@@ -132,6 +132,8 @@ class CodingRunRead(BaseModel):
     pr_url: str | None
     pr_state: PrState | None = Field(description="`open`, `merged`, or `closed`, from GitHub")
     files_changed: list[dict[str, Any]]
+    ci_sensitive: list[str] = Field(default_factory=list, description="Changed files CI runs (build scripts, "
+                                    "test setup): a turn that changes any waits for a person to accept it, in every mode")
     screenshots: list[CodingScreenshot] = Field(default_factory=list, description="What the agent's browser captured in this turn")
     events: list[CodingEvent] = Field(description="The latest events (up to 300); every one is at GET .../events")
     event_count: int = Field(default=0, description="How many events the run has in all")

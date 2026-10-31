@@ -188,6 +188,7 @@ export function toNotif(n: Schemas["NotificationRead"]): Notif {
     project: n.project_id,
     thread: n.thread_id ?? undefined,
     run: n.run_id ?? undefined,
+    codingRun: n.coding_run_id ?? undefined,
     text: n.title,
     snippet: n.excerpt ?? "",
     at: ms(n.created_at),

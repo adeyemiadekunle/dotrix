@@ -35,6 +35,7 @@ from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effec
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
+from . import guard
 from .brief import build_brief
 from .models import (
     ACTIVE,
@@ -753,6 +754,7 @@ class CodingService:
             status=run.status, brief=run.brief, note=run.note, repo_full_name=run.repo_full_name,
             base_branch=run.base_branch, base_sha=run.base_sha, branch=run.branch, commit_sha=run.commit_sha,
             pr_number=run.pr_number, pr_url=run.pr_url, files_changed=list(run.files_changed or []),
+            ci_sensitive=guard.ci_sensitive([f["path"] for f in run.files_changed or [] if f.get("path")]),
             screenshots=[
                 CodingScreenshot(index=i, name=s["name"], size=s["size"], content_type=s["content_type"])
                 for i, s in enumerate(run.screenshots or [])

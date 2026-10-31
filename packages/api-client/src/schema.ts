@@ -5947,6 +5947,11 @@ export interface components {
                 [key: string]: unknown;
             }[];
             /**
+             * Ci Sensitive
+             * @description Changed files CI runs (build scripts, test setup): a turn that changes any waits for a person to accept it, in every mode
+             */
+            ci_sensitive?: string[];
+            /**
              * Screenshots
              * @description What the agent's browser captured in this turn
              */

@@ -45,7 +45,7 @@ These hold whatever the implementation does, and whatever the approval mode.
 
 ## Approval modes
 
-Built (2026-10-24): the start gate, one setting with chat's (`workspaces/approval_modes.py`), the workspace cap, and the person's limit; the accept gate (A2: in Manual a turn's checked changes wait as `changes_ready`, kept as a patch, and an approver accepts them through the same decision route, `POST .../coding/runs/{id}/decision`, or discards them; nothing reaches GitHub before that); reverts of pushed turns in every mode (`POST .../coding/runs/{id}/revert`: a new turn whose commit reverts it on the session's branch, approved like any turn, the agent not run). Not yet: CI-sensitive files falling back to Manual, and the mode changed while a session runs.
+Built (2026-10-24): the start gate, one setting with chat's (`workspaces/approval_modes.py`), the workspace cap, and the person's limit; the accept gate (A2: in Manual a turn's checked changes wait as `changes_ready`, kept as a patch, and an approver accepts them through the same decision route, `POST .../coding/runs/{id}/decision`, or discards them; nothing reaches GitHub before that); reverts of pushed turns in every mode (`POST .../coding/runs/{id}/revert`: a new turn whose commit reverts it on the session's branch, approved like any turn, the agent not run). A turn whose changes touch files CI runs (`guard.CI_SENSITIVE`: build scripts, test setup) waits as `changes_ready` in every mode (2026-10-31, `guard.needs_a_person`; `CodingRunRead.ci_sensitive`). Not yet: the mode changed while a session runs.
 
 Each session has a mode, like Claude Code's permission modes, picked when it starts and changeable
 while it runs (by whoever started it, within the limits). The mode decides two gates: **start** (a
@@ -373,7 +373,8 @@ Claude Haiku 5.5 (Claude Code 2.1.296), four turns for well under a cent:
   session's branch, through the guard, as a new turn. A revert that doesn't apply cleanly fails the turn.
 - [x] The mode on each turn and in the audit log; the workspace's and the person's limits (2026-10-24).
 - [x] Sessions private like conversations (the visibility rules above; coding has no automations yet).
-- [ ] CI-sensitive files falling back to Manual; changing a session's mode while it runs.
+- [x] CI-sensitive files fall back to a person in every mode (2026-10-31).
+- [ ] Changing a session's mode while it runs.
 
 **M1: one run interrupted, recovered, and reviewed in one conversation.** Proven 2026-10-24 by
 `test_m1_a_run_interrupted_recovered_and_reviewed_in_one_conversation` (scripted agent, fake GitHub, a
@@ -412,7 +413,7 @@ conversation. On a real model (needs Docker, the coding image, the GitHub App, a
 - [x] Checked on Claude Code (WIR-7 on `dotrix-test`, PR #4): turn 2 ran in the same container, resumed
   (it named the button it added in turn 1 unprompted), diffed only its own change, cost $0.0013 of its
   own; closing removed the container.
-- [ ] Approvals for start and accept in Notifications per turn (with A2's accept step).
+- [x] Approvals for start and accept in Notifications per turn: the Inbox loads the turn from the API and approves, rejects, accepts or discards it (2026-10-31).
 
 **Phase C: the workspace view.** The panel done 2026-10-24.
 - [x] The side panel beside a conversation or a session (`components/KaiPanel.tsx`), for any turn:

@@ -11,7 +11,9 @@ import { ago, dayBucket } from "../core/utils";
 import { D, S, commentsOf, mutate, pColor, proj, render, task, toolName, who } from "../data/store";
 import type { Notif, NotifType } from "../data/types";
 import { ChangeCard } from "../components/Changes";
+import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { isLive, live, liveCommentsOf, notifsRead } from "../data/live";
+import { useCodingRun, useDecideCoding } from "../../lib/coding";
 import { useIssue } from "../../lib/issues";
 import { useLiveNotifications } from "../../lib/workspace-data";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
@@ -329,7 +331,8 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
             )}
           </div>
         )}
-        {!th && !cs && (
+        {!cs && n.codingRun && p && live.ws && <CodingDecision workspaceId={live.ws.id} projectId={p.id} runId={n.codingRun} />}
+        {!th && !cs && !n.codingRun && (
           <div className="alert info">
             <Ic n={TYPE_IC[n.type] ?? "bell"} s={16} />
             <div>
@@ -346,6 +349,69 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
         )}
       </div>
     </>
+  );
+}
+
+/** A turn of Kai's a notification is about, as it is now: approve it to start, or accept its changes. */
+function CodingDecision({ workspaceId, projectId, runId }: { workspaceId: string; projectId: string; runId: string }) {
+  const scope = { workspaceId, projectId };
+  const run = useCodingRun(scope, runId);
+  const decide = useDecideCoding(scope, run.data?.issue_key ?? "");
+  const r = run.data;
+  if (run.isError) return <p className="muted">This coding turn isn't one you can see any more.</p>;
+  if (!r) return <p className="muted">Loading the coding turn…</p>;
+  const decision = (approve: boolean) => decide.mutate({ runId: r.id, decision: approve ? "approve" : "reject" });
+  const waiting = r.status === "awaiting_approval" || r.status === "changes_ready";
+  return (
+    <div className="change" role="group" aria-label="Coding turn">
+      <div className="change-h">
+        <Ic n="code" s={14} />
+        <span className="muted">Code</span>
+        <b style={{ fontWeight: 500 }}>
+          {r.issue_key} · turn {r.turn}
+        </b>
+        <span className="sp" />
+        <button className="btn btn-sm btn-ghost" onClick={() => go("codes", {}, { search: `session=${r.session_id}` })}>
+          Open the session
+        </button>
+      </div>
+      {r.note && <div className="change-b">{r.note}</div>}
+      {r.status === "changes_ready" && r.files_changed.length > 0 && (
+        <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+          {r.files_changed.map((f) => (
+            <span key={String(f.path)} className="row" style={{ gap: 8 }}>
+              <span className="trunc grow">{String(f.path)}</span>
+              <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
+              <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {r.status === "changes_ready" && (r.ci_sensitive ?? []).length > 0 && <CiSensitiveNote files={r.ci_sensitive ?? []} />}
+      <div className="change-f">
+        {waiting ? (
+          <span className="faint" style={{ fontSize: 12 }}>
+            {r.status === "awaiting_approval"
+              ? "It works on its own branch and opens a pull request; a person merges."
+              : "Nothing is pushed until someone accepts them."}
+          </span>
+        ) : (
+          <span className="badge">{r.status.replace(/_/g, " ")}</span>
+        )}
+        <span className="sp" />
+        {waiting && r.can_decide && (
+          <>
+            <button className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
+              {r.status === "changes_ready" ? "Discard" : "Reject"}
+            </button>
+            <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
+              <Ic n="check" s={13} />
+              {r.status === "changes_ready" ? "Accept and push" : "Approve"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
