@@ -174,6 +174,14 @@ async def reconcile_coding_runs(ctx: dict[str, Any]) -> None:
         await recover_uncertain_runs(runner.session_factory, coding.app, coding.settings, requeue)
 
 
+async def sandboxes(ctx: dict[str, Any]) -> None:
+    """Delete coding sandboxes asleep too long or of closed sessions, and what nothing refers to any more
+    (Docker Cloud; a no-op for sandboxes that don't sleep)."""
+    coding = ctx["jobs"].coding
+    if coding is not None:
+        await coding.sweep_sandboxes()
+
+
 async def cleanup(ctx: dict[str, Any]) -> None:
     await cleanup_expired(ctx["jobs"])
 
@@ -203,6 +211,7 @@ class WorkerSettings:
         cron(dispatch_runs, second={0, 15, 30, 45}, run_at_startup=True),
         cron(reconcile_coding_runs, second={5}, run_at_startup=True),
         cron(cleanup, minute={17}, run_at_startup=True),
+        cron(sandboxes, minute=set(range(3, 60, 10)), timeout=5 * 60),
         cron(index, run_at_startup=True, timeout=10 * 60),
         cron(automations, timeout=2 * 60),
         cron(emails, timeout=2 * 60),

@@ -59,6 +59,50 @@ matters:
 Redis is still needed (the queue, live streams, rate limits); its data can be lost without
 losing runs.
 
+## Coding sandboxes on Docker Cloud (recommended)
+
+With `DOTRIX_CODING_SANDBOX=docker-cloud`, Kai's turns run in Docker Cloud sandboxes (the Docker
+Agentic Platform) instead of on this VPS. Each turn gets a microVM of its own; the API, worker,
+Postgres and Redis stay here. Docker enforces the network policy (only the model API of the turn's
+engine is reachable), so the egress proxy isn't needed. The worker still clones and pushes, so no
+GitHub token ever reaches a sandbox.
+
+1. **Subscribe** to the Docker Agentic Platform with the Docker account the sandboxes bill to.
+2. **A personal access token** for that account with **Allow Cloud Sandboxes access** (`sandbox:use`).
+   Put the Docker ID in `DOTRIX_DOCKER_CLOUD_ID` and the token in `DOTRIX_DOCKER_CLOUD_PAT` (Dokploy's
+   Environment tab, as a secret).
+3. **Publish the coding image** to a registry Docker can pull from. In GitHub: the repository variable
+   `CODING_IMAGE` (e.g. `docker.io/acme/dotrix-coding`) and the secrets `DOCKERHUB_USERNAME` and
+   `DOCKERHUB_TOKEN`; `.github/workflows/coding-image.yml` then publishes it for each release (or run it
+   by hand). Set `DOTRIX_CODING_IMAGE` to the version you deploy, e.g. `docker.io/acme/dotrix-coding:0.1.0`.
+4. **Size:** `DOTRIX_CODING_CPUS` picks the sandbox size (Docker pairs 2 GiB of memory with each CPU:
+   1, 2, 4, 8 or 16 CPUs); `DOTRIX_CODING_MEMORY` and `DOTRIX_CODING_DOCKER_RUNTIME` don't apply.
+
+The VPS then needs no room for sandboxes: 2 vCPUs and 4 GB run the rest. An account runs 10
+sandboxes at once by default; `DOTRIX_CODING_MAX_RUNS` (per worker) stays below that. Docker labels
+the API experimental.
+
+**The key stays out of the sandbox.** Each person's model key is stored as a Docker secret for the
+session; the sandbox holds a placeholder and Docker writes the real key only into requests to the
+model API (`DOTRIX_DOCKER_CLOUD_KEY_INJECTION`, on by default).
+
+**Sessions sleep between turns.** After a turn (and the warm idle time) a session's sandbox is
+stopped, keeping its files and installed dependencies, and the next turn wakes it. A sleeping
+sandbox is deleted after `DOTRIX_CODING_SLEEP_DAYS` (7); straight away when its session is closed or
+deleted, or when someone deletes it ("Delete sandbox" in the session's menu); and the workspace's
+oldest when more than `DOTRIX_CODING_SLEEP_MAX` (5) are asleep. The worker sweeps every 10
+minutes, and also deletes stopped dotrix sandboxes and secrets nothing refers to (a crash's). An
+account stores 50 sandboxes by default, sleeping ones included. A sandbox whose worker crashed stops
+itself after the turn time plus the idle time (and 10 minutes), so it stops billing.
+
+**Sandbox network.** Owners and admins can let sandboxes reach package registries or other hosts in
+Settings → Sandbox network. Those apply only to Docker Cloud sandboxes, because there the key stays
+out; the other sandbox kinds refuse a turn while any are set.
+
+Not yet checked against a real account (the client is tested against a fake of the documented API,
+`tests/unit/test_docker_cloud.py`): whether Docker pulls a private image without extra setup, and how
+long a sandbox takes to start.
+
 ## Coding sandboxes on the VPS
 
 The worker starts each run's containers on the VPS's Docker. It reaches Docker only through
@@ -80,6 +124,7 @@ setup. If you put a firewall or an egress proxy in front of the VPS, allow HTTPS
 | --- | --- |
 | `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, `api.x.ai`, `api.deepseek.com`, `api.mistral.ai`, `api.groq.com`, `openrouter.ai` | People's model keys: chat, specialists, coding (only the providers people connect) |
 | `github.com`, `api.github.com` | Sign-in, the GitHub App, checkouts, pushes and PRs |
+| `connect.docker.com`, `hub.docker.com`, and each sandbox's endpoint host | Docker Cloud sandboxes (`docker-cloud`): the Sandboxes API, signing in, and a sandbox's files and commands |
 | `api.osv.dev` | `dependency_advisories`: known vulnerabilities in a repository's dependencies. Without it the tool says OSV can't be reached; nothing else breaks |
 | `api.sendlyai.com` | Email |
 | `api.tavily.com`, and the pages research reads | Web research (optional) |

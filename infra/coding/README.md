@@ -109,7 +109,8 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 
 | Setting | Default | What |
 | --- | --- | --- |
-| `DOTRIX_CODING_SANDBOX` | `off` outside Compose; `docker` in Compose | `docker`, `openshell`, or `local` (development only: no isolation; production refuses it) |
+| `DOTRIX_CODING_SANDBOX` | `off` outside Compose; `docker` in Compose | `docker`, `docker-cloud`, `openshell`, or `local` (development only: no isolation; production refuses it) |
+| `DOTRIX_DOCKER_CLOUD_ID`, `DOTRIX_DOCKER_CLOUD_PAT` | none | For `docker-cloud`: the Docker ID and a personal access token with Cloud Sandboxes access |
 | `DOTRIX_CODING_IMAGE` | `dotrix-coding:latest` | The image built from this folder |
 | `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, `opencode`, or `fx` |
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
@@ -131,6 +132,32 @@ it to the **Check suite** event: Juno's review is posted on the PR as a comment 
 a failed check suite on Kai's commit gets Juno's look at the failed jobs' logs, posted on the PR, with
 "Ask Kai to fix" in Codes. Without Actions (read) Juno is told the logs couldn't be read. Switch them off
 with `DOTRIX_GITHUB_PR_REVIEWS=false` and `DOTRIX_GITHUB_CI_MONITOR=false`.
+
+## Docker Cloud sandboxes (no Docker on the worker)
+
+`DOTRIX_CODING_SANDBOX=docker-cloud` runs each turn in a Docker Cloud sandbox through the Docker
+Sandboxes API (`modules/coding/docker_cloud.py`): a microVM from this image, pulled from a registry
+(`DOTRIX_CODING_IMAGE=docker.io/acme/dotrix-coding:0.1.0`), with an inline `denyAll` network policy
+allowing only the engine's model API host. Instead of `docker exec`:
+
+- the repo goes in as a tar through the sandbox's file service and is unpacked by the image's user;
+- each command is a process whose output is read from a cursor (stdout a line at a time, stderr's
+  tail), with stdin uploaded as a file and opened as the process's standard input;
+- Stop is SIGINT, then SIGKILL after 5 s; the turn's time limit is SIGKILL;
+- the model key is a Docker secret: the sandbox holds a placeholder, and Docker writes the key into
+  requests to the model API only (custom injection with the engine's header; Docker's own
+  integration for hosts it serves itself). Without a secret the key goes in each process's
+  environment, and then extra allowed hosts are refused;
+- the hosts owners and admins allow (Settings → Sandbox network, `coding/network.py`) join the model
+  API in the policy;
+- between turns the sandbox sleeps (stopped, files kept) and the next turn wakes it; the worker's
+  sweep deletes sleepers after 7 days, closed or deleted sessions', and leftovers;
+- the sandbox's own timeout (turn time + idle time + 10 minutes, renewed by each command) stops it
+  if the worker doesn't.
+
+It needs `DOTRIX_DOCKER_CLOUD_ID` and `DOTRIX_DOCKER_CLOUD_PAT` (a personal access token with Cloud
+Sandboxes access); see deploy/README.md. Docker's API is experimental; its reference is at
+https://docs.docker.com/reference/api/sandboxes/latest/.
 
 ## Set up Docker (the simplest: once per machine that runs agents)
 

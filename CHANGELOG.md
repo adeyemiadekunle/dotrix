@@ -9,6 +9,20 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Added
+
+- Kai's turns can run in Docker Cloud sandboxes (`DOTRIX_CODING_SANDBOX=docker-cloud`): a microVM per session, reaching
+  only the model API, with the model key kept out of the sandbox as a Docker secret. The coding image is published to a
+  registry for each release.
+- A session's Docker Cloud sandbox sleeps between turns (stopped, its files and installed dependencies kept) and wakes for
+  the next one. It's deleted after 7 days asleep, or straight away when the session is closed or deleted or someone
+  deletes it ("Delete sandbox" in the session's menu: whoever started it, or owners and admins); at most 5 sleep per
+  workspace.
+- Settings → Sandbox network: owners and admins choose package registries and other hosts Kai's sandboxes may reach,
+  for every project or one; every change is audited, and a turn says which hosts its sandbox blocked.
+- A Windows installer for the desktop app and a standalone Windows CLI, built and attached to each release (unsigned for
+  now).
+
 ## [0.1.0] - 2026-10-31
 
 The first versioned release: everything built before versioning began, through #199.

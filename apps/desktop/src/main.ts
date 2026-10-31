@@ -4,10 +4,11 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent, shell } from "electron";
 import path from "node:path";
 
+import { webUrl } from "./config";
 import { Runners, sameOrigin } from "./runner";
 import { ownWorktree, worktreeFile, worktreeTree } from "./worktree";
 
-const WEB_URL = process.env.DOTRIX_WEB_URL ?? "http://localhost:3000";
+const WEB_URL = webUrl();
 // The web app is served on the API's origin, so the runner talks to the same one unless told otherwise.
 const API_URL = process.env.DOTRIX_API_URL ?? new URL(WEB_URL).origin;
 

@@ -32,7 +32,7 @@ class CodingAvailability(BaseModel):
         description="Your compatible default tool: Codex with OpenAI, Claude Code with Anthropic, "
         "or OpenCode with another connected provider"
     )
-    sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
+    sandbox: str | None = Field(description="`docker`, `docker-cloud`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
     local_available: bool = Field(default=False, description="Whether you can code here on your own computer")
     local_runner: str | None = Field(default=None, description="Your computer that would code (the one seen last)")
@@ -198,6 +198,11 @@ class CodingSessionRead(BaseModel):
         default=CodingSessionState.IDLE,
         description="`warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: closed by hand",
     )
+    sandbox: Literal["warm", "asleep"] | None = Field(
+        default=None,
+        description="Its cloud sandbox between turns: `warm` (running), `asleep` (stopped, files kept; deleted after "
+        "the sleep days), or none (the next turn starts one). Whoever started it, or owners and admins, can delete it.",
+    )
     title: str = Field(default="", description="Its own name when renamed, else its issue's title")
     pinned: bool = False
     archived: bool = False
@@ -311,3 +316,20 @@ class CodingFile(BaseModel):
     after: str | None = Field(description="Its text after the turn (none: deleted, or isn't shown)")
     binary: bool
     too_large: bool = Field(description="Over 1 MB: not shown")
+
+
+class SandboxNetworkUpdate(BaseModel):
+    """The hosts Kai's sandboxes may reach besides the model API, here (workspace or project)."""
+
+    presets: list[str] = Field(default_factory=list, max_length=20,
+                               description="Named presets (package registries), e.g. npm, pypi")
+    hosts: list[str] = Field(default_factory=list, max_length=50,
+                             description="Exact host names, or *.domain for one domain's hosts")
+
+
+class SandboxNetworkRead(BaseModel):
+    presets: list[str] = Field(description="The presets chosen here")
+    hosts: list[str] = Field(description="The custom hosts chosen here")
+    effective: list[str] = Field(
+        description="Everything a sandbox here may reach besides the model API (a project: the workspace's too)")
+    available_presets: dict[str, dict[str, Any]] = Field(description="Each preset's name and its hosts")

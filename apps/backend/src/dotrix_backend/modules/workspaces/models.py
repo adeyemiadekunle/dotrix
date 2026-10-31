@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import enum
 import uuid
+from typing import Any
 
 from sqlalchemy import ARRAY, Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from dotrix_backend.db.base import (
@@ -50,6 +52,9 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # The highest approval mode its people may work in (approval_modes.py: manual, accept_edits,
     # auto); null: Auto in a personal workspace, Manual in an organisation.
     approval_mode_cap: Mapped[str | None] = mapped_column(String(16))
+    # Hosts Kai's sandboxes may reach besides the model API (coding/network.py): {"presets": [...],
+    # "hosts": [...]}; owners and admins set it, each project adds its own.
+    sandbox_network: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class Membership(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):

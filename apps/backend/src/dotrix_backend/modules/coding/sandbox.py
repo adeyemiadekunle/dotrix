@@ -11,10 +11,16 @@
   agent's container has a read-only system, no capabilities, and an unprivileged user; the repo
   sits on a volume deleted with it. Unlike OpenShell, the model key is in the agent's environment:
   the proxy is what keeps it from going anywhere but the model API.
+- Docker Cloud (`docker-cloud`): a Docker Sandboxes microVM per run, its network limited to the
+  model API by Docker's own policy (docker_cloud.py).
 - Local (`local`): a temporary folder on this machine, with no isolation at all. For
   development only; refused in production.
 
-Neither ever receives a GitHub token: the worker clones and pushes outside the sandbox.
+None ever receives a GitHub token: the worker clones and pushes outside the sandbox.
+
+Extra hosts owners and admins allow (Settings → Sandbox network, network.py) reach only Docker Cloud
+sandboxes, which keep the key out of the sandbox; the others refuse a turn rather than open a way
+for the key to leave.
 """
 from __future__ import annotations
 
@@ -78,9 +84,12 @@ class SandboxSession(Protocol):
 class CodingSandbox(Protocol):
     kind: str
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
         """A sandbox holding a copy of `source` (a folder named `repo`), where commands run in the
-        repo, and `tool` can reach its model with `model_key`."""
+        repo, and `tool` can reach its model with `model_key`, and the `allow` hosts (owners' and admins'
+        Settings → Sandbox network; exact, or `*.domain`) besides."""
         ...
 
 
@@ -373,7 +382,12 @@ class OpenShellSandbox:
             raise SandboxError(f"openshell {args[0]} {args[1]} failed: {lines[-1][:300] if lines else result.code}")
         return result.stdout
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
+        if allow:  # its policy reaches the model provider only; not the hosts owners allow
+            raise SandboxError("OpenShell sandboxes don't take the extra hosts in Settings → Sandbox network: "
+                               "those need Docker Cloud sandboxes; or remove the hosts.")
         # OpenShell names are at most 19 characters; a UUIDv7's last 16 hex digits are its random part.
         name = provider = f"pm-{run_id.hex[-16:]}"
         scratch = Path(tempfile.mkdtemp(prefix="dotrix-openshell-"))
@@ -404,6 +418,11 @@ EGRESS_PORT = 3128
 def egress_allow(tool: CodingTool) -> str:
     """Where the egress proxy lets the tool go: its model API, nothing else."""
     return f"{tool.api_host}:443"
+
+
+EXTRA_HOSTS_REFUSED = ("The key is inside this sandbox, so it can't reach the extra hosts in Settings → Sandbox "
+                       "network (the agent could send the key there). Those need Docker Cloud sandboxes, which "
+                       "keep the key out; or remove the hosts.")
 
 
 def _tar_of(source: Path) -> bytes:
@@ -464,7 +483,11 @@ class DockerSandbox:
             raise SandboxError(f"docker {args[0]} failed: {lines[-1][:300] if lines else result.code}")
         return result.stdout
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
+        if allow:
+            raise SandboxError(EXTRA_HOSTS_REFUSED)
         name = f"dotrix-run-{run_id.hex[-16:]}"
         label = f"dotrix.run={run_id}"
         try:
@@ -532,7 +555,9 @@ class LocalSandbox:
 
     kind = "local"
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
         root = Path(tempfile.mkdtemp(prefix=f"dotrix-coding-{run_id.hex[:8]}-"))
         await asyncio.to_thread(shutil.copytree, source, root / "repo", symlinks=True)
         (root / "home").mkdir()
@@ -546,6 +571,10 @@ def build_sandbox(settings: Settings) -> CodingSandbox | None:
         return OpenShellSandbox(settings)
     if settings.coding_sandbox == "docker":
         return DockerSandbox(settings)
+    if settings.coding_sandbox == "docker-cloud":
+        from .docker_cloud import DockerCloudSandbox  # (imports this module)
+
+        return DockerCloudSandbox(settings)
     if settings.coding_sandbox == "local":
         return LocalSandbox()
     return None

@@ -2,6 +2,11 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Install scripts dependencies may run. electron-winstaller (electron-builder's Squirrel target) isn't
+# used: the Windows installer is NSIS.
+allowBuilds:
+  electron-winstaller: false
+
 # One TypeScript for typecheck and ESLint: the newest typescript-eslint supports (<6.1).
 catalog:
   typescript: ~6.0.3

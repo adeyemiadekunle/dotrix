@@ -22,6 +22,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission
 
 from .files import TurnFiles
 from .local import LocalRunners
+from .network import SandboxNetwork
 from .schemas import (
     CodingAvailability,
     CodingClaimed,
@@ -42,6 +43,8 @@ from .schemas import (
     RunnerHeartbeat,
     RunnerHeartbeatRead,
     RunnerResult,
+    SandboxNetworkRead,
+    SandboxNetworkUpdate,
 )
 from .service import CodingService
 
@@ -163,6 +166,14 @@ async def close_coding_session(session_id: uuid.UUID, access: ProjectViewer, cod
     """Close a coding session: its sandbox kept between turns goes; its transcript, branch, and PR
     stay, and a new turn opens it again and resumes. Whoever started it, or owners and admins."""
     await coding.close_session(access, session_id)
+
+
+@router.delete("/sessions/{session_id}/sandbox", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))
+async def delete_coding_sandbox(session_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> None:
+    """Delete a coding session's cloud sandbox now, warm or asleep: its installed dependencies and anything
+    not committed go; the session, its branch, PR, and transcript stay, and its next turn starts a fresh
+    sandbox and resumes. Whoever started it, or owners and admins; not while a turn waits or works."""
+    await coding.delete_sandbox(access, session_id)
 
 
 @router.patch("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 422))
@@ -312,3 +323,42 @@ async def report_coding_result(
     Changes are checked (no `.dotrix/`, no CI configuration); in Manual they wait for a person to
     accept them, otherwise they're pushed by the platform. 409 `lease_lost` when no longer held."""
     await runners.result(member, runner_id, coding_run_id, data)
+
+
+# -- Sandbox network: the hosts Kai's sandboxes may reach besides the model API (network.py) --------
+
+WorkspaceSettingsEditor = Annotated[Membership, Depends(require_permission(Permission.MANAGE_WORKSPACE))]
+ProjectNetworkEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_WORKSPACE))]
+
+
+@workspace_router.get("/network")
+async def get_workspace_sandbox_network(
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], session: SessionDep,
+) -> SandboxNetworkRead:
+    """The hosts every project's coding sandboxes may reach besides the model API, and the presets to
+    choose from. Anyone in the workspace can read it (a blocked turn says where to ask)."""
+    return await SandboxNetwork(session).workspace(member)
+
+
+@workspace_router.put("/network", responses=errors(403, 409, 422))
+async def set_workspace_sandbox_network(
+    data: SandboxNetworkUpdate, member: WorkspaceSettingsEditor, session: SessionDep,
+) -> SandboxNetworkRead:
+    """Set the hosts every project's coding sandboxes may reach (presets and custom hosts: exact, or
+    *.domain). Each one is somewhere an agent could send data. Owners and admins; audited."""
+    return await SandboxNetwork(session).set_workspace(member, data)
+
+
+@router.get("/network")
+async def get_project_sandbox_network(access: ProjectViewer, session: SessionDep) -> SandboxNetworkRead:
+    """The hosts this project's coding sandboxes may reach on top of the workspace's, and all of them together."""
+    return await SandboxNetwork(session).project(access.member, access.project)
+
+
+@router.put("/network", responses=errors(403, 409, 422))
+async def set_project_sandbox_network(
+    data: SandboxNetworkUpdate, access: ProjectNetworkEditor, session: SessionDep,
+) -> SandboxNetworkRead:
+    """Set the hosts this project's coding sandboxes may also reach, on top of the workspace's. Owners and
+    admins; audited."""
+    return await SandboxNetwork(session).set_project(access.member, access.project, data)

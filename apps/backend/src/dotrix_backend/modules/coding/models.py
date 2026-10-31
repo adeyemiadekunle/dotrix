@@ -234,6 +234,10 @@ class CodingSession(WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Its sandbox asleep between turns (Docker Cloud: stopped, files kept), to wake for the next one: where
+    # it is, its key's secret and placeholder, and which key and network it was opened with (a digest).
+    sandbox_handle: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    sandbox_slept_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CodingRunner(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

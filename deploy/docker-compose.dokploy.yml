@@ -32,9 +32,12 @@ x-dotrix: &dotrix
     DOTRIX_GITHUB_CLIENT_ID: ${DOTRIX_GITHUB_CLIENT_ID:-}
     DOTRIX_GITHUB_CLIENT_SECRET: ${DOTRIX_GITHUB_CLIENT_SECRET:-}
     DOTRIX_TAVILY_API_KEY: ${DOTRIX_TAVILY_API_KEY:-}
-    # Coding runs (the worker): sandboxes on this host's Docker, through the socket proxy below.
+    # Coding runs (the worker): sandboxes on Docker Cloud (docker-cloud: the image from a registry), or
+    # on this host's Docker through the socket proxy below (docker: the image built here).
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
-    DOTRIX_CODING_IMAGE: dotrix-coding:${DOTRIX_VERSION:-latest}
+    DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:${DOTRIX_VERSION:-latest}}
+    DOTRIX_DOCKER_CLOUD_ID: ${DOTRIX_DOCKER_CLOUD_ID:-}
+    DOTRIX_DOCKER_CLOUD_PAT: ${DOTRIX_DOCKER_CLOUD_PAT:-}
     DOTRIX_CODING_FORK_OWNER: ${DOTRIX_CODING_FORK_OWNER:?the GitHub organisation coding branches go to (deploy/README.md)}
     DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
     DOTRIX_CODING_MEMORY: ${DOTRIX_CODING_MEMORY:-3g}

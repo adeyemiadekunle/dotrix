@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode 
 
 import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
 import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
-import { useCloseSession, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
+import { useCloseSession, useDeleteSandbox, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
 import { useLiveProjectTasks } from "@/lib/workspace-data";
 import { confirmDlg, promptDlg } from "../core/more";
 import { isLive, live, liveCommentById, taskPatched } from "../data/live";
@@ -51,6 +51,7 @@ import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, rende
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import type { Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
+import { toast } from "../ui/toast";
 import { FIELDS, viewChange, viewOf } from "../shell/viewEngine";
 import { toggleReaction } from "./Drawer";
 import { taskForm } from "./Modals";
@@ -991,6 +992,7 @@ function SessionMenu({ cs }: { cs: CodingSession }) {
   const update = useUpdateSession(scope, cs.session_id, cs.issue_key);
   const close = useCloseSession(scope, cs.session_id, cs.issue_key);
   const remove = useDeleteSession(scope, cs.session_id, cs.issue_key);
+  const dropSandbox = useDeleteSandbox(scope, cs.session_id, cs.issue_key);
   const it = isLive() ? { id: cs.issue_key } : D().tasks.find((t) => t.key === cs.issue_key);
   const act = (f: () => void) => () => (closePop(), f());
   return (
@@ -1008,6 +1010,27 @@ function SessionMenu({ cs }: { cs: CodingSession }) {
       />
       <Sep />
       {cs.state !== "closed" && <Mi icon="power" label="Close session" onClick={act(() => close.mutate())} />}
+      {cs.sandbox && (
+        <Mi
+          icon="box"
+          label="Delete sandbox"
+          onClick={act(() =>
+            confirmDlg({
+              title: "Delete this session's sandbox?",
+              body:
+                (cs.sandbox === "asleep" ? "It's asleep and would be deleted after 7 days anyway. " : "") +
+                "Installed dependencies and anything not committed go. The session, its branch, pull request, and conversation stay; the next turn starts a fresh sandbox.",
+              ok: "Delete sandbox",
+              danger: true,
+              run: () =>
+                dropSandbox.mutateAsync().then(
+                  () => toast("Sandbox deleted"),
+                  () => {},
+                ),
+            }),
+          )}
+        />
+      )}
       <Mi icon="archive" label={cs.archived ? "Unarchive" : "Archive"} onClick={act(() => update.mutate({ archived: !cs.archived }))} />
       <Mi
         icon="trash-2"

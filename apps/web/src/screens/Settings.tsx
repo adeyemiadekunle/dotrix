@@ -55,6 +55,8 @@ import {
   tokenCreated,
   tokenRevoked,
   tokens,
+  sandboxNetwork,
+  sandboxNetworkSaved,
   unlinkGitHub,
   useApi,
   workspaceRenamed,
@@ -94,6 +96,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["agents", "Agents", "bot"],
       ["github", "GitHub", "github"],
+      ["sandbox", "Sandbox network", "shield-check"],
       ["audit", "Audit log", "list-checks"],
     ],
     true,
@@ -1619,6 +1622,124 @@ function LiveGitHub() {
   );
 }
 
+// The seeded workspace's presets (a real one reads them from the API, with what it allows).
+const DEMO_PRESETS: Record<string, { label: string; hosts: string[] }> = {
+  npm: { label: "npm (and pnpm, Yarn)", hosts: ["registry.npmjs.org", "registry.yarnpkg.com"] },
+  pypi: { label: "PyPI (pip, uv)", hosts: ["pypi.org", "files.pythonhosted.org"] },
+  go: { label: "Go modules", hosts: ["proxy.golang.org", "sum.golang.org"] },
+};
+
+/** Owners and admins choose the hosts Kai's sandboxes may reach besides the model API: for every project,
+ *  and on top of that for one. Each is somewhere an agent could send data, so it stays a short list. */
+function SandboxNetworkSettings() {
+  const [scope, setScope] = useState("");
+  const loaded = useApi(() => sandboxNetwork(scope || undefined), [scope]);
+  const [presets, setPresets] = useState<string[] | null>(null);
+  const [hosts, setHosts] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const data = isLive() ? loaded.data : { presets: [], hosts: [], effective: [], available_presets: DEMO_PRESETS };
+  if (isLive() && loaded.error) return <div className="alert danger">{loaded.error}</div>;
+  if (!data) return <div className="faint">Loading…</div>;
+  const available = data.available_presets as Record<string, { label: string; hosts: string[] }>;
+  const chosen = presets ?? data.presets;
+  const typed = hosts ?? data.hosts.join("\n");
+  const changed = presets !== null || hosts !== null;
+  const pick = (scopeId: string) => {
+    setScope(scopeId);
+    setPresets(null);
+    setHosts(null);
+  };
+  const save = () => {
+    const body = { presets: chosen, hosts: typed.split(/[\s,]+/).filter(Boolean) };
+    if (!isLive()) {
+      toast("Saved");
+      return;
+    }
+    setBusy(true);
+    sandboxNetworkSaved(body, scope || undefined)
+      .then(() => {
+        setPresets(null);
+        setHosts(null);
+        loaded.reload();
+        toast("Sandbox network saved");
+      })
+      .catch((e: unknown) => toast(`It didn't save: ${errText(e)}`, { kind: "err", ms: 6000 }))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <>
+      <div className="alert info" style={{ marginBottom: 16 }}>
+        <Ic n="shield-check" s={15} />
+        <span>
+          Kai's sandboxes reach only the model API. Each host you allow is somewhere an agent could also send your code, so allow only what turns need, such as
+          a package registry. They apply to Docker Cloud sandboxes, which keep the model key out of the sandbox; other sandboxes refuse a turn while any are
+          allowed.
+        </span>
+      </div>
+      <div className="sblock" style={{ marginTop: 0 }}>
+        <SRow t="Applies to" d={scope ? "This project, on top of what every project may reach" : "Every project"}>
+          <select className="select" style={{ width: "auto", minWidth: 200 }} value={scope} onChange={(e) => pick(e.target.value)} aria-label="Applies to">
+            <option value="">Every project</option>
+            {visibleProjects().map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </SRow>
+      </div>
+      <div className="sblock">
+        <h2>Package registries</h2>
+        {Object.entries(available).map(([key, preset]) => (
+          <SRow key={key} t={preset.label} d={<span className="mono">{preset.hosts.join(", ")}</span>}>
+            <Tog on={chosen.includes(key)} set={(on) => setPresets(on ? [...chosen, key] : chosen.filter((k) => k !== key))} label={preset.label} />
+          </SRow>
+        ))}
+      </div>
+      <div className="sblock">
+        <h2>Other hosts</h2>
+        <p className="faint" style={{ marginTop: 0 }}>
+          One per line: an exact name such as <span className="mono">api.example.com</span>, or <span className="mono">*.example.com</span> for that domain's
+          hosts. HTTPS only.
+        </p>
+        <textarea
+          className="textarea mono"
+          rows={5}
+          value={typed}
+          onChange={(e) => setHosts(e.target.value)}
+          placeholder="api.example.com"
+          aria-label="Other hosts"
+          style={{ maxWidth: 520 }}
+        />
+        <div className="row" style={{ gap: 8, marginTop: 12 }}>
+          <button className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={save}>
+            Save
+          </button>
+          {changed && (
+            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (setPresets(null), setHosts(null))}>
+              Discard
+            </button>
+          )}
+        </div>
+      </div>
+      {isLive() && (
+        <div className="sblock">
+          <h2>{scope ? "This project's sandboxes may reach" : "Every project's sandboxes may reach"}</h2>
+          {data.effective.length ? (
+            <div className="mono" style={{ fontSize: 12.5, display: "flex", flexDirection: "column", gap: 2 }}>
+              {data.effective.map((h) => (
+                <span key={h}>{h}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="faint">Only the model API.</p>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function GitHub() {
   if (isLive()) return <LiveGitHub />;
   const ps = visibleProjects();
@@ -2398,6 +2519,8 @@ function Body({ sec }: { sec: string }) {
       return <Automations />;
     case "github":
       return <GitHub />;
+    case "sandbox":
+      return <SandboxNetworkSettings />;
     case "audit":
       return <Audit />;
     case "notif-email":
@@ -2647,6 +2770,7 @@ const LEADS: Record<string, string> = {
   rules: "Rules every agent follows, and skills they can use, across every project.",
   automations: "Agents that run on a schedule or when something happens. Their changes still wait for approval.",
   github: "The GitHub App's installations, and the repository each project reads code from.",
+  sandbox: "The hosts Kai's sandboxes may reach besides the model API. Owners and admins; every change is audited.",
   audit: "Everything people and agents changed, who asked, and who approved.",
   "notif-email": "Choose what reaches you, and where.",
   profile: "How you appear to others in the workspace.",
@@ -2685,6 +2809,7 @@ const SEC_TABS: Record<string, [string, string][]> = {
 const ITEM_NEEDS: Record<string, Perm> = {
   workspace: "workspace:manage",
   permissions: "workspace:manage",
+  sandbox: "workspace:manage",
 };
 
 export function Settings() {
