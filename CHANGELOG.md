@@ -22,6 +22,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   for every project or one; every change is audited, and a turn says which hosts its sandbox blocked.
 - A Windows installer for the desktop app and a standalone Windows CLI, built and attached to each release (unsigned for
   now).
+- dotrix.cc, the public site (`apps/site`): what dotrix does, with screenshots, and links to sign in to the web app at
+  app.dotrix.cc and to download the desktop app and the CLI. Deployed beside the app as the `site` service.
 
 ## [0.1.0] - 2026-10-31
 

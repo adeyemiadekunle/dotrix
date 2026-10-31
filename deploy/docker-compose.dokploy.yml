@@ -1,6 +1,7 @@
 # dotrix on one VPS with Dokploy (a "Docker Compose" service from this repo; deploy/README.md).
 # Fill the variables in Dokploy's Environment tab (deploy/dokploy.env.example lists them); give the
-# `web` service your domain on port 80. Nothing here is published on the host: Traefik routes in.
+# `web` service the app's domain (app.dotrix.cc) and `site` the public site's (dotrix.cc), each on
+# port 80. Nothing here is published on the host: Traefik routes in.
 #
 # Sized for 6 vCPUs and 12 GB: two coding runs at once, 3 GB and 2 CPUs each.
 
@@ -63,6 +64,15 @@ services:
     build: { context: .., dockerfile: deploy/web.Dockerfile }
     restart: unless-stopped
     depends_on: [api]
+
+  # The public site (dotrix.cc): static, prerendered, linking to the web app at DOTRIX_APP_URL.
+  site:
+    build:
+      context: ..
+      dockerfile: deploy/site.Dockerfile
+      args:
+        VITE_APP_URL: ${DOTRIX_APP_URL}
+    restart: unless-stopped
 
   migrate:
     <<: *dotrix

@@ -8,6 +8,10 @@
       "project": ["**/*.{ts,tsx,css}"],
       "ignoreDependencies": ["tailwindcss"]
     },
+    "apps/site": {
+      "entry": ["src/entry-server.tsx"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
     "apps/desktop": {
       "entry": ["src/preload.ts"],
       "project": ["src/**/*.ts"]
