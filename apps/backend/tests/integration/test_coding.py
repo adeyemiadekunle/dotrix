@@ -1549,8 +1549,22 @@ def _local_runner(db_client: AsyncClient, coding, checkout: Path, tmp_path: Path
     from dotrix_cli.runner import LocalRunner
 
     ada, _, ws, kun, _, _ = coding
+    kw.setdefault("isolation", "none")  # never a Docker sandbox the machine running the tests happens to have
     return LocalRunner(_RunnerApi(db_client, ada.headers), checkout, ws.split("/")[-1], kun["id"], command=command,
                        worktrees=tmp_path / "worktrees", name="ada-laptop", echo=lambda _: None, **kw)
+
+
+async def test_a_runner_with_docker_sandboxes_registers_as_isolated(
+    db_client: AsyncClient, coding, checkout: Path, tmp_path: Path
+) -> None:
+    from dotrix_cli.runner import Sbx
+
+    ada, _, ws, kun, _, _ = coding
+    runner = _local_runner(db_client, coding, checkout, tmp_path, "true", isolation="sbx", sbx=Sbx("/usr/local/bin/sbx"))
+    registered = await runner.register()
+    assert registered["isolation"] == "sbx"
+    listed = (await db_client.get(f"{ws}/coding/runners", headers=ada.headers)).json()
+    assert [r["isolation"] for r in listed] == ["sbx"]
 
 
 async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushes_it(

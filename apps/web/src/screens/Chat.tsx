@@ -1499,7 +1499,10 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                       on: location === "local",
                       disabled: !avail.local_available,
                       note: avail.local_available ? undefined : hereRunner?.state === "failed" ? "Stopped" : "Starting…",
-                      tip: hereRunner?.folder ?? "In a worktree of your checkout, with the coding tool signed in there",
+                      tip:
+                        hereRunner?.isolation === "sbx"
+                          ? `In a Docker sandbox on this computer, on ${hereRunner.folder}: Kai may run commands there`
+                          : (hereRunner?.folder ?? "In a worktree of your checkout, with the coding tool signed in there"),
                       onPick: () => setWhere("local"),
                     } satisfies Choice,
                   ]

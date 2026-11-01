@@ -144,7 +144,10 @@ class LocalRunners:
         run.status, run.started_at, run.runner_id, run.runner_name = CodingRunStatus.RUNNING, now, runner.id, runner.name
         run.lease_token += 1
         run.lease_expires_at = now + timedelta(seconds=self.settings.coding_lease_seconds)
-        isolation = "isolated by srt" if runner.isolation == "srt" else "a worktree only, not isolated"
+        isolation = {
+            "sbx": "in a Docker sandbox on that computer",
+            "srt": "isolated by srt",
+        }.get(runner.isolation, "a worktree only, not isolated")
         add_events(run, self.session, step=f"On {runner.name} ({isolation})")
         claim = CodingClaim(
             run_id=run.id, project_id=run.project_id, session_id=run.session_id, lease_token=run.lease_token,
