@@ -500,9 +500,16 @@ def runner_command(
     name: str = typer.Option(None, "--name", help="This checkout's name on the platform (default: the hostname and folder)"),
     worktrees: Path = typer.Option(None, "--worktrees", help="Where turns' worktrees go (default: ~/.dotrix/worktrees)"),
     as_json: bool = typer.Option(False, "--json", help="A JSON line per event, for a program running this one (the desktop app)"),
+    isolation: str = typer.Option(
+        "auto",
+        "--isolation",
+        help="auto: in a Docker sandbox when `sbx` is installed (it may run commands there), else a worktree only "
+        "(edits only); sbx: require it; none: never",
+    ),
 ):
-    """Code your local turns on this computer: each in a worktree of this checkout, with the coding
-    tool signed in here (never a key or token from the platform). The platform pushes what's accepted.
+    """Code your local turns on this computer: each in a worktree of this checkout, in a Docker sandbox
+    when `sbx` is installed (its key from your own `sbx secret` store), else with the coding tool signed
+    in here (never a key or token from the platform). The platform pushes what's accepted.
     Start a local turn with `dotrix code KEY`, or "On my computer" in the web app."""
     import asyncio
 
@@ -517,15 +524,17 @@ def runner_command(
     config, state, client = _linked(project)
     runner = LocalRunner(
         _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
-        echo=say,
+        isolation=isolation.strip().lower(), echo=say,
         notify=_json_line if as_json else (lambda event: None), **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
     )
     try:
         registered = asyncio.run(runner.register())
     except (PlatformError, RuntimeError) as exc:
         _fail(str(exc))
-    say(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, "
-        "each in a worktree of its own (not isolated: the tool edits files, it runs no commands)")
+    how = ("each in a Docker sandbox of its own (it may run commands there)" if registered.get("isolation") == "sbx"
+           else "each in a worktree of its own (not isolated: the tool edits files, it runs no commands; "
+                "install Docker Sandboxes, `sbx`, to let it run commands)")
+    say(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {how}")
     try:
         if once:
             if not asyncio.run(runner.once()):

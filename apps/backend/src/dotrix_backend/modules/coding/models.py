@@ -252,7 +252,7 @@ class CodingRunner(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     name: Mapped[str] = mapped_column(String(100))  # the machine's name, as its owner sees it
     platform: Mapped[str | None] = mapped_column(String(40))  # e.g. "darwin", "linux"
     tools: Mapped[list[str]] = mapped_column(JSONB, default=list)  # coding tools found there, preferred first
-    isolation: Mapped[str] = mapped_column(String(16), default="none")  # "srt", or "none" (a worktree only)
+    isolation: Mapped[str] = mapped_column(String(16), default="none")  # "sbx" (Docker Sandboxes), "srt", or "none" (a worktree only)
     project_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)  # the projects it has checkouts of
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -6359,10 +6359,10 @@ export interface components {
             tools?: components["schemas"]["CodingAgent"][];
             /**
              * Isolation
-             * @description `srt` (the sandbox runtime) or `none` (a worktree only)
+             * @description `sbx` (a Docker Sandboxes microVM on that computer), `srt` (the sandbox runtime), or `none` (a worktree only)
              * @enum {string}
              */
-            isolation: "srt" | "none";
+            isolation: "sbx" | "srt" | "none";
             /**
              * Project Ids
              * @description Projects it has checkouts of

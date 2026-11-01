@@ -220,7 +220,9 @@ class CodingRunnerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="This computer's name; registering it again updates it")
     platform: str | None = Field(default=None, max_length=40)
     tools: list[CodingAgent] = Field(default_factory=list, max_length=5, description="Coding tools found, preferred first")
-    isolation: Literal["srt", "none"] = Field(description="`srt` (the sandbox runtime) or `none` (a worktree only)")
+    isolation: Literal["sbx", "srt", "none"] = Field(
+        description="`sbx` (a Docker Sandboxes microVM on that computer), `srt` (the sandbox runtime), or `none` (a worktree only)"
+    )
     project_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200, description="Projects it has checkouts of")
 
 

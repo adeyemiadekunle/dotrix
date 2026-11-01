@@ -7,12 +7,16 @@ config).
 
 Each turn gets a worktree of its own outside the checkout (`~/.dotrix/worktrees/...`), on the
 session's branch or the base branch as the remote has it, so your working copy and its changes are
-never touched. A worktree separates directories, it isn't a security boundary, and nothing isolates
-the tool for now: so it only edits files (Claude Code's acceptEdits, no commands), with an
-environment that carries its own provider's settings and none of this machine's other credentials
-(`dotrix_cli.toolenv`). A worktree is kept after its turn, for a while: its patch is already on the
-platform, so the runner removes worktrees untouched for `WORKTREE_DAYS` days (never the one it's
-coding in) when it starts and after each turn.
+never touched. A worktree separates directories, it isn't a security boundary. With Docker Sandboxes
+(`sbx`, https://docs.docker.com/ai/sandboxes/) installed, each turn's tool runs in a microVM of its
+own with only the turn's worktree mounted (at the same path), behind sbx's network policy, with the
+key from the person's own `sbx secret` store, which sbx adds to the model API's requests outside the
+VM: so it may run commands there (tests, builds). Without sbx, nothing isolates the tool: it only
+edits files (Claude Code's acceptEdits, no commands), with an environment that carries its own
+provider's settings and none of this machine's other credentials (`dotrix_cli.toolenv`). A worktree is
+kept after its turn, for a while: its patch is already on the platform, so the runner removes
+worktrees untouched for `WORKTREE_DAYS` days (never the one it's coding in) when it starts and after
+each turn.
 """
 from __future__ import annotations
 
@@ -35,6 +39,10 @@ from typing import Any, Protocol
 from .toolenv import tool_environment
 
 TOOLS = ("claude-code", "opencode")
+# Each tool's Docker Sandboxes agent template (the image it starts from, with the tool installed).
+SBX_AGENTS = {"claude-code": "claude", "opencode": "opencode"}
+# The provider whose key `sbx secret set` stores for each tool, named when a turn fails to sign in.
+SBX_SECRETS = {"claude-code": "anthropic", "opencode": "anthropic, openai or another provider"}
 EVENTS_PER_BEAT = 50
 WORKTREE_DAYS = 3  # a finished turn's worktree is removed once untouched this long
 EVENTS_SECONDS = 2.0  # waiting events go out this often (the lease is renewed every third of it regardless)
@@ -59,13 +67,51 @@ class Tool:
     argv: list[str]
 
     @classmethod
-    def named(cls, name: str) -> Tool:
+    def named(cls, name: str, *, isolated: bool = False) -> Tool:
         if name == "claude-code":
+            if isolated:  # In its own microVM the sandbox is the boundary: it may run commands there.
+                return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"])
             # Not isolated, so it may only edit files: no commands on this machine.
             return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"])
         if name == "opencode":
             return cls(name, ["opencode", "run", "--format", "json"])
         raise ValueError(f"Unknown coding tool {name!r} (one of {', '.join(TOOLS)})")
+
+
+@dataclass
+class Sbx:
+    """Docker Sandboxes' CLI: a microVM per turn from the tool's agent template, the worktree mounted at
+    the same path, the tool run in it with `sbx exec`, and the sandbox removed when the turn ends."""
+
+    binary: str
+
+    @classmethod
+    def found(cls) -> Sbx | None:
+        binary = shutil.which("sbx")
+        return cls(binary) if binary else None
+
+    async def _run(self, *args: str) -> str:
+        process = await asyncio.create_subprocess_exec(
+            self.binary, *args, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await process.communicate()
+        if process.returncode != 0:
+            raise RuntimeError((err or out).decode(errors="replace").strip()[-1000:] or f"sbx {args[0]} exited with {process.returncode}")
+        return out.decode(errors="replace")
+
+    async def start(self, name: str, agent: str, tree: Path) -> None:
+        """A detached sandbox from the agent's template, with only the worktree mounted."""
+        await self._run("run", "-d", "--name", name, agent, str(tree))
+
+    def exec_argv(self, name: str, tree: Path, argv: list[str]) -> list[str]:
+        """The tool in the sandbox, in the worktree, the brief on stdin."""
+        return [self.binary, "exec", "-i", "--workdir", str(tree), name, "--", *argv]
+
+    async def remove(self, name: str) -> None:
+        try:
+            await self._run("rm", "--force", name)
+        except (RuntimeError, OSError):
+            pass  # already gone, or sbx itself is: nothing left to stop
 
 
 def found_tools() -> list[str]:
@@ -230,11 +276,17 @@ class LocalRunner:
     # so the turn's view in the app keeps up as it does for a cloud turn.
     events_seconds: float = EVENTS_SECONDS
     keep_days: float = WORKTREE_DAYS
+    # "auto": in a Docker sandbox when sbx is installed, else a worktree only; "sbx" requires it; "none" never.
+    isolation: str = "auto"
+    sbx: Sbx | None = None
     _coding_in: Path | None = None  # the worktree of the turn in progress, never cleaned
+    _sandbox: str | None = None  # the turn in progress's sandbox, removed when it ends
 
     def tools(self) -> list[str]:
         if self.tool:
             return [self.tool]
+        if self.sbx is not None:  # the agents' templates carry the tools: nothing to install here
+            return list(SBX_AGENTS)
         found = found_tools()
         return found or ([] if self.command is None else ["claude-code"])
 
@@ -243,17 +295,25 @@ class LocalRunner:
         return f"/workspaces/{self.workspace_id}/coding/runners"
 
     def __post_init__(self) -> None:
+        if self.isolation not in ("auto", "sbx", "none"):
+            raise ValueError("isolation is auto, sbx or none")
+        if self.sbx is None and self.isolation != "none":
+            self.sbx = Sbx.found()
+        if self.isolation == "none":
+            self.sbx = None
         if not self.name:
             where = hashlib.sha256(str(self.repo.resolve()).encode()).hexdigest()[:6]
             self.name = f"{socket.gethostname()} · {self.repo.name} ({where})"[:100]
 
     async def register(self) -> dict[str, Any]:
+        if self.isolation == "sbx" and self.sbx is None:
+            raise RuntimeError("Docker Sandboxes isn't installed here: install `sbx` (https://docs.docker.com/ai/sandboxes/)")
         tools = self.tools()
         if not tools:
             raise RuntimeError("No coding tool here: install Claude Code (`claude`) or OpenCode (`opencode`)")
         runner = await self.api.post(self.base, {
             "name": self.name[:100], "platform": platform_info.system().lower(), "tools": tools,
-            "isolation": "none", "project_ids": [self.project_id],
+            "isolation": "sbx" if self.sbx else "none", "project_ids": [self.project_id],
         })
         self.runner_id = runner["id"]
         self.notify({"event": "registered", "runner_id": runner["id"], "name": runner["name"],
@@ -276,6 +336,9 @@ class LocalRunner:
                 except OSError:
                     pass
             self._coding_in = None
+            if self._sandbox is not None and self.sbx is not None:
+                await asyncio.shield(self.sbx.remove(self._sandbox))
+            self._sandbox = None
             self.notify({"event": "done", "run_id": claimed["run"]["run_id"]})
             await self.clean_worktrees()
         return True
@@ -372,20 +435,34 @@ class LocalRunner:
             await report("stopped", base_sha=base_sha)
             return
 
+        isolated = self.sbx is not None
         if self.command:
             tool = Tool("command", shlex.split(self.command))
         else:
             here = self.tools()
-            tool = Tool.named(run["tool"] if run["tool"] in here else here[0])
+            tool = Tool.named(run["tool"] if run["tool"] in here else here[0], isolated=isolated)
         # A custom command stands in for the requested tool; its name is only a display label.
         environment_tool = run["tool"] if self.command else tool.name
-        # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
-        argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
+        if self.sbx is not None:
+            # Its own microVM, from the tool's template, with only this worktree mounted.
+            self._sandbox = f"dotrix-{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
+            try:
+                await self.sbx.start(self._sandbox, SBX_AGENTS.get(environment_tool, "shell"), tree)
+            except (RuntimeError, OSError) as exc:
+                await report("failed", base_sha=base_sha, error=f"Couldn't start the Docker sandbox: {exc}")
+                return
+            pending.append({"kind": "step", "text": "In a Docker sandbox on this computer: it may run commands there"})
+            argv = self.sbx.exec_argv(self._sandbox, tree, tool.argv)
+            environment = dict(os.environ)  # sbx's own; the tool in the VM gets none of it
+        else:
+            # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
+            argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
+            environment = _env(environment_tool)
         out = Outcome(root=tree)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, env=_env(environment_tool), **_own_group(),
+                stderr=asyncio.subprocess.PIPE, env=environment, **_own_group(),
             )
         except OSError as exc:
             await report("failed", base_sha=base_sha, error=f"Couldn't start {tool.name}: {exc}")
@@ -446,6 +523,9 @@ class LocalRunner:
         if not patch.strip():
             if code != 0:
                 error = (stderr or f"{tool.name} exited with {code}")[-2000:]
+                if isolated and _sign_in_failed(error):
+                    error += (f"\nThe sandbox has no key for it: run `sbx secret set "
+                              f"{SBX_SECRETS.get(environment_tool, 'anthropic')}` on this computer, then ask again.")
                 await report("failed", base_sha=base_sha, summary=out.summary, error=error, **usage)
                 self.echo(f"  Failed: {_tail(error)}")
             else:
@@ -487,6 +567,12 @@ def _lost(exc: Exception) -> bool:
 def _env(tool: str = "claude-code") -> dict[str, str]:
     """Only the selected tool's credentials and execution settings cross this boundary."""
     return tool_environment(tool, os.environ)
+
+
+def _sign_in_failed(error: str) -> bool:
+    """Whether a tool's error reads like it had no credentials (in a sandbox: no `sbx secret` set)."""
+    lowered = error.lower()
+    return any(word in lowered for word in ("api key", "api_key", "not signed in", "/login", "unauthorized", "401", "authentication"))
 
 
 def _tail(text: str) -> str | None:

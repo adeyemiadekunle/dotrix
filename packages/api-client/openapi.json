@@ -27481,11 +27481,12 @@
           "isolation": {
             "type": "string",
             "enum": [
+              "sbx",
               "srt",
               "none"
             ],
             "title": "Isolation",
-            "description": "`srt` (the sandbox runtime) or `none` (a worktree only)"
+            "description": "`sbx` (a Docker Sandboxes microVM on that computer), `srt` (the sandbox runtime), or `none` (a worktree only)"
           },
           "project_ids": {
             "items": {
