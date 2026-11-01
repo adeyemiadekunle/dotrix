@@ -108,6 +108,9 @@ services:
       VOLUMES: 1
       IMAGES: 1
       POST: 1
+      # Listen on IPv4 only: hosts without IPv6 refuse its default [::] socket, and only Docker's IPv4
+      # network reaches it.
+      DISABLE_IPV6: 1
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
 
   web:
