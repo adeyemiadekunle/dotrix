@@ -1,25 +1,27 @@
 # Coding runs: sandbox setup
 
 Kai, the coding agent, works on an issue in a sandbox: from "Start coding" on the issue, Build
-mode in Chat, or a session in Chat's Code tab. Underneath, Kai is one of three headless tools,
-each behind `CodingTool` (`apps/backend/src/dotrix_backend/modules/coding/tools.py`):
+mode in Chat, or "New session" in Codes. Underneath, Kai is one of four headless engines, each
+behind `CodingTool` (`apps/backend/src/dotrix_backend/modules/coding/tools.py`). People only
+ever see Kai; the engine is never named in a step, failure, commit or PR.
 
-| Tool | Runs on | Chosen by |
+| Engine | Runs on | Chosen when |
 | --- | --- | --- |
-| Claude Code | Anthropic | Your default or session choice; Auto when Anthropic is available without OpenAI |
-| Codex | OpenAI | Your default or session choice; Auto when OpenAI is available |
-| OpenCode 2 (pinned in the image) | Anthropic, OpenAI, Google, xAI/Grok, DeepSeek, Mistral, Groq, OpenRouter | Your default or session choice; Auto with another provider |
+| Claude Code | Anthropic | Automatically for an Anthropic model |
+| Codex | OpenAI | Automatically for an OpenAI model |
+| OpenCode 2 | Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter | Automatically for the other providers |
+| fx (ACP, `fx-acp.mjs`) | OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter (not Google yet) | Only when a person prefers it, or `DOTRIX_CODING_AGENT=fx` |
 
-Account → Your models saves a personal default. A new session can override it; follow-up turns
-keep their recorded tool and model. Unavailable defaults fall back to a compatible tool. OpenCode
-uses an available model from the platform catalogue; its session picker can choose another.
-Every person brings their own provider key. The web app requires a usable personal key before
+A new session picks a model (your default model to start), and the engine follows it: your
+preferred engine in Account → Your models where it can run that model, otherwise the one in the
+table. Follow-up turns keep their recorded engine and model. Every person brings their own
+provider key. The web app requires a usable personal key before
 continuing in a real workspace (the seeded demo stays public). Shared workspace and server model keys
 are not supported. Scheduled runs use the creator's own key.
 
 The worker gives the tool a copy of the repo and a brief, reads its changes back, then pushes a
 new branch and opens a PR through the dotrix GitHub App. This folder holds what the sandbox
-needs: the image (all three tools, git, Playwright MCP for the agent's own browser, and the
+needs: the image (all four engines, git, Playwright MCP for the agent's own browser, and the
 egress proxy) and the OpenShell provider profiles for the model keys.
 
 ## A run, from start to PR
@@ -42,8 +44,8 @@ egress proxy) and the OpenShell provider profiles for the model keys.
    (`.gitlab-ci.yml`, `Jenkinsfile`, …). Files CI runs without being CI configuration (build
    scripts, test setup) are named on the PR for a person to review first.
 7. **The push.** A new branch (`dotrix/<key>-<title>-<id>`, never the default branch, never
-   forced), then the PR. The issue moves to review and the Reviewer reads the PR. A person
-   merges.
+   forced), then the PR. The issue moves to review and Juno reviews the PR, posting the review
+   on GitHub. A person merges.
 
 **Sessions.** A session keeps its sandbox warm between turns (`DOTRIX_CODING_WARM_MAX` per
 workspace, closed after `DOTRIX_CODING_IDLE_MINUTES`). Claude Code's transcript and OpenCode's
@@ -58,7 +60,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 `recovery_required` and is settled from what GitHub shows (`coding/recovery.py`):
 - its PR is adopted, or opened, when the branch is at the recorded commit;
 - the turn runs again, twice in all, when nothing was published;
-- anything else waits for Recover in the Code tab.
+- anything else waits for Recover in Codes.
 
 ## How a run is contained
 
@@ -235,7 +237,8 @@ it.
 ## Status
 
 - **Checked:** Claude Code in the Docker sandbox on a real model (a turn, resume across two
-  containers, Stop, cumulative cost) and the whole flow to a PR and the Reviewer. OpenCode was
+  containers, Stop, cumulative cost) and the whole flow to a PR and Juno's review. Codex on
+  GPT-5.5 in the Docker sandbox through the egress proxy, issue to PR (2026-10-31). OpenCode was
   checked against fake Anthropic and OpenAI-compatible APIs (turns, resume in a fresh sandbox,
   Stop, base URLs), and through the egress proxy to the real api.anthropic.com.
 - The coding image also completed fake local API runs for xAI (Responses), DeepSeek, Mistral,
@@ -245,7 +248,6 @@ it.
   - Paid model calls with the added providers.
   - The OpenCode profiles on an OpenShell gateway.
   - OpenCode's browser.
-  - Codex (needs an OpenAI key).
   - **The image with every engine, 2026-10-30.** Built from this Dockerfile (Claude Code 2.1.296, Codex
     0.166.0, OpenCode 2.1.4, fx 0.0.16 from releases.fx.sh with its SHA-256, Playwright MCP 0.0.83); the
     Docker sandbox tests pass with it (`tests/unit/test_coding_docker.py`: edits, nothing else reachable,
@@ -258,7 +260,7 @@ it.
     API directly; the internal Docker network in front of it is what the sandbox tests cover.
   - **fx outside a container** too: against a fake model (resume, Stop) and on Claude Haiku 5.5 (a follow-up,
     the session saved and restored into a fresh home).
-  - Not yet: Codex on a model, the other providers on paid models, the profiles on a gateway, fx's browser.
+  - Not yet: the other providers on paid models, the profiles on a gateway, fx's browser.
   - Coding runs through Dokploy's Docker proxy (see [deploy/README.md](../../deploy/README.md)).
 
 ## Check a sandbox by hand
@@ -299,3 +301,13 @@ What a check showed (OpenShell built from source, a local gateway on Docker, thi
 - `curl` to api.anthropic.com was denied too: only Claude Code's binary is let through there
   (`ALLOWED …/claude-code/bin/claude.exe -> api.anthropic.com:443`).
 - The agent's edits came back as a patch, and the sandbox and provider were gone afterwards.
+
+## Local turns (on a person's own computer)
+
+Local turns don't use this image. `dotrix runner` (or the desktop app, which runs it) codes a
+person's own turns in a git worktree of their checkout under `~/.dotrix/worktrees`, with the
+coding tool signed in on that computer; the platform never sends a key or a GitHub token there.
+With Docker Sandboxes (`sbx`) installed, each turn runs in a microVM of its own with only its
+worktree mounted, and may run commands; without it the tool only edits files. The patch comes
+back to the platform, which checks and pushes it like a cloud turn. See
+`apps/cli/src/dotrix_cli/runner.py`.

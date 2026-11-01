@@ -47,6 +47,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- The READMEs are up to date: the fixed team and personal model keys, Codes and Juno's reviews, the desktop app,
+  `dotrix codes` and local turns in Docker Sandboxes, the admin console and site, and how to deploy.
 - New chats and Codes sessions look like Claude Code's: a card in the middle to choose the project (or where Kai codes:
   this computer's folder or the cloud), and a rounded message box at the bottom with + on the left and send on the
   right; the mode, approvals and model sit under it as plain text. Model names are short ("Opus 5.5", "GPT-5.5"), and
