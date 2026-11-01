@@ -677,37 +677,54 @@ body {
 
 /* Sign-in */
 .ad-auth {
+  position: relative;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
   padding: 24px 16px;
+  overflow: hidden;
+  isolation: isolate;
+}
+/* A faint dot grid, fading out from the middle: quiet, and dotrix's own pattern. */
+.ad-auth-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 60% 55% at 50% 45%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 45%, #000 20%, transparent 75%);
 }
 .ad-auth-card {
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 28px 26px;
+  gap: 16px;
+  padding: 30px 28px 22px;
   background: var(--surface);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: var(--shadow-pop);
 }
 .ad-auth-brand {
   padding: 0;
-  margin-bottom: 6px;
 }
 .ad-auth-card h1 {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 26px;
+  font-synthesis-weight: none;
+  font-size: 27px;
   letter-spacing: -0.02em;
   line-height: 1.15;
 }
 .ad-auth-sub {
-  margin-top: -6px;
+  margin-top: 6px;
   color: var(--text-3);
   font-size: var(--fs-sm);
+  line-height: 1.5;
 }
 .ad-auth-card label {
   display: flex;
@@ -717,13 +734,62 @@ body {
   font-size: var(--fs-xs);
   font-weight: 500;
 }
-.ad-auth-card .btn {
-  height: 36px;
-  margin-top: 4px;
+.ad-auth-card .input {
+  height: 38px;
+  font-size: var(--fs);
+}
+.ad-pw {
+  position: relative;
+  display: flex;
+}
+.ad-pw .input {
+  flex: 1;
+  padding-right: 40px;
+}
+.ad-pw .icon-btn {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+.ad-auth-card .btn-primary {
+  height: 40px;
+  margin-top: 2px;
+  font-size: var(--fs);
 }
 .ad-auth-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--red-soft);
   color: var(--red);
   font-size: var(--fs-sm);
+}
+.ad-auth-error svg {
+  flex: none;
+  margin-top: 1px;
+}
+.ad-auth-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--divider);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.ad-auth-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+.ad-auth-out:hover {
+  color: var(--acc);
 }
 
 /* Narrower screens: the sidebar becomes a bar of pages across the top. */

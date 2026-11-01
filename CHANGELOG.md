@@ -27,7 +27,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - The admin console (`apps/admin`, formerly Ops) watches the whole platform: health (database, run queue, workers,
   stuck runs, recovery, runners and sandboxes), runs and failures per day, failures grouped by error, coding by engine
   (outcomes, PRs, time to finish, cost), workspaces by use, and the audit log, in tables with pages (rows per page,
-  page numbers) and shadcn charts. Redesigned on dotrix's own design.
+  page numbers) and shadcn charts. Redesigned on dotrix's own design, sign-in included, which loads before the rest.
 
 ### Changed
 
