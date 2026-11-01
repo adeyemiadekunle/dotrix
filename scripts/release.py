@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CHANGELOG = ROOT / "CHANGELOG.md"
-PACKAGE_JSONS = ["apps/web", "apps/desktop", "apps/ops", "packages/ui", "packages/api-client"]
+PACKAGE_JSONS = ["apps/web", "apps/site", "apps/desktop", "apps/ops", "packages/ui", "packages/api-client"]
 PYPROJECTS = ["apps/backend", "apps/cli", "packages/engine"]
 API_VERSION = ROOT / "apps/backend/src/dotrix_backend/main.py"  # API_VERSION = "X.Y.Z" (OpenAPI's info.version)
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")

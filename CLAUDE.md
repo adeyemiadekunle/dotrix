@@ -46,7 +46,8 @@ Project settings expose the project model and the optional shared specialist mod
 | --- | --- | --- |
 | `apps/backend` | Platform API; every client talks to it | FastAPI (Python, uv) |
 | `apps/cli` | `dotrix` CLI + MCP server for Claude Code / Codex | Typer |
-| `apps/web` | Web app (a single-page app on the API's origin) | Vite, React, TanStack Router |
+| `apps/web` | Web app (a single-page app on the API's origin, app.dotrix.cc) | Vite, React, TanStack Router |
+| `apps/site` | The public site, dotrix.cc: one prerendered page linking to the web app and the downloads (`VITE_APP_URL`, `VITE_DOWNLOADS_URL`); its screenshots are of the seeded workspace | Vite, React (prerendered) |
 | `apps/desktop` | Desktop shell around the web app; codes local turns with the bundled CLI's runner | Electron |
 | `packages/engine` | UI-agnostic agent engine (`dotrix_engine`) | deepagents / LangGraph |
 | `packages/ui`, `api-client` | shadcn/ui components and theme; the typed API client (generated from OpenAPI) | TypeScript |
@@ -64,6 +65,7 @@ pnpm format                               # Prettier (TS, CSS, JSON, YAML; print
 pnpm install && pnpm build && pnpm typecheck
 pnpm test                                 # web unit tests (Vitest, apps/web/src/**/*.test.ts)
 pnpm knip                                 # unused files, exports and dependencies (knip.json)
+pnpm --filter @dotrix/site dev           # the public site on :3200 (prerendered by its build)
 pnpm dev:web                              # web app on :3000 (Vite; forwards /v1, /api, /health to the API, DOTRIX_API_URL in apps/web/.env.local)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m dotrix_backend.serve: selector loop on Windows)
 pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when DOTRIX_JOBS=worker
