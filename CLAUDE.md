@@ -52,7 +52,7 @@ Project settings expose the project model and the optional shared specialist mod
 | `apps/desktop` | Desktop shell around the web app; codes local turns with the bundled CLI's runner | Electron |
 | `packages/engine` | UI-agnostic agent engine (`dotrix_engine`) | deepagents / LangGraph |
 | `packages/ui`, `api-client` | shadcn/ui components and theme; the typed API client (generated from OpenAPI) | TypeScript |
-| `infra` | Local Postgres (with pgvector), Redis, MinIO (`docker-compose.yml`) | Docker |
+| `infra` | Local Postgres (with pgvector), Redis, RustFS for S3-compatible storage (`docker-compose.yml`) | Docker |
 | `deploy` | Production on one VPS with Dokploy: backend and web images, nginx, the compose file, the guide (`deploy/README.md`) | Docker |
 
 ## Commands
@@ -71,7 +71,7 @@ pnpm --filter @dotrix/admin dev          # the admin console on :3300 (forwards 
 pnpm dev:web                              # web app on :3000 (Vite; forwards /v1, /api, /health to the API, DOTRIX_API_URL in apps/web/.env.local)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m dotrix_backend.serve: selector loop on Windows)
 pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when DOTRIX_JOBS=worker
-pnpm db:up && pnpm db:migrate             # Postgres, Redis, MinIO (console :9001) from infra/docker-compose.yml, then apply migrations
+pnpm db:up && pnpm db:migrate             # Postgres, Redis, RustFS storage (console :9001) from infra/docker-compose.yml, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
 pnpm docker:up                            # dotrix in Docker: migrate, API on :8000, worker, web on :3080 (DOTRIX_DOCKER_WEB_PORT=3000 keeps the native web address); docker:web rebuilds the web, docker:logs, docker:down
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
@@ -122,7 +122,7 @@ apps/backend/
 │   │   ├── email.py             EmailSender (dev console backend for now)
 │   │   ├── jobs.py              background jobs: queued (worker), local tasks, or inline; QueuedEmailSender
 │   │   ├── ratelimit.py         sliding-window rate limits (Redis or memory), client IP behind trusted proxies
-│   │   ├── storage.py           BlobStorage: S3-compatible (MinIO locally) for document originals
+│   │   ├── storage.py           BlobStorage: S3-compatible (RustFS locally and in the Dokploy deploy) for document originals
 │   │   ├── logging.py           structured JSON logs
 │   │   └── middleware.py        request IDs, access log, last-resort 500
 │   ├── db/

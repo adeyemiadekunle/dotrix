@@ -1,5 +1,6 @@
 # dotrix itself in Docker for development, on top of infra/docker-compose.yml (the same Postgres,
-# Redis and MinIO, the same data): `pnpm docker:up`, then http://localhost:3080.
+# Redis and object storage, the same data): `pnpm docker:up`, then http://localhost:3080 (the web app),
+# http://localhost:3300 (the admin console) and http://localhost:3200 (the public site).
 # Set DOTRIX_DOCKER_WEB_PORT=3000 to keep the native web address; the API stays on :8000
 # (DOTRIX_DOCKER_API_PORT overrides it). These ports are bound to localhost only.
 #
@@ -8,6 +9,10 @@
 #   worker   agent runs and jobs (DOTRIX_JOBS=worker), the same code
 #   web      the built web app behind nginx, which forwards /v1, /api and /health to the API, as
 #            in production (deploy/web.Dockerfile); rebuild it after web changes: `pnpm docker:web`
+#   admin    the admin console behind nginx, which forwards only /v1/ops (deploy/admin.Dockerfile;
+#            DOTRIX_DOCKER_ADMIN_PORT, 3300); rebuild it with `pnpm docker:admin`
+#   site     the public site, prerendered, linking to the web app above (deploy/site.Dockerfile;
+#            DOTRIX_DOCKER_SITE_PORT, 3200); rebuild it with `pnpm docker:site`
 #
 # Settings come from the repo-root .env; only addresses that differ inside Docker are set here.
 # The package scripts pass --project-directory . from the repo root, so relative paths (including
@@ -24,7 +29,7 @@ x-backend: &backend
     DOTRIX_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dotrix}@postgres:5432/${POSTGRES_DB:-dotrix}
     PGPASSWORD: ${POSTGRES_PASSWORD:?}
     DOTRIX_REDIS_URL: redis://redis:6379/0
-    DOTRIX_S3_ENDPOINT_URL: http://minio:9000
+    DOTRIX_S3_ENDPOINT_URL: http://storage:9000
     DOTRIX_APP_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
     DOTRIX_WEB_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
     DOTRIX_CORS_ORIGINS: '["http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}"]'
@@ -51,7 +56,7 @@ x-backend: &backend
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_started }
-    minio: { condition: service_started }
+    storage: { condition: service_started }
 
 services:
   migrate:
@@ -103,6 +108,9 @@ services:
       VOLUMES: 1
       IMAGES: 1
       POST: 1
+      # Listen on IPv4 only: hosts without IPv6 refuse its default [::] socket, and only Docker's IPv4
+      # network reaches it.
+      DISABLE_IPV6: 1
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
 
   web:
@@ -132,6 +140,22 @@ services:
       start_period: 15s
     depends_on:
       api: { condition: service_healthy }
+
+  site:
+    build:
+      context: .
+      dockerfile: deploy/site.Dockerfile
+      args:
+        VITE_APP_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
+    image: dotrix-site:dev
+    restart: unless-stopped
+    ports: ["127.0.0.1:${DOTRIX_DOCKER_SITE_PORT:-3200}:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
 volumes:
   codecache:

@@ -23,17 +23,22 @@ services:
     image: redis:7
     restart: unless-stopped
     ports: ["127.0.0.1:6379:6379"] # localhost only
-  # S3-compatible object storage for document originals. Console: http://localhost:9001
-  minio:
-    image: minio/minio:latest
+  # S3-compatible object storage for document originals: RustFS (MinIO's images left Docker Hub).
+  # Console: http://localhost:9001
+  storage:
+    image: rustfs/rustfs:1.0.3
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    # Required, from .env (see .env.example); compose refuses to start without them.
+    # Required, from .env (see .env.example); compose refuses to start without them. The variables keep
+    # MinIO's names so existing .env files work.
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:?}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
     ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"] # localhost only
-    volumes: [miniodata:/data]
+    volumes: [storagedata:/data]
 volumes:
   pgdata:
-  miniodata:
+  storagedata:
