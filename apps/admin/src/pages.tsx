@@ -129,9 +129,9 @@ const TONE_ICON: Record<Tone, ReactNode> = {
 export function Overview({ go }: { go: (page: string) => void }) {
   const now = useTick();
   const [days, setDays] = useState(14);
-  const health = useQuery({ queryKey: ["health"], queryFn: () => call<Health>("/ops/observe/health"), refetchInterval: REFRESH });
-  const counts = useQuery({ queryKey: ["counts"], queryFn: () => call<Counts>("/ops/observe/counts?days=7"), refetchInterval: 60_000 });
-  const trends = useQuery({ queryKey: ["trends", days], queryFn: () => call<Day[]>(`/ops/observe/trends?days=${days}`), refetchInterval: 60_000 });
+  const health = useQuery({ queryKey: ["health"], queryFn: () => call<Health>("/admin/observe/health"), refetchInterval: REFRESH });
+  const counts = useQuery({ queryKey: ["counts"], queryFn: () => call<Counts>("/admin/observe/counts?days=7"), refetchInterval: 60_000 });
+  const trends = useQuery({ queryKey: ["trends", days], queryFn: () => call<Day[]>(`/admin/observe/trends?days=${days}`), refetchInterval: 60_000 });
 
   const list = health.data ? checks(health.data, now) : [];
   const worst: Tone = list.some((c) => c.tone === "bad") ? "bad" : list.some((c) => c.tone === "warn") ? "warn" : "good";
@@ -321,7 +321,7 @@ export function Runs() {
     queryKey: ["runs", kind, failed, page.pageIndex, page.pageSize],
     queryFn: () =>
       call<Page<Run>>(
-        `/ops/observe/runs?limit=${page.pageSize}&offset=${page.pageIndex * page.pageSize}${kind === "all" ? "" : `&kind=${kind}`}${failed ? "&failed=true" : ""}`,
+        `/admin/observe/runs?limit=${page.pageSize}&offset=${page.pageIndex * page.pageSize}${kind === "all" ? "" : `&kind=${kind}`}${failed ? "&failed=true" : ""}`,
       ),
     placeholderData: keepPreviousData,
     refetchInterval: REFRESH,
@@ -400,7 +400,7 @@ const failureColumns = (now: number): Column<FailureGroup>[] => [
 export function FailuresPage() {
   const now = useTick();
   const [days, setDays] = useState(7);
-  const q = useQuery({ queryKey: ["failures", days], queryFn: () => call<Failures>(`/ops/observe/failures?days=${days}`), refetchInterval: 60_000 });
+  const q = useQuery({ queryKey: ["failures", days], queryFn: () => call<Failures>(`/admin/observe/failures?days=${days}`), refetchInterval: 60_000 });
   const d = q.data;
   const total = d ? d.messages.reduce((s, g) => s + g.count, 0) : 0;
   return (
@@ -455,8 +455,8 @@ function Breakdown({ rows, mono }: { rows: { key: string; count: number }[]; mon
 
 export function CodingPage() {
   const [days, setDays] = useState(7);
-  const q = useQuery({ queryKey: ["coding", days], queryFn: () => call<CodingRow[]>(`/ops/observe/coding?days=${days}`), refetchInterval: 60_000 });
-  const health = useQuery({ queryKey: ["health"], queryFn: () => call<Health>("/ops/observe/health"), refetchInterval: REFRESH });
+  const q = useQuery({ queryKey: ["coding", days], queryFn: () => call<CodingRow[]>(`/admin/observe/coding?days=${days}`), refetchInterval: 60_000 });
+  const health = useQuery({ queryKey: ["health"], queryFn: () => call<Health>("/admin/observe/health"), refetchInterval: REFRESH });
   const rows = q.data ?? [];
   const sum = (k: keyof CodingRow) => rows.reduce((s, r) => s + (r[k] as number), 0);
   return (
@@ -572,7 +572,7 @@ export function WorkspacesPage() {
   const [find, setFind] = useState("");
   const q = useQuery({
     queryKey: ["workspaces", days],
-    queryFn: () => call<WorkspaceRow[]>(`/ops/observe/workspaces?days=${days}&limit=200`),
+    queryFn: () => call<WorkspaceRow[]>(`/admin/observe/workspaces?days=${days}&limit=200`),
     refetchInterval: 60_000,
   });
   const term = find.trim().toLowerCase();
@@ -637,7 +637,7 @@ export function AuditPage() {
     queryKey: ["audit", action, page.pageIndex, page.pageSize],
     queryFn: () =>
       call<Page<AuditEvent>>(
-        `/ops/audit?limit=${page.pageSize}&offset=${page.pageIndex * page.pageSize}${action ? `&action=${encodeURIComponent(action)}` : ""}`,
+        `/admin/audit?limit=${page.pageSize}&offset=${page.pageIndex * page.pageSize}${action ? `&action=${encodeURIComponent(action)}` : ""}`,
       ),
     placeholderData: keepPreviousData,
   });

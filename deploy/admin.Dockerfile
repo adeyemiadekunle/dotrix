@@ -1,5 +1,5 @@
 # The admin console (platform observability), built and served by nginx on its own origin,
-# never bundled into the web app. Only /v1/ops/* forwards to the API (deploy/admin.nginx.conf);
+# never bundled into the web app. Only /v1/admin/* forwards to the API (deploy/admin.nginx.conf);
 # the web session API stays on the web app's origin.
 #
 #   docker build -f deploy/admin.Dockerfile -t dotrix-admin .

@@ -798,21 +798,21 @@
         }
       }
     },
-    "/v1/ops/bootstrap": {
+    "/v1/admin/bootstrap": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
-        "summary": "Ops Bootstrap",
-        "description": "Whether ops sign-up is open: true only while no ops account exists.",
-        "operationId": "ops_bootstrap",
+        "summary": "Admin Bootstrap",
+        "description": "Whether admin sign-up is open: true only while no admin account exists.",
+        "operationId": "admin_bootstrap",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OpsBootstrap"
+                  "$ref": "#/components/schemas/AdminBootstrap"
                 }
               }
             }
@@ -830,19 +830,19 @@
         }
       }
     },
-    "/v1/ops/signup": {
+    "/v1/admin/signup": {
       "post": {
         "tags": [
-          "ops"
+          "admin"
         ],
-        "summary": "Ops Signup",
-        "description": "Bootstrap the first ops account. The console is for whoever operates the deployment,\nnot app users \u2014 sign-up closes once the first account exists. Rate-limited per IP.",
-        "operationId": "ops_signup",
+        "summary": "Admin Signup",
+        "description": "Bootstrap the first admin account. The console is for whoever operates the deployment,\nnot app users \u2014 sign-up closes once the first account exists. Rate-limited per IP.",
+        "operationId": "admin_signup",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OpsSignup"
+                "$ref": "#/components/schemas/AdminSignup"
               }
             }
           },
@@ -900,19 +900,19 @@
         }
       }
     },
-    "/v1/ops/login": {
+    "/v1/admin/login": {
       "post": {
         "tags": [
-          "ops"
+          "admin"
         ],
-        "summary": "Ops Login",
-        "description": "Sign the ops in: its own email and password, never an app session. Rate-limited per\nIP and per email (10 attempts in 15 minutes).",
-        "operationId": "ops_login",
+        "summary": "Admin Login",
+        "description": "Sign the admin in: its own email and password, never an app session. Rate-limited per\nIP and per email (10 attempts in 15 minutes).",
+        "operationId": "admin_login",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OpsLogin"
+                "$ref": "#/components/schemas/AdminLogin"
               }
             }
           },
@@ -955,17 +955,17 @@
         }
       }
     },
-    "/v1/ops/refresh": {
+    "/v1/admin/refresh": {
       "post": {
         "tags": [
-          "ops"
+          "admin"
         ],
-        "summary": "Ops Refresh",
+        "summary": "Admin Refresh",
         "description": "Trade the refresh-token cookie for a new access token. The cookie rotates with it:\nthe one you sent is dead from now on (the row is locked while it rotates).",
-        "operationId": "ops_refresh",
+        "operationId": "admin_refresh",
         "parameters": [
           {
-            "name": "dtx_ops_refresh",
+            "name": "dtx_admin_refresh",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -977,7 +977,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Refresh"
+              "title": "Dtx Admin Refresh"
             }
           }
         ],
@@ -1008,17 +1008,17 @@
         }
       }
     },
-    "/v1/ops/logout": {
+    "/v1/admin/logout": {
       "post": {
         "tags": [
-          "ops"
+          "admin"
         ],
-        "summary": "Ops Logout",
+        "summary": "Admin Logout",
         "description": "Sign out: revoke the access token's session, then clear both cookies.",
-        "operationId": "ops_logout",
+        "operationId": "admin_logout",
         "parameters": [
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1030,7 +1030,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1061,17 +1061,17 @@
         }
       }
     },
-    "/v1/ops/me": {
+    "/v1/admin/me": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
-        "summary": "Ops Me",
+        "summary": "Admin Me",
         "description": "Who's signed in.",
-        "operationId": "ops_me",
+        "operationId": "admin_me",
         "parameters": [
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1083,7 +1083,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1093,7 +1093,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OpsRead"
+                  "$ref": "#/components/schemas/AdminRead"
                 }
               }
             }
@@ -1121,17 +1121,17 @@
         }
       }
     },
-    "/v1/ops/observe/health": {
+    "/v1/admin/observe/health": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Observe Health",
         "description": "Is the deployment working: the database's answer time, the run queue and when a worker last\ntook from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners.",
         "operationId": "observe_health",
         "parameters": [
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1143,7 +1143,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1181,10 +1181,10 @@
         }
       }
     },
-    "/v1/ops/observe/counts": {
+    "/v1/admin/observe/counts": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Observe Counts",
         "description": "How big the deployment is: workspaces and people (all, new, active in the window), projects, documents.",
@@ -1205,7 +1205,7 @@
             "description": "How many days back"
           },
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1217,7 +1217,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1255,10 +1255,10 @@
         }
       }
     },
-    "/v1/ops/observe/trends": {
+    "/v1/admin/observe/trends": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Observe Trends",
         "description": "Each UTC day: chat runs and coding turns started and failed, tokens, coding cost, and sign-ups.",
@@ -1279,7 +1279,7 @@
             "description": "How many days back"
           },
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1291,7 +1291,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1333,10 +1333,10 @@
         }
       }
     },
-    "/v1/ops/observe/failures": {
+    "/v1/admin/observe/failures": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Observe Failures",
         "description": "What failed in the window: chat runs by error kind and by model, and every failure grouped by its\nerror's first line, most frequent first.",
@@ -1357,7 +1357,7 @@
             "description": "How many days back"
           },
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1369,7 +1369,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1407,10 +1407,10 @@
         }
       }
     },
-    "/v1/ops/observe/coding": {
+    "/v1/admin/observe/coding": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Observe Coding",
         "description": "Coding turns by engine and by where they ran: outcomes, PRs, time to finish (p50, p95), tokens and cost.",
@@ -1431,7 +1431,7 @@
             "description": "How many days back"
           },
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1443,7 +1443,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1485,10 +1485,10 @@
         }
       }
     },
-    "/v1/ops/observe/workspaces": {
+    "/v1/admin/observe/workspaces": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Observe Workspaces",
         "description": "Workspaces by their use in the window: runs, failures, tokens, coding cost, size, and the latest run.",
@@ -1521,7 +1521,7 @@
             }
           },
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1533,7 +1533,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1575,10 +1575,10 @@
         }
       }
     },
-    "/v1/ops/observe/runs": {
+    "/v1/admin/observe/runs": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Observe Runs",
         "description": "A page of the run history across the platform, with the total: chat and coding merged,\nnewest first, named by workspace, project and issue (never a conversation's words).",
@@ -1643,7 +1643,7 @@
             }
           },
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1655,7 +1655,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -1703,10 +1703,10 @@
         }
       }
     },
-    "/v1/ops/audit": {
+    "/v1/admin/audit": {
       "get": {
         "tags": [
-          "ops"
+          "admin"
         ],
         "summary": "Audit",
         "description": "A page of audit events across the whole platform, newest first, with the total: the action,\nwho, and which workspace, without the details (they can carry words people wrote).",
@@ -1758,7 +1758,7 @@
             }
           },
           {
-            "name": "dtx_ops_access",
+            "name": "dtx_admin_access",
             "in": "cookie",
             "required": false,
             "schema": {
@@ -1770,7 +1770,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Dtx Ops Access"
+              "title": "Dtx Admin Access"
             }
           }
         ],
@@ -23720,6 +23720,139 @@
         ],
         "title": "ActivityKind"
       },
+      "AdminBootstrap": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AdminBootstrap",
+        "description": "Whether the sign-up form is open: true only while no admin account exists."
+      },
+      "AdminLogin": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AdminLogin"
+      },
+      "AdminRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminWorkspace"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "name",
+          "created_at"
+        ],
+        "title": "AdminRead"
+      },
+      "AdminSignup": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "name",
+          "password"
+        ],
+        "title": "AdminSignup",
+        "description": "Create an admin account by proving you own the workspace: your app account's email and\npassword. The admin gets its own credentials from then on \u2014 separate from your sign-in."
+      },
+      "AdminWorkspace": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "kind"
+        ],
+        "title": "AdminWorkspace"
+      },
       "AgentActivityRead": {
         "properties": {
           "run_id": {
@@ -31789,139 +31922,6 @@
         "title": "ObservedRun",
         "description": "One agent run or coding turn in the unified run history."
       },
-      "OpsBootstrap": {
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          }
-        },
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "title": "OpsBootstrap",
-        "description": "Whether the sign-up form is open: true only while no ops account exists."
-      },
-      "OpsLogin": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "maxLength": 320,
-            "title": "Email"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 200,
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "email",
-          "password"
-        ],
-        "title": "OpsLogin"
-      },
-      "OpsRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "workspace": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OpsWorkspace"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "email",
-          "name",
-          "created_at"
-        ],
-        "title": "OpsRead"
-      },
-      "OpsSignup": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "maxLength": 320,
-            "minLength": 3,
-            "title": "Email"
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 8,
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "email",
-          "name",
-          "password"
-        ],
-        "title": "OpsSignup",
-        "description": "Create an ops account by proving you own the workspace: your app account's email and\npassword. The ops gets its own credentials from then on \u2014 separate from your sign-in."
-      },
-      "OpsWorkspace": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "slug": {
-            "type": "string",
-            "title": "Slug"
-          },
-          "kind": {
-            "type": "string",
-            "title": "Kind"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "slug",
-          "kind"
-        ],
-        "title": "OpsWorkspace"
-      },
       "OrganizationConversion": {
         "properties": {
           "name": {
@@ -37221,8 +37221,8 @@
       "description": "Workspace observability for owners: health counts, run summaries, the dispatch queue, and the unified chat/coding run history \u2014 all scoped to the workspace and the caller's run visibility."
     },
     {
-      "name": "ops",
-      "description": "The Ops app's own accounts and reads: sign-up by proving workspace ownership, httpOnly cookie sessions, workspace observability, audit, and creating an organisation workspace."
+      "name": "admin",
+      "description": "The Admin app's own accounts and reads: sign-up by proving workspace ownership, httpOnly cookie sessions, workspace observability, audit, and creating an organisation workspace."
     },
     {
       "name": "health",

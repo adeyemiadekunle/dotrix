@@ -9,7 +9,7 @@
 #   worker   agent runs and jobs (DOTRIX_JOBS=worker), the same code
 #   web      the built web app behind nginx, which forwards /v1, /api and /health to the API, as
 #            in production (deploy/web.Dockerfile); rebuild it after web changes: `pnpm docker:web`
-#   admin    the admin console behind nginx, which forwards only /v1/ops (deploy/admin.Dockerfile;
+#   admin    the admin console behind nginx, which forwards only /v1/admin (deploy/admin.Dockerfile;
 #            DOTRIX_DOCKER_ADMIN_PORT, 3300); rebuild it with `pnpm docker:admin`
 #   site     the public site, prerendered, linking to the web app above (deploy/site.Dockerfile;
 #            DOTRIX_DOCKER_SITE_PORT, 3200); rebuild it with `pnpm docker:site`

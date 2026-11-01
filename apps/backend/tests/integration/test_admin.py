@@ -14,36 +14,36 @@ from dotrix_backend.modules.coding.models import CodingRunStatus
 
 from .test_observe import _chat_run, _coding_run
 
-OPS = {"email": "ops@example.com", "name": "Ops", "password": "ops secret 123"}
+ADMIN = {"email": "admin@example.com", "name": "Admin", "password": "admin secret 123"}
 
 
 @pytest.fixture(autouse=True)
-def ops_header(db_client: AsyncClient) -> None:
-    db_client.headers["X-Requested-With"] = "dotrix-ops"
+def admin_header(db_client: AsyncClient) -> None:
+    db_client.headers["X-Requested-With"] = "dotrix-admin"
 
 
-async def _ops(db_client: AsyncClient) -> None:
-    """Bootstrap the ops account and sign it in (httpOnly cookies carry it after)."""
-    res = await db_client.post("/v1/ops/signup", json=OPS)
+async def _admin(db_client: AsyncClient) -> None:
+    """Bootstrap the admin account and sign it in (httpOnly cookies carry it after)."""
+    res = await db_client.post("/v1/admin/signup", json=ADMIN)
     assert res.status_code == 201, res.text
     assert "access_token" not in res.text and "refresh_token" not in res.text
-    assert res.cookies.get("dtx_ops_access") and res.cookies.get("dtx_ops_refresh")
+    assert res.cookies.get("dtx_admin_access") and res.cookies.get("dtx_admin_refresh")
 
 
 async def test_bootstrap_only_while_no_account_exists(db_client: AsyncClient) -> None:
-    assert (await db_client.get("/v1/ops/bootstrap")).json()["enabled"] is True
-    await _ops(db_client)
-    assert (await db_client.get("/v1/ops/bootstrap")).json()["enabled"] is False
-    assert (await db_client.post("/v1/ops/signup", json=OPS)).status_code == 403
+    assert (await db_client.get("/v1/admin/bootstrap")).json()["enabled"] is True
+    await _admin(db_client)
+    assert (await db_client.get("/v1/admin/bootstrap")).json()["enabled"] is False
+    assert (await db_client.post("/v1/admin/signup", json=ADMIN)).status_code == 403
 
 
 async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: AsyncSession, signup) -> None:
     owner = await signup()
     other = await signup(email="other@example.com", name="Other")
-    await _ops(db_client)
+    await _admin(db_client)
 
-    me = (await db_client.get("/v1/ops/me")).json()
-    assert me["email"] == "ops@example.com" and me["workspace"] is None
+    me = (await db_client.get("/v1/admin/me")).json()
+    assert me["email"] == "admin@example.com" and me["workspace"] is None
 
     ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
     base = f"/v1/workspaces/{ws['id']}"
@@ -82,35 +82,35 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     )
     await db_session.commit()
 
-    health = (await db_client.get("/v1/ops/observe/health")).json()
+    health = (await db_client.get("/v1/admin/observe/health")).json()
     assert health["version"] and health["database_ms"] >= 0 and health["runs_running"] == 1
     assert [(s["kind"], s["workspace"]) for s in health["stuck"]] == [("chat", other_ws["slug"])]
     assert health["failed_24h"] == 2 and health["finished_24h"] == 3
 
-    counts = (await db_client.get("/v1/ops/observe/counts")).json()
+    counts = (await db_client.get("/v1/admin/observe/counts")).json()
     assert counts["workspaces"] >= 2 and counts["people"] >= 2 and counts["people_active"] == 2
     assert counts["workspaces_active"] == 2 and counts["projects"] == 2
 
-    days = (await db_client.get("/v1/ops/observe/trends?days=3")).json()
+    days = (await db_client.get("/v1/admin/observe/trends?days=3")).json()
     assert len(days) == 3 and days[-1]["day"] == now.date().isoformat()
     assert days[-1]["chat_runs"] == 3 and days[-1]["chat_failed"] == 1
     assert days[-1]["coding_runs"] == 2 and days[-1]["coding_failed"] == 1 and days[-1]["coding_cost_usd"] == 0.5
 
-    failures = (await db_client.get("/v1/ops/observe/failures")).json()
+    failures = (await db_client.get("/v1/admin/observe/failures")).json()
     assert [(g["key"], g["count"]) for g in failures["chat_kinds"]] == [("model_limit", 1)]
     lines = {(g["kind"], g["key"]) for g in failures["messages"]}
     assert lines == {("chat", "Provider refused: rate limit"), ("coding", "the sandbox died")}
 
-    coding = (await db_client.get("/v1/ops/observe/coding")).json()
+    coding = (await db_client.get("/v1/admin/observe/coding")).json()
     assert len(coding) == 1 and coding[0]["turns"] == 2 and coding[0]["failed"] == 1 and coding[0]["prs"] == 1
     assert coding[0]["p50_seconds"] == 180.0
 
-    workspaces = (await db_client.get("/v1/ops/observe/workspaces")).json()
+    workspaces = (await db_client.get("/v1/admin/observe/workspaces")).json()
     mine = next(w for w in workspaces if w["slug"] == ws["slug"])
     assert mine["chat_runs"] == 1 and mine["coding_runs"] == 2 and mine["failed"] == 1 and mine["projects"] == 1
 
     # Runs and audit cover every workspace but never carry what people wrote.
-    res = await db_client.get("/v1/ops/observe/runs")
+    res = await db_client.get("/v1/admin/observe/runs")
     assert res.status_code == 200 and "secret words" not in res.text and "My private question" not in res.text
     page = res.json()
     runs = page["items"]
@@ -118,53 +118,53 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     assert {r["workspace"] for r in runs} == {ws["slug"], other_ws["slug"]}
     assert {r["label"] for r in runs if r["kind"] == "chat"} == {"KUN", "OTH"}
     # Pages of two: the second starts where the first ended, and the last has what's left.
-    first = (await db_client.get("/v1/ops/observe/runs?limit=2")).json()
-    second = (await db_client.get("/v1/ops/observe/runs?limit=2&offset=2")).json()
-    last = (await db_client.get("/v1/ops/observe/runs?limit=2&offset=4")).json()
+    first = (await db_client.get("/v1/admin/observe/runs?limit=2")).json()
+    second = (await db_client.get("/v1/admin/observe/runs?limit=2&offset=2")).json()
+    last = (await db_client.get("/v1/admin/observe/runs?limit=2&offset=4")).json()
     assert [r["id"] for r in first["items"] + second["items"] + last["items"]] == [r["id"] for r in runs]
     assert first["total"] == second["total"] == last["total"] == 5 and len(last["items"]) == 1
-    failed = (await db_client.get("/v1/ops/observe/runs?failed=true")).json()
+    failed = (await db_client.get("/v1/admin/observe/runs?failed=true")).json()
     assert {r["status"] for r in failed["items"]} == {"failed"} and failed["total"] == 2
-    coding = (await db_client.get("/v1/ops/observe/runs?kind=coding")).json()
+    coding = (await db_client.get("/v1/admin/observe/runs?kind=coding")).json()
     assert coding["total"] == 2 and {r["kind"] for r in coding["items"]} == {"coding"}
 
-    res = await db_client.get("/v1/ops/audit?action=sandbox_")
+    res = await db_client.get("/v1/admin/audit?action=sandbox_")
     assert res.status_code == 200 and "secret.example.com" not in res.text
     assert [(e["action"], e["workspace"]) for e in res.json()["items"]] == [("sandbox_network.updated", ws["slug"])]
     assert res.json()["total"] == 1
-    assert (await db_client.get("/v1/ops/audit?action=nothing.")).json() == {"items": [], "total": 0}
-    everything = (await db_client.get("/v1/ops/audit?limit=1")).json()
+    assert (await db_client.get("/v1/admin/audit?action=nothing.")).json() == {"items": [], "total": 0}
+    everything = (await db_client.get("/v1/admin/audit?limit=1")).json()
     assert len(everything["items"]) == 1 and everything["total"] >= 1
 
 
 async def test_app_tokens_and_missing_auth_are_rejected(db_client: AsyncClient, signup) -> None:
     owner = await signup()
-    assert (await db_client.get("/v1/ops/me")).status_code == 401
-    assert (await db_client.get("/v1/ops/me", headers=owner.headers)).status_code == 401
+    assert (await db_client.get("/v1/admin/me")).status_code == 401
+    assert (await db_client.get("/v1/admin/me", headers=owner.headers)).status_code == 401
 
 
 async def test_login_and_lockout(db_client: AsyncClient) -> None:
-    await _ops(db_client)
-    assert (await db_client.post("/v1/ops/login", json={"email": "ops@example.com", "password": "wrong"})).status_code == 401
-    res = await db_client.post("/v1/ops/login", json={"email": "ops@example.com", "password": "ops secret 123"})
-    assert res.status_code == 204 and res.cookies.get("dtx_ops_access")
+    await _admin(db_client)
+    assert (await db_client.post("/v1/admin/login", json={"email": "admin@example.com", "password": "wrong"})).status_code == 401
+    res = await db_client.post("/v1/admin/login", json={"email": "admin@example.com", "password": "admin secret 123"})
+    assert res.status_code == 204 and res.cookies.get("dtx_admin_access")
 
 
 async def test_refresh_rotates_and_logout_revokes(db_client: AsyncClient) -> None:
-    await _ops(db_client)
-    first = db_client.cookies.get("dtx_ops_refresh")
-    assert (await db_client.post("/v1/ops/refresh")).status_code == 204
-    assert db_client.cookies.get("dtx_ops_refresh") != first
+    await _admin(db_client)
+    first = db_client.cookies.get("dtx_admin_refresh")
+    assert (await db_client.post("/v1/admin/refresh")).status_code == 204
+    assert db_client.cookies.get("dtx_admin_refresh") != first
     # The rotated-out refresh token is dead.
     assert (
-        await db_client.post("/v1/ops/refresh", headers={"Cookie": f"dtx_ops_refresh={first}"})
+        await db_client.post("/v1/admin/refresh", headers={"Cookie": f"dtx_admin_refresh={first}"})
     ).status_code == 401
-    access = db_client.cookies.get("dtx_ops_access")
-    assert (await db_client.post("/v1/ops/logout")).status_code == 204
-    assert (await db_client.get("/v1/ops/me", headers={"Cookie": f"dtx_ops_access={access}"})).status_code == 401
+    access = db_client.cookies.get("dtx_admin_access")
+    assert (await db_client.post("/v1/admin/logout")).status_code == 204
+    assert (await db_client.get("/v1/admin/me", headers={"Cookie": f"dtx_admin_access={access}"})).status_code == 401
 
 
-async def test_ops_cookie_writes_require_csrf_header(db_client: AsyncClient) -> None:
-    await _ops(db_client)
-    res = await db_client.post("/v1/ops/logout", headers={"X-Requested-With": ""})
+async def test_admin_cookie_writes_require_csrf_header(db_client: AsyncClient) -> None:
+    await _admin(db_client)
+    res = await db_client.post("/v1/admin/logout", headers={"X-Requested-With": ""})
     assert res.status_code == 403

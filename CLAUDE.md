@@ -48,7 +48,7 @@ Project settings expose the project model and the optional shared specialist mod
 | `apps/cli` | `dotrix` CLI + MCP server for Claude Code / Codex | Typer |
 | `apps/web` | Web app (a single-page app on the API's origin, app.dotrix.cc) | Vite, React, TanStack Router |
 | `apps/site` | The public site, dotrix.cc: one prerendered page linking to the web app and the downloads (`VITE_APP_URL`, `VITE_DOWNLOADS_URL`); its screenshots are of the seeded workspace | Vite, React (prerendered) |
-| `apps/admin` | The admin console for whoever operates dotrix: its own sign-in (`/v1/ops/*`, `modules/ops`), the platform's health, runs, failures, coding, workspaces and audit log across every workspace (`observe/platform.py`), never what people wrote; tables with pages (`table.tsx`: TanStack Table on shadcn's table and pagination; runs and the audit log paged by the API, `offset` and `total`) and shadcn charts (`charts.tsx`, `@dotrix/ui/components/chart` on Recharts 3) | Vite, React, TanStack Query and Table |
+| `apps/admin` | The admin console for whoever operates dotrix: its own sign-in (`/v1/admin/*`, `modules/admin`), the platform's health, runs, failures, coding, workspaces and audit log across every workspace (`modules/admin/platform.py`), never what people wrote; tables with pages (`table.tsx`: TanStack Table on shadcn's table and pagination; runs and the audit log paged by the API, `offset` and `total`) and shadcn charts (`charts.tsx`, `@dotrix/ui/components/chart` on Recharts 3) | Vite, React, TanStack Query and Table |
 | `apps/desktop` | Desktop shell around the web app; codes local turns with the bundled CLI's runner | Electron |
 | `packages/engine` | UI-agnostic agent engine (`dotrix_engine`) | deepagents / LangGraph |
 | `packages/ui`, `api-client` | shadcn/ui components and theme; the typed API client (generated from OpenAPI) | TypeScript |
@@ -67,7 +67,7 @@ pnpm install && pnpm build && pnpm typecheck
 pnpm test                                 # web unit tests (Vitest, apps/web/src/**/*.test.ts)
 pnpm knip                                 # unused files, exports and dependencies (knip.json)
 pnpm --filter @dotrix/site dev           # the public site on :3200 (prerendered by its build)
-pnpm --filter @dotrix/admin dev          # the admin console on :3300 (forwards /v1/ops to the API)
+pnpm --filter @dotrix/admin dev          # the admin console on :3300 (forwards /v1/admin to the API)
 pnpm dev:web                              # web app on :3000 (Vite; forwards /v1, /api, /health to the API, DOTRIX_API_URL in apps/web/.env.local)
 pnpm dev:backend                          # API on :8000, OpenAPI at /docs (python -m dotrix_backend.serve: selector loop on Windows)
 pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when DOTRIX_JOBS=worker

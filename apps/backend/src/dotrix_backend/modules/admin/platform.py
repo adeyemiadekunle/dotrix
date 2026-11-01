@@ -9,12 +9,25 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import Date, case, cast, func, literal_column, select, text
+from sqlalchemy import Date, case, cast, func, literal_column, select, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.admin.schemas import (
+    AuditPage,
+    CodingBreakdown,
+    DayStats,
+    FailureGroup,
+    FailureReport,
+    PlatformAuditEvent,
+    PlatformCounts,
+    PlatformHealth,
+    RunPage,
+    StuckRun,
+    WorkspaceUsage,
+)
 from dotrix_backend.modules.agents.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from dotrix_backend.modules.audit.models import AuditEvent
 from dotrix_backend.modules.auth.models import User
@@ -28,21 +41,9 @@ from dotrix_backend.modules.coding.models import (
 )
 from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
+from dotrix_backend.modules.observe.service import ObserveService
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.models import Membership, Workspace
-
-from .schemas import (
-    AuditPage,
-    CodingBreakdown,
-    DayStats,
-    FailureGroup,
-    FailureReport,
-    PlatformAuditEvent,
-    PlatformCounts,
-    PlatformHealth,
-    StuckRun,
-    WorkspaceUsage,
-)
 
 RUNNER_ONLINE = timedelta(minutes=2)
 # A literal, not a bound parameter: GROUP BY must repeat the SELECT's expression exactly.
@@ -449,3 +450,45 @@ class PlatformObserve:
         ]
         total = await self._scalar(select(func.count(AuditEvent.id)).where(*where))
         return AuditPage(items=items, total=int(total))
+
+
+class AdminRunService(ObserveService):
+    async def platform_runs(
+        self,
+        *,
+        kind: Literal["chat", "coding"] | None = None,
+        failed: bool = False,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> RunPage:
+        """One page of every workspace's runs, newest first, with the total, for the admin console.
+        It sees every workspace but not what people wrote: a run is named by its workspace, project and
+        issue, never by its conversation's title or message."""
+        runs = await self._runs(None, kind=kind, failed=failed, offset=offset, limit=limit)
+        slugs = dict(
+            (await self.session.execute(
+                select(Workspace.id, Workspace.slug).where(Workspace.id.in_({r.workspace_id for r in runs}))
+            )).all()
+        )
+        keys = dict(
+            (await self.session.execute(
+                select(Project.id, Project.key).where(Project.id.in_({r.project_id for r in runs if r.project_id}))
+            )).all()
+        )
+        for r in runs:
+            r.workspace = slugs.get(r.workspace_id)
+            project = keys.get(r.project_id) if r.project_id else None
+            if r.kind == "chat":
+                r.label = " · ".join(filter(None, [project or "Across projects", r.work_mode]))
+        total = 0
+        if kind in (None, "chat"):
+            total += (await self.session.scalar(
+                select(func.count(AgentRun.id)).where(AgentRun.status == RunStatus.FAILED if failed else true())
+            )) or 0
+        if kind in (None, "coding"):
+            total += (await self.session.scalar(
+                select(func.count(CodingRun.id)).where(
+                    CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true()
+                )
+            )) or 0
+        return RunPage(items=runs, total=total)

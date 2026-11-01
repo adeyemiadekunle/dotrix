@@ -8,7 +8,7 @@ Docker. Nobody who uses dotrix installs anything.
 VPS
 └── Docker
     ├── Dokploy, Traefik (TLS, your domain)
-    ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc), admin (nginx, admin.dotrix.cc, /v1/ops only) → api, worker, migrate (once), postgres, redis, storage (RustFS), docker-proxy
+    ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc), admin (nginx, admin.dotrix.cc, /v1/admin only) → api, worker, migrate (once), postgres, redis, storage (RustFS), docker-proxy
     └── coding sandboxes, two containers per run: dotrix-run-<id> and dotrix-run-<id>-egress
 ```
 
@@ -40,7 +40,7 @@ enforcement are removed; a person can still choose a limit for their project or 
 3. **Domains:** add the app's domain (`app.dotrix.cc`, the same as `DOTRIX_APP_URL`) to the `web`
    service, the public site's (`dotrix.cc`, and `www.dotrix.cc` if you like) to the `site`
    service, and the admin console's (`admin.dotrix.cc`) to the `admin` service, each on port 80
-   with HTTPS. The admin console forwards only `/v1/ops` to the API; whoever operates dotrix
+   with HTTPS. The admin console forwards only `/v1/admin` to the API; whoever operates dotrix
    creates their console account there by proving they own a workspace. Nothing else needs a domain: the API is reached through
    `web`, on the same origin. The site has no API; its Sign in, Get started and Open dotrix links go
    to `DOTRIX_APP_URL`, and its downloads to the repository's latest release.
