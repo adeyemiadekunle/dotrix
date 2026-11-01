@@ -30,6 +30,13 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   stuck runs, recovery, runners and sandboxes), runs and failures per day, failures grouped by error, coding by engine
   (outcomes, PRs, time to finish, cost), workspaces by use, and the audit log, in tables with pages (rows per page,
   page numbers) and shadcn charts. Redesigned on dotrix's own design, sign-in included, which loads before the rest.
+- `dotrix chat` matches the app: pick the work mode (`--mode`, `/mode`: Discuss, Plan, Build, Review), the approval mode
+  (`--approvals`, `/approvals`) and, for a new conversation, the runtime (`--runtime fx`); see Nova's thinking as it
+  comes; stop a reply with Ctrl+C; `/continue` after a model's limit (now, or `/continue later` once it resets); in Build,
+  the session Kai starts is named.
+- `dotrix codes` in the terminal: list Kai's sessions, show one (each turn's request, steps, summary, files, the pull
+  request and its checks, `--diff`), follow up, approve or reject a turn, accept or discard its changes, stop, revert,
+  recover, and wait for a turn. `dotrix code KEY` takes `--approvals`, `--model` and `--wait`.
 
 ### Changed
 

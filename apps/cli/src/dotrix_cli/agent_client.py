@@ -29,6 +29,12 @@ class ApprovalNotAllowed(Exception):
 
 OnText = Callable[[str, bool], None]  # (text, starts a new message)
 OnActivity = Callable[[str], None]  # what the PM is doing now, e.g. "Reading roadmap.md"
+OnThinking = Callable[[str], None]  # more of the model's thinking, as it comes
+
+# Chat's work modes and approval modes (the platform's names), and the chat runtimes.
+WORK_MODES = ("discuss", "plan", "build", "review")
+APPROVAL_MODES = ("manual", "accept_edits", "auto")
+RUNTIMES = ("deepagents", "fx")
 
 
 @dataclass
@@ -65,10 +71,21 @@ class PlatformAgent:
         self.sleep = sleep
 
     def start(
-        self, message: str, thread_id: str | None = None, *, agent: str | None = None, model: str | None = None
+        self,
+        message: str,
+        thread_id: str | None = None,
+        *,
+        agent: str | None = None,
+        model: str | None = None,
+        work_mode: str | None = None,
+        approval_mode: str | None = None,
+        runtime: str | None = None,
     ) -> dict:
-        """Send a message: `agent` picks who answers (auto or a specialist); `model` is only for
-        a new conversation (an existing one keeps the model it started with)."""
+        """Send a message: `agent` picks who answers (auto or a specialist); `work_mode` is Discuss,
+        Plan, Build or Review (the conversation's last when left out); `approval_mode` asks for
+        Manual, Accept edits or Auto (the platform gives the lowest of that, the workspace's cap
+        and yours). `model` and `runtime` (DeepAgents or fx) are only for a new conversation: an
+        existing one keeps what it started with."""
         body: dict[str, Any] = {"message": message}
         if thread_id:
             body["thread_id"] = thread_id
@@ -76,7 +93,17 @@ class PlatformAgent:
             body["agent"] = agent
         if model and not thread_id:
             body["model"] = model
+        if runtime and not thread_id:
+            body["chat_runtime"] = runtime
+        if work_mode:
+            body["work_mode"] = work_mode
+        if approval_mode:
+            body["approval_mode"] = approval_mode
         return self.client.post(f"{self.base}/runs", body)
+
+    def continue_run(self, run_id: str, *, when_reset: bool = False) -> dict:
+        """Go on with a run that stopped at its model's limit: now, or once the limit resets."""
+        return self.client.post(f"{self.base}/runs/{run_id}/continue", {"when_reset": when_reset})
 
     def briefing(self) -> dict:
         return self.client.post(f"{self.base}/briefing")
@@ -107,6 +134,7 @@ class PlatformAgent:
         on_tick: Callable[[dict], None] | None = None,
         on_text: OnText | None = None,
         on_activity: OnActivity | None = None,
+        on_thinking: OnThinking | None = None,
         shown: list[str] | None = None,
     ) -> dict:
         """Wait until the run stops (completed, failed, or waiting for approval): follow its
@@ -122,7 +150,7 @@ class PlatformAgent:
             got_text = False
             if streaming:
                 try:
-                    got_text = self._follow(run, on_text, shown, on_activity)  # type: ignore[arg-type]
+                    got_text = self._follow(run, on_text, shown, on_activity, on_thinking)  # type: ignore[arg-type]
                 except PlatformError:
                     streaming = False  # (an older server, or the connection dropped): poll
             waited += time.monotonic() - started
@@ -138,9 +166,17 @@ class PlatformAgent:
                 delay = min(delay * 1.5, 3.0)
         return run
 
-    def _follow(self, run: dict, on_text: OnText, shown: list[str], on_activity: OnActivity | None = None) -> bool:
+    def _follow(
+        self,
+        run: dict,
+        on_text: OnText,
+        shown: list[str],
+        on_activity: OnActivity | None = None,
+        on_thinking: OnThinking | None = None,
+    ) -> bool:
         """Show the stream until it ends; True if any text came."""
         got = False
+        thought = ""  # the thinking shown so far (a reconnect repeats it as "thinking_text")
         for event, data in self.client.events(f"{self.base}/runs/{run['id']}/stream"):
             text = data.get("text", "") if isinstance(data, dict) else ""
             if event == "text":
@@ -158,6 +194,13 @@ class PlatformAgent:
                 got = True
             elif event == "activity" and text and on_activity is not None:
                 on_activity(text)
+            elif event == "thinking" and text and on_thinking is not None:
+                on_thinking(text)
+                thought += text
+            elif event == "thinking_text" and on_thinking is not None:
+                if text.startswith(thought) and text[len(thought):]:
+                    on_thinking(text[len(thought):])
+                thought = text
             elif event == "end":
                 break
         return got
@@ -190,6 +233,7 @@ class PlatformAgent:
         on_text: OnText | None = None,
         on_activity: OnActivity | None = None,
         on_note: Callable[[str], None] | None = None,
+        on_thinking: OnThinking | None = None,
     ) -> Outcome:
         """Wait for the run, settle each pause with `decide`, and repeat until it ends.
 
@@ -198,7 +242,8 @@ class PlatformAgent:
         agent make that kind of change without asking from now on (`on_note` hears how that went).
         """
         shown = [""]
-        run = self.wait(run, on_tick=on_tick, on_text=on_text, on_activity=on_activity, shown=shown)
+        follow = {"on_tick": on_tick, "on_text": on_text, "on_activity": on_activity, "on_thinking": on_thinking}
+        run = self.wait(run, shown=shown, **follow)
         while run["status"] == "awaiting_approval":
             pending = [a for a in run["approvals"] if a["status"] == "pending"]
             decisions: list[tuple[dict, Decision]] = []
@@ -227,5 +272,5 @@ class PlatformAgent:
             except ApprovalNotAllowed:
                 return Outcome(run, left_waiting=True, streamed=shown[0])
             shown[0] = ""  # the resumed run writes a new message
-            run = self.wait(run, on_tick=on_tick, on_text=on_text, on_activity=on_activity, shown=shown)
+            run = self.wait(run, shown=shown, **follow)
         return Outcome(run, streamed=shown[0])
