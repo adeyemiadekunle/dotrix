@@ -967,30 +967,10 @@ function Composer({
               aria-label="Project and mode"
               aria-haspopup="listbox"
               aria-expanded={at.open}
-              data-tip="Pick a project or a mode (or type @)"
+              data-tip={contexts ? "Pick a project or a mode (or type @)" : "Pick a mode (or type @)"}
             >
               <Ic n="plus" s={12} />
             </button>
-          )}
-          {contexts && setContext && context !== undefined ? (
-            <button
-              className="cpill pick"
-              onClick={at.start}
-              aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}`}
-              aria-haspopup="listbox"
-              aria-expanded={at.open}
-              data-tip="Pick a project or a mode (or type @)"
-            >
-              <Ic n={context ? "at-sign" : "layers"} s={12} />
-              <span className="trunc">{contexts.find(([v]) => v === context)?.[1]}</span>
-            </button>
-          ) : (
-            context && (
-              <span className="cpill" data-tip="What the agents read: the project's documents and board">
-                <Ic n="at-sign" s={12} />
-                {context}
-              </span>
-            )
           )}
           {mode && setMode && (
             <button
@@ -1343,7 +1323,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
           )}
           <Composer
             key={q}
-            placeholder="Ask anything, or type @ to pick a project or a mode"
+            placeholder={pid ? `Ask anything about ${ps.find((p) => p.id === pid)?.name ?? "this project"}` : "Ask anything across your projects"}
             agent={agent}
             setAgent={setAgent}
             model={model}
@@ -1484,10 +1464,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   return (
     <div className="chat-scroll" style={{ display: "flex" }}>
       <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a session</h2>
-        <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
-          Kai works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
-        </p>
+        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 18px", textAlign: "center" }}>Start a session</h2>
         <div style={{ position: "relative" }}>
           <div className="cbox">
             <textarea
@@ -1495,11 +1472,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
               rows={3}
               value={note}
               autoFocus
-              placeholder={
-                t
-                  ? `What should it do? It gets ${t.key}'s description and acceptance criteria either way`
-                  : `Type @ or / to pick ${personal ? "an issue" : "one of your issues"}, then say what to do`
-              }
+              placeholder={t ? `What should Kai do on ${t.key}?` : `Type @ to pick ${personal ? "an issue" : "one of your issues"}`}
               onChange={(e) => onText(e.target)}
               onKeyDown={(e) => {
                 if (menuOpen && found.length) {
@@ -1519,7 +1492,10 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                   setMenu(null);
                   setMenuBtn(false);
                 }
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go_();
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  go_();
+                }
               }}
               aria-label="What should it do"
               aria-expanded={menuOpen}
@@ -1560,25 +1536,17 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
               {model && (
                 <Pick value={model} label="Model" lead={<Ic n="sparkles" s={12} />} onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} />
               )}
-              {avail && location === "cloud" && !avail.available && (
-                <span className="cpill" data-tip={avail.reason ?? undefined}>
-                  Coding is off
-                </span>
-              )}
-              {avail && location === "local" && !avail.local_available && !here && (
-                <span className="cpill" data-tip={avail.local_reason ?? undefined}>
-                  <Ic n="laptop" s={12} />
-                  Not on this computer yet
-                </span>
-              )}
               <span className="sp" />
-              <span className="faint hide-m" style={{ fontSize: 11 }}>
-                {MOD}+Enter to start
+              <span
+                data-tip={
+                  !t ? "Pick an issue first" : !ready ? ((location === "local" ? avail?.local_reason : avail?.reason) ?? "Kai can't code here yet") : undefined
+                }
+              >
+                <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || !ready || start.isPending}>
+                  <Ic n="code" s={13} />
+                  Start coding
+                </button>
               </span>
-              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || !ready || start.isPending}>
-                <Ic n="code" s={13} />
-                Start coding
-              </button>
             </div>
           </div>
           {menuOpen && (
@@ -2331,7 +2299,6 @@ export function Session({ cs }: { cs: CodingSession }) {
             <span data-tip="The model this session's turns use">{sessionModel(latest?.model)}</span>
             <span data-tip="Follow-ups are approved like the first turn">{modeName(latest?.approval_mode)}</span>
             <span className="sp" />
-            <span className="faint">Enter to send · Shift+Enter for a new line</span>
             {cs.location !== "local" && cs.sandbox && (
               <span
                 className={`sd-state ${cs.sandbox}`}

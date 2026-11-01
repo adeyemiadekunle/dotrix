@@ -35,6 +35,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Simpler message boxes: Chat's no longer shows the project as a chip (its placeholder names it, and + or @ switches);
+  starting a Codes session drops the "Coding is off" chip, the keyboard hints and the explainer, and Enter starts it.
 - Codes looks and works like Claude Code's session view: a details column (where Kai works, the repository and
   branch, usage, the files it changed, the pull request and its checks); several panes open at once, stacked
   (Changes, Files, Terminal, Review), each expandable, from the session bar or its "…" menu; each turn's steps folded
