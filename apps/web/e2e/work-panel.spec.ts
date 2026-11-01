@@ -182,7 +182,8 @@ test("the session bar opens panes beside it, stacked, and Juno's findings show o
   await files.getByRole("button", { name: "Back to the files" }).click();
   await review.getByRole("button", { name: `${path}:2` }).click();
   await expect(files.locator(".kp-line-reference")).toBeVisible();
-  await review.getByLabel("Turn").selectOption("turn1");
+  // A turn's changes chip in the transcript shows that turn in every pane.
+  await page.locator(".kt").first().locator(".kt-lines").first().click();
   await expect(review.getByText("Earlier finding")).toBeVisible();
   await expect(review.getByText("Superseded by a later coding turn")).toBeVisible();
   // A pane's close button closes just that pane; "Close all panes" the rest; the shortcut opens Changes again.

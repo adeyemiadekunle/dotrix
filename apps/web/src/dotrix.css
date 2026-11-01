@@ -1905,13 +1905,6 @@ body.resizing-row * {
   gap: 6px;
   color: var(--text-2);
 }
-.side-panel-turn {
-  color: var(--text-3);
-  font-size: 12px;
-}
-.side-panel-select {
-  width: auto;
-}
 section.side-panel-body[hidden] {
   display: none;
 }

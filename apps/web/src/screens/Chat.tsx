@@ -1649,7 +1649,6 @@ function copyText(text: string) {
  *  its summary, and a row with copy, the time, and its changes. */
 function KaiTurn({
   turn,
-  index,
   issueTitle,
   busy,
   revert,
@@ -1659,7 +1658,6 @@ function KaiTurn({
   shotSrc,
 }: {
   turn: CodingRun;
-  index: number;
   issueTitle: string;
   busy: boolean;
   revert: ReturnType<typeof useRevertCoding>;
@@ -1680,9 +1678,7 @@ function KaiTurn({
         <div className="kt-bubble">{asked}</div>
         <div className="kt-meta">
           {!mine && <span>{who(turn.requested_by_id ?? "")?.name ?? "Someone"} ·</span>}
-          <span>
-            Turn {index + 1} · {ago(ms(turn.created_at))}
-          </span>
+          <span>{ago(ms(turn.created_at))}</span>
           <button className="ibtn ibtn-xs" onClick={() => copyText(asked)} aria-label="Copy the request" data-tip="Copy">
             <Ic n="copy" s={13} />
           </button>
@@ -1746,7 +1742,7 @@ function KaiTurn({
             )}
             {turn.finished_at && <span className="faint">{ago(ms(turn.finished_at))}</span>}
             {turn.files_changed.length > 0 && (
-              <button className="kt-lines" onClick={() => onChanges(turn.id)} data-tip={`Changes in turn ${index + 1}`}>
+              <button className="kt-lines" onClick={() => onChanges(turn.id)} data-tip="Open these changes">
                 <Ic n="git-compare" s={12} />
                 {turn.files_changed.length} file{turn.files_changed.length > 1 ? "s" : ""}
                 <span className="plus">+{added}</span>
@@ -2033,11 +2029,10 @@ export function Session({ cs }: { cs: CodingSession }) {
         )}
         <div className="chat-scroll">
           <div className="chat-col kt-col">
-            {turns.map((turn, i) => (
+            {turns.map((turn) => (
               <KaiTurn
                 key={turn.id}
                 turn={turn}
-                index={i}
                 issueTitle={cs.issue_title}
                 busy={busy}
                 revert={revert}

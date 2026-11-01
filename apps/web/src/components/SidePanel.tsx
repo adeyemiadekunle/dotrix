@@ -187,20 +187,6 @@ function useTurn(scope: Scope | undefined, cs: CodingSession | null | undefined,
   return { turnsQuery, turns, turn, setPicked, diff, files };
 }
 
-function TurnPicker({ turns, turn, onPick }: { turns: CodingRun[]; turn: CodingRun | undefined; onPick: (id: string) => void }) {
-  if (!turn) return null;
-  if (turns.length === 1) return <span className="side-panel-turn">Turn {turn.turn}</span>;
-  return (
-    <select className="input input-sm side-panel-select" value={turn.id} aria-label="Turn" onChange={(event) => onPick(event.target.value)}>
-      {turns.map((candidate) => (
-        <option key={candidate.id} value={candidate.id}>
-          Turn {candidate.turn}
-        </option>
-      ))}
-    </select>
-  );
-}
-
 function NoTurn({ query }: { query: ReturnType<typeof useCodingSession> }) {
   return (
     <p className="muted">
@@ -278,6 +264,11 @@ function CodingPanel({
   }, [queryTurn, setPicked]);
   const [selectedReview, setSelectedReview] = useState<string | null>(null);
   const [reference, setReference] = useState<{ turn: string; path: string; line?: number; version: number } | null>(null);
+  // Every pane shows the turn the address names (a turn's changes chip in the transcript sets it), else the latest.
+  useEffect(() => {
+    setSelectedReview(null);
+    setReference(null);
+  }, [queryTurn]);
   const latestChanged = [...turns].reverse().find((turn) => turn.files_changed.length && ["pr_opened", "changes_ready"].includes(turn.status));
   const reviewQueries = useReviewRunQueries(
     scope,
@@ -341,17 +332,6 @@ function CodingPanel({
           )}
           {view === "terminal" && <span className="faint">Recorded output · read-only</span>}
         </span>
-      }
-      tools={
-        <TurnPicker
-          turns={turns}
-          turn={turn}
-          onPick={(picked) => {
-            setPicked(picked);
-            setReference(null);
-            setSelectedReview(null);
-          }}
-        />
       }
     >
       <div className="side-panel-body">
