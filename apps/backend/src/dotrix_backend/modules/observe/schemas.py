@@ -204,3 +204,15 @@ class PlatformAuditEvent(BaseModel):
     actor_user_id: uuid.UUID | None
     agent: str | None
     created_at: datetime
+
+
+class RunPage(BaseModel):
+    """A page of the admin console's run history, and how many runs match in all."""
+
+    items: list[ObservedRun]
+    total: int
+
+
+class AuditPage(BaseModel):
+    items: list[PlatformAuditEvent]
+    total: int

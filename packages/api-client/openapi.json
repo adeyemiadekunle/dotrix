@@ -1581,7 +1581,7 @@
           "ops"
         ],
         "summary": "Observe Runs",
-        "description": "Run history across the platform: chat and coding merged, newest first, named by workspace,\nproject and issue (never a conversation's words). Page backwards with `before` + `before_id`\n(the last row's `created_at` and `id`) so ties aren't skipped.",
+        "description": "A page of the run history across the platform, with the total: chat and coding merged,\nnewest first, named by workspace, project and issue (never a conversation's words).",
         "operationId": "observe_runs",
         "parameters": [
           {
@@ -1617,38 +1617,18 @@
             "description": "Only failed runs (and coding turns waiting to be recovered)"
           },
           {
-            "name": "before",
+            "name": "offset",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Before"
-            }
-          },
-          {
-            "name": "before_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Before Id"
-            }
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 0,
+              "description": "Skip this many runs: the page times its size",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Skip this many runs: the page times its size"
           },
           {
             "name": "limit",
@@ -1658,7 +1638,7 @@
               "type": "integer",
               "maximum": 200,
               "minimum": 1,
-              "default": 50,
+              "default": 25,
               "title": "Limit"
             }
           },
@@ -1685,11 +1665,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ObservedRun"
-                  },
-                  "title": "Response Observe Runs"
+                  "$ref": "#/components/schemas/RunPage"
                 }
               }
             }
@@ -1733,7 +1709,7 @@
           "ops"
         ],
         "summary": "Audit",
-        "description": "Audit events across the whole platform, newest first: the action, who, and which workspace,\nwithout the details (they can carry words people wrote).",
+        "description": "A page of audit events across the whole platform, newest first, with the total: the action,\nwho, and which workspace, without the details (they can carry words people wrote).",
         "operationId": "audit",
         "parameters": [
           {
@@ -1756,21 +1732,18 @@
             "description": "Actions starting with this, e.g. `coding.`"
           },
           {
-            "name": "before",
+            "name": "offset",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Before"
-            }
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 0,
+              "description": "Skip this many events: the page times its size",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Skip this many events: the page times its size"
           },
           {
             "name": "limit",
@@ -1780,7 +1753,7 @@
               "type": "integer",
               "maximum": 200,
               "minimum": 1,
-              "default": 100,
+              "default": 25,
               "title": "Limit"
             }
           },
@@ -1807,11 +1780,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PlatformAuditEvent"
-                  },
-                  "title": "Response Audit"
+                  "$ref": "#/components/schemas/AuditPage"
                 }
               }
             }
@@ -25392,6 +25361,27 @@
         ],
         "title": "AuditEventRead"
       },
+      "AuditPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformAuditEvent"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AuditPage"
+      },
       "AuthProviders": {
         "properties": {
           "github": {
@@ -34404,6 +34394,28 @@
         ],
         "title": "RunOutputRead",
         "description": "What the leading agent recorded as its result (its contract's output schema)."
+      },
+      "RunPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ObservedRun"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "RunPage",
+        "description": "A page of the admin console's run history, and how many runs match in all."
       },
       "RunStatus": {
         "type": "string",

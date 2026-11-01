@@ -10,3 +10,7 @@ allowBuilds:
 # One TypeScript for typecheck and ESLint: the newest typescript-eslint supports (<6.1).
 catalog:
   typescript: ~6.0.3
+
+# Recharts 2 (shadcn's charts) finds its parts with react-is, which must match React 19, or charts draw nothing.
+overrides:
+  recharts>react-is: ^19.3.0

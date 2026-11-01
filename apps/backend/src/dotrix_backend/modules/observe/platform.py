@@ -32,6 +32,7 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.models import Membership, Workspace
 
 from .schemas import (
+    AuditPage,
     CodingBreakdown,
     DayStats,
     FailureGroup,
@@ -249,12 +250,14 @@ class PlatformObserve:
         """What went wrong lately: chat runs by the kind of error, coding turns by engine, and the
         recorded errors grouped by their first line, most frequent first."""
         since = datetime.now(UTC) - timedelta(days=days)
+        # A failure without a kind recorded is an ordinary error.
+        error_kind = func.coalesce(AgentRun.error_kind, literal_column("'error'"))
         chat_kinds = [
-            FailureGroup(key=kind or "error", count=int(count), last_at=last)
+            FailureGroup(key=kind, count=int(count), last_at=last)
             for kind, count, last in await self.session.execute(
-                select(AgentRun.error_kind, func.count(AgentRun.id), func.max(AgentRun.finished_at))
+                select(error_kind, func.count(AgentRun.id), func.max(AgentRun.finished_at))
                 .where(AgentRun.status == RunStatus.FAILED, AgentRun.finished_at >= since)
-                .group_by(AgentRun.error_kind)
+                .group_by(error_kind)
                 .order_by(func.count(AgentRun.id).desc())
             )
         ]
@@ -417,17 +420,22 @@ class PlatformObserve:
         found.sort(key=lambda w: (w.chat_runs + w.coding_runs, w.tokens, w.created_at), reverse=True)
         return found[:limit]
 
-    async def audit(self, *, action: str | None = None, before: datetime | None = None, limit: int = 100) -> list[PlatformAuditEvent]:
-        """Audit events across every workspace, newest first. `action` matches a prefix
-        (`coding.` finds every coding event)."""
-        stmt = select(AuditEvent, Workspace.slug).outerjoin(Workspace, Workspace.id == AuditEvent.workspace_id)
+    async def audit(self, *, action: str | None = None, offset: int = 0, limit: int = 100) -> AuditPage:
+        """A page of audit events across every workspace, newest first, with the total. `action`
+        matches a prefix (`coding.` finds every coding event)."""
+        where = []
         if action:
             escaped = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            stmt = stmt.where(AuditEvent.action.like(f"{escaped}%", escape="\\"))
-        if before is not None:
-            stmt = stmt.where(AuditEvent.created_at < before)
-        rows = await self.session.execute(stmt.order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(limit))
-        return [
+            where.append(AuditEvent.action.like(f"{escaped}%", escape="\\"))
+        rows = await self.session.execute(
+            select(AuditEvent, Workspace.slug)
+            .outerjoin(Workspace, Workspace.id == AuditEvent.workspace_id)
+            .where(*where)
+            .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        items = [
             PlatformAuditEvent(
                 id=e.id,
                 action=e.action,
@@ -439,3 +447,5 @@ class PlatformObserve:
             )
             for e, slug in rows
         ]
+        total = await self._scalar(select(func.count(AuditEvent.id)).where(*where))
+        return AuditPage(items=items, total=int(total))

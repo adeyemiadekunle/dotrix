@@ -613,9 +613,8 @@ export interface paths {
         };
         /**
          * Observe Runs
-         * @description Run history across the platform: chat and coding merged, newest first, named by workspace,
-         *     project and issue (never a conversation's words). Page backwards with `before` + `before_id`
-         *     (the last row's `created_at` and `id`) so ties aren't skipped.
+         * @description A page of the run history across the platform, with the total: chat and coding merged,
+         *     newest first, named by workspace, project and issue (never a conversation's words).
          */
         get: operations["observe_runs"];
         put?: never;
@@ -635,8 +634,8 @@ export interface paths {
         };
         /**
          * Audit
-         * @description Audit events across the whole platform, newest first: the action, who, and which workspace,
-         *     without the details (they can carry words people wrote).
+         * @description A page of audit events across the whole platform, newest first, with the total: the action,
+         *     who, and which workspace, without the details (they can carry words people wrote).
          */
         get: operations["audit"];
         put?: never;
@@ -5494,6 +5493,13 @@ export interface components {
              */
             created_at: string;
         };
+        /** AuditPage */
+        AuditPage: {
+            /** Items */
+            items: components["schemas"]["PlatformAuditEvent"][];
+            /** Total */
+            total: number;
+        };
         /** AuthProviders */
         AuthProviders: {
             /**
@@ -9357,6 +9363,16 @@ export interface components {
             created_at: string;
         };
         /**
+         * RunPage
+         * @description A page of the admin console's run history, and how many runs match in all.
+         */
+        RunPage: {
+            /** Items */
+            items: components["schemas"]["ObservedRun"][];
+            /** Total */
+            total: number;
+        };
+        /**
          * RunStatus
          * @enum {string}
          */
@@ -11754,8 +11770,8 @@ export interface operations {
                 kind?: ("chat" | "coding") | null;
                 /** @description Only failed runs (and coding turns waiting to be recovered) */
                 failed?: boolean;
-                before?: string | null;
-                before_id?: string | null;
+                /** @description Skip this many runs: the page times its size */
+                offset?: number;
                 limit?: number;
             };
             header?: never;
@@ -11772,7 +11788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ObservedRun"][];
+                    "application/json": components["schemas"]["RunPage"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -11809,7 +11825,8 @@ export interface operations {
             query?: {
                 /** @description Actions starting with this, e.g. `coding.` */
                 action?: string | null;
-                before?: string | null;
+                /** @description Skip this many events: the page times its size */
+                offset?: number;
                 limit?: number;
             };
             header?: never;
@@ -11826,7 +11843,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlatformAuditEvent"][];
+                    "application/json": components["schemas"]["AuditPage"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

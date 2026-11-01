@@ -3,8 +3,6 @@ platform's observability across every workspace, never what people wrote, and ne
 users' session."""
 from __future__ import annotations
 
-import uuid
-from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Cookie, Depends, Query, Request, Response, status
@@ -16,13 +14,13 @@ from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.auth.limits import LOGIN, ThrottleDep
 from dotrix_backend.modules.observe.platform import PlatformObserve
 from dotrix_backend.modules.observe.schemas import (
+    AuditPage,
     CodingBreakdown,
     DayStats,
     FailureReport,
-    ObservedRun,
-    PlatformAuditEvent,
     PlatformCounts,
     PlatformHealth,
+    RunPage,
     WorkspaceUsage,
 )
 from dotrix_backend.modules.observe.service import ObserveService
@@ -191,14 +189,12 @@ async def observe_runs(
     observe: Observe,
     kind: Literal["chat", "coding"] | None = None,
     failed: bool = Query(default=False, description="Only failed runs (and coding turns waiting to be recovered)"),
-    before: datetime | None = None,
-    before_id: uuid.UUID | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
-) -> list[ObservedRun]:
-    """Run history across the platform: chat and coding merged, newest first, named by workspace,
-    project and issue (never a conversation's words). Page backwards with `before` + `before_id`
-    (the last row's `created_at` and `id`) so ties aren't skipped."""
-    return await observe.platform_runs(kind=kind, failed=failed, before=before, before_id=before_id, limit=limit)
+    offset: int = Query(default=0, ge=0, le=10_000, description="Skip this many runs: the page times its size"),
+    limit: int = Query(default=25, ge=1, le=200),
+) -> RunPage:
+    """A page of the run history across the platform, with the total: chat and coding merged,
+    newest first, named by workspace, project and issue (never a conversation's words)."""
+    return await observe.platform_runs(kind=kind, failed=failed, offset=offset, limit=limit)
 
 
 @router.get("/audit", responses=errors(403, 422))
@@ -206,10 +202,10 @@ async def audit(
     ops: OpsDep,
     platform: Platform,
     action: str | None = Query(default=None, max_length=100, description="Actions starting with this, e.g. `coding.`"),
-    before: datetime | None = None,
-    limit: int = Query(default=100, ge=1, le=200),
-) -> list[PlatformAuditEvent]:
-    """Audit events across the whole platform, newest first: the action, who, and which workspace,
-    without the details (they can carry words people wrote)."""
-    return await platform.audit(action=action, before=before, limit=limit)
+    offset: int = Query(default=0, ge=0, le=100_000, description="Skip this many events: the page times its size"),
+    limit: int = Query(default=25, ge=1, le=200),
+) -> AuditPage:
+    """A page of audit events across the whole platform, newest first, with the total: the action,
+    who, and which workspace, without the details (they can carry words people wrote)."""
+    return await platform.audit(action=action, offset=offset, limit=limit)
 

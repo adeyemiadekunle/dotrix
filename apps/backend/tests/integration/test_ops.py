@@ -112,16 +112,29 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     # Runs and audit cover every workspace but never carry what people wrote.
     res = await db_client.get("/v1/ops/observe/runs")
     assert res.status_code == 200 and "secret words" not in res.text and "My private question" not in res.text
-    runs = res.json()
+    page = res.json()
+    runs = page["items"]
+    assert page["total"] == 5 and len(runs) == 5
     assert {r["workspace"] for r in runs} == {ws["slug"], other_ws["slug"]}
     assert {r["label"] for r in runs if r["kind"] == "chat"} == {"KUN", "OTH"}
+    # Pages of two: the second starts where the first ended, and the last has what's left.
+    first = (await db_client.get("/v1/ops/observe/runs?limit=2")).json()
+    second = (await db_client.get("/v1/ops/observe/runs?limit=2&offset=2")).json()
+    last = (await db_client.get("/v1/ops/observe/runs?limit=2&offset=4")).json()
+    assert [r["id"] for r in first["items"] + second["items"] + last["items"]] == [r["id"] for r in runs]
+    assert first["total"] == second["total"] == last["total"] == 5 and len(last["items"]) == 1
     failed = (await db_client.get("/v1/ops/observe/runs?failed=true")).json()
-    assert {r["status"] for r in failed} == {"failed"} and len(failed) == 2
+    assert {r["status"] for r in failed["items"]} == {"failed"} and failed["total"] == 2
+    coding = (await db_client.get("/v1/ops/observe/runs?kind=coding")).json()
+    assert coding["total"] == 2 and {r["kind"] for r in coding["items"]} == {"coding"}
 
     res = await db_client.get("/v1/ops/audit?action=sandbox_")
     assert res.status_code == 200 and "secret.example.com" not in res.text
-    assert [(e["action"], e["workspace"]) for e in res.json()] == [("sandbox_network.updated", ws["slug"])]
-    assert (await db_client.get("/v1/ops/audit?action=nothing.")).json() == []
+    assert [(e["action"], e["workspace"]) for e in res.json()["items"]] == [("sandbox_network.updated", ws["slug"])]
+    assert res.json()["total"] == 1
+    assert (await db_client.get("/v1/ops/audit?action=nothing.")).json() == {"items": [], "total": 0}
+    everything = (await db_client.get("/v1/ops/audit?limit=1")).json()
+    assert len(everything["items"]) == 1 and everything["total"] >= 1
 
 
 async def test_app_tokens_and_missing_auth_are_rejected(db_client: AsyncClient, signup) -> None:

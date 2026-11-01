@@ -98,7 +98,7 @@ export type Day = {
   signups: number;
 };
 
-type FailureGroup = { key: string; kind: "chat" | "coding" | null; detail: string | null; count: number; last_at: string | null };
+export type FailureGroup = { key: string; kind: "chat" | "coding" | null; detail: string | null; count: number; last_at: string | null };
 export type Failures = { days: number; chat_kinds: FailureGroup[]; chat_models: FailureGroup[]; messages: FailureGroup[] };
 
 export type CodingRow = {
@@ -160,3 +160,5 @@ export type AuditEvent = {
   agent: string | null;
   created_at: string;
 };
+
+export type Page<T> = { items: T[]; total: number };

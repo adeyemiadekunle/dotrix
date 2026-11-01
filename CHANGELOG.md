@@ -26,7 +26,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   app.dotrix.cc and to download the desktop app and the CLI. Deployed beside the app as the `site` service.
 - The admin console (`apps/admin`, formerly Ops) watches the whole platform: health (database, run queue, workers,
   stuck runs, recovery, runners and sandboxes), runs and failures per day, failures grouped by error, coding by engine
-  (outcomes, PRs, time to finish, cost), workspaces by use, and the audit log. Redesigned on dotrix's own design.
+  (outcomes, PRs, time to finish, cost), workspaces by use, and the audit log, in tables with pages (rows per page,
+  page numbers) and shadcn charts. Redesigned on dotrix's own design.
 
 ### Changed
 

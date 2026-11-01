@@ -30,6 +30,7 @@ from .schemas import (
     ObserveOverview,
     ObserveQueue,
     RunGroupSummary,
+    RunPage,
 )
 
 
@@ -222,14 +223,13 @@ class ObserveService:
         *,
         kind: Literal["chat", "coding"] | None = None,
         failed: bool = False,
-        before: datetime | None = None,
-        before_id: uuid.UUID | None = None,
+        offset: int = 0,
         limit: int = 50,
-    ) -> list[ObservedRun]:
-        """Every workspace's runs, newest first, for the admin console. It sees every workspace but
-        not what people wrote: a run is named by its workspace, project and issue, never by its
-        conversation's title or message."""
-        runs = await self._runs(None, kind=kind, failed=failed, before=before, before_id=before_id, limit=limit)
+    ) -> RunPage:
+        """One page of every workspace's runs, newest first, with the total, for the admin console.
+        It sees every workspace but not what people wrote: a run is named by its workspace, project and
+        issue, never by its conversation's title or message."""
+        runs = await self._runs(None, kind=kind, failed=failed, offset=offset, limit=limit)
         slugs = dict(
             (await self.session.execute(
                 select(Workspace.id, Workspace.slug).where(Workspace.id.in_({r.workspace_id for r in runs}))
@@ -245,7 +245,18 @@ class ObserveService:
             project = keys.get(r.project_id) if r.project_id else None
             if r.kind == "chat":
                 r.label = " · ".join(filter(None, [project or "Across projects", r.work_mode]))
-        return runs
+        total = 0
+        if kind in (None, "chat"):
+            total += (await self.session.scalar(
+                select(func.count(AgentRun.id)).where(AgentRun.status == RunStatus.FAILED if failed else true())
+            )) or 0
+        if kind in (None, "coding"):
+            total += (await self.session.scalar(
+                select(func.count(CodingRun.id)).where(
+                    CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true()
+                )
+            )) or 0
+        return RunPage(items=runs, total=total)
 
     async def runs(
         self,
@@ -270,6 +281,7 @@ class ObserveService:
         failed: bool = False,
         before: datetime | None = None,
         before_id: uuid.UUID | None = None,
+        offset: int = 0,
         limit: int = 50,
     ) -> list[ObservedRun]:
         ws = member.workspace_id if member else None
@@ -292,7 +304,7 @@ class ObserveService:
                     AgentRun.status == RunStatus.FAILED if failed else true(),
                 )
                 .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
-                .limit(limit)
+                .limit(offset + limit)
             )
             if (clause := keyset(AgentRun)) is not None:
                 stmt = stmt.where(clause)
@@ -328,7 +340,7 @@ class ObserveService:
                     CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true(),
                 )
                 .order_by(CodingRun.created_at.desc(), CodingRun.id.desc())
-                .limit(limit)
+                .limit(offset + limit)
             )
             if (clause := keyset(CodingRun)) is not None:
                 stmt = stmt.where(clause)
@@ -356,4 +368,4 @@ class ObserveService:
                 )
 
         found.sort(key=lambda r: (r.created_at, r.id), reverse=True)
-        return found[:limit]
+        return found[offset : offset + limit]
