@@ -300,7 +300,7 @@ export function useCodingTree(
 }
 
 /** One file before a turn and after it (on this computer: in its worktree, as it is now). */
-export function useCodingFile(scope: Scope | undefined, runId: string | undefined, filePath: string | null, worktree: string | null = null) {
+export function useCodingFile(scope: Scope | undefined, runId: string | undefined, filePath: string | null, worktree: string | null = null, working = false) {
   const here = worktree ? desktop() : null;
   return useQuery<CodingFile>({
     queryKey: ["coding-run", scope?.projectId, runId, "file", filePath, worktree],
@@ -315,7 +315,7 @@ export function useCodingFile(scope: Scope | undefined, runId: string | undefine
     enabled: Boolean(scope && runId && filePath),
     retry: false,
     staleTime: here ? 0 : 30_000,
-    refetchInterval: here ? 3000 : false,
+    refetchInterval: here && working ? 3000 : false,
   });
 }
 

@@ -17,6 +17,7 @@ import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, type Modal } fr
 import type { FileItem, Member, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
+import { WhatsNew } from "../shell/DesktopApp";
 import { viewOf } from "../shell/viewEngine";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
@@ -77,6 +78,12 @@ function Wrap({ cls = "", m, children }: { cls?: string; m: Modal; children: Rea
 
 function ModalBody({ m }: { m: Modal }) {
   switch (m.type) {
+    case "whatsNew":
+      return (
+        <Wrap m={m} cls="lg">
+          <WhatsNew onClose={closeModal} />
+        </Wrap>
+      );
     case "task":
       return (
         <Wrap m={m}>

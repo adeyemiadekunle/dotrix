@@ -35,9 +35,17 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - `dotrix codes` in the terminal: list Kai's sessions, show one (each turn's request, steps, summary, files, the pull
   request and its checks, `--diff`), follow up, approve or reject a turn, accept or discard its changes, stop, revert,
   recover, and wait for a turn. `dotrix code KEY` takes `--approvals`, `--model` and `--wait`.
+- The desktop app updates itself: it downloads a new version in the background, says when it's ready (Restart, or it
+  installs when you quit), and shows What's new after an update and from the sidebar.
+- Codes: a new session's "where it codes" menu lists this computer's folder for the project, the cloud sandbox, and, in
+  the desktop app, Add a folder; each session in the list shows whether it codes in the cloud or on a computer.
 
 ### Changed
 
+- New chats and Codes sessions look like Claude Code's: a card in the middle to choose the project (or where Kai codes:
+  this computer's folder or the cloud), and a rounded message box at the bottom with + on the left and send on the
+  right; the mode, approvals and model sit under it as plain text. Model names are short ("Opus 5.5", "GPT-5.5"), and
+  the "Coding is off" chip, the keyboard hints and the explainers are gone. Enter starts a session.
 - Codes looks and works like Claude Code's session view: a details column (where Kai works, the repository and
   branch, usage, the files it changed, the pull request and its checks); several panes open at once, stacked
   (Changes, Files, Terminal, Review), each expandable, from the session bar or its "…" menu; each turn's steps folded
@@ -48,6 +56,11 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - The admin console no longer sees what people wrote: runs are named by workspace, project and issue instead of a
   conversation's title or first message, and audit events come without their details.
+
+### Fixed
+
+- A local turn's worktree is removed once it has been untouched for 3 days, so they no longer pile up on your
+  computer; an open file from a local turn stops refreshing once the turn is done.
 
 ## [0.1.0] - 2026-10-31
 

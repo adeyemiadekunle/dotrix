@@ -34,8 +34,8 @@ async function openChat(page: Page, search = "") {
 async function pickChatOption(page: Page, label: "Approvals" | "Mode", name: string | RegExp) {
   const picker = page.getByRole("button", { name: new RegExp(`^${label}:`) });
   await picker.click();
-  // Approvals keeps its own list; Mode is a section of the + menu (projects + modes).
-  const menu = label === "Approvals" ? page.getByRole("listbox", { name: "Approvals", exact: true }) : page.locator(".pop[role='listbox']");
+  // Each picker under the message box keeps its own list.
+  const menu = page.getByRole("listbox", { name: label, exact: true });
   const option = menu.getByRole("option", { name, exact: true });
   const selected = (await option.innerText()).trim();
   await option.click();

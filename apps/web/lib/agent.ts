@@ -80,7 +80,23 @@ export function useModels(workspaceId: string | undefined) {
 }
 
 /** "gemini-3.8-flash" from "google_genai:gemini-3.8-flash". */
-export const modelName = (model: string | null | undefined) => (model ?? "").split(":").slice(1).join(":") || model || "";
+/** A model as people read it: "anthropic:claude-opus-5-5" → "Opus 5.5", "openai:gpt-5.4-mini" → "GPT-5.4 mini",
+ *  "google_genai:gemini-3.8-flash" → "Gemini 3.8 Flash". Anything else: its `name` when given (the API's), else its id
+ *  without the provider. */
+export const modelName = (model: string | null | undefined, name?: string): string => {
+  const id = (model ?? "").includes(":") ? (model ?? "").split(":").slice(1).join(":") : (model ?? "");
+  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  if (claude) return `${claude[1]![0]!.toUpperCase()}${claude[1]!.slice(1)} ${claude[2]}${claude[3] ? `.${claude[3]}` : ""}`;
+  const gpt = /^gpt-([\d.]+)(?:-(.+))?$/.exec(id);
+  if (gpt) return `GPT-${gpt[1]}${gpt[2] ? ` ${gpt[2].replaceAll("-", " ")}` : ""}`;
+  const gemini = /^gemini-([\d.]+)-(.+)$/.exec(id);
+  if (gemini)
+    return `Gemini ${gemini[1]} ${gemini[2]!
+      .split("-")
+      .map((w) => w[0]!.toUpperCase() + w.slice(1))
+      .join(" ")}`;
+  return name || id;
+};
 
 // Kept in sync with ARCHITECTURE_DRAFT_PROMPT in the backend's agents service.
 const ARCHITECTURE_PROMPT_START = "Project setup: draft the architecture overview.";

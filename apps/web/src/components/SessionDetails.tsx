@@ -3,6 +3,7 @@
 // the pull request with its checks. A column beside the session on wide screens; a popover on narrow ones.
 import { useState, type ReactNode } from "react";
 
+import { modelName } from "@/lib/agent";
 import type { CodingRun, CodingSession } from "@/lib/coding";
 import { Ic } from "../core/icons";
 
@@ -23,8 +24,8 @@ function Section({ title, children, aside }: { title: string; children: ReactNod
   );
 }
 
-/** The model a session's turns use, without its provider: "claude-sonnet-5-5". */
-export const sessionModel = (model: string | null | undefined) => (model ? model.split(":").pop()! : "Your default model");
+/** The model a session's turns use, as people say it: "Sonnet 5.5". */
+export const sessionModel = (model: string | null | undefined) => (model ? modelName(model) : "Your default model");
 export const modeName = (mode: string | null | undefined) => MODE[mode ?? ""] ?? "Manual";
 
 export function SessionDetails({

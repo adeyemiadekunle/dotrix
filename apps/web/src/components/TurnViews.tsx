@@ -341,7 +341,7 @@ function FileView({
   initialLine?: number;
   onBack: () => void;
 }) {
-  const file = useCodingFile(scope, run.id, path, worktree);
+  const file = useCodingFile(scope, run.id, path, worktree, run.status === "running");
   const [view, setView] = useState<"file" | "diff">(initialLine ? "file" : diff ? "diff" : "file");
   const lineRef = useRef<HTMLDivElement>(null);
   const text = file.data?.after ?? file.data?.before ?? "";

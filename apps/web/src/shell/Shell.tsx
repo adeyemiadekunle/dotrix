@@ -16,6 +16,8 @@ import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
 import { AgentsPanel, agentsShown, inCodeTab, panelColumn, toggleAgents } from "./AgentsPanel";
+import { desktopApp } from "../core/desktop";
+import { UpdateBar, openWhatsNew, useWhatsNewAfterUpdate } from "./DesktopApp";
 import { Notices } from "./Notices";
 
 export const ROUTE_NAMES: Record<string, string> = {
@@ -92,6 +94,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const at = `${here}/${JSON.stringify(hereParams)}`;
   const navTrigger = useRef<HTMLButtonElement | null>(null);
   const navWasOpen = useRef(false);
+  useWhatsNewAfterUpdate();
   const openNavigation = (e: MouseEvent<HTMLButtonElement>) => {
     navTrigger.current = e.currentTarget;
     S.ui.mnav = true;
@@ -128,6 +131,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {u.mnav && <div className="side-scrim" onClick={() => ((S.ui.mnav = false), render())} />}
         <main className="main" id="main">
           <Topbar openNavigation={openNavigation} />
+          <UpdateBar />
           {!agentsShown() && <Notices />}
           {u.offline && (
             <div className="offline-bar" role="alert">
@@ -355,6 +359,12 @@ function Sidebar() {
         </div>
       </div>
       <div className="side-bot">
+        {desktopApp() && (
+          <button className="sitem" onClick={openWhatsNew} data-tip={sideCollapsed() ? "What's new" : undefined} data-tip-pos="right">
+            <Ic n="gift" s={16} />
+            <span>What&apos;s new</span>
+          </button>
+        )}
         <button className="sitem" onClick={(e) => openPop(e.currentTarget, "help")} data-tip={sideCollapsed() ? "Help" : undefined} data-tip-pos="right">
           <Ic n="circle-help" s={16} />
           <span>Help &amp; resources</span>
