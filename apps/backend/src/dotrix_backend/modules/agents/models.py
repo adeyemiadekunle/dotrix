@@ -202,7 +202,7 @@ class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
 
 
 class AgentRuntimeBinding(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
-    """An experimental runtime session pinned to one private run and its configuration."""
+    """A chat runtime session pinned to one private run and its configuration."""
 
     __tablename__ = "agent_runtime_bindings"
     __table_args__ = (UniqueConstraint("run_id"), UniqueConstraint("runtime", "session_id"))

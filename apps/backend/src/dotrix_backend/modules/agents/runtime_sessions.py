@@ -1,4 +1,4 @@
-"""Private, per-run bindings for experimental chat runtime sessions.
+"""Private, per-run bindings for chat runtime sessions.
 
 This stores an identity mapping, not the runtime's journal. The caller must derive the
 identity from its trusted, effective configuration and isolate the runtime's storage.
