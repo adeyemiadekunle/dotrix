@@ -13,6 +13,7 @@ WS, PID = "ws-1", "proj-1"
 KB = f"/v1/workspaces/{WS}/projects/{PID}/knowledge"
 ISSUES = f"/v1/workspaces/{WS}/projects/{PID}/issues"
 AGENT = f"/v1/workspaces/{WS}/projects/{PID}/agent"
+CODING = f"/v1/workspaces/{WS}/projects/{PID}/coding"
 
 
 def canonical(url: str) -> str:
@@ -58,6 +59,14 @@ class FakePlatform:
         # project is then gone from WS and found in that workspace instead.
         self.moved_to: dict[str, Any] | None = None
         self.me = {"id": "user-1", "email": "ada@example.com", "display_name": "Ada"}
+        # Kai's coding sessions (GET .../coding/sessions) and each one's turns, by session id; each
+        # GET of a run answers with the next of `coding_script` when there is one (for waiting).
+        self.coding_sessions: list[dict[str, Any]] = []
+        self.coding_turns: dict[str, list[dict[str, Any]]] = {}
+        self.coding_script: list[dict[str, Any]] = []
+        # GET .../coding/sessions answers with the next of these lists when there are any (a
+        # session appearing after a Build turn), then with `coding_sessions`.
+        self.coding_session_lists: list[list[dict[str, Any]]] = []
 
     # -- state changes, as if someone edited on the platform ----------------------------
     def put(self, path: str, content: str) -> None:
@@ -194,6 +203,15 @@ class FakePlatform:
             return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
         if path.startswith(AGENT + "/runs/") and method == "GET":
             return httpx.Response(200, json=self._next_run())
+        if path == f"/v1/workspaces/{WS}/coding/sessions" and method == "GET":
+            if self.coding_session_lists:
+                return httpx.Response(200, json=self.coding_session_lists.pop(0))
+            return httpx.Response(200, json=self.coding_sessions)
+        if path.startswith(CODING + "/"):
+            return self._coding(path.removeprefix(CODING), method, body)
+        if path.startswith(AGENT + "/runs/") and path.endswith("/continue") and method == "POST":
+            self.runs_started.append({"continue": path.split("/")[-2], **body})
+            return httpx.Response(202, json=self._next_run())
         if path == ISSUES + "/claim":
             if not self.issues:
                 return self.problem(404, "nothing_ready")
@@ -211,6 +229,53 @@ class FakePlatform:
             return httpx.Response(200, json=self.issues[path.rsplit("/", 1)[1]] | {"log": [], "links": []})
         if path == ISSUES:
             return httpx.Response(200, json=list(self.issues.values()))
+        return self.problem(404, "not_found")
+
+    def _coding(self, path: str, method: str, body: dict[str, Any]) -> httpx.Response:
+        turns = [t for ts in self.coding_turns.values() for t in ts]
+        if path.startswith("/sessions/") and path.endswith("/turns") and method == "POST":
+            session_id = path.split("/")[2]
+            prior = self.coding_turns[session_id][-1]
+            turn = prior | {"id": f"run-{len(turns) + 1}", "turn": prior["turn"] + 1, "status": "queued",
+                            "note": body["message"], "events": [], "files_changed": [], "summary": None}
+            self.coding_turns[session_id].append(turn)
+            return httpx.Response(201, json=turn)
+        if path.startswith("/sessions/") and method == "GET":
+            return httpx.Response(200, json=self.coding_turns.get(path.split("/")[2], []))
+        if path.startswith("/issues/") and path.endswith("/runs") and method == "POST":
+            key = path.split("/")[2]
+            run = coding_run("run-new", key, status="awaiting_approval" if body.get("approval_mode") in (None, "manual") else "queued")
+            return httpx.Response(201, json=run)
+        if path.startswith("/runs/"):
+            parts = path.split("/")
+            run_id, action = parts[2], parts[3] if len(parts) > 3 else ""
+            turn = next((t for t in turns if t["id"] == run_id), None)
+            if turn is None:
+                return self.problem(404, "not_found")
+            if action == "diff":
+                return httpx.Response(200, json={"base_sha": None, "diff": turn.get("diff", ""), "files": []})
+            if method == "GET":
+                if self.coding_script:
+                    turn |= self.coding_script.pop(0)
+                return httpx.Response(200, json=turn)
+            if action == "decision":
+                approved = body["decision"] == "approve"
+                after = {"awaiting_approval": "queued" if approved else "rejected",
+                         "changes_ready": "pr_opened" if approved else "no_changes"}
+                turn["status"] = after.get(turn["status"], turn["status"])
+                return httpx.Response(200, json=turn)
+            if action == "stop":
+                turn["status"] = "stopped"
+                return httpx.Response(200, json=turn)
+            if action == "recover":
+                turn["status"] = "pr_opened" if body["action"] == "check" else "failed"
+                return httpx.Response(200, json=turn)
+            if action == "revert":
+                session = self.coding_turns[turn["session_id"]]
+                new = turn | {"id": f"run-{len(turns) + 1}", "turn": session[-1]["turn"] + 1, "status": "queued",
+                              "revert_of": run_id, "can_revert": False}
+                session.append(new)
+                return httpx.Response(201, json=new)
         return self.problem(404, "not_found")
 
     def _next_run(self) -> dict[str, Any]:
@@ -232,3 +297,21 @@ def issue(key: str, **fields: Any) -> dict[str, Any]:
 
 def approval(approval_id: str, tool: str = "write_file", target: str = "/dotrix/roadmap.md", **extra: Any) -> dict:
     return {"id": approval_id, "tool": tool, "target": target, "args": {}, "diff": None, "status": "pending", **extra}
+
+
+def coding_run(run_id: str, key: str = "KUN-7", *, session_id: str = "0192abcd-0000-7000-8000-000000000001", turn: int = 1,
+               **fields: Any) -> dict[str, Any]:
+    return {"id": run_id, "project_id": PID, "issue_key": key, "session_id": session_id, "turn": turn,
+            "status": "pr_opened", "note": None, "events": [], "files_changed": [], "summary": None, "error": None,
+            "repo_full_name": "kunemi/app", "branch": "kai/kun-7", "commit_sha": None, "pr_number": None,
+            "pr_url": None, "ci_state": None, "review_posted_url": None, "model": "anthropic:claude-sonnet-5-5",
+            "location": "cloud", "can_decide": False, "can_stop": False, "can_revert": False, "can_recover": False,
+            "ci_sensitive": [], "revert_of": None, **fields}
+
+
+def coding_session(key: str = "KUN-7", *, session_id: str = "0192abcd-0000-7000-8000-000000000001",
+                   **fields: Any) -> dict[str, Any]:
+    return {"session_id": session_id, "project_id": PID, "project_key": "KUN", "issue_key": key,
+            "issue_title": "Fix the postcode lookup", "title": "Fix the postcode lookup", "status": "pr_opened",
+            "branch": "kai/kun-7", "pr_number": None, "pr_url": None, "pr_state": None, "thread_id": None,
+            "archived": False, "updated_at": "2026-11-01T10:00:00Z", **fields}
