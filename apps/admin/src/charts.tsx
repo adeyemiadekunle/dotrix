@@ -44,8 +44,8 @@ export function RunsChart({ days }: { days: Day[] }) {
           strokeWidth={2}
           fill="url(#fill-finished)"
         />
-        <Area isAnimationActive={false} dataKey="failed" type="monotone" stackId="runs" stroke="var(--color-failed)" strokeWidth={2} fill="url(#fill-failed)" />
-        <ChartLegend content={<ChartLegendContent />} />
+        <Area dataKey="failed" type="monotone" stackId="runs" stroke="var(--color-failed)" strokeWidth={2} fill="url(#fill-failed)" />
+        <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
       </AreaChart>
     </ChartContainer>
   );
@@ -69,7 +69,7 @@ export function TokensChart({ days }: { days: Day[] }) {
         <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} minTickGap={28} tickFormatter={day} />
         <YAxis tickLine={false} axisLine={false} width={44} tickFormatter={compact} />
         <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" labelFormatter={(_, p) => day(p?.[0]?.payload?.day ?? "")} />} />
-        <Area isAnimationActive={false} dataKey="tokens" type="monotone" stroke="var(--color-tokens)" strokeWidth={2} fill="url(#fill-tokens)" />
+        <Area dataKey="tokens" type="monotone" stroke="var(--color-tokens)" strokeWidth={2} fill="url(#fill-tokens)" />
       </AreaChart>
     </ChartContainer>
   );
@@ -86,7 +86,7 @@ export function SignupsChart({ days }: { days: Day[] }) {
         <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} minTickGap={28} tickFormatter={day} />
         <YAxis tickLine={false} axisLine={false} width={36} allowDecimals={false} />
         <ChartTooltip cursor={false} content={<ChartTooltipContent hideIndicator labelFormatter={(_, p) => day(p?.[0]?.payload?.day ?? "")} />} />
-        <Bar isAnimationActive={false} dataKey="signups" fill="var(--color-signups)" radius={[4, 4, 0, 0]} maxBarSize={24} />
+        <Bar dataKey="signups" fill="var(--color-signups)" radius={[4, 4, 0, 0]} maxBarSize={24} />
       </BarChart>
     </ChartContainer>
   );
