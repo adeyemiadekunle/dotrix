@@ -115,6 +115,8 @@ function Changes({
   onNote?: () => void;
 }) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [viewed, setViewed] = useState<Set<string>>(new Set());
+  const toggle = (set: Set<string>, path: string) => (set.has(path) ? new Set([...set].filter((p) => p !== path)) : new Set(set).add(path));
   if (loading) return <p className="muted">Loading the changes…</p>;
   if (!files.length)
     return (
@@ -132,28 +134,41 @@ function Changes({
         {files.length} file{files.length === 1 ? "" : "s"} changed
         <span style={{ color: "var(--green)" }}>+{added}</span>
         <span style={{ color: "var(--red)" }}>-{removed}</span>
+        {viewed.size > 0 && (
+          <span className="sp" style={{ textAlign: "right" }}>
+            {viewed.size} of {files.length} viewed
+          </span>
+        )}
       </div>
       {files.map((f) => {
-        const open = !closed.has(f.path);
+        const seen = viewed.has(f.path);
+        const open = !closed.has(f.path) && !seen;
         return (
-          <section key={f.path} className="kp-file">
-            <button
-              className="kp-file-h"
-              aria-expanded={open}
-              onClick={() => setClosed((s) => (s.has(f.path) ? new Set([...s].filter((p) => p !== f.path)) : new Set(s).add(f.path)))}
-            >
-              <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
-              <span className={`kp-st ${f.status}`}>{f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}</span>
-              <span className="trunc grow mono">{f.path}</span>
-              {!!notes?.get(f.path)?.length && (
-                <span className="kp-note-count" title="Juno's findings on this file">
-                  <Ic n="shield-check" s={11} />
-                  {notes.get(f.path)!.length}
-                </span>
-              )}
-              <span style={{ color: "var(--green)" }}>+{f.added}</span>
-              <span style={{ color: "var(--red)" }}>-{f.removed}</span>
-            </button>
+          <section key={f.path} className={`kp-file ${seen ? "seen" : ""}`}>
+            <div className="kp-file-row">
+              <button className="kp-file-h" aria-expanded={open} onClick={() => setClosed((s) => toggle(s, f.path))}>
+                <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
+                <span className={`kp-st ${f.status}`}>{f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}</span>
+                <span className="trunc grow mono">{f.path}</span>
+                {!!notes?.get(f.path)?.length && (
+                  <span className="kp-note-count" title="Juno's findings on this file">
+                    <Ic n="shield-check" s={11} />
+                    {notes.get(f.path)!.length}
+                  </span>
+                )}
+                <span style={{ color: "var(--green)" }}>+{f.added}</span>
+                <span style={{ color: "var(--red)" }}>-{f.removed}</span>
+              </button>
+              <button
+                className={`kp-viewed ${seen ? "on" : ""}`}
+                onClick={() => setViewed((s) => toggle(s, f.path))}
+                aria-pressed={seen}
+                aria-label={seen ? `Mark ${f.path} as not viewed` : `Mark ${f.path} as viewed`}
+                data-tip={seen ? "Viewed" : "Mark as viewed"}
+              >
+                <Ic n={seen ? "circle-check" : "circle"} s={15} />
+              </button>
+            </div>
             {open &&
               (f.binary ? <p className="muted kp-note">A binary file: not shown.</p> : <Hunks hunks={f.hunks} notes={notes?.get(f.path)} onNote={onNote} />)}
           </section>

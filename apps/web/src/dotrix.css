@@ -1905,13 +1905,6 @@ body.resizing-row * {
   gap: 6px;
   color: var(--text-2);
 }
-.side-panel-turn {
-  color: var(--text-3);
-  font-size: 12px;
-}
-.side-panel-select {
-  width: auto;
-}
 section.side-panel-body[hidden] {
   display: none;
 }
@@ -1996,4 +1989,564 @@ section.side-panel-body[hidden] {
   gap: 3px;
   color: var(--amber);
   font-size: 11px;
+}
+
+/* ---------- Codes, after Claude Code's session view ----------
+ * The session bar: a title with its menu, the status, then the details and panes (screens/Chat.tsx Session). */
+.cs-head {
+  overflow: visible;
+  position: relative;
+  z-index: 6; /* over the panes, which float over the session on narrow screens */
+}
+.cs-title-wrap {
+  position: relative;
+  min-width: 0;
+  display: flex;
+}
+.cs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+.cs-title:hover,
+.cs-title.on {
+  background: var(--surface-2);
+}
+.cs-title svg {
+  flex: none;
+  color: var(--text-3);
+}
+.cs-from {
+  display: inline-flex;
+  color: var(--text-3);
+}
+.cs-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+.cs-menu.right {
+  left: auto;
+  right: 0;
+}
+.cs-menu > button,
+.cs-menu > a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cs-menu > button:hover,
+.cs-menu > a:hover {
+  background: var(--surface-2);
+}
+.cs-menu > button svg,
+.cs-menu > a svg {
+  color: var(--text-3);
+  flex: none;
+}
+.cs-menu > button[aria-checked="true"] > svg:last-child {
+  color: var(--acc);
+}
+.cs-menu kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-4);
+}
+.cs-menu hr {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--divider);
+}
+
+/* The session's details (components/SessionDetails.tsx): a column beside it, or a popover under its button. */
+.cs-details {
+  width: 300px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 12px;
+}
+.cs-details-pop {
+  position: absolute;
+  top: calc(var(--cs-head-h, 46px) + 4px);
+  right: 12px;
+  width: min(320px, calc(100% - 24px));
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+  padding: 8px;
+  z-index: 25;
+}
+.sd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sd-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 6px 8px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.cs-details-pop .sd-sec {
+  box-shadow: none;
+  background: none;
+  padding: 6px 4px;
+}
+.cs-details-pop .sd-sec + .sd-sec {
+  border-top: 1px solid var(--divider);
+  border-radius: 0;
+}
+.sd-sec h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.sd-count {
+  font-weight: 500;
+  color: var(--text-3);
+}
+.sd-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  min-width: 0;
+}
+.sd-row > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.sd-row a {
+  color: var(--text);
+  text-decoration: none;
+}
+.sd-row a:hover {
+  color: var(--acc);
+}
+.sd-link {
+  cursor: pointer;
+  width: 100%;
+}
+.sd-link:hover {
+  background: var(--surface-2);
+}
+.sd-dir {
+  max-width: 45%;
+  color: var(--text-4);
+  font-size: 11.5px;
+}
+.sd-more {
+  align-self: flex-start;
+  margin: 2px 6px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sd-more:hover {
+  color: var(--text);
+}
+.sd-empty {
+  margin: 0 6px 4px;
+  font-size: 12.5px;
+}
+.sd-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 2px 6px 6px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.sd-usage b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sd-state {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.sd-state.warm {
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+.sd-state.asleep {
+  background: var(--amber);
+}
+.sd-pr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 6px;
+}
+.sd-pr-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  min-width: 0;
+}
+.sd-pr-title svg {
+  flex: none;
+  color: var(--green);
+}
+.sd-pr-title:hover {
+  color: var(--acc);
+}
+.sd-pr-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 23px;
+  font-size: 12.5px;
+}
+.sd-lines {
+  display: inline-flex;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.plus {
+  color: var(--green);
+}
+.minus {
+  color: var(--red);
+}
+.sd-ci {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.sd-ci.passed {
+  color: var(--green);
+}
+.sd-ci.failed {
+  color: var(--red);
+}
+
+/* The panes beside a session: stacked in one resizable column, each with its own bar. */
+.side-panel.panes {
+  padding: 0;
+}
+.side-panel.panes > .pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.side-panel.panes > .pane + .pane {
+  border-top: 1px solid var(--border);
+}
+.side-panel-branch {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* A session's turns, as Claude Code's transcript: your request on the right, Kai's reply below it without a
+ * name row, its steps folded into one line, and copy and the time under it. */
+.kt-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.kt {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kt-ask {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  padding-left: 15%;
+}
+.kt-bubble {
+  padding: 10px 16px;
+  border-radius: 18px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.kt-meta,
+.kt-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.kt-meta .ibtn,
+.kt-actions .ibtn {
+  opacity: 0.75;
+}
+.kt-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.kt-reply .md {
+  font-size: 14.5px;
+}
+.kt-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+}
+.kt-who b {
+  font-weight: 600;
+}
+.kt-steps {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.kt-steps:hover {
+  color: var(--text);
+}
+.kt-steplist {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--divider);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.kt-steplist span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.kt-steplist span.bad {
+  color: var(--red);
+}
+.kt-error {
+  padding: 8px 12px;
+  border-radius: var(--r);
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 13px;
+}
+.kt-lines {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.kt-lines:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* The follow-up box, as Claude Code's: rounded, growing with what's typed, the send button inside; the model,
+ * the approval mode and the sandbox under it. */
+.kt-input {
+  padding-top: 4px;
+}
+.kt-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 10px 10px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--dur),
+    box-shadow var(--dur);
+}
+.kt-box:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.kt-box.off {
+  background: var(--surface-2);
+}
+.kt-box textarea {
+  flex: 1;
+  min-height: 24px;
+  max-height: 200px;
+  padding: 3px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.kt-send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  cursor: pointer;
+  transition: opacity var(--dur);
+}
+.kt-send:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.conv-main {
+  container-type: inline-size;
+}
+.kt-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+  padding: 8px 14px 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.kt-foot .faint {
+  font-size: 11.5px;
+}
+@container (max-width: 560px) {
+  .kt-foot .faint {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .kt-ask {
+    padding-left: 8%;
+  }
+}
+/* Changes: a "viewed" check on each file's bar (as Claude Code's diff); a viewed file folds and dims. */
+.kp-file-row {
+  display: flex;
+  align-items: center;
+}
+.kp-file-row .kp-file-h {
+  flex: 1;
+  min-width: 0;
+}
+.kp-viewed {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--text-4);
+  cursor: pointer;
+}
+.kp-viewed:hover {
+  color: var(--text-2);
+}
+.kp-viewed.on {
+  color: var(--green);
+}
+.kp-file.seen .kp-file-h {
+  opacity: 0.6;
+}
+/* Narrow screens: the panes float over the session, under its bar, so the bar's buttons stay in reach. */
+@media (max-width: 1200px) {
+  .side-panel.panes {
+    top: var(--cs-head-h, 46px);
+    border-top: 1px solid var(--border);
+  }
 }

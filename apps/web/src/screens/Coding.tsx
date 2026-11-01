@@ -37,7 +37,7 @@ export function Coding() {
   // While a session's side panel is open on a screen without room for all three, the list folds to its rail
   // (unless you open it again); it comes back when the panel closes.
   const [keepList, setKeepList] = useState(false);
-  const crowded = Boolean(sessionId && search.get("panel")) && window.matchMedia("(max-width: 1599px)").matches;
+  const crowded = Boolean(sessionId && search.get("panel")) && window.matchMedia("(max-width: 1799px)").matches;
   useEffect(() => setKeepList(false), [crowded]);
   const listMin = (listMinSet || (crowded && !keepList)) && !window.matchMedia("(max-width: 900px)").matches;
   const itemsOf = (projectId: string) =>

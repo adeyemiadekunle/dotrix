@@ -31,6 +31,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Codes looks and works like Claude Code's session view: a details column (where Kai works, the repository and
+  branch, usage, the files it changed, the pull request and its checks); several panes open at once, stacked
+  (Changes, Files, Terminal, Review), each expandable, from the session bar or its "…" menu; each turn's steps folded
+  into one line; and a rounded message box with the model and approval mode under it. Changes marks files as viewed.
 - Icons are Phosphor everywhere, and page titles use Geist Serif.
 
 ### Security
