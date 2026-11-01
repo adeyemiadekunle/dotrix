@@ -26,7 +26,8 @@ import { ChangesView, FilesView, TerminalView, type DiffNote } from "./TurnViews
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const narrowPanel = () => window.matchMedia("(max-width: 1200px)").matches;
 
-/** The panel's frame: the drag edge, a one-line header (what it shows, the turn, close), and the body. */
+/** The panel's frame: the drag edge, a one-line header (what it shows, the turn, close), and the body.
+ *  Stacked (Codes' panes, several at once in one column), it has no edge of its own: the column has it. */
 function PanelFrame({
   label,
   widthKey,
@@ -34,6 +35,9 @@ function PanelFrame({
   tools,
   onClose,
   closeLabel = "Close the panel",
+  stacked = false,
+  expanded = false,
+  onExpand,
   children,
 }: {
   label: string;
@@ -42,38 +46,132 @@ function PanelFrame({
   tools?: ReactNode;
   onClose: () => void;
   closeLabel?: string;
+  stacked?: boolean;
+  expanded?: boolean;
+  onExpand?: () => void;
   children: ReactNode;
 }) {
   const [width, setWidth] = useStoredSize(widthKey, 460, 300, 960);
   const closeButton = useRef<HTMLButtonElement>(null);
   // Floating over the page on narrow screens: focus moves in, and Escape closes it.
   useEffect(() => {
-    if (!narrowPanel()) return;
+    if (stacked || !narrowPanel()) return;
     const previous = document.activeElement;
     closeButton.current?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, [stacked]);
+  useEffect(() => {
+    if (stacked) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && narrowPanel()) onClose();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [onClose, stacked]);
+  const head = (
+    <div className="side-panel-head">
+      {title}
+      <span className="sp" />
+      {tools}
+      {onExpand && (
+        <button
+          className="ibtn ibtn-sm"
+          onClick={onExpand}
+          aria-label={expanded ? `Show the other panes` : `Expand ${label}`}
+          data-tip={expanded ? "Restore" : "Expand"}
+        >
+          <Ic n={expanded ? "arrows-in" : "arrows-out"} s={14} />
+        </button>
+      )}
+      <button ref={closeButton} className="ibtn ibtn-sm" onClick={onClose} aria-label={closeLabel} data-tip="Close">
+        <Ic n="x" s={14} />
+      </button>
+    </div>
+  );
+  if (stacked)
+    return (
+      <section className="pane" aria-label={label}>
+        {head}
+        {children}
+      </section>
+    );
+  return (
+    <aside className="side-panel" style={{ width }} aria-label={label}>
+      <Splitter dir="col" className="side-panel-split" label="Resize the panel" onDrag={(delta) => setWidth((w) => w - delta)} />
+      {head}
+      {children}
+    </aside>
+  );
+}
+
+/** Codes' panes: the views a session has open (Changes, Files, Terminal, Review), stacked in one resizable
+ *  column, as Claude Code stacks its panes; one can be expanded to the whole column. */
+export function CodingPanes({
+  scope,
+  cs,
+  views,
+  onOpen,
+  onClose,
+  onCloseAll,
+  onAskFix,
+  fixLabel,
+}: {
+  scope: Scope | undefined;
+  cs: CodingSession;
+  views: CodingView[];
+  onOpen: (view: CodingView, extra?: Record<string, string>) => void;
+  onClose: (view: CodingView) => void;
+  onCloseAll: () => void;
+  onAskFix?: (message: string) => void;
+  fixLabel: string;
+}) {
+  const [width, setWidth] = useStoredSize("dotrix.coding.panes.width", 560, 320, 1100);
+  const [expanded, setExpanded] = useState<CodingView | null>(null);
+  const shown = expanded && views.includes(expanded) ? [expanded] : views;
+  // Over the page on narrow screens: Escape closes the panes.
+  const closeAll = useRef(onCloseAll);
+  closeAll.current = onCloseAll;
+  const column = useRef<HTMLElement>(null);
+  // Over the page on narrow screens: focus moves into the panes, and back to where it was when they close.
+  useEffect(() => {
+    if (!narrowPanel()) return;
+    const previous = document.activeElement;
+    column.current?.querySelector<HTMLButtonElement>('button[aria-label^="Close"]')?.focus();
     return () => {
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && narrowPanel()) onClose();
+      if (event.key === "Escape" && narrowPanel()) closeAll.current();
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, [onClose]);
+  }, []);
   return (
-    <aside className="side-panel" style={{ width }} aria-label={label}>
-      <Splitter dir="col" className="side-panel-split" label="Resize the panel" onDrag={(delta) => setWidth((w) => w - delta)} />
-      <div className="side-panel-head">
-        {title}
-        <span className="sp" />
-        {tools}
-        <button ref={closeButton} className="ibtn ibtn-sm" onClick={onClose} aria-label={closeLabel} data-tip="Close">
-          <Ic n="x" s={14} />
-        </button>
-      </div>
-      {children}
+    <aside ref={column} className="side-panel panes" style={{ width }} aria-label="Session panes">
+      <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setWidth((w) => w - delta)} />
+      {shown.map((view) => (
+        <CodingPanel
+          key={view}
+          scope={scope}
+          cs={cs}
+          view={view}
+          onView={(next, extra) => onOpen(next, extra)}
+          onClose={() => {
+            if (expanded === view) setExpanded(null);
+            onClose(view);
+          }}
+          onAskFix={onAskFix}
+          onCloseAll={onCloseAll}
+          fixLabel={fixLabel}
+          stacked
+          expanded={expanded === view}
+          onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
+        />
+      ))}
     </aside>
   );
 }
@@ -146,7 +244,7 @@ function findingNotes(review: Run | undefined, turn: CodingRun | undefined): Map
 }
 
 /** Coding: one view of a session's turn at a time (Changes, Files, Terminal, Review), picked from the session header. */
-export function CodingPanel({
+function CodingPanel({
   scope,
   cs,
   view,
@@ -154,14 +252,22 @@ export function CodingPanel({
   onClose,
   onAskFix,
   fixLabel,
+  stacked = false,
+  expanded = false,
+  onExpand,
+  onCloseAll,
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
   view: CodingView;
-  onView: (view: CodingView) => void;
+  onView: (view: CodingView, extra?: Record<string, string>) => void;
   onClose: () => void;
   onAskFix?: (message: string) => void;
   fixLabel: string;
+  stacked?: boolean;
+  expanded?: boolean;
+  onExpand?: () => void;
+  onCloseAll?: () => void;
 }) {
   const query = useRoute().search;
   const queryTurn = query.get("turn");
@@ -198,7 +304,11 @@ export function CodingPanel({
     const turn = text(review.review_context?.coding_run_id),
       session = text(review.review_context?.session_id);
     if (!turn || !session || !path || path.startsWith("/") || path.includes("..")) return;
-    if (cs.session_id === session) {
+    if (cs.session_id === session && stacked) {
+      // Stacked panes each keep their own state: the reference goes to Files through the address
+      // (`ref` changes each time, so the same line opens again after going back to the files).
+      onView("files", { turn, file: path, ...(line ? { line: String(line) } : {}), ref: String(Date.now()) });
+    } else if (cs.session_id === session) {
       setPicked(turn);
       setReference((previous) => ({ turn, path, line, version: (previous?.version ?? 0) + 1 }));
       onView("files");
@@ -215,10 +325,20 @@ export function CodingPanel({
       widthKey="dotrix.coding.panel.width"
       onClose={onClose}
       closeLabel={`Close ${current.label}`}
+      stacked={stacked}
+      expanded={expanded}
+      onExpand={onExpand}
       title={
         <span className="side-panel-title">
           <Ic n={current.icon} s={14} />
-          <b>{current.label}</b>
+          {view === "changes" && turn?.base_branch ? (
+            // Where the turn's changes go, as Claude Code's diff header says it: base → branch.
+            <b className="mono side-panel-branch" title={`${turn.base_branch} → ${turn.branch ?? cs.branch ?? "a new branch"}`}>
+              {turn.base_branch} <span className="faint">→</span> {turn.branch ?? cs.branch ?? "new branch"}
+            </b>
+          ) : (
+            <b>{current.label}</b>
+          )}
           {view === "terminal" && <span className="faint">Recorded output · read-only</span>}
         </span>
       }
@@ -250,7 +370,7 @@ export function CodingPanel({
               onAskFix
                 ? (message) => {
                     onAskFix(message);
-                    if (narrowPanel()) onClose();
+                    if (narrowPanel()) (onCloseAll ?? onClose)();
                   }
                 : undefined
             }
@@ -280,7 +400,7 @@ export function CodingPanel({
                 files={files}
                 initialFile={initialFile}
                 initialLine={initialLine}
-                referenceVersion={reference?.version}
+                referenceVersion={reference?.version ?? (Number(query.get("ref")) || undefined)}
                 enabled={view === "files"}
               />
             </div>

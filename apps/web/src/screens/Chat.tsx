@@ -71,7 +71,8 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
-import { CODING_VIEWS, CodingPanel, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePanel";
+import { SessionDetails, modeName, sessionModel } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
 import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
@@ -1614,6 +1615,166 @@ function CiCard({ turn, scope, canFix, onFix }: { turn: CodingRun; scope: Scope 
   );
 }
 
+/** What a turn did, in a line, as Claude Code folds its tool calls: "Read 2 files, ran 2 commands, edited 3 files". */
+function stepsSummary(events: CodingRun["events"]): string {
+  let read = 0,
+    edited = 0,
+    ran = 0,
+    other = 0;
+  for (const e of events) {
+    if (e.kind !== "tool") continue;
+    if (/^Read\b/.test(e.text)) read++;
+    else if (/^(Edited|Wrote|Created|Deleted)\b/.test(e.text)) edited++;
+    else if (/^Ran\b/.test(e.text)) ran++;
+    else other++;
+  }
+  const parts = [
+    read && `read ${read} file${read > 1 ? "s" : ""}`,
+    ran && `ran ${ran} command${ran > 1 ? "s" : ""}`,
+    edited && `edited ${edited} file${edited > 1 ? "s" : ""}`,
+    other && `used ${other} other tool${other > 1 ? "s" : ""}`,
+  ].filter(Boolean) as string[];
+  const line = parts.join(", ");
+  return line ? line[0]!.toUpperCase() + line.slice(1) : "Worked on it";
+}
+
+function copyText(text: string) {
+  void navigator.clipboard
+    ?.writeText(text)
+    .then(() => toast("Copied"))
+    .catch(() => toast("It couldn't be copied"));
+}
+
+/** One of Kai's turns: your request on the right; then what it did folded into one line (open it for each step),
+ *  its summary, and a row with copy, the time, and its changes. */
+function KaiTurn({
+  turn,
+  index,
+  issueTitle,
+  busy,
+  revert,
+  onPath,
+  onChanges,
+  onShot,
+  shotSrc,
+}: {
+  turn: CodingRun;
+  index: number;
+  issueTitle: string;
+  busy: boolean;
+  revert: ReturnType<typeof useRevertCoding>;
+  onPath: (path: string, turnId?: string) => void;
+  onChanges: (turnId: string) => void;
+  onShot: (src: string, name: string) => void;
+  shotSrc: (runId: string, index: number) => string;
+}) {
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output")); // output: the Terminal pane
+  const asked = turn.note || `Work on ${turn.issue_key}${issueTitle ? `: ${issueTitle}` : ""}`;
+  const mine = turn.requested_by_id === D().me;
+  const added = turn.files_changed.reduce((n, f) => n + Number(f.added ?? 0), 0);
+  const removed = turn.files_changed.reduce((n, f) => n + Number(f.removed ?? 0), 0);
+  return (
+    <div className="kt">
+      <div className="kt-ask">
+        <div className="kt-bubble">{asked}</div>
+        <div className="kt-meta">
+          {!mine && <span>{who(turn.requested_by_id ?? "")?.name ?? "Someone"} ·</span>}
+          <span>
+            Turn {index + 1} · {ago(ms(turn.created_at))}
+          </span>
+          <button className="ibtn ibtn-xs" onClick={() => copyText(asked)} aria-label="Copy the request" data-tip="Copy">
+            <Ic n="copy" s={13} />
+          </button>
+        </div>
+      </div>
+      {(steps.length > 0 || turn.summary || turn.error) && (
+        <div className="kt-reply">
+          <div className="kt-who">
+            <Av id={CODING_AGENT.id} cls="sm" tip={false} />
+            <b>{CODING_AGENT.name}</b>
+            {steps.length > 0 && (
+              <button className="kt-steps" onClick={() => setStepsOpen(!stepsOpen)} aria-expanded={stepsOpen}>
+                {stepsSummary(turn.events)}
+                <Ic n={stepsOpen ? "chevron-down" : "chevron-right"} s={12} />
+              </button>
+            )}
+          </div>
+          {stepsOpen && (
+            <div className="kt-steplist">
+              {steps.slice(-60).map((e, j) => (
+                <span key={j} className={e.kind === "error" ? "bad" : undefined}>
+                  <Ic
+                    n={e.kind === "error" ? "triangle-alert" : e.text.startsWith("Ran") ? "square-terminal" : e.text.startsWith("Edited") ? "pencil" : "check"}
+                    s={12}
+                  />
+                  <PathLinks text={e.text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />
+                </span>
+              ))}
+            </div>
+          )}
+          {turn.summary && (
+            <div className="md">
+              <Markdown
+                onCode={(code) =>
+                  turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, "")) ? () => onPath(code.replace(/:\d+$/, ""), turn.id) : undefined
+                }
+              >
+                {turn.summary}
+              </Markdown>
+            </div>
+          )}
+          {turn.error && <div className="kt-error">{turn.error}</div>}
+          {(turn.screenshots ?? []).length > 0 && (
+            <div className="cs-shots" aria-label="Screenshots from the browser">
+              {(turn.screenshots ?? []).map((sh) => {
+                const src = shotSrc(turn.id, sh.index);
+                return (
+                  <button key={sh.index} className="cs-shot" onClick={() => onShot(src, sh.name)} aria-label={`Open the screenshot ${sh.name}`}>
+                    <img src={src} alt={`Screenshot: ${sh.name}`} loading="lazy" />
+                    <span className="faint trunc">{sh.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="kt-actions">
+            {turn.summary && (
+              <button className="ibtn ibtn-xs" onClick={() => copyText(turn.summary ?? "")} aria-label="Copy Kai's reply" data-tip="Copy">
+                <Ic n="copy" s={13} />
+              </button>
+            )}
+            {turn.finished_at && <span className="faint">{ago(ms(turn.finished_at))}</span>}
+            {turn.files_changed.length > 0 && (
+              <button className="kt-lines" onClick={() => onChanges(turn.id)} data-tip={`Changes in turn ${index + 1}`}>
+                <Ic n="git-compare" s={12} />
+                {turn.files_changed.length} file{turn.files_changed.length > 1 ? "s" : ""}
+                <span className="plus">+{added}</span>
+                <span className="minus">−{removed}</span>
+              </button>
+            )}
+            {turn.can_revert && !busy && (
+              <button className="kt-lines" disabled={revert.isPending} onClick={() => revert.mutate(turn.id)}>
+                <Ic n="undo-2" s={12} />
+                Revert this turn
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The panes a session can show beside it; the address keeps the open ones (`panel=changes,files`). */
+const PANES = CODING_VIEWS;
+const paneList = (value: string | null): CodingView[] =>
+  (value ?? "")
+    .split(",")
+    .map((v) => (v === "coding" ? "changes" : v))
+    .filter((v): v is CodingView => PANES.some((p) => p.id === v))
+    .filter((v, i, all) => all.indexOf(v) === i);
+
 export function Session({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
@@ -1625,53 +1786,63 @@ export function Session({ cs }: { cs: CodingSession }) {
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
   const search = useRoute().search;
-  // Which view the side panel shows: the address's (`panel=`, or Files for a `file=` link), else the last one
-  // opened in this browser ("" when it was closed). Older links say `panel=coding`: Changes.
-  const [lastView, setLastView] = useStoredText("dotrix.coding.panelView", "");
-  const asked = search.get("panel") === "coding" ? "changes" : search.get("panel");
-  const view = (CODING_VIEWS.find((v) => v.id === (asked ?? (search.has("file") ? "files" : lastView)))?.id ?? null) as CodingView | null;
-  const showView = (next: CodingView | null, extra: Record<string, string> = {}) => {
+  // The open panes: the address's (`panel=`, Files for a `file=` link), else the ones last open in this browser.
+  const [lastPanes, setLastPanes] = useStoredText("dotrix.coding.panes", "");
+  const asked = search.get("panel");
+  const panes = paneList(asked ?? (search.has("file") ? "files" : lastPanes));
+  const setPanes = (next: CodingView[], extra: Record<string, string> = {}) => {
     const query = new URLSearchParams(search);
-    // Switching views keeps the file and turn a link opened; closing, or opening something new, lets them go.
-    for (const key of !next || Object.keys(extra).length ? ["panel", "file", "line", "turn"] : ["panel"]) query.delete(key);
-    if (next) query.set("panel", next);
+    // Opening a file or a turn sets them; closing the last pane lets them go.
+    for (const key of !next.length || Object.keys(extra).length ? ["panel", "file", "line", "turn", "ref"] : ["panel"]) query.delete(key);
+    if (next.length) query.set("panel", next.join(","));
     for (const [key, value] of Object.entries(extra)) query.set(key, value);
     go("codes", {}, { search: query.toString(), replace: true });
-    setLastView(next ?? "");
+    setLastPanes(next.join(","));
   };
-  const closePanel = () => showView(null);
-  // The address always says when the panel is open (the list beside the session folds for it: screens/Coding.tsx).
+  const openPane = (view: CodingView, extra: Record<string, string> = {}) => setPanes(panes.includes(view) ? panes : [...panes, view], extra);
+  const closePane = (view: CodingView) => setPanes(panes.filter((v) => v !== view));
+  const togglePane = (view: CodingView) => (panes.includes(view) ? closePane(view) : openPane(view));
+  // The address always says which panes are open (the list beside the session folds for them: screens/Coding.tsx).
   useEffect(() => {
-    if (view && !search.has("panel")) showView(view);
+    if (panes.length && !search.has("panel")) setPanes(panes);
   });
-  const toggleView = (next: CodingView) => showView(view === next ? null : next);
+  // The session's details: a column beside it on wide screens (hidden by its button), a popover on narrow ones.
+  const [detailsHidden, setDetailsHidden] = useStoredFlag("dotrix.coding.detailsHidden");
+  const [detailsPop, setDetailsPop] = useState(false);
+  const wide = useWide("(min-width: 1280px)");
+  const detailsColumn = wide && !detailsHidden && panes.length === 0;
+  const toggleDetails = () => (wide && panes.length === 0 ? setDetailsHidden(!detailsHidden) : setDetailsPop(!detailsPop));
   /** A file the session changed, opened in Files (in the latest turn that changed it, or the latest). */
   const openPath = (path: string, turnId?: string) => {
     const owner = turnId ?? [...turns].reverse().find((t) => t.files_changed.some((f) => fileOf(f) === path))?.id ?? latest?.id;
-    showView("files", { file: path, ...(owner ? { turn: owner } : {}) });
+    setDetailsPop(false);
+    openPane("files", { file: path, ...(owner ? { turn: owner } : {}) });
   };
-  // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panel, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
-  const keys = useRef({ view, toggleView, closePanel });
-  keys.current = { view, toggleView, closePanel };
+  const openChanges = (turnId?: string) => {
+    setDetailsPop(false);
+    openPane("changes", turnId ? { turn: turnId } : {});
+  };
+  // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panes, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
+  const keys = useRef({ panes, togglePane, setPanes });
+  keys.current = { panes, togglePane, setPanes };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === "\\" && keys.current.view) {
+      if (mod && e.key === "\\" && keys.current.panes.length) {
         e.preventDefault();
-        keys.current.closePanel();
+        keys.current.setPanes([]);
       } else if (mod && e.shiftKey && e.key.toLowerCase() === "d") {
         e.preventDefault();
-        keys.current.toggleView("changes");
+        keys.current.togglePane("changes");
       } else if (e.ctrlKey && e.key === "`") {
         e.preventDefault();
-        keys.current.toggleView("terminal");
+        keys.current.togglePane("terminal");
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
-  const p = proj(cs.project_id);
   // People see Kai; the engine underneath (cs.agent) stays on the run and in the logs.
   const kai = CODING_AGENT.name;
   const [ask, setAsk] = useState("");
@@ -1680,115 +1851,173 @@ export function Session({ cs }: { cs: CodingSession }) {
   const busy = BUSY.includes(cs.status) || cs.state === "closed";
   // The latest turn that reached the PR: CI runs on its commit.
   const pushed = [...turns].reverse().find((t) => t.commit_sha && t.pr_number);
-  // Its details (project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
-  // or pinned by a click until a click elsewhere or Escape.
-  const [info, setInfo] = useState<null | "hover" | "pinned">(null);
   // A screenshot opened large over everything; Escape or a click closes it.
   const [shot, setShot] = useState<{ src: string; name: string } | null>(null);
+  // The title's menu and the panes menu (the "…"), closed by a click elsewhere or Escape.
+  const [menu, setMenu] = useState<null | "title" | "panes">(null);
   useEffect(() => {
-    if (!shot) return;
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setShot(null);
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, [shot]);
-  const infoBtn = useRef<HTMLButtonElement>(null);
-  const leave = useRef<number>(0);
-  useEffect(() => setInfo(null), [cs.session_id]);
-  useEffect(() => {
-    if (info !== "pinned") return;
+    if (!shot && !menu && !detailsPop) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setShot(null);
+      setMenu(null);
+      setDetailsPop(false);
+    };
     const away = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      if (!t.closest(".cs-info") && !infoBtn.current?.contains(t)) setInfo(null);
+      const target = e.target as HTMLElement;
+      if (menu && !target.closest(".cs-menu, [data-menu]")) setMenu(null);
+      if (detailsPop && !target.closest(".cs-details-pop, [data-details]")) setDetailsPop(false);
     };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setInfo(null);
-    document.addEventListener("mousedown", away);
     document.addEventListener("keydown", esc);
+    document.addEventListener("mousedown", away);
     return () => {
-      document.removeEventListener("mousedown", away);
       document.removeEventListener("keydown", esc);
+      document.removeEventListener("mousedown", away);
     };
-  }, [info]);
-  const hoverIn = () => {
-    window.clearTimeout(leave.current);
-    setInfo((i) => i ?? "hover");
-  };
-  const hoverOut = () => {
-    leave.current = window.setTimeout(() => setInfo((i) => (i === "hover" ? null : i)), 180);
-  };
+  }, [shot, menu, detailsPop]);
+  useEffect(() => {
+    setMenu(null);
+    setDetailsPop(false);
+  }, [cs.session_id]);
   const send = () => {
     if (busy || !ask.trim()) return;
     follow.mutate(ask.trim());
     setAsk("");
   };
-  const at = infoBtn.current?.getBoundingClientRect();
-  const files = latest?.files_changed ?? [];
-  const changedTurn = [...turns].reverse().find((t) => t.files_changed.length > 0);
+  const box = useRef<HTMLTextAreaElement>(null);
+  // The message box grows with what's typed, up to about eight lines.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [ask]);
   const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
+  // The bar's height (it wraps on phones): the panes float under it on narrow screens.
+  const convRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const head = headRef.current;
+    if (!head) return;
+    const ro = new ResizeObserver(() => convRef.current?.style.setProperty("--cs-head-h", `${head.offsetHeight}px`));
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, []);
+  const details = (
+    <SessionDetails cs={cs} turns={turns} onOpenFile={openPath} onOpenChanges={openChanges} onShot={(src, name) => setShot({ src, name })} shotSrc={shotSrc} />
+  );
+  const detailsOn = detailsColumn || detailsPop;
   return (
-    <div className="conv">
+    <div className="conv" ref={convRef}>
       <div className="conv-main">
-        <div className="row cs-head">
-          <button className="ibtn ibtn-sm" onClick={() => openCoding("")} aria-label="Back to sessions">
+        <div className="row cs-head" ref={headRef}>
+          <button className="ibtn ibtn-sm cs-back" onClick={() => openCoding("")} aria-label="Back to sessions" data-tip="Sessions">
             <Ic n="arrow-left" s={15} />
           </button>
-          <button
-            className="mono faint cs-key"
-            style={{ fontSize: 12, whiteSpace: "nowrap" }}
-            onClick={() => t && openTask(t.id)}
-            data-tip="Open the issue"
-            aria-label={`Open ${cs.issue_key}`}
-          >
-            {cs.issue_key}
-          </button>
-          <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
-            {cs.title ?? cs.issue_title}
-          </b>
-          <button
-            ref={infoBtn}
-            className={`ibtn ibtn-sm ${info ? "on" : ""}`}
-            onClick={() => setInfo(info === "pinned" ? null : "pinned")}
-            onMouseEnter={hoverIn}
-            onMouseLeave={hoverOut}
-            aria-label={info ? "Hide the session's details" : "Show the session's details"}
-            aria-expanded={!!info}
-            aria-haspopup="dialog"
-          >
-            <Ic n="ellipsis-vertical" s={15} />
-          </button>
+          <div className="cs-title-wrap">
+            <button
+              className={`cs-title ${menu === "title" ? "on" : ""}`}
+              data-menu
+              onClick={() => setMenu(menu === "title" ? null : "title")}
+              aria-haspopup="menu"
+              aria-expanded={menu === "title"}
+            >
+              <span className="trunc">{cs.title ?? cs.issue_title}</span>
+              <Ic n="chevron-down" s={14} />
+            </button>
+            {menu === "title" && (
+              <div className="pop cs-menu" role="menu" aria-label="Session">
+                <button role="menuitem" onClick={() => (setMenu(null), t && openTask(t.id))}>
+                  <Ic n="circle-dot" s={14} />
+                  Open {cs.issue_key}
+                </button>
+                {cs.thread_id && (
+                  <button role="menuitem" onClick={() => (setMenu(null), open(`thread=${cs.thread_id}&project=${cs.project_key}`))}>
+                    <Ic n="message-square" s={14} />
+                    Open the conversation it came from
+                  </button>
+                )}
+                {cs.pr_url && (
+                  <a role="menuitem" href={cs.pr_url} target="_blank" rel="noreferrer" onClick={() => setMenu(null)}>
+                    <Ic n="git-pull-request" s={14} />
+                    Open pull request #{cs.pr_number}
+                  </a>
+                )}
+                <button role="menuitem" onClick={() => (setMenu(null), copyText(location.href))}>
+                  <Ic n="link" s={14} />
+                  Copy a link to this session
+                </button>
+              </div>
+            )}
+          </div>
           <span className={`badge ${c}`}>{label}</span>
           {cs.thread_id && (
-            // Started from a conversation: its outcome goes back there; the link opens it (it stays private to whoever started it).
-            <button
-              className="pillbtn"
-              onClick={() => open(`thread=${cs.thread_id}&project=${cs.project_key}`)}
-              data-tip="The conversation this session came from"
-            >
-              <Ic n="message-square" s={12} />
-              From a conversation
-            </button>
+            // Started from a conversation: its outcome goes back there (it stays private to whoever started it).
+            <span className="cs-from" data-tip="Started from a conversation">
+              <Ic n="message-square" s={13} />
+            </span>
           )}
           <span className="sp" />
-          {changedTurn && (
-            <LineCounts
-              files={changedTurn.files_changed}
-              onClick={() => showView("changes", { turn: changedTurn.id })}
-              tip={`Changes in turn ${changedTurn.turn}`}
-            />
-          )}
-          {/* Each view opens the side panel on it, as Claude Code's title bar opens its panes (icons, named on hover); the open one closes it. */}
-          <div className="cs-views" role="group" aria-label="Side panel">
-            {CODING_VIEWS.map((v) => (
+          {/* As Claude Code's session bar: the details, then each pane (several can be open, stacked), then the menu of panes. */}
+          <div className="cs-views" role="group" aria-label="Session panes">
+            <button
+              className={`cs-view ${detailsOn ? "on" : ""}`}
+              data-details
+              onClick={toggleDetails}
+              aria-pressed={detailsOn}
+              aria-label="Session details"
+              data-tip="Details"
+            >
+              <Ic n="list-bullets" s={16} />
+            </button>
+            {PANES.filter((v) => v.id === "changes" || v.id === "files").map((v) => (
               <button
                 key={v.id}
-                className={`cs-view ${view === v.id ? "on" : ""}`}
-                onClick={() => toggleView(v.id)}
-                aria-pressed={view === v.id}
+                className={`cs-view ${panes.includes(v.id) ? "on" : ""}`}
+                onClick={() => togglePane(v.id)}
+                aria-pressed={panes.includes(v.id)}
                 aria-label={v.label}
-                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.id === "terminal" ? `${v.label}  Ctrl \`` : v.label}
+                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.label}
               >
-                <Ic n={v.icon} s={15} />
+                <Ic n={v.id === "changes" ? "plus-minus" : "folder-simple"} s={16} />
               </button>
             ))}
+            <div className="cs-title-wrap">
+              <button
+                className={`cs-view ${menu === "panes" ? "on" : ""}`}
+                data-menu
+                onClick={() => setMenu(menu === "panes" ? null : "panes")}
+                aria-haspopup="menu"
+                aria-expanded={menu === "panes"}
+                aria-label="Panes"
+                data-tip={menu === "panes" ? undefined : "Panes"}
+              >
+                <Ic n="dots-three" s={18} />
+              </button>
+              {menu === "panes" && (
+                <div className="pop cs-menu right" role="menu" aria-label="Panes">
+                  {PANES.map((v) => (
+                    <button key={v.id} role="menuitemcheckbox" aria-checked={panes.includes(v.id)} onClick={() => togglePane(v.id)}>
+                      <Ic n={v.icon} s={14} />
+                      <span className="grow">{v.label}</span>
+                      {v.id === "changes" && <kbd>{MOD}⇧D</kbd>}
+                      {v.id === "terminal" && <kbd>Ctrl `</kbd>}
+                      {panes.includes(v.id) && <Ic n="check" s={14} />}
+                    </button>
+                  ))}
+                  {panes.length > 0 && (
+                    <>
+                      <hr />
+                      <button role="menuitem" onClick={() => (setMenu(null), setPanes([]))}>
+                        <Ic n="x" s={14} />
+                        <span className="grow">Close all panes</span>
+                        <kbd>{MOD}\</kbd>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         {shot && (
@@ -1797,198 +2026,26 @@ export function Session({ cs }: { cs: CodingSession }) {
             <span>{shot.name}</span>
           </div>
         )}
-        {info && at && (
-          <div
-            className="pop cs-info"
-            role="dialog"
-            aria-label="The session's details"
-            style={{ top: at.bottom + 6, left: Math.max(8, Math.min(at.left - 8, window.innerWidth - 436)) }}
-            onMouseEnter={hoverIn}
-            onMouseLeave={hoverOut}
-          >
-            <dl className="kv" style={{ margin: 0 }}>
-              <dt>
-                <Ic n="folder" s={14} />
-                Project
-              </dt>
-              <dd>
-                <span className="row" style={{ gap: 6 }}>
-                  {p && <span className="pdot" style={css({ "--c": pColor(p) })} />}
-                  {cs.project_name}
-                </span>
-              </dd>
-              <dt>
-                <Ic n="folder-git-2" s={14} />
-                Repository
-              </dt>
-              <dd>
-                {latest?.repo_full_name ? (
-                  <a
-                    href={`https://github.com/${latest.repo_full_name}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mono"
-                    style={{ fontSize: 12, color: "var(--acc)" }}
-                  >
-                    {latest.repo_full_name}
-                  </a>
-                ) : (
-                  <span className="faint">No repository connected to {cs.project_name}</span>
-                )}
-              </dd>
-              <dt>
-                <Ic n="git-branch" s={14} />
-                Branch
-              </dt>
-              <dd className="mono" style={{ fontSize: 12 }}>
-                {latest?.base_branch && (
-                  <span className="faint">
-                    {latest.base_branch}
-                    {latest.base_sha ? `@${latest.base_sha.slice(0, 7)}` : ""} →{" "}
-                  </span>
-                )}
-                {cs.branch ?? <span className="faint">a new branch, made when it starts</span>}
-              </dd>
-              <dt>
-                <Ic n="git-commit-horizontal" s={14} />
-                Commit
-              </dt>
-              <dd>
-                {latest?.commit_sha ? (
-                  <span className="mono faint" style={{ fontSize: 12 }}>
-                    {latest.commit_sha.slice(0, 7)}
-                  </span>
-                ) : (
-                  <span className="faint">none yet</span>
-                )}
-              </dd>
-              <dt>
-                <Ic n="git-pull-request" s={14} />
-                Pull request
-              </dt>
-              <dd>
-                {cs.pr_url && cs.pr_number ? (
-                  <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <a href={cs.pr_url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
-                      #{cs.pr_number}
-                      {cs.pr_state && (
-                        <span className={`badge ${cs.pr_state === "merged" ? "accent" : cs.pr_state === "open" ? "green" : ""}`}>{cs.pr_state}</span>
-                      )}
-                    </a>
-                    {pushed?.ci_state && <span className={`badge ${pushed.ci_state === "passed" ? "green" : "red"}`}>CI {pushed.ci_state}</span>}
-                    {pushed?.review_posted_url && (
-                      <a href={pushed.review_posted_url} target="_blank" rel="noreferrer" style={{ color: "var(--acc)", fontSize: 12 }}>
-                        Juno's review
-                      </a>
-                    )}
-                  </span>
-                ) : (
-                  <span className="faint">none yet</span>
-                )}
-              </dd>
-            </dl>
+        {detailsPop && (
+          <div className="pop cs-details-pop" role="dialog" aria-label="Session details">
+            {details}
           </div>
         )}
         <div className="chat-scroll">
-          <div className="chat-col">
-            {files.length > 0 && (
-              <div className="change" aria-label="Files changed">
-                <div className="change-h">
-                  <Ic n="files" s={14} />
-                  <b style={{ fontWeight: 500 }}>
-                    {files.length} file{files.length > 1 ? "s" : ""} changed
-                  </b>
-                  <span className="sp" />
-                  <LineCounts files={files} onClick={() => latest && showView("changes", { turn: latest.id })} tip="Open the changes" />
-                </div>
-                <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                  {files.map((f, i) => (
-                    <button key={i} className="path-link trunc" onClick={() => openPath(fileOf(f), latest?.id)} data-tip="Open in Files">
-                      {fileOf(f)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+          <div className="chat-col kt-col">
             {turns.map((turn, i) => (
-              <div key={turn.id} style={{ marginBottom: 14 }}>
-                <div className="chat-msg user">
-                  <Av id={turn.requested_by_id ?? D().me} cls="md" tip={false} />
-                  <div className="body">
-                    <div className="who">
-                      <b>{turn.requested_by_id === D().me ? "You" : (who(turn.requested_by_id ?? "")?.name ?? "Someone")}</b>
-                      <time>
-                        Turn {i + 1} · {ago(ms(turn.created_at))}
-                      </time>
-                    </div>
-                    <div className="bubble">{turn.note || `Work on ${cs.issue_key}: ${cs.issue_title}`}</div>
-                  </div>
-                </div>
-                {(turn.events.length > 0 || turn.summary || turn.error) && (
-                  <div className="chat-msg">
-                    <Av id={CODING_AGENT.id} cls="md" tip={false} />
-                    <div className="body">
-                      <div className="who">
-                        <b>{kai}</b>
-                      </div>
-                      <div className="chat-act" style={{ flexDirection: "column", gap: 2 }}>
-                        {turn.events
-                          .filter((e) => e.kind !== "text" && !e.kind.startsWith("output")) // output: the panel's Terminal
-                          .slice(-30)
-                          .map((e, j) => (
-                            <span key={j}>
-                              <Ic n={e.kind === "error" ? "triangle-alert" : "check"} s={11} />
-                              <PathLinks text={e.text} paths={turn.files_changed.map(fileOf)} onPath={(path) => openPath(path, turn.id)} />
-                            </span>
-                          ))}
-                      </div>
-                      {turn.summary && (
-                        <div className="md">
-                          <Markdown
-                            onCode={(code) =>
-                              turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, ""))
-                                ? () => openPath(code.replace(/:\d+$/, ""), turn.id)
-                                : undefined
-                            }
-                          >
-                            {turn.summary}
-                          </Markdown>
-                        </div>
-                      )}
-                      {turn.error && <div className="faint">{turn.error}</div>}
-                      {turn.can_revert && !busy && (
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          style={{ alignSelf: "flex-start", marginTop: 4 }}
-                          disabled={revert.isPending}
-                          onClick={() => revert.mutate(turn.id)}
-                        >
-                          <Ic n="undo-2" s={12} />
-                          Revert this turn
-                        </button>
-                      )}
-                      {(turn.screenshots ?? []).length > 0 && (
-                        <div className="cs-shots" aria-label="Screenshots from the browser">
-                          {(turn.screenshots ?? []).map((sh) => {
-                            const src = shotSrc(turn.id, sh.index);
-                            return (
-                              <button
-                                key={sh.index}
-                                className="cs-shot"
-                                onClick={() => setShot({ src, name: sh.name })}
-                                aria-label={`Open the screenshot ${sh.name}`}
-                              >
-                                <img src={src} alt={`Screenshot: ${sh.name}`} loading="lazy" />
-                                <span className="faint trunc">{sh.name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <KaiTurn
+                key={turn.id}
+                turn={turn}
+                index={i}
+                issueTitle={cs.issue_title}
+                busy={busy}
+                revert={revert}
+                onPath={openPath}
+                onChanges={openChanges}
+                onShot={(src, name) => setShot({ src, name })}
+                shotSrc={shotSrc}
+              />
             ))}
             {latest?.status === "awaiting_approval" && (
               <div className="change">
@@ -2028,6 +2085,8 @@ export function Session({ cs }: { cs: CodingSession }) {
                 <div className="change-h">
                   <Ic n="shield-check" s={14} />
                   <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
+                  <span className="sp" />
+                  <LineCounts files={latest.files_changed} onClick={() => openChanges(latest.id)} tip="Open the changes" />
                 </div>
                 {latest.files_changed.length > 0 && (
                   <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -2130,10 +2189,11 @@ export function Session({ cs }: { cs: CodingSession }) {
             )}
           </div>
         </div>
-        <div className="chat-input">
-          <div className="cbox">
+        <div className="chat-input kt-input">
+          <div className={`kt-box ${busy ? "off" : ""}`}>
             <textarea
-              rows={2}
+              ref={box}
+              rows={1}
               placeholder={
                 cs.state === "closed"
                   ? "This session is closed"
@@ -2147,26 +2207,69 @@ export function Session({ cs }: { cs: CodingSession }) {
               disabled={busy}
               onChange={(e) => setAsk(e.target.value)}
               aria-label="Follow-up"
-              onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && send()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
             />
-            <div className="row">
-              <span className="faint" style={{ fontSize: 11.5 }}>
-                {MOD}+Enter to send · approved like the first turn
-              </span>
-              <span className="sp" />
-              <button className="btn btn-primary btn-sm" disabled={busy || !ask.trim() || follow.isPending} onClick={send}>
-                <Ic n="arrow-up" s={13} />
-                Send
-              </button>
-            </div>
+            <button className="kt-send" disabled={busy || !ask.trim() || follow.isPending} onClick={send} aria-label="Send" data-tip="Send">
+              <Ic n="arrow-up" s={15} />
+            </button>
+          </div>
+          <div className="kt-foot">
+            <span data-tip="The model this session's turns use">{sessionModel(latest?.model)}</span>
+            <span data-tip="Follow-ups are approved like the first turn">{modeName(latest?.approval_mode)}</span>
+            <span className="sp" />
+            <span className="faint">Enter to send · Shift+Enter for a new line</span>
+            {cs.location !== "local" && cs.sandbox && (
+              <span
+                className={`sd-state ${cs.sandbox}`}
+                data-tip={
+                  cs.sandbox === "warm"
+                    ? "Sandbox ready"
+                    : cs.sandbox === "asleep"
+                      ? "Sandbox asleep: it wakes on the next turn"
+                      : "No sandbox: the next turn starts one"
+                }
+                aria-label={`Sandbox ${cs.sandbox}`}
+              />
+            )}
           </div>
         </div>
       </div>
-      {view && (
-        <CodingPanel scope={scope} cs={cs} view={view} onView={showView} onClose={closePanel} onAskFix={setAsk} fixLabel={`Ask ${CODING_AGENT.name} to fix`} />
+      {panes.length > 0 && (
+        <CodingPanes
+          scope={scope}
+          cs={cs}
+          views={panes}
+          onOpen={openPane}
+          onClose={closePane}
+          onCloseAll={() => setPanes([])}
+          onAskFix={setAsk}
+          fixLabel={`Ask ${CODING_AGENT.name} to fix`}
+        />
+      )}
+      {detailsColumn && (
+        <aside className="cs-details" aria-label="Session details">
+          {details}
+        </aside>
       )}
     </div>
   );
+}
+
+/** Whether the window matches `query` now, kept current as it's resized. */
+function useWide(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const change = () => setOn(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, [query]);
+  return on;
 }
 
 const MISSING_THREAD = "This conversation isn't here: it was deleted, or isn't one you can see.";
