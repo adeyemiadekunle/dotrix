@@ -28,6 +28,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   stuck runs, recovery, runners and sandboxes), runs and failures per day, failures grouped by error, coding by engine
   (outcomes, PRs, time to finish, cost), workspaces by use, and the audit log, in tables with pages (rows per page,
   page numbers) and shadcn charts. Redesigned on dotrix's own design, sign-in included, which loads before the rest.
+- The desktop app updates itself: it downloads a new version in the background, says when it's ready (Restart, or it
+  installs when you quit), and shows What's new after an update and from the sidebar.
+- Codes: a new session's "where it codes" menu lists this computer's folder for the project, the cloud sandbox, and, in
+  the desktop app, Add a folder; each session in the list shows whether it codes in the cloud or on a computer.
 
 ### Changed
 
@@ -41,6 +45,11 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - The admin console no longer sees what people wrote: runs are named by workspace, project and issue instead of a
   conversation's title or first message, and audit events come without their details.
+
+### Fixed
+
+- A local turn's worktree is removed once it has been untouched for 3 days, so they no longer pile up on your
+  computer; an open file from a local turn stops refreshing once the turn is done.
 
 ## [0.1.0] - 2026-10-31
 

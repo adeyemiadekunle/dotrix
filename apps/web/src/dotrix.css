@@ -2550,3 +2550,95 @@ section.side-panel-body[hidden] {
     border-top: 1px solid var(--border);
   }
 }
+
+/* The desktop app: a new version ready to install (shell/DesktopApp.tsx), and What's new. */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 14px 0;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-sm);
+}
+.update-bar > .i:first-child {
+  color: var(--acc);
+  flex-shrink: 0;
+}
+.update-bar .grow {
+  min-width: 0;
+}
+.wn {
+  display: grid;
+  gap: 28px;
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+}
+.wn-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.wn-head h3 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  flex: 1;
+}
+.wn-ver {
+  font-size: 11.5px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+}
+.wn-sec {
+  margin: 14px 0 6px;
+}
+.wn ul {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  display: grid;
+  gap: 6px;
+}
+.wn li {
+  line-height: 1.55;
+}
+.wn li::marker {
+  color: var(--text-3);
+}
+.wn li > div > p {
+  margin: 0;
+}
+
+/* Where a new session codes (WhereItCodes in screens/Chat.tsx). */
+.env-menu {
+  min-width: 260px;
+}
+.env-h {
+  display: block;
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.env-state {
+  font-size: 11.5px;
+}
+.env-note {
+  display: block;
+  padding: 4px 10px 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.env-sep {
+  display: block;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--divider);
+}

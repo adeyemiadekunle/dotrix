@@ -56,7 +56,7 @@ import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { LimitNotice } from "../components/LimitNotice";
 import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
-import { desktop, useDesktopRunners } from "../core/desktop";
+import { desktop, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
@@ -243,6 +243,7 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
             {cs.title ?? cs.issue_title}
           </span>
           <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
+            <Ic n={cs.location === "local" ? "laptop" : "cloud"} s={11} />
             {CODING_AGENT.name} · {ago(ms(cs.updated_at))}
             {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
           </span>
@@ -733,6 +734,135 @@ function Pick({
                 {v === value && <Ic n="check" s={13} />}
               </button>
             ))}
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
+
+/** Where a new session codes, as Claude Code's environment menu: this computer (its folder for the
+ *  project, or a computer running `dotrix runner`), the cloud sandbox, and, in the desktop app, a folder to
+ *  add. */
+function WhereItCodes({
+  location,
+  setWhere,
+  cloudReady,
+  cloudWhy,
+  localReady,
+  localName,
+  localWhy,
+  folder,
+  canAdd,
+  adding,
+  onAdd,
+}: {
+  location: "cloud" | "local";
+  setWhere: (where: "cloud" | "local") => void;
+  cloudReady: boolean;
+  cloudWhy?: string | null;
+  localReady: boolean;
+  localName?: string | null;
+  localWhy?: string | null;
+  folder?: DesktopRunner;
+  canAdd: boolean;
+  adding: boolean;
+  onAdd: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const folderName = folder ? folder.folder.split(/[\\/]/).filter(Boolean).pop() : null;
+  const localLabel = folderName ?? localName ?? "Your computer";
+  const starting = adding || folder?.state === "starting";
+  const choose = (where: "cloud" | "local") => {
+    setWhere(where);
+    setOpen(false);
+    btnRef.current?.focus();
+  };
+  return (
+    <span
+      className="cpill pick"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+          btnRef.current?.focus();
+        }
+      }}
+    >
+      <button
+        ref={btnRef}
+        type="button"
+        className="pick-open"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Where it codes: ${location === "local" ? localLabel : "Cloud"}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Ic n={location === "local" ? "laptop" : "cloud"} s={12} />
+        <span className="trunc">{location === "local" ? localLabel : "Cloud"}</span>
+        <Ic n="chevron-down" s={11} />
+      </button>
+      {open && (
+        <>
+          <span className="pick-veil" aria-hidden onClick={() => setOpen(false)} />
+          <span className="cmenu env-menu" role="listbox" aria-label="Where it codes">
+            <span className="env-h">This computer</span>
+            {localReady || folder ? (
+              <button
+                type="button"
+                role="option"
+                aria-selected={location === "local"}
+                className={`mi ${location === "local" ? "on" : ""}`}
+                disabled={!localReady}
+                onClick={() => choose("local")}
+                data-tip={folder?.folder ?? "In a worktree of your checkout, with the coding tool signed in there; the platform pushes what's accepted"}
+              >
+                <Ic n="laptop" s={14} />
+                <span className="trunc grow">{localLabel}</span>
+                {!localReady && <span className="faint env-state">{starting ? "Starting…" : folder?.state === "failed" ? "Stopped" : "Not ready"}</span>}
+                {location === "local" && <Ic n="check" s={13} />}
+              </button>
+            ) : (
+              !canAdd && (
+                <span className="env-note faint" title={localWhy ?? undefined}>
+                  Run <code>dotrix runner</code> in your checkout, or use the desktop app
+                </span>
+              )
+            )}
+            {canAdd && (
+              <button
+                type="button"
+                className="mi"
+                disabled={starting}
+                onClick={() => {
+                  onAdd();
+                  setWhere("local");
+                  setOpen(false);
+                }}
+                data-tip="Choose your checkout of the project's repository: this app codes its turns there, in a worktree"
+              >
+                <Ic n="folder-plus" s={14} />
+                <span className="trunc grow">
+                  {folder ? (folder.state === "failed" ? "Choose the folder again" : "Choose another folder") : "Add a folder"}
+                </span>
+              </button>
+            )}
+            <span className="env-sep" />
+            <span className="env-h">Cloud</span>
+            <button
+              type="button"
+              role="option"
+              aria-selected={location === "cloud"}
+              className={`mi ${location === "cloud" ? "on" : ""}`}
+              onClick={() => choose("cloud")}
+              data-tip={cloudReady ? "In a sandbox on the platform" : (cloudWhy ?? undefined)}
+            >
+              <Ic n="cloud" s={14} />
+              <span className="trunc grow">Cloud sandbox</span>
+              {!cloudReady && <span className="faint env-state">Off</span>}
+              {location === "cloud" && <Ic n="check" s={13} />}
+            </button>
           </span>
         </>
       )}
@@ -1412,20 +1542,20 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                   Issue
                 </button>
               )}
-              {avail && (avail.local_available || location === "local") && (
-                <button
-                  className="cpill pick"
-                  onClick={() => setWhere(location === "local" ? "cloud" : "local")}
-                  aria-label="Where it codes"
-                  data-tip={
-                    location === "local"
-                      ? "In a worktree of your checkout, with the coding tool signed in there; the platform pushes what's accepted"
-                      : "In a sandbox on the platform"
-                  }
-                >
-                  <Ic n={location === "local" ? "laptop" : "cloud"} s={12} />
-                  {location === "local" ? `On ${avail.local_runner ?? "your computer"}` : "Cloud"}
-                </button>
+              {avail && (avail.local_available || location === "local" || here) && (
+                <WhereItCodes
+                  location={location}
+                  setWhere={setWhere}
+                  cloudReady={avail.available}
+                  cloudWhy={avail.reason}
+                  localReady={avail.local_available}
+                  localName={avail.local_runner}
+                  localWhy={avail.local_reason}
+                  folder={hereRunner}
+                  canAdd={Boolean(here && slug && pkey)}
+                  adding={adding}
+                  onAdd={codeHere}
+                />
               )}
               {model && (
                 <Pick value={model} label="Model" lead={<Ic n="sparkles" s={12} />} onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} />
@@ -1440,22 +1570,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                   <Ic n="laptop" s={12} />
                   Not on this computer yet
                 </span>
-              )}
-              {avail && location === "local" && !avail.local_available && here && (
-                <button
-                  className="cpill pick"
-                  onClick={codeHere}
-                  disabled={!slug || !pkey || adding}
-                  aria-label="Local"
-                  data-tip={
-                    hereRunner?.state === "failed"
-                      ? (hereRunner.message ?? "This computer's runner stopped")
-                      : "Choose your checkout of the project's repository: this app codes its turns there, in a worktree"
-                  }
-                >
-                  <Ic n="folder-plus" s={12} />
-                  {adding || hereRunner?.state === "starting" ? "Starting…" : hereRunner?.state === "failed" ? "Runner stopped: choose again" : "Local"}
-                </button>
               )}
               <span className="sp" />
               <span className="faint hide-m" style={{ fontSize: 11 }}>

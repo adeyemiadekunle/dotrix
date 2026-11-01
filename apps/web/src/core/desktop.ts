@@ -1,6 +1,7 @@
 // The desktop app's bridge (apps/desktop: preload.ts), when the web app runs inside it: its runners
-// (the bundled dotrix CLI's `dotrix runner`, one per folder a person picks) and the live worktrees of
-// the turns they code. In a browser there's none, and every helper here says so.
+// (the bundled dotrix CLI's `dotrix runner`, one per folder a person picks), the live worktrees of
+// the turns they code, the app's version and What's new, and its updates. In a browser there's none,
+// and every helper here says so; an older app has runners and worktrees but no updates.
 import { useEffect, useState } from "react";
 
 import type { CodingRun } from "@/lib/coding";
@@ -32,6 +33,34 @@ interface WorktreeFile {
   too_large: boolean;
 }
 
+/** A release in the app's bundled CHANGELOG.md. */
+export interface DesktopRelease {
+  version: string;
+  date: string | null;
+  sections: { title: string; items: string[] }[];
+}
+
+export type DesktopUpdate =
+  | { state: "off" }
+  | { state: "idle"; checked: string | null }
+  | { state: "checking" }
+  | { state: "downloading"; version: string; percent: number }
+  | { state: "ready"; version: string }
+  | { state: "failed"; message: string };
+
+interface AppBridge {
+  app: {
+    info(): Promise<{ version: string; platform: string; packaged: boolean }>;
+    changelog(): Promise<DesktopRelease[]>;
+  };
+  updates: {
+    state(): Promise<DesktopUpdate>;
+    check(): Promise<DesktopUpdate>;
+    install(): Promise<void>;
+    onChange(listener: (state: DesktopUpdate) => void): () => void;
+  };
+}
+
 interface Bridge {
   platform: string;
   runners: {
@@ -54,6 +83,29 @@ interface Bridge {
 export function desktop(): Bridge | null {
   const found = (globalThis as { dotrixDesktop?: Partial<Bridge> }).dotrixDesktop;
   return found?.runners && found.worktree ? (found as Bridge) : null;
+}
+
+/** The app's version, What's new and updates, or null in a browser or an app from before them. */
+export function desktopApp(): AppBridge | null {
+  const found = (globalThis as { dotrixDesktop?: Partial<AppBridge> }).dotrixDesktop;
+  return found?.app && found.updates ? (found as AppBridge) : null;
+}
+
+/** The app's update, kept current (null in a browser). */
+export function useDesktopUpdate(): DesktopUpdate | null {
+  const [state, setState] = useState<DesktopUpdate | null>(null);
+  useEffect(() => {
+    const bridge = desktopApp();
+    if (!bridge) return;
+    let live = true;
+    void bridge.updates.state().then((s) => live && setState(s));
+    const off = bridge.updates.onChange(setState);
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  return state;
 }
 
 /** This computer's runners, kept current (empty in a browser). */

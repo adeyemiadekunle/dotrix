@@ -4,6 +4,8 @@ name: Desktop and CLI builds
 # it; on a pull request that touches them, or by hand, they're kept as the run's artifacts.
 # A release opens and talks to the repository variable DOTRIX_APP_URL (e.g. https://dotrix.example.com).
 # Unsigned for now: Windows SmartScreen warns on first run. macOS comes later.
+# Installed apps update themselves from the latest release (electron-updater, the `publish` settings in
+# apps/desktop/package.json): so a release also carries latest.yml and the installer's .blockmap.
 on:
   release:
     types: [published]
@@ -11,6 +13,7 @@ on:
     paths:
       - apps/desktop/**
       - apps/cli/**
+      - CHANGELOG.md
       - .github/workflows/desktop.yml
   workflow_dispatch:
 
@@ -61,7 +64,9 @@ jobs:
       - name: The desktop installer
         run: pnpm --filter @dotrix/desktop dist:win
       - name: Collect
-        run: cp apps/desktop/release/*-setup.exe out/ && ls -la out
+        run: cp apps/desktop/release/*-setup.exe apps/desktop/release/*-setup.exe.blockmap apps/desktop/release/latest.yml out/ && ls -la out
+      - name: The update feed names this installer
+        run: grep -q "dotrix-$VERSION-windows-x64-setup.exe" out/latest.yml
 
       - uses: actions/upload-artifact@v4
         with:

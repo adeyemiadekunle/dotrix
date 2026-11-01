@@ -4,8 +4,10 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent, shell } from "electron";
 import path from "node:path";
 
+import { readChangelog } from "./changelog";
 import { webUrl } from "./config";
 import { Runners, sameOrigin } from "./runner";
+import { Updates } from "./updates";
 import { ownWorktree, worktreeFile, worktreeTree } from "./worktree";
 
 const WEB_URL = webUrl();
@@ -13,6 +15,12 @@ const WEB_URL = webUrl();
 const API_URL = process.env.DOTRIX_API_URL ?? new URL(WEB_URL).origin;
 
 const runners = new Runners(API_URL, WEB_URL);
+let stopped = false; // the runners were stopped for quitting (or restarting into an update)
+// A turn coding here is stopped (the tool with it) before the app restarts into a new version.
+const updates = new Updates(async () => {
+  stopped = true;
+  await runners.stopAll();
+});
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -66,19 +74,24 @@ function bridge(): void {
     if (error) throw new Error(error);
   });
   handle("dotrix:worktree:reveal", (_e, tree: unknown) => shell.showItemInFolder(worktree(tree)));
+  handle("dotrix:app:info", () => ({ version: app.getVersion(), platform: process.platform, packaged: app.isPackaged }));
+  handle("dotrix:app:changelog", () => readChangelog(process.resourcesPath, app.isPackaged));
+  handle("dotrix:updates:state", () => updates.state);
+  handle("dotrix:updates:check", () => updates.check());
+  handle("dotrix:updates:install", () => updates.install());
 }
 
 app.whenReady().then(() => {
   bridge();
   createWindow();
   runners.resume();
+  updates.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 // A turn in progress is stopped (the tool with it) before the app goes, not left coding unwatched.
-let stopped = false;
 app.on("before-quit", (event) => {
   if (stopped || !runners.running) return;
   event.preventDefault();
