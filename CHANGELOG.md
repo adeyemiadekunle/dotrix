@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Self-hosting: the admin console is part of the production deploy (`admin`, on its own domain such as admin.dotrix.cc),
+  and `pnpm docker:up` also runs the public site (http://localhost:3200) beside the web app and the admin console.
 - Kai's turns can run in Docker Cloud sandboxes (`DOTRIX_CODING_SANDBOX=docker-cloud`): a microVM per session, reaching
   only the model API, with the model key kept out of the sandbox as a Docker secret. The coding image is published to a
   registry for each release.
