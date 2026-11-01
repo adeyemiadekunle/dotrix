@@ -1,15 +1,20 @@
 # Deploying dotrix with Dokploy
 
-One VPS running [Dokploy](https://dokploy.com): the web app, the API, the background worker,
-Postgres (with pgvector), Redis, and RustFS (S3-compatible storage), and coding runs in sandboxes on the same machine's
-Docker. Nobody who uses dotrix installs anything.
+One VPS running [Dokploy](https://dokploy.com): the web app, the public site, the admin console,
+the API, the background worker, Postgres (with pgvector), Redis, and RustFS (S3-compatible
+storage). Coding turns run in sandboxes, on Docker Cloud (recommended) or the same machine's
+Docker. Nobody who uses dotrix installs anything; each person connects their own model key in
+Account → Your models.
 
 ```
 VPS
 └── Docker
     ├── Dokploy, Traefik (TLS, your domain)
-    ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc), admin (nginx, admin.dotrix.cc, /v1/admin only) → api, worker, migrate (once), postgres, redis, storage (RustFS), docker-proxy
-    └── coding sandboxes, two containers per run: dotrix-run-<id> and dotrix-run-<id>-egress
+    ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc),
+    │   admin (nginx, admin.dotrix.cc, /v1/admin only) → api, worker, migrate (once),
+    │   postgres, redis, storage (RustFS), docker-proxy
+    └── coding sandboxes on the VPS (not with docker-cloud): two containers per run,
+        dotrix-run-<id> and dotrix-run-<id>-egress
 ```
 
 ## Sizing
@@ -41,11 +46,15 @@ enforcement are removed; a person can still choose a limit for their project or 
    service, the public site's (`dotrix.cc`, and `www.dotrix.cc` if you like) to the `site`
    service, and the admin console's (`admin.dotrix.cc`) to the `admin` service, each on port 80
    with HTTPS. The admin console forwards only `/v1/admin` to the API; whoever operates dotrix
-   creates their console account there by proving they own a workspace. Nothing else needs a domain: the API is reached through
-   `web`, on the same origin. The site has no API; its Sign in, Get started and Open dotrix links go
+   creates their console account there by proving they own a workspace. Nothing else needs a
+   domain: the API is reached through `web`, on the same origin. The site has no API; its Sign in, Get started and Open dotrix links go
    to `DOTRIX_APP_URL`, and its downloads to the repository's latest release.
 4. **Deploy.** The first deploy builds the images on the VPS (the backend, the web app, the public
-   site, the admin console, and the coding image the worker starts), runs the migrations, then starts everything.
+   site, the admin console, and the coding image the worker starts), runs the migrations, then
+   starts everything.
+5. **Desktop downloads and updates:** set the repository variable `DOTRIX_APP_URL` to the same
+   address before cutting a release. Each release then carries the Windows installer and CLI, built
+   for that address, and installed apps update themselves from it.
 
 ## What survives a restart
 
@@ -57,7 +66,7 @@ matters:
   twice. After three tries the run shows Continue to whoever asked.
 - **Coding runs** hold a lease too (`DOTRIX_CODING_LEASE_SECONDS`). One whose worker stopped is
   settled from what GitHub shows: its PR is adopted when the push landed, the turn runs again
-  when nothing was published, and anything unclear waits for Recover in the Code tab.
+  when nothing was published, and anything unclear waits for Recover in Codes.
 - **What a run did** is kept in Postgres as it happens, so a reload, a redeploy of the API, or
   Redis restarting doesn't lose a reply mid-way.
 
@@ -117,8 +126,8 @@ the API, migrations, and web cannot reach the proxy. The worker also joins the a
 for the database, queue, and storage. The socket itself is never mounted into a dotrix container. Each
 run's agent container has no route out except its egress proxy, which reaches only the model API
 of the tool Kai runs: Claude Code and Codex by default, or OpenCode on the provider set in
-`DOTRIX_CODING_OPENCODE_MODEL` (`DOTRIX_CODING_AGENT=opencode`). Runs use the requester's own key
-where the organisation allows it, else the workspace's (Settings → Models), else the server's.
+the session's model (Claude Code, Codex, OpenCode or fx). Every run uses only the requester's own
+key, from Account → Your models; there are no workspace or server keys.
 
 ## Outbound access
 

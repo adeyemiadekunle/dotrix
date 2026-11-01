@@ -8,15 +8,19 @@ An AI project team for software projects. Agents write and maintain a project's 
 board, explain its code, and hand coding to Kai, the coding agent. People decide how much goes
 through without asking, and every change is in the audit log.
 
-- **A team of agents you configure:**
-  - The Project Manager (Nova) and five specialists: Product, Architecture, Research, Reviewer,
-    and Documentation (Echo). Kai codes.
-  - Owners and admins can edit any of them, or create their own: instructions, model, tools,
-    folder access, autonomy rules, budgets. Each person can add their own instructions and model
-    for their runs.
+- **A fixed team:**
+  - **Nova** leads Chat and brings in the specialists: **Lyra** (product), **Orion**
+    (architecture), **Vega** (research), **Juno** (reviews) and **Echo** (documentation).
+  - **Kai** codes, in Codes.
+  - Each workspace and project can add guidance; each person can add up to 2,000 characters of
+    instructions and pick a model for their own runs. Every change to these is versioned and
+    audited.
+- **Your own model keys:** every person connects their own provider key (Account → Your
+  models). Every run, chat or coding, uses only that key: there are no workspace or server
+  keys.
 - **One source of truth per project:** a versioned `.dotrix/` knowledge store (requirements,
-  architecture, decisions, research, the repository's wiki), a Jira-style board, and a project
-  graph that links them.
+  architecture, decisions, research, the repository's wiki), a board, and a project graph that
+  links them.
 - **You decide what goes through:** approval modes (Manual, Accept edits, Auto) work the same in
   chat and coding. The workspace's owners cap them, and a pause means Manual for everyone.
   Closing issues, merging, and agent rules always need a person. Every change is audited.
@@ -24,142 +28,129 @@ through without asking, and every change is in the audit log.
   worker, without making a change twice. A coding run whose push or PR is uncertain is settled
   from what GitHub shows.
 - **Agents that work in the background:** automations run on a schedule or when people change
-  things. Examples: "Keep documents current" after approved changes, a weekly status, triage of
-  new issues, a watch on a topic.
-- **Agents that learn:**
-  - Rules set for the whole workspace, layered under each project's own.
-  - Skills (procedures agents follow) and folder templates.
-  - Lessons proposed from rejected changes and dismissed results, which owners accept or
-    decline.
+  things: "Keep documents current" after approved changes, a weekly status, triage of new
+  issues, a watch on a topic.
+- **Agents that learn:** workspace rules layered under each project's, skills (procedures
+  agents follow), folder templates, and lessons proposed from rejected changes and dismissed
+  results.
 
-Product spec: [docs/prd.md](docs/prd.md). The agents' design: [docs/agents-v2.md](docs/agents-v2.md).
-The direction: [strategy and roadmap](docs/dotrix-product-strategy-and-roadmap.md),
-[durable agent harness](docs/dotrix-durable-agent-harness.md),
-[hybrid execution](docs/dotrix-hybrid-execution-architecture.md), and the
-[Repository Knowledge skill](docs/dotrix-repository-knowledge-skill.md). What's built, item by
-item: [CLAUDE.md](CLAUDE.md).
+Product spec: [docs/prd.md](docs/prd.md). The team: [docs/nova-team.md](docs/nova-team.md).
+Coding: [docs/coding-agent.md](docs/coding-agent.md). What's built, item by item, and what's
+left: [CLAUDE.md](CLAUDE.md).
 
 ## What you can do today
 
-- **Chat** with the project's agents, in one Chat for the workspace (or from Home's ask box):
-  - Type @ to pick the project (or all projects) and who answers (Auto brings in the
-    specialists it needs); pick the model.
-  - **Work modes:** each message is Discuss, Plan, Build, or Review.
-    - Plan saves versions of the conversation's plan, with "Build this plan".
-    - Only Build engages Kai.
-    - Review reads what Kai did in this conversation.
-  - **Approvals:** pick Manual, Accept edits, or Auto beside the mode (only the modes you may
-    use). In Manual, approve or reject each change, with diffs.
-  - Follow what each agent is doing as it works. A reply keeps its steps afterwards, and a
-    dropped connection picks up where it was.
+- **Chat** with the project's team (or from Home's ask box):
+  - Pick the project in the card when you start, or type @ in the message box; "All projects"
+    asks across several at once, read-only.
+  - **Work modes:** each message is Discuss, Plan, Build, or Review. Plan saves versions of the
+    conversation's plan, with "Build this plan"; only Build engages Kai; Review reads what Kai
+    did in this conversation.
+  - **Approvals:** Manual, Accept edits, or Auto (only the modes you may use). In Manual you
+    approve or reject each change, with diffs.
+  - Nova thinks first, and you see its thinking and what each agent is doing as it works. A
+    reply keeps its steps afterwards, and a dropped connection picks up where it was.
+  - Queue a follow-up or steer Nova while it works; Stop cancels both.
   - A run stopped at its model's limit, or interrupted, continues from where it stopped.
-  - Ask across several projects at once; those conversations are read-only.
-- **Plan and track:**
-  - Board and List for each project, with an Overview and Activity.
-  - My Tasks across the workspace.
-  - ⌘K search over issues, documents, projects, people, and agents.
+  - **Two runtimes:** DeepAgents (the default) or fx, picked per conversation. Both go through
+    the same approvals.
+- **Coding with Kai** (Codes, below Chat in the sidebar):
+  - Start from "Start coding" on an issue, Build mode in Chat, or "New session" in Codes.
+  - **Where it codes:** a cloud sandbox, or your own computer through the desktop app or
+    `dotrix runner`.
+  - **The model** is picked per session, and the engine follows it. The engine is Claude Code,
+    Codex, OpenCode or fx, set in Account → Your models; people only ever see Kai.
+  - Kai works from a brief: the issue, its acceptance criteria, linked documents, the
+    repository's wiki, and a definition of done.
+  - Every session has its own branch and PR; follow-ups add commits to it. In Manual, a turn
+    waits to start and again before it's pushed. Changes to files CI runs always wait for a
+    person. A pushed turn can be reverted.
+  - **Juno** reviews Kai's PR and posts the review on GitHub. When CI fails, Juno reads the failed
+    logs, and "Ask Kai to fix" starts a follow-up.
+  - Sessions follow Claude Code's session view: the turns, a details column (environment,
+    branch, usage, outputs, the PR and its checks), and panes for Changes, Files, Terminal and
+    Review.
+  - Guardrails: Kai never holds a GitHub token, nothing is pushed to the default branch,
+    `.dotrix/` and CI configuration are refused, and a person merges.
+- **Plan and track:** Board and List for each project, with an Overview and Activity; My Tasks
+  across the workspace; ⌘K search over issues, documents, projects, people, and agents.
 - **Keep knowledge current:**
   - Documents with full history, restore, and export.
   - Uploads converted to Markdown.
   - Hybrid search (keywords and meaning, with pgvector).
-  - The project graph, which shows what relates to what, what a change affects, and which
-    documents may be out of date. It's drawn in Knowledge.
+  - The project graph: what relates to what, what a change affects, and which documents may be
+    out of date.
 - **Explain the repository** (Knowledge → Coverage):
-  - Each push takes an inventory: every tracked file, what it is, and which of 12 knowledge
-    domains it's evidence for. What isn't read is listed with why.
-  - Coverage shows each domain as read, partly read, not read, or a gap, with what to ask
-    for.
-  - "Explain the repository" has Echo write `docs/wiki/` pages. Every claim cites its source as
-    `path:line`, with its basis and gaps, and pages go through approval like any document.
-  - A page goes stale when the code it cites changes. Editors are notified, and "Refresh stale
-    pages" updates them.
-  - Dependencies come from manifests and their lockfiles (npm, pnpm, yarn, Python, Cargo, Go).
-  - Every run, and Kai's brief, starts from the wiki pages that bear on the work.
-- **Research** on the web (Tavily): every claim is checked against the page it cites, and
-  reports can be saved as research notes.
-- **Coding with Kai:** "Start coding" on an issue, Build mode in Chat, or a new session in Chat's
-  Code tab (type @ or / to pick the issue).
-  - Kai runs headless in a sandbox from a brief: the issue, its acceptance criteria, the
-    documents it links to, and the repository's wiki. Underneath, Kai is Claude Code, Codex, or
-    OpenCode. OpenCode runs on any provider's model.
-  - It runs on the same keys as chat: yours, where the organisation allows it, else the
-    workspace's.
-  - The sandbox is a Docker container per run whose only way out is the model API, or an
-    OpenShell sandbox.
-  - In Manual a run waits for an approver. In Accept edits and Auto it starts at once. You can
-    follow it as it works, and stop it.
-  - Every fix gets its own branch on the project's repo and a PR; follow-ups add commits to the
-    same branch and PR. The issue moves to review, and the Reviewer reads the PR.
-  - Sessions keep their sandbox warm between turns and resume where they left off.
-  - A session shows its repo, the branch it started from and its own, its commits, and each
-    changed file.
-  - A run cut off mid-push is recovered from what GitHub shows.
-  - Guardrails: Kai never holds a GitHub token, and nothing is pushed to the default branch.
-    Changes to `.dotrix/` or CI configuration (all of `.github/`) are refused, and a person merges.
-  - Setup: [infra/coding/README.md](infra/coding/README.md).
-- **Notifications:**
-  - What happens: approvals waiting, decisions, mentions, assignments, findings, changes to
-    issues you watch, runs stopped at a limit, and wiki pages a push made stale.
-  - Where: in the app (one Inbox, with what people and agents send you) and by email, as it happens, as a daily digest, or off.
+  - Each push takes an inventory of every tracked file and the knowledge domains it covers.
+  - "Explain the repository" has Echo write `docs/wiki/` pages, every claim cited as
+    `path:line`.
+  - A page goes stale when the code it cites changes; "Refresh stale pages" updates it.
+  - Dependencies come from manifests and lockfiles, checked against OSV for known
+    vulnerabilities.
+- **Research** on the web (Tavily): every claim is checked against the page it cites.
+- **Notifications:** approvals waiting, decisions, mentions, assignments, findings, changes to
+  issues you watch, runs stopped at a limit, and stale wiki pages. They arrive in the Inbox, by
+  email as they happen, or as a daily digest.
 - **Teams:**
-  - Personal workspaces and organisations, with roles and invites.
-  - Restricted projects.
+  - Personal workspaces and organisations, with roles, invites, and restricted projects.
   - Sign-in with a password, an email link, or GitHub.
-  - Sessions per device.
-- **CLI and MCP:** `dotrix` chats, briefs, triages, reviews, and works the board from a
-  terminal. Its MCP server gives Claude Code and Codex the board, the documents, and the graph.
+- **Desktop app** (Windows first): the web app in a window. It codes local turns on your
+  computer, shows a turn's live worktree, updates itself, and shows What's new.
+- **CLI and MCP:** the same chat, coding sessions and board from a terminal. The MCP server
+  gives Claude Code and Codex the board, the documents, and the graph.
+- **Admin console:** for whoever runs dotrix. It shows the platform's health, runs, failures,
+  coding, workspaces and audit log, across every workspace, never what people wrote.
 
 ## What's next
 
-The first milestone (M1 in the [roadmap](docs/dotrix-product-strategy-and-roadmap.md)): one
-coding run interrupted on purpose, recovered, and reviewed in the same conversation.
+The full list, most urgent first, is in [CLAUDE.md](CLAUDE.md) under "Remaining work". In short:
 
-- **One conversation for chat and code:**
-  - Kai's turns inline in the conversation: status, branch, PR, changed files, Stop, and
-    Recover.
-  - Coding sessions joined to the conversations list, and one composer for both.
-  - The side panel: Changes, Files, and Terminal from real sessions.
-- **Coding:**
-  - OpenCode's first turn on a real model, and its image in the Docker sandbox.
-  - Turns committed one by one, and a turn's diff accepted before it's pushed (A2).
-  - The board and documents available to Kai inside its sandbox, and running the app it
-    builds.
-  - PR checks back on the board.
-- **Where coding runs:** in the cloud on dotrix's own hosts (hardened with gVisor and
-  per-workspace limits), or locally from the desktop app or CLI in a worktree of your own
-  checkout.
-- **Models:** retry a provider's rate limit with backoff, a per-workspace limit on runs working
-  at once with a queue, and usage per person.
-- **Repository knowledge:** more manifests (Gemfile, composer, Gradle, Maven), and the discovery
-  run measured on real models.
-- **The web app on TanStack Query:** Chat and its Code tab read the API through TanStack Query;
-  the other screens still load into the store (`data/live.ts`).
-- **Background commit review:** a code graph and the blast radius of each push.
-- **Space:** workspace-level knowledge, and ideas before a project exists.
-- **Deployment:** production on one VPS with Dokploy ([deploy/README.md](deploy/README.md)).
-  It needs a domain with HTTPS, `DOTRIX_ENCRYPTION_KEY`, and a model key for coding runs.
+- **Production:**
+  - A domain with HTTPS on Dokploy ([deploy/README.md](deploy/README.md)).
+  - Docker Cloud sandboxes on a real account.
+  - The engines on their other providers' paid models.
+  - Hardening the cloud sandbox (gVisor, per-workspace limits).
+  - Retries and a queue when several people share a key.
+- **Codes:** live text instead of polling, usage per session, and subagents' events nested.
+- **Chat:**
+  - fx tested on real models before it becomes a default.
+  - Specialist memory controls.
+  - Steering and work modes in conversations across projects.
+- **Local coding:**
+  - Docker Sandboxes (`sbx`) checked on a real machine.
+  - Signing and macOS for the desktop app.
+  - Folders without a remote.
+- **Later:**
+  - A code graph and blast radius.
+  - Running the app Kai builds.
+  - Workspace-level knowledge and ideas.
+  - More connectors (Slack, GitLab, Drive).
 
 ## Monorepo layout
 
 ```
 apps/
   backend/      FastAPI platform API: accounts, workspaces, projects, knowledge, issues, agents,
-                approvals, automations, notifications, the graph, connectors (Python)
-  cli/          `dotrix` terminal client + MCP server for Claude Code / Codex (Python)
-  web/          Web app (Vite + React)
-  desktop/      Desktop shell around the web app (Electron)
+                approvals, automations, notifications, the graph, coding, connectors (Python)
+  cli/          `dotrix` terminal client, local coding runner, and MCP server (Python)
+  web/          Web app, app.dotrix.cc (Vite + React)
+  desktop/      Desktop app around the web app; codes local turns (Electron)
+  admin/        Admin console for whoever operates dotrix (Vite + React)
+  site/         Public site, dotrix.cc (Vite + React, prerendered)
 packages/
-  engine/       UI-agnostic agent engine: agent contracts, pipelines, approvals, tools (Python)
+  engine/       UI-agnostic agent engine: the team, pipelines, approvals, tools, runtimes (Python)
   api-client/   Typed client for the backend API, generated from its OpenAPI schema
-  ui/           shadcn/ui components, the chat kit, and the theme
-infra/          Local services (Postgres with pgvector, Redis, RustFS for S3-compatible storage) and the coding sandbox's
-                image and egress proxy (infra/coding)
-docs/           The PRD, the engine, the agents v2 spec, the coding agent, and the proposed direction
+  ui/           shadcn/ui components, the chat kit, and the design
+infra/          Local Postgres (with pgvector), Redis and RustFS; dotrix in Docker; the coding
+                sandbox's image and egress proxy (infra/coding)
+deploy/         Production on one VPS with Dokploy
+docs/           The PRD, the engine, the team, the coding agent, and the proposed direction
 ```
 
 Python is a [uv](https://docs.astral.sh/uv/) workspace; TypeScript is a
 [pnpm](https://pnpm.io/) workspace run by [Turborepo](https://turbo.build/). The web app, the
-desktop app, and the CLI are all clients of one API. The engine never depends on a UI.
+desktop app, the admin console and the CLI are all clients of one API. The engine never depends
+on a UI.
 
 ## Getting started
 
@@ -168,38 +159,50 @@ You need Python 3.11+, uv, Node 22+, pnpm 11, and Docker (for Postgres, Redis, a
 ```bash
 uv sync                  # Python: engine, CLI, backend + dev tools
 pnpm install             # TypeScript apps and packages
-cp .env.example .env     # then replace every change-me and set a model API key
+cp .env.example .env     # then replace every change-me
 ```
 
-Run it:
+Run it on your machine:
 
 ```bash
 pnpm db:up && pnpm db:migrate   # Postgres, Redis, RustFS (localhost only), then the migrations
-pnpm dev:backend         # API on http://localhost:8000 (agents need a model key in .env)
-pnpm dev:worker          # only with DOTRIX_JOBS=worker: runs survive API and worker restarts
-pnpm dev:web             # web on http://localhost:3000
+pnpm dev:backend         # API on http://localhost:8000
+pnpm dev:worker          # with DOTRIX_JOBS=worker: runs survive API and worker restarts
+pnpm dev:web             # web app on http://localhost:3000
 pnpm dev:desktop         # Electron window on the web app
-uv run dotrix --help    # CLI
+uv run dotrix --help     # CLI
 ```
 
+Or run all of dotrix in Docker:
+
+```bash
+pnpm docker:up           # web http://localhost:3080, admin :3300, site :3200, API :8000, worker
+```
+
+Then sign up, open Account → Your models and connect your own provider key: agents run on it.
+
 **Configuration** (all in `.env`, explained in [.env.example](.env.example)):
-- **Required:** a model key (Anthropic, OpenAI, or Google) and `DOTRIX_DEFAULT_MODEL`.
+- **Required:**
+  - `DOTRIX_ENCRYPTION_KEY`: a Fernet key that encrypts people's model keys and saved coding
+    sessions.
+  - The Postgres and storage passwords.
 - **Optional:**
   - `DOTRIX_EMBEDDING_MODEL`: search by meaning; without it, search uses keywords only.
   - `DOTRIX_TAVILY_API_KEY`: web research through Tavily.
   - `DOTRIX_SENDLY_API_KEY`: real email delivery.
-  - The GitHub sign-in and GitHub App settings: sign-in with GitHub and connected repos.
-  - `DOTRIX_CODING_AGENT`: which tool Kai runs (`auto`: Claude Code, or Codex with only an
-    OpenAI key; `opencode`, with `DOTRIX_CODING_OPENCODE_MODEL`, on any provider's model).
-  - `DOTRIX_CODING_SANDBOX`: coding runs: `docker` (build the image first:
-    `docker build -t dotrix-coding:latest infra/coding`), `openshell`, or `local` for
-    development only. Staging and production also need `DOTRIX_CODING_FORK_OWNER`, the
-    organisation coding branches are pushed to as a fork. See
+  - The GitHub sign-in and GitHub App settings: sign-in with GitHub, connected repos, and
+    coding.
+  - `DOTRIX_CODING_SANDBOX`: where cloud coding turns run:
+    - `docker`: build the image first, `docker build -t dotrix-coding:latest infra/coding`.
+    - `docker-cloud`: Docker's own cloud sandboxes.
+    - `openshell`.
+    - `local`: development only.
+
+    Staging and production also need `DOTRIX_CODING_FORK_OWNER`. See
     [infra/coding/README.md](infra/coding/README.md).
-- **Limits:**
-  - `DOTRIX_RUN_TOKEN_BUDGET`: tokens per agent run.
-  - `DOTRIX_AUTOMATION_DAILY_RUNS` and `DOTRIX_AUTOMATION_DAILY_TOKENS`: automation runs and
-    tokens per workspace per day.
+  - `DOTRIX_SPECIALIST_CONTINUITY`: specialists keep their earlier work within a conversation.
+
+There are no platform token budgets: each person's own key pays for their runs.
 
 ## Install the CLI
 
@@ -209,13 +212,11 @@ The `dotrix` command installs on its own (Python 3.11+ and [uv](https://docs.ast
 uv tool install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"
 ```
 
-- Local coding turns (`dotrix runner`) each run in a git worktree of their own under
-  `~/.dotrix/worktrees`. Nothing isolates them for now, so the coding tool only edits files there
-  and runs no commands.
-- On Windows, run `uv tool update-shell` once (then open a new terminal) so `dotrix` is on your PATH.
+- On Windows, run `uv tool update-shell` once (then open a new terminal) so `dotrix` is on your
+  PATH. A standalone Windows CLI is attached to each release.
 - Without uv: `pipx install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"`.
 - Point it at your server with `DOTRIX_API_URL` (or `--api-url` on `login`). The default is
-  `http://127.0.0.1:8000` until a hosted platform exists.
+  `http://127.0.0.1:8000`.
 - Upgrade with `uv tool upgrade dotrix`; remove with `uv tool uninstall dotrix`.
 
 ## The CLI with the platform
@@ -224,27 +225,33 @@ uv tool install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps
 dotrix login                                   # device login; the token goes to your OS keychain
 cd ~/code/kunemi && dotrix connect             # link this checkout to its project (found by the git remote)
 dotrix pull                                    # refresh the .dotrix/ mirror (only what changed)
-dotrix chat --agent research                   # talk to the team; approve or reject each change inline
+dotrix chat --mode plan --approvals manual     # talk to the team; /mode, /approvals, /continue; Ctrl+C stops a reply
 dotrix brief                                   # a summary of what changed (read-only)
-dotrix triage "Drivers see the wrong zone"     # the PM triages a report into an issue (waits for approval)
-dotrix review KUN-12                           # the Reviewer checks an issue against its acceptance criteria
+dotrix triage "Drivers see the wrong zone"     # Nova triages a report into an issue (waits for approval)
+dotrix review KUN-12                           # Juno checks an issue against its acceptance criteria
 dotrix issue list --mine                       # your issues (or --as claude-code for an agent's)
-dotrix issue claim KUN-42 --as claude-code     # coding tools act as themselves and stop at review
-dotrix issue done KUN-42                       # only a person closes
+dotrix code KUN-42 --cloud --wait              # ask Kai to code an issue (on your computer without --cloud)
+dotrix codes                                   # Kai's sessions; show, follow, approve, accept, stop, revert, recover
+dotrix runner                                  # code your local turns on this computer
 dotrix handoff install --register              # Claude Code / Codex via MCP: board, documents, graph
-dotrix runner                                  # code your local turns on this computer, in worktrees, sandboxed by srt
-dotrix code KUN-42                             # ask Kai to code an issue here (--cloud: on the platform)
 dotrix logout
 ```
 
-**Setting a project up, and working in it.** Owners and admins set a project up once, on the
-web or with the CLI:
-- Create it (`dotrix connect`, or `dotrix init` for a new repo).
-- Add its documents (`dotrix docs-add <files>`).
-- Have the Architecture agent draft its overview (`dotrix architecture draft`).
+**Local turns** (`dotrix runner`, or a folder picked in the desktop app) each run in a git
+worktree of their own under `~/.dotrix/worktrees`, so your working copy is never touched. They
+use the coding tool signed in on your computer; the platform never sends a key.
+- **With [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) installed:** each
+  turn runs in a microVM of its own and Kai can run tests and commands there. Its key comes
+  from `sbx secret set`.
+- **Without it:** the tool only edits files.
+- Worktrees untouched for 3 days are removed.
+- `--isolation auto|sbx|none` chooses.
 
-Everyone else just runs `dotrix connect` in their own checkout: it links to the project by the
-git remote and changes nothing.
+**Setting a project up.** Owners and admins set a project up once, on the web or with the CLI:
+create it (`dotrix connect`, or `dotrix init` for a new repo), add its documents
+(`dotrix docs-add <files>`), and have Orion draft its overview (`dotrix architecture draft`).
+Everyone else runs `dotrix connect` in their own checkout: it links to the project by the git
+remote and changes nothing.
 
 `DOTRIX_TOKEN` overrides the keychain for CI. Unlinked repos keep working with local files
 (`--local`, `dotrix task …`).
@@ -263,14 +270,23 @@ The TypeScript client in `packages/api-client` is generated from that schema. Af
 any route or schema, run `pnpm openapi` and commit the result; CI fails if they're out of date.
 Set `DOTRIX_DOCS_ENABLED=false` to turn the docs off.
 
+## Branches and releases
+
+Branch from `stage` and open pull requests into `stage`; every PR adds a line to
+[CHANGELOG.md](CHANGELOG.md) under Unreleased. Merging `stage` into `main` is a release: it tags
+the version and publishes the GitHub release, with the desktop installer and the Windows CLI.
+Details in [CLAUDE.md](CLAUDE.md#branches-and-releases).
+
 ## Checks
 
 CI runs all of these:
 
 ```bash
 uv run ruff check apps packages && uv run pytest   # lint; unit and integration tests (need Postgres)
+pnpm lint && pnpm format:check                     # ESLint and Prettier
 pnpm build && pnpm typecheck
 pnpm test                                          # web unit tests (Vitest)
-pnpm knip                                          # unused files, exports and dependencies (CI fails on unused files and dependencies)
-pnpm --filter @dotrix/web e2e                     # browser tests on a rule-based model
+pnpm knip                                          # unused files, exports and dependencies
+pnpm --filter @dotrix/web e2e                      # browser tests on a rule-based model
+python scripts/release.py check                    # one version everywhere, with its changelog section
 ```
