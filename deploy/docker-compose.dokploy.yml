@@ -22,7 +22,7 @@ x-dotrix: &dotrix
     DOTRIX_TRUSTED_PROXIES: '["127.0.0.1", "172.16.0.0/12", "10.0.0.0/8"]'
     DOTRIX_JWT_SECRET: ${DOTRIX_JWT_SECRET:?}
     DOTRIX_ENCRYPTION_KEY: ${DOTRIX_ENCRYPTION_KEY:?}
-    DOTRIX_S3_ENDPOINT_URL: http://minio:9000
+    DOTRIX_S3_ENDPOINT_URL: http://storage:9000
     DOTRIX_S3_ACCESS_KEY: ${MINIO_ROOT_USER:?}
     DOTRIX_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
     DOTRIX_SENDLY_API_KEY: ${DOTRIX_SENDLY_API_KEY:?}
@@ -96,7 +96,7 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
-      minio: { condition: service_started }
+      storage: { condition: service_started }
 
   worker:
     <<: *dotrix
@@ -148,14 +148,17 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes: [redisdata:/data]
 
-  minio:
-    image: minio/minio:latest
+  # S3-compatible object storage for document originals: RustFS (MinIO's images left Docker Hub).
+  # The variables keep MinIO's names.
+  storage:
+    image: rustfs/rustfs:1.0.3
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
-    volumes: [miniodata:/data]
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:?}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+    volumes: [storagedata:/data]
 
 networks:
   docker-control:
@@ -164,4 +167,4 @@ networks:
 volumes:
   pgdata:
   redisdata:
-  miniodata:
+  storagedata:

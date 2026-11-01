@@ -1,14 +1,14 @@
 # Deploying dotrix with Dokploy
 
 One VPS running [Dokploy](https://dokploy.com): the web app, the API, the background worker,
-Postgres (with pgvector), Redis, and MinIO, and coding runs in sandboxes on the same machine's
+Postgres (with pgvector), Redis, and RustFS (S3-compatible storage), and coding runs in sandboxes on the same machine's
 Docker. Nobody who uses dotrix installs anything.
 
 ```
 VPS
 └── Docker
     ├── Dokploy, Traefik (TLS, your domain)
-    ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc), admin (nginx, admin.dotrix.cc, /v1/ops only) → api, worker, migrate (once), postgres, redis, minio, docker-proxy
+    ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc), admin (nginx, admin.dotrix.cc, /v1/ops only) → api, worker, migrate (once), postgres, redis, storage (RustFS), docker-proxy
     └── coding sandboxes, two containers per run: dotrix-run-<id> and dotrix-run-<id>-egress
 ```
 
@@ -19,7 +19,7 @@ The defaults in `dokploy.env.example` fit 6 vCPUs and 12 GB of memory:
 | What | Memory |
 | --- | --- |
 | Dokploy and Traefik | about 0.5 GB |
-| Postgres, Redis, MinIO | about 1.5 GB |
+| Postgres, Redis, RustFS | about 1.5 GB |
 | API and worker | about 1.5 GB |
 | Coding: 2 runs at once × 3 GB (`DOTRIX_CODING_MAX_RUNS`, `DOTRIX_CODING_MEMORY`) | up to 6 GB |
 
@@ -175,4 +175,4 @@ Then remove the `worker` and `docker-proxy` services from the compose file.
   `DOTRIX_CODING_DOCKER_RUNTIME=runsc`. Each sandbox then runs on its own kernel layer.
 - **A second VPS for coding:** keeps untrusted code off the machine with your database. Run the
   worker there (as above), pointing at this VPS's Postgres and Redis over a private network.
-- **Snapshots:** take one before upgrading; back up the `pgdata` and `miniodata` volumes.
+- **Snapshots:** take one before upgrading; back up the `pgdata` and `storagedata` volumes.

@@ -33,6 +33,9 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Self-hosting: file storage is RustFS (`rustfs/rustfs:1.0.3`, S3-compatible) in place of MinIO, whose images left Docker
+  Hub. The service is `storage` with a fresh `storagedata` volume; `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` keep
+  their names. Copy any existing MinIO files across before switching (e.g. with an S3 client's sync).
 - Codes looks and works like Claude Code's session view: a details column (where Kai works, the repository and
   branch, usage, the files it changed, the pull request and its checks); several panes open at once, stacked
   (Changes, Files, Terminal, Review), each expandable, from the session bar or its "…" menu; each turn's steps folded
