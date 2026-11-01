@@ -75,7 +75,7 @@ services:
         VITE_APP_URL: ${DOTRIX_APP_URL}
     restart: unless-stopped
 
-  # The admin console for whoever operates dotrix: its own origin and sign-in; only /v1/ops reaches
+  # The admin console for whoever operates dotrix: its own origin and sign-in; only /v1/admin reaches
   # the API (deploy/admin.nginx.conf).
   admin:
     build: { context: .., dockerfile: deploy/admin.Dockerfile }

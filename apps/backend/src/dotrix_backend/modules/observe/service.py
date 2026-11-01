@@ -1,4 +1,4 @@
-"""The observability reads behind Ops: the workspace's health in one query set, and a
+"""Workspace observability reads: the workspace's health in one query set, and a
 unified run history across chat and coding. Reads only — the numbers come from the modules'
 own tables. Runs stay under the same privacy as everywhere else (each person sees their own,
 plus what's waiting on a decision they may make)."""
@@ -22,7 +22,7 @@ from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
-from dotrix_backend.modules.workspaces.models import Membership, Workspace
+from dotrix_backend.modules.workspaces.models import Membership
 
 from .schemas import (
     ObserveCounts,
@@ -30,7 +30,6 @@ from .schemas import (
     ObserveOverview,
     ObserveQueue,
     RunGroupSummary,
-    RunPage,
 )
 
 
@@ -217,46 +216,6 @@ class ObserveService:
             if cost is not None
             else None,
         )
-
-    async def platform_runs(
-        self,
-        *,
-        kind: Literal["chat", "coding"] | None = None,
-        failed: bool = False,
-        offset: int = 0,
-        limit: int = 50,
-    ) -> RunPage:
-        """One page of every workspace's runs, newest first, with the total, for the admin console.
-        It sees every workspace but not what people wrote: a run is named by its workspace, project and
-        issue, never by its conversation's title or message."""
-        runs = await self._runs(None, kind=kind, failed=failed, offset=offset, limit=limit)
-        slugs = dict(
-            (await self.session.execute(
-                select(Workspace.id, Workspace.slug).where(Workspace.id.in_({r.workspace_id for r in runs}))
-            )).all()
-        )
-        keys = dict(
-            (await self.session.execute(
-                select(Project.id, Project.key).where(Project.id.in_({r.project_id for r in runs if r.project_id}))
-            )).all()
-        )
-        for r in runs:
-            r.workspace = slugs.get(r.workspace_id)
-            project = keys.get(r.project_id) if r.project_id else None
-            if r.kind == "chat":
-                r.label = " · ".join(filter(None, [project or "Across projects", r.work_mode]))
-        total = 0
-        if kind in (None, "chat"):
-            total += (await self.session.scalar(
-                select(func.count(AgentRun.id)).where(AgentRun.status == RunStatus.FAILED if failed else true())
-            )) or 0
-        if kind in (None, "coding"):
-            total += (await self.session.scalar(
-                select(func.count(CodingRun.id)).where(
-                    CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true()
-                )
-            )) or 0
-        return RunPage(items=runs, total=total)
 
     async def runs(
         self,

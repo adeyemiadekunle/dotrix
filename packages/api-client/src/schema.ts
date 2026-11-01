@@ -359,7 +359,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/bootstrap": {
+    "/v1/admin/bootstrap": {
         parameters: {
             query?: never;
             header?: never;
@@ -367,10 +367,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Ops Bootstrap
-         * @description Whether ops sign-up is open: true only while no ops account exists.
+         * Admin Bootstrap
+         * @description Whether admin sign-up is open: true only while no admin account exists.
          */
-        get: operations["ops_bootstrap"];
+        get: operations["admin_bootstrap"];
         put?: never;
         post?: never;
         delete?: never;
@@ -379,7 +379,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/signup": {
+    "/v1/admin/signup": {
         parameters: {
             query?: never;
             header?: never;
@@ -389,18 +389,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ops Signup
-         * @description Bootstrap the first ops account. The console is for whoever operates the deployment,
+         * Admin Signup
+         * @description Bootstrap the first admin account. The console is for whoever operates the deployment,
          *     not app users — sign-up closes once the first account exists. Rate-limited per IP.
          */
-        post: operations["ops_signup"];
+        post: operations["admin_signup"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/login": {
+    "/v1/admin/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -410,18 +410,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ops Login
-         * @description Sign the ops in: its own email and password, never an app session. Rate-limited per
+         * Admin Login
+         * @description Sign the admin in: its own email and password, never an app session. Rate-limited per
          *     IP and per email (10 attempts in 15 minutes).
          */
-        post: operations["ops_login"];
+        post: operations["admin_login"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/refresh": {
+    "/v1/admin/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -431,18 +431,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ops Refresh
+         * Admin Refresh
          * @description Trade the refresh-token cookie for a new access token. The cookie rotates with it:
          *     the one you sent is dead from now on (the row is locked while it rotates).
          */
-        post: operations["ops_refresh"];
+        post: operations["admin_refresh"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/logout": {
+    "/v1/admin/logout": {
         parameters: {
             query?: never;
             header?: never;
@@ -452,17 +452,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ops Logout
+         * Admin Logout
          * @description Sign out: revoke the access token's session, then clear both cookies.
          */
-        post: operations["ops_logout"];
+        post: operations["admin_logout"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/me": {
+    "/v1/admin/me": {
         parameters: {
             query?: never;
             header?: never;
@@ -470,10 +470,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Ops Me
+         * Admin Me
          * @description Who's signed in.
          */
-        get: operations["ops_me"];
+        get: operations["admin_me"];
         put?: never;
         post?: never;
         delete?: never;
@@ -482,7 +482,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/health": {
+    "/v1/admin/observe/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -503,7 +503,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/counts": {
+    "/v1/admin/observe/counts": {
         parameters: {
             query?: never;
             header?: never;
@@ -523,7 +523,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/trends": {
+    "/v1/admin/observe/trends": {
         parameters: {
             query?: never;
             header?: never;
@@ -543,7 +543,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/failures": {
+    "/v1/admin/observe/failures": {
         parameters: {
             query?: never;
             header?: never;
@@ -564,7 +564,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/coding": {
+    "/v1/admin/observe/coding": {
         parameters: {
             query?: never;
             header?: never;
@@ -584,7 +584,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/workspaces": {
+    "/v1/admin/observe/workspaces": {
         parameters: {
             query?: never;
             header?: never;
@@ -604,7 +604,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/runs": {
+    "/v1/admin/observe/runs": {
         parameters: {
             query?: never;
             header?: never;
@@ -625,7 +625,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/audit": {
+    "/v1/admin/audit": {
         parameters: {
             query?: never;
             header?: never;
@@ -4769,6 +4769,66 @@ export interface components {
          * @enum {string}
          */
         ActivityKind: "issue.created" | "issue.updated" | "issue.commented" | "issue.claimed" | "document.changed" | "document.deleted" | "run.started" | "approval.decided";
+        /**
+         * AdminBootstrap
+         * @description Whether the sign-up form is open: true only while no admin account exists.
+         */
+        AdminBootstrap: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** AdminLogin */
+        AdminLogin: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** AdminRead */
+        AdminRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            workspace?: components["schemas"]["AdminWorkspace"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AdminSignup
+         * @description Create an admin account by proving you own the workspace: your app account's email and
+         *     password. The admin gets its own credentials from then on — separate from your sign-in.
+         */
+        AdminSignup: {
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            /** Password */
+            password: string;
+        };
+        /** AdminWorkspace */
+        AdminWorkspace: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Kind */
+            kind: string;
+        };
         /** AgentActivityRead */
         AgentActivityRead: {
             /**
@@ -8191,66 +8251,6 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
         };
-        /**
-         * OpsBootstrap
-         * @description Whether the sign-up form is open: true only while no ops account exists.
-         */
-        OpsBootstrap: {
-            /** Enabled */
-            enabled: boolean;
-        };
-        /** OpsLogin */
-        OpsLogin: {
-            /** Email */
-            email: string;
-            /** Password */
-            password: string;
-        };
-        /** OpsRead */
-        OpsRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Email */
-            email: string;
-            /** Name */
-            name: string;
-            workspace?: components["schemas"]["OpsWorkspace"] | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /**
-         * OpsSignup
-         * @description Create an ops account by proving you own the workspace: your app account's email and
-         *     password. The ops gets its own credentials from then on — separate from your sign-in.
-         */
-        OpsSignup: {
-            /** Email */
-            email: string;
-            /** Name */
-            name: string;
-            /** Password */
-            password: string;
-        };
-        /** OpsWorkspace */
-        OpsWorkspace: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            /** Kind */
-            kind: string;
-        };
         /** OrganizationConversion */
         OrganizationConversion: {
             /**
@@ -11254,7 +11254,7 @@ export interface operations {
             };
         };
     };
-    ops_bootstrap: {
+    admin_bootstrap: {
         parameters: {
             query?: never;
             header?: never;
@@ -11269,7 +11269,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OpsBootstrap"];
+                    "application/json": components["schemas"]["AdminBootstrap"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -11283,7 +11283,7 @@ export interface operations {
             };
         };
     };
-    ops_signup: {
+    admin_signup: {
         parameters: {
             query?: never;
             header?: never;
@@ -11292,7 +11292,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OpsSignup"];
+                "application/json": components["schemas"]["AdminSignup"];
             };
         };
         responses: {
@@ -11343,7 +11343,7 @@ export interface operations {
             };
         };
     };
-    ops_login: {
+    admin_login: {
         parameters: {
             query?: never;
             header?: never;
@@ -11352,7 +11352,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OpsLogin"];
+                "application/json": components["schemas"]["AdminLogin"];
             };
         };
         responses: {
@@ -11392,13 +11392,13 @@ export interface operations {
             };
         };
     };
-    ops_refresh: {
+    admin_refresh: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_refresh?: string | null;
+                dtx_admin_refresh?: string | null;
             };
         };
         requestBody?: never;
@@ -11430,13 +11430,13 @@ export interface operations {
             };
         };
     };
-    ops_logout: {
+    admin_logout: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11468,13 +11468,13 @@ export interface operations {
             };
         };
     };
-    ops_me: {
+    admin_me: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11485,7 +11485,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OpsRead"];
+                    "application/json": components["schemas"]["AdminRead"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -11514,7 +11514,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11557,7 +11557,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11600,7 +11600,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11643,7 +11643,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11686,7 +11686,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11730,7 +11730,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11777,7 +11777,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;
@@ -11832,7 +11832,7 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: {
-                dtx_ops_access?: string | null;
+                dtx_admin_access?: string | null;
             };
         };
         requestBody?: never;

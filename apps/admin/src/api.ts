@@ -1,6 +1,6 @@
-// The admin console's API client. The console has its own accounts (POST /v1/ops/*), never the web
+// The admin console's API client. The console has its own accounts (POST /v1/admin/*), never the web
 // app's session: both tokens live in httpOnly, SameSite=Strict cookies, the refresh cookie scoped to
-// /v1/ops/refresh, and browser tabs take turns rotating it (a Web Lock).
+// /v1/admin/refresh, and browser tabs take turns rotating it (a Web Lock).
 
 type Problem = { detail?: string };
 type ApiError = Error & { status?: number };
@@ -9,7 +9,7 @@ let refreshing: Promise<string | null> | null = null;
 
 export async function refreshSession(): Promise<boolean> {
   refreshing ??= (async () => {
-    const refresh = () => rawCall<void>("/ops/refresh", { method: "POST" }).then(() => "ok");
+    const refresh = () => rawCall<void>("/admin/refresh", { method: "POST" }).then(() => "ok");
     return navigator.locks ? navigator.locks.request("dotrix-admin-refresh", refresh) : refresh();
   })()
     .catch(() => null)

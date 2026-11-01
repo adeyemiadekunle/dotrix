@@ -1,4 +1,4 @@
-"""Workspace observability (Ops): health overview and the unified run history."""
+"""Workspace observability: health overview and the unified run history."""
 from __future__ import annotations
 
 import uuid

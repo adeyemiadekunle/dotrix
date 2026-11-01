@@ -1,5 +1,5 @@
 // dotrix admin: the console for whoever operates dotrix. It has its own accounts and sign-in
-// (/v1/ops/*, never the web app's session) and reads the whole platform's health and use, across
+// (/v1/admin/*, never the web app's session) and reads the whole platform's health and use, across
 // every workspace, without what people wrote.
 import {
   ArrowUpRightIcon,
@@ -68,13 +68,13 @@ function usePage(): [string, (p: string) => void] {
 }
 
 function Login({ onAuth }: { onAuth: () => void }) {
-  const boot = useQuery({ queryKey: ["bootstrap"], queryFn: () => rawCall<{ enabled: boolean }>("/ops/bootstrap"), staleTime: 60_000 });
+  const boot = useQuery({ queryKey: ["bootstrap"], queryFn: () => rawCall<{ enabled: boolean }>("/admin/bootstrap"), staleTime: 60_000 });
   const first = boot.data?.enabled === true;
   const [f, setF] = useState({ email: "", name: "", password: "" });
   const [show, setShow] = useState(false);
   const auth = useMutation({
     mutationFn: () =>
-      rawCall<void>(first ? "/ops/signup" : "/ops/login", {
+      rawCall<void>(first ? "/admin/signup" : "/admin/login", {
         method: "POST",
         body: first ? f : { email: f.email, password: f.password },
       }),
@@ -163,7 +163,7 @@ export function App() {
   const [booting, setBooting] = useState(true);
   const [page, go] = usePage();
 
-  const me = useQuery({ queryKey: ["me"], queryFn: () => call<Me>("/ops/me"), enabled: signedIn, retry: false });
+  const me = useQuery({ queryKey: ["me"], queryFn: () => call<Me>("/admin/me"), enabled: signedIn, retry: false });
 
   // On load, a valid refresh cookie signs back in without the form.
   useEffect(() => {
@@ -174,7 +174,7 @@ export function App() {
 
   const signOut = () => {
     // Revoke before dropping the UI's session, so the cookie is still sent.
-    void rawCall<void>("/ops/logout", { method: "POST" }).catch(() => undefined);
+    void rawCall<void>("/admin/logout", { method: "POST" }).catch(() => undefined);
     setSignedIn(false);
     qc.clear();
   };

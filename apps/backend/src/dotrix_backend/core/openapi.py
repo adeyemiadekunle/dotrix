@@ -147,8 +147,8 @@ TAGS: list[dict[str, str]] = [
         "and the caller's run visibility.",
     },
     {
-        "name": "ops",
-        "description": "The Ops app's own accounts and reads: sign-up by proving workspace "
+        "name": "admin",
+        "description": "The Admin app's own accounts and reads: sign-up by proving workspace "
         "ownership, httpOnly cookie sessions, workspace observability, audit, and creating an "
         "organisation workspace.",
     },
