@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Self-hosting: the admin console is part of the production deploy (`admin`, on its own domain such as admin.dotrix.cc),
+  and `pnpm docker:up` also runs the public site (http://localhost:3200) beside the web app and the admin console.
 - Kai's turns can run in Docker Cloud sandboxes (`DOTRIX_CODING_SANDBOX=docker-cloud`): a microVM per session, reaching
   only the model API, with the model key kept out of the sandbox as a Docker secret. The coding image is published to a
   registry for each release.
@@ -46,6 +48,9 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   this computer's folder or the cloud), and a rounded message box at the bottom with + on the left and send on the
   right; the mode, approvals and model sit under it as plain text. Model names are short ("Opus 5.5", "GPT-5.5"), and
   the "Coding is off" chip, the keyboard hints and the explainers are gone. Enter starts a session.
+- Self-hosting: file storage is RustFS (`rustfs/rustfs:1.0.3`, S3-compatible) in place of MinIO, whose images left Docker
+  Hub. The service is `storage` with a fresh `storagedata` volume; `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` keep
+  their names. Copy any existing MinIO files across before switching (e.g. with an S3 client's sync).
 - Codes looks and works like Claude Code's session view: a details column (where Kai works, the repository and
   branch, usage, the files it changed, the pull request and its checks); several panes open at once, stacked
   (Changes, Files, Terminal, Review), each expandable, from the session bar or its "…" menu; each turn's steps folded

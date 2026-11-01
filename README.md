@@ -152,7 +152,7 @@ packages/
   engine/       UI-agnostic agent engine: agent contracts, pipelines, approvals, tools (Python)
   api-client/   Typed client for the backend API, generated from its OpenAPI schema
   ui/           shadcn/ui components, the chat kit, and the theme
-infra/          Local services (Postgres with pgvector, Redis, MinIO) and the coding sandbox's
+infra/          Local services (Postgres with pgvector, Redis, RustFS for S3-compatible storage) and the coding sandbox's
                 image and egress proxy (infra/coding)
 docs/           The PRD, the engine, the agents v2 spec, the coding agent, and the proposed direction
 ```
@@ -163,7 +163,7 @@ desktop app, and the CLI are all clients of one API. The engine never depends on
 
 ## Getting started
 
-You need Python 3.11+, uv, Node 22+, pnpm 11, and Docker (for Postgres, Redis, and MinIO).
+You need Python 3.11+, uv, Node 22+, pnpm 11, and Docker (for Postgres, Redis, and RustFS).
 
 ```bash
 uv sync                  # Python: engine, CLI, backend + dev tools
@@ -174,7 +174,7 @@ cp .env.example .env     # then replace every change-me and set a model API key
 Run it:
 
 ```bash
-pnpm db:up && pnpm db:migrate   # Postgres, Redis, MinIO (localhost only), then the migrations
+pnpm db:up && pnpm db:migrate   # Postgres, Redis, RustFS (localhost only), then the migrations
 pnpm dev:backend         # API on http://localhost:8000 (agents need a model key in .env)
 pnpm dev:worker          # only with DOTRIX_JOBS=worker: runs survive API and worker restarts
 pnpm dev:web             # web on http://localhost:3000

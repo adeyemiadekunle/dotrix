@@ -179,7 +179,7 @@ class Settings(DatabaseSettings):
     # branches go to the repo itself (development only).
     coding_fork_owner: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{1,39}$")
 
-    # Object storage for document originals: any S3-compatible store (MinIO locally).
+    # Object storage for document originals: any S3-compatible store (RustFS locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
     s3_endpoint_url: str | None = None
     s3_access_key: SecretStr | None = None

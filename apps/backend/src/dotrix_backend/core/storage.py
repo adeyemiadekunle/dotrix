@@ -1,7 +1,7 @@
 """Object storage for binary files (document originals). Services depend on the
 BlobStorage protocol, never on S3 directly.
 
-- S3BlobStorage: any S3-compatible store. Locally that's MinIO from
+- S3BlobStorage: any S3-compatible store. Locally that's RustFS from
   docker-compose; in production AWS S3, Cloudflare R2, etc. Only env vars change.
 - MemoryBlobStorage: tests.
 """
