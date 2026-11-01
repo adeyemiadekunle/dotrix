@@ -1,9 +1,8 @@
-"""The Ops app's API: its own accounts and sign-in, then the workspace's observability
-and management — never the app users' session."""
+"""The admin console's API (apps/admin, under /v1/ops): its own accounts and sign-in, then the
+platform's observability across every workspace, never what people wrote, and never the app
+users' session."""
 from __future__ import annotations
 
-import uuid
-from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Cookie, Depends, Query, Request, Response, status
@@ -12,10 +11,18 @@ from dotrix_backend.api.deps import SessionDep, SettingsDep
 from dotrix_backend.core.errors import Forbidden, Unauthorized
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.core.settings import Settings
-from dotrix_backend.modules.audit.schemas import AuditEventRead
-from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.limits import LOGIN, ThrottleDep
-from dotrix_backend.modules.observe.schemas import ObservedRun, ObserveOverview
+from dotrix_backend.modules.observe.platform import PlatformObserve
+from dotrix_backend.modules.observe.schemas import (
+    AuditPage,
+    CodingBreakdown,
+    DayStats,
+    FailureReport,
+    PlatformCounts,
+    PlatformHealth,
+    RunPage,
+    WorkspaceUsage,
+)
 from dotrix_backend.modules.observe.service import ObserveService
 
 from .schemas import OpsBootstrap, OpsLogin, OpsRead, OpsSignup
@@ -128,35 +135,77 @@ def get_observe(session: SessionDep, settings: SettingsDep) -> ObserveService:
 Observe = Annotated[ObserveService, Depends(get_observe)]
 
 
-@router.get("/observe/overview", responses=errors(403, 422))
-async def observe_overview(ops: OpsDep, observe: Observe) -> ObserveOverview:
-    """Platform health: every workspace's runs, the whole dispatch queue, lapsed leases."""
-    return await observe.platform_overview()
+def get_platform(session: SessionDep, settings: SettingsDep) -> PlatformObserve:
+    return PlatformObserve(session, settings)
+
+
+Platform = Annotated[PlatformObserve, Depends(get_platform)]
+Days = Annotated[int, Query(ge=1, le=90, description="How many days back")]
+
+
+@router.get("/observe/health", responses=errors(422))
+async def observe_health(ops: OpsDep, request: Request, platform: Platform) -> PlatformHealth:
+    """Is the deployment working: the database's answer time, the run queue and when a worker last
+    took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners."""
+    return await platform.health(request.app.version)
+
+
+@router.get("/observe/counts", responses=errors(422))
+async def observe_counts(ops: OpsDep, platform: Platform, days: Days = 7) -> PlatformCounts:
+    """How big the deployment is: workspaces and people (all, new, active in the window), projects, documents."""
+    return await platform.counts(days)
+
+
+@router.get("/observe/trends", responses=errors(422))
+async def observe_trends(ops: OpsDep, platform: Platform, days: Days = 14) -> list[DayStats]:
+    """Each UTC day: chat runs and coding turns started and failed, tokens, coding cost, and sign-ups."""
+    return await platform.trends(days)
+
+
+@router.get("/observe/failures", responses=errors(422))
+async def observe_failures(ops: OpsDep, platform: Platform, days: Days = 7) -> FailureReport:
+    """What failed in the window: chat runs by error kind and by model, and every failure grouped by its
+    error's first line, most frequent first."""
+    return await platform.failures(days)
+
+
+@router.get("/observe/coding", responses=errors(422))
+async def observe_coding(ops: OpsDep, platform: Platform, days: Days = 7) -> list[CodingBreakdown]:
+    """Coding turns by engine and by where they ran: outcomes, PRs, time to finish (p50, p95), tokens and cost."""
+    return await platform.coding(days)
+
+
+@router.get("/observe/workspaces", responses=errors(422))
+async def observe_workspaces(
+    ops: OpsDep, platform: Platform, days: Days = 7, limit: int = Query(default=50, ge=1, le=200)
+) -> list[WorkspaceUsage]:
+    """Workspaces by their use in the window: runs, failures, tokens, coding cost, size, and the latest run."""
+    return await platform.workspaces(days, limit)
 
 
 @router.get("/observe/runs", responses=errors(403, 422))
 async def observe_runs(
     ops: OpsDep,
-    session: SessionDep,
     observe: Observe,
     kind: Literal["chat", "coding"] | None = None,
-    before: datetime | None = None,
-    before_id: uuid.UUID | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
-) -> list[ObservedRun]:
-    """Run history across the platform: chat and coding merged, newest first. Page backwards
-    with `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped."""
-    return await observe.platform_runs(kind=kind, before=before, before_id=before_id, limit=limit)
+    failed: bool = Query(default=False, description="Only failed runs (and coding turns waiting to be recovered)"),
+    offset: int = Query(default=0, ge=0, le=10_000, description="Skip this many runs: the page times its size"),
+    limit: int = Query(default=25, ge=1, le=200),
+) -> RunPage:
+    """A page of the run history across the platform, with the total: chat and coding merged,
+    newest first, named by workspace, project and issue (never a conversation's words)."""
+    return await observe.platform_runs(kind=kind, failed=failed, offset=offset, limit=limit)
 
 
 @router.get("/audit", responses=errors(403, 422))
 async def audit(
     ops: OpsDep,
-    session: SessionDep,
-    action: str | None = None,
-    before: datetime | None = None,
-    limit: int = Query(default=100, ge=1, le=200),
-) -> list[AuditEventRead]:
-    """Audit events across the whole platform, newest first."""
-    return await AuditLog(session).list(None, action=action, before=before, limit=limit)
+    platform: Platform,
+    action: str | None = Query(default=None, max_length=100, description="Actions starting with this, e.g. `coding.`"),
+    offset: int = Query(default=0, ge=0, le=100_000, description="Skip this many events: the page times its size"),
+    limit: int = Query(default=25, ge=1, le=200),
+) -> AuditPage:
+    """A page of audit events across the whole platform, newest first, with the total: the action,
+    who, and which workspace, without the details (they can carry words people wrote)."""
+    return await platform.audit(action=action, offset=offset, limit=limit)
 

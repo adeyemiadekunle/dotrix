@@ -22,7 +22,7 @@ from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
-from dotrix_backend.modules.workspaces.models import Membership
+from dotrix_backend.modules.workspaces.models import Membership, Workspace
 
 from .schemas import (
     ObserveCounts,
@@ -30,6 +30,7 @@ from .schemas import (
     ObserveOverview,
     ObserveQueue,
     RunGroupSummary,
+    RunPage,
 )
 
 
@@ -41,10 +42,6 @@ class ObserveService:
     async def overview(self, member: Membership) -> ObserveOverview:
         """Workspace counts, visible runs and dispatches, and runs with lapsed leases."""
         return await self._overview(member)
-
-    async def platform_overview(self) -> ObserveOverview:
-        """The same overview for the whole deployment: ops sees every workspace's runs."""
-        return await self._overview(None)
 
     async def _overview(self, member: Membership | None) -> ObserveOverview:
         ws = member.workspace_id if member else None  # None: the whole deployment
@@ -225,12 +222,41 @@ class ObserveService:
         self,
         *,
         kind: Literal["chat", "coding"] | None = None,
-        before: datetime | None = None,
-        before_id: uuid.UUID | None = None,
+        failed: bool = False,
+        offset: int = 0,
         limit: int = 50,
-    ) -> list[ObservedRun]:
-        """Every workspace's runs, newest first (the ops console sees the whole platform)."""
-        return await self._runs(None, kind=kind, before=before, before_id=before_id, limit=limit)
+    ) -> RunPage:
+        """One page of every workspace's runs, newest first, with the total, for the admin console.
+        It sees every workspace but not what people wrote: a run is named by its workspace, project and
+        issue, never by its conversation's title or message."""
+        runs = await self._runs(None, kind=kind, failed=failed, offset=offset, limit=limit)
+        slugs = dict(
+            (await self.session.execute(
+                select(Workspace.id, Workspace.slug).where(Workspace.id.in_({r.workspace_id for r in runs}))
+            )).all()
+        )
+        keys = dict(
+            (await self.session.execute(
+                select(Project.id, Project.key).where(Project.id.in_({r.project_id for r in runs if r.project_id}))
+            )).all()
+        )
+        for r in runs:
+            r.workspace = slugs.get(r.workspace_id)
+            project = keys.get(r.project_id) if r.project_id else None
+            if r.kind == "chat":
+                r.label = " · ".join(filter(None, [project or "Across projects", r.work_mode]))
+        total = 0
+        if kind in (None, "chat"):
+            total += (await self.session.scalar(
+                select(func.count(AgentRun.id)).where(AgentRun.status == RunStatus.FAILED if failed else true())
+            )) or 0
+        if kind in (None, "coding"):
+            total += (await self.session.scalar(
+                select(func.count(CodingRun.id)).where(
+                    CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true()
+                )
+            )) or 0
+        return RunPage(items=runs, total=total)
 
     async def runs(
         self,
@@ -252,8 +278,10 @@ class ObserveService:
         member: Membership | None,
         *,
         kind: Literal["chat", "coding"] | None = None,
+        failed: bool = False,
         before: datetime | None = None,
         before_id: uuid.UUID | None = None,
+        offset: int = 0,
         limit: int = 50,
     ) -> list[ObservedRun]:
         ws = member.workspace_id if member else None
@@ -273,9 +301,10 @@ class ObserveService:
                 .where(
                     *( [AgentRun.workspace_id == ws] if ws is not None else [] ),
                     runs_visible_to(member) if member else true(),
+                    AgentRun.status == RunStatus.FAILED if failed else true(),
                 )
                 .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
-                .limit(limit)
+                .limit(offset + limit)
             )
             if (clause := keyset(AgentRun)) is not None:
                 stmt = stmt.where(clause)
@@ -284,6 +313,7 @@ class ObserveService:
                     ObservedRun(
                         kind="chat",
                         id=r.id,
+                        workspace_id=r.workspace_id,
                         status=r.status.value,
                         label=r.title or r.message[:100],
                         project_id=r.project_id,
@@ -307,9 +337,10 @@ class ObserveService:
                 .where(
                     *( [CodingRun.workspace_id == ws] if ws is not None else [] ),
                     visible_runs(member) if member else true(),
+                    CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true(),
                 )
                 .order_by(CodingRun.created_at.desc(), CodingRun.id.desc())
-                .limit(limit)
+                .limit(offset + limit)
             )
             if (clause := keyset(CodingRun)) is not None:
                 stmt = stmt.where(clause)
@@ -318,6 +349,8 @@ class ObserveService:
                     ObservedRun(
                         kind="coding",
                         id=r.id,
+                        workspace_id=r.workspace_id,
+                        started_at=r.started_at,
                         status=r.status.value,
                         label=r.issue_key,
                         project_id=r.project_id,
@@ -335,4 +368,4 @@ class ObserveService:
                 )
 
         found.sort(key=lambda r: (r.created_at, r.id), reverse=True)
-        return found[:limit]
+        return found[offset : offset + limit]

@@ -24,10 +24,19 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   now).
 - dotrix.cc, the public site (`apps/site`): what dotrix does, with screenshots, and links to sign in to the web app at
   app.dotrix.cc and to download the desktop app and the CLI. Deployed beside the app as the `site` service.
+- The admin console (`apps/admin`, formerly Ops) watches the whole platform: health (database, run queue, workers,
+  stuck runs, recovery, runners and sandboxes), runs and failures per day, failures grouped by error, coding by engine
+  (outcomes, PRs, time to finish, cost), workspaces by use, and the audit log, in tables with pages (rows per page,
+  page numbers) and shadcn charts. Redesigned on dotrix's own design, sign-in included, which loads before the rest.
 
 ### Changed
 
 - Icons are Phosphor everywhere, and page titles use Geist Serif.
+
+### Security
+
+- The admin console no longer sees what people wrote: runs are named by workspace, project and issue instead of a
+  conversation's title or first message, and audit events come without their details.
 
 ## [0.1.0] - 2026-10-31
 

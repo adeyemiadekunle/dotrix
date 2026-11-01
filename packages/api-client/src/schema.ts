@@ -482,7 +482,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/ops/observe/overview": {
+    "/v1/ops/observe/health": {
         parameters: {
             query?: never;
             header?: never;
@@ -490,10 +490,112 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Observe Overview
-         * @description Platform health: every workspace's runs, the whole dispatch queue, lapsed leases.
+         * Observe Health
+         * @description Is the deployment working: the database's answer time, the run queue and when a worker last
+         *     took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners.
          */
-        get: operations["observe_overview"];
+        get: operations["observe_health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ops/observe/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Counts
+         * @description How big the deployment is: workspaces and people (all, new, active in the window), projects, documents.
+         */
+        get: operations["observe_counts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ops/observe/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Trends
+         * @description Each UTC day: chat runs and coding turns started and failed, tokens, coding cost, and sign-ups.
+         */
+        get: operations["observe_trends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ops/observe/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Failures
+         * @description What failed in the window: chat runs by error kind and by model, and every failure grouped by its
+         *     error's first line, most frequent first.
+         */
+        get: operations["observe_failures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ops/observe/coding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Coding
+         * @description Coding turns by engine and by where they ran: outcomes, PRs, time to finish (p50, p95), tokens and cost.
+         */
+        get: operations["observe_coding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ops/observe/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Workspaces
+         * @description Workspaces by their use in the window: runs, failures, tokens, coding cost, size, and the latest run.
+         */
+        get: operations["observe_workspaces"];
         put?: never;
         post?: never;
         delete?: never;
@@ -511,8 +613,8 @@ export interface paths {
         };
         /**
          * Observe Runs
-         * @description Run history across the platform: chat and coding merged, newest first. Page backwards
-         *     with `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.
+         * @description A page of the run history across the platform, with the total: chat and coding merged,
+         *     newest first, named by workspace, project and issue (never a conversation's words).
          */
         get: operations["observe_runs"];
         put?: never;
@@ -532,7 +634,8 @@ export interface paths {
         };
         /**
          * Audit
-         * @description Audit events across the whole platform, newest first.
+         * @description A page of audit events across the whole platform, newest first, with the total: the action,
+         *     who, and which workspace, without the details (they can carry words people wrote).
          */
         get: operations["audit"];
         put?: never;
@@ -5390,6 +5493,13 @@ export interface components {
              */
             created_at: string;
         };
+        /** AuditPage */
+        AuditPage: {
+            /** Items */
+            items: components["schemas"]["PlatformAuditEvent"][];
+            /** Total */
+            total: number;
+        };
         /** AuthProviders */
         AuthProviders: {
             /**
@@ -5756,6 +5866,38 @@ export interface components {
              * @description The model a new session starts on: your default model when you can code on it
              */
             default_model?: string | null;
+        };
+        /**
+         * CodingBreakdown
+         * @description Coding turns for one engine in one place (cloud or local).
+         */
+        CodingBreakdown: {
+            /** Engine */
+            engine: string;
+            /** Location */
+            location: string;
+            /** Turns */
+            turns: number;
+            /**
+             * Finished
+             * @description Ended with a PR, changes ready, or no changes
+             */
+            finished: number;
+            /**
+             * Failed
+             * @description Failed, or waiting to be recovered
+             */
+            failed: number;
+            /** Prs */
+            prs: number;
+            /** P50 Seconds */
+            p50_seconds: number | null;
+            /** P95 Seconds */
+            p95_seconds: number | null;
+            /** Tokens */
+            tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
         };
         /**
          * CodingClaim
@@ -6485,6 +6627,57 @@ export interface components {
              */
             when_reset: boolean;
         };
+        /**
+         * DayStats
+         * @description One UTC day: runs started and how many of them failed, tokens, coding cost, sign-ups.
+         */
+        DayStats: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * Chat Runs
+             * @default 0
+             */
+            chat_runs: number;
+            /**
+             * Chat Failed
+             * @default 0
+             */
+            chat_failed: number;
+            /**
+             * Coding Runs
+             * @default 0
+             */
+            coding_runs: number;
+            /**
+             * Coding Failed
+             * @default 0
+             */
+            coding_failed: number;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            /**
+             * Coding Cost Usd
+             * @default 0
+             */
+            coding_cost_usd: number;
+            /**
+             * Signups
+             * @default 0
+             */
+            signups: number;
+        };
         /** Decision */
         Decision: {
             /**
@@ -6743,6 +6936,39 @@ export interface components {
              * @description Children done, 0-100
              */
             percent: number;
+        };
+        /** FailureGroup */
+        FailureGroup: {
+            /**
+             * Key
+             * @description The error kind, the model, or the error's first line
+             */
+            key: string;
+            /** Kind */
+            kind?: ("chat" | "coding") | null;
+            /**
+             * Detail
+             * @description Messages: the chat error kind or the coding status
+             */
+            detail?: string | null;
+            /** Count */
+            count: number;
+            /** Last At */
+            last_at: string | null;
+        };
+        /** FailureReport */
+        FailureReport: {
+            /** Days */
+            days: number;
+            /** Chat Kinds */
+            chat_kinds: components["schemas"]["FailureGroup"][];
+            /** Chat Models */
+            chat_models: components["schemas"]["FailureGroup"][];
+            /**
+             * Messages
+             * @description Failures grouped by their error's first line, most frequent first
+             */
+            messages: components["schemas"]["FailureGroup"][];
         };
         /**
          * FileEntry
@@ -7909,9 +8135,19 @@ export interface components {
             status: string;
             /**
              * Label
-             * @description The conversation's title or first message; the coding run's issue key
+             * @description The conversation's title or first message, or the coding run's issue key. The admin console sees the project and work mode instead of a conversation's words.
              */
             label: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Workspace
+             * @description Admin console: the workspace's slug
+             */
+            workspace?: string | null;
             /** Project Id */
             project_id: string | null;
             /** Agent */
@@ -7947,6 +8183,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Started At
+             * @description Coding runs: when a worker started the turn
+             */
+            started_at?: string | null;
             /** Finished At */
             finished_at: string | null;
         };
@@ -8170,6 +8411,140 @@ export interface components {
              * @description The tasks (numbers, from 1) this one needs first
              */
             depends_on: number[];
+        };
+        /**
+         * PlatformAuditEvent
+         * @description An audit event on the admin console: what happened, by whom and where, without its details
+         *     (which can carry titles, paths and other words people wrote).
+         */
+        PlatformAuditEvent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Action */
+            action: string;
+            /**
+             * Workspace
+             * @description The workspace's slug
+             */
+            workspace: string | null;
+            /**
+             * Actor Type
+             * @description user, agent, or system
+             */
+            actor_type: string;
+            /** Actor User Id */
+            actor_user_id: string | null;
+            /** Agent */
+            agent: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** PlatformCounts */
+        PlatformCounts: {
+            /** Days */
+            days: number;
+            /** Workspaces */
+            workspaces: number;
+            /** Workspaces New */
+            workspaces_new: number;
+            /**
+             * Workspaces Active
+             * @description Workspaces with a run in the window
+             */
+            workspaces_active: number;
+            /** People */
+            people: number;
+            /** People New */
+            people_new: number;
+            /**
+             * People Active
+             * @description People who started a run in the window
+             */
+            people_active: number;
+            /** Projects */
+            projects: number;
+            /** Documents */
+            documents: number;
+            /** Document Bytes */
+            document_bytes: number;
+        };
+        /**
+         * PlatformHealth
+         * @description Is the deployment working, in one read: the database, the run queue, workers, leases and sandboxes.
+         */
+        PlatformHealth: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Version */
+            version: string;
+            /** Environment */
+            environment: string;
+            /**
+             * Jobs
+             * @description Where background work runs: local, worker, or inline
+             */
+            jobs: string;
+            /**
+             * Sandbox
+             * @description Where cloud coding turns run: docker, docker-cloud, openshell, local, or off
+             */
+            sandbox: string;
+            /** Database Ms */
+            database_ms: number;
+            /**
+             * Queue Pending
+             * @description Dispatches published but not yet taken by a worker
+             */
+            queue_pending: number;
+            /** Queue Oldest Seconds */
+            queue_oldest_seconds: number | null;
+            /** Queue Discarded 24H */
+            queue_discarded_24h: number;
+            /**
+             * Worker Last Took At
+             * @description When a worker last took a run off the queue
+             */
+            worker_last_took_at: string | null;
+            /** Runs Running */
+            runs_running: number;
+            /** Runs Queued */
+            runs_queued: number;
+            /** Stuck */
+            stuck: components["schemas"]["StuckRun"][];
+            /**
+             * Recovery Required
+             * @description Coding turns waiting for someone to check and recover them
+             */
+            recovery_required: number;
+            /**
+             * Interrupted
+             * @description Chat runs that ran out of attempts after their worker stopped
+             */
+            interrupted: number;
+            /** Sandboxes Warm */
+            sandboxes_warm: number;
+            /** Sandboxes Asleep */
+            sandboxes_asleep: number;
+            /**
+             * Runners Online
+             * @description People's computers that checked in during the last 2 minutes
+             */
+            runners_online: number;
+            /** Runners */
+            runners: number;
+            /** Failed 24H */
+            failed_24h: number;
+            /** Finished 24H */
+            finished_24h: number;
         };
         /**
          * PrState
@@ -8988,6 +9363,16 @@ export interface components {
             created_at: string;
         };
         /**
+         * RunPage
+         * @description A page of the admin console's run history, and how many runs match in all.
+         */
+        RunPage: {
+            /** Items */
+            items: components["schemas"]["ObservedRun"][];
+            /** Total */
+            total: number;
+        };
+        /**
          * RunStatus
          * @enum {string}
          */
@@ -9357,6 +9742,36 @@ export interface components {
              * @enum {string}
              */
             why: "changed" | "removed" | "unread";
+        };
+        /**
+         * StuckRun
+         * @description An active run whose lease lapsed: the worker on it is gone, and the sweep should pick it up.
+         */
+        StuckRun: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chat" | "coding";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /**
+             * Workspace
+             * @description The workspace's slug
+             */
+            workspace: string;
+            /**
+             * Label
+             * @description Coding: the issue key
+             */
+            label?: string | null;
+            /** Lease Expired At */
+            lease_expired_at: string | null;
         };
         /**
          * SubgraphRead
@@ -10073,6 +10488,46 @@ export interface components {
             unattended_paused?: boolean | null;
             /** @description The highest approval mode people may work in: `manual` (every change waits for a yes), `accept_edits` (what a person asks for goes through, and coding starts at once), `auto` (the same, and checkpoints don't pause). Owners raise it; owners and admins lower it */
             approval_mode_cap?: components["schemas"]["ApprovalMode"] | null;
+        };
+        /** WorkspaceUsage */
+        WorkspaceUsage: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Kind */
+            kind: string;
+            /** Members */
+            members: number;
+            /** Projects */
+            projects: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Chat Runs */
+            chat_runs: number;
+            /** Coding Runs */
+            coding_runs: number;
+            /** Failed */
+            failed: number;
+            /** Tokens */
+            tokens: number;
+            /** Cost Usd */
+            cost_usd: number;
+            /** Last Run At */
+            last_run_at: string | null;
+            /**
+             * Paused
+             * @description An owner paused the workspace's agents
+             */
+            paused: boolean;
         };
         /** WorkspaceWithRole */
         WorkspaceWithRole: {
@@ -11053,7 +11508,7 @@ export interface operations {
             };
         };
     };
-    observe_overview: {
+    observe_health: {
         parameters: {
             query?: never;
             header?: never;
@@ -11070,7 +11525,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ObserveOverview"];
+                    "application/json": components["schemas"]["PlatformHealth"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -11082,8 +11537,215 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_counts: {
+        parameters: {
+            query?: {
+                /** @description How many days back */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformCounts"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_trends: {
+        parameters: {
+            query?: {
+                /** @description How many days back */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayStats"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_failures: {
+        parameters: {
+            query?: {
+                /** @description How many days back */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FailureReport"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_coding: {
+        parameters: {
+            query?: {
+                /** @description How many days back */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingBreakdown"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_workspaces: {
+        parameters: {
+            query?: {
+                /** @description How many days back */
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_ops_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceUsage"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11106,8 +11768,10 @@ export interface operations {
         parameters: {
             query?: {
                 kind?: ("chat" | "coding") | null;
-                before?: string | null;
-                before_id?: string | null;
+                /** @description Only failed runs (and coding turns waiting to be recovered) */
+                failed?: boolean;
+                /** @description Skip this many runs: the page times its size */
+                offset?: number;
                 limit?: number;
             };
             header?: never;
@@ -11124,7 +11788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ObservedRun"][];
+                    "application/json": components["schemas"]["RunPage"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
@@ -11159,8 +11823,10 @@ export interface operations {
     audit: {
         parameters: {
             query?: {
+                /** @description Actions starting with this, e.g. `coding.` */
                 action?: string | null;
-                before?: string | null;
+                /** @description Skip this many events: the page times its size */
+                offset?: number;
                 limit?: number;
             };
             header?: never;
@@ -11177,7 +11843,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuditEventRead"][];
+                    "application/json": components["schemas"]["AuditPage"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */
