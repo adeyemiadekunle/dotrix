@@ -1,4 +1,4 @@
-"""Read-only platform tools for experimental chat runtimes.
+"""Read-only platform tools for the chat runtimes.
 
 The fx pilot selects these for project Chat. A caller must first bind a runtime
 session to an admitted platform run; session IDs supplied by a model are not authority.

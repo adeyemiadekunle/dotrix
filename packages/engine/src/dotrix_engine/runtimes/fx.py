@@ -77,7 +77,7 @@ def _prepare_local_dir(path: Path, config: AgentRuntimeConfig, model: str, base_
 
 
 class FxRuntime:
-    """Experimental memory, local or host-journal runtime; platform controls remain external."""
+    """Memory, local or host-journal runtime; platform controls remain external."""
 
     capabilities = RuntimeCapabilities(streaming=True, cancellation=True, steering=True)
 

@@ -2,13 +2,13 @@
 
 Dotrix owns Nova, Lyra, Orion, Vega, Juno and Echo, their instructions and policies,
 and the lifecycle of their work. DeepAgents and libfx are candidate execution
-engines underneath those identities. Kai remains in the coding service. The
-read-only [experiment](../experiments/fx-chat/README.md) compares role conversations
-and host-controlled delegation. The experimental runtime implementations are in
-`dotrix_engine.runtimes`; they are not production adapters or evidence that either
-framework wins.
+engines underneath those identities. Kai remains in the coding service. Both runtimes
+are in `dotrix_engine.runtimes` behind the platform's runner, and fx is a normal choice
+per conversation (since 2026-10-30). The read-only comparison that came first
+(`experiments/fx-chat`) was removed on 2026-11-01, once fx was no longer an experiment;
+what it found is kept below. Neither is evidence that one framework wins.
 
-The read-only team experiment validates `SpecialistBatch` and `SpecialistResult`,
+The read-only team comparison validated `SpecialistBatch` and `SpecialistResult`,
 requires a specialist to submit a structured result, and blocks a dependent task
 when its prerequisite is partial or blocked. Tasks targeting the same specialist
 session are serialized so their results cannot be attributed to each other. These
@@ -83,7 +83,7 @@ recovered attempts and Continue resume it. Delegation, project-changing tasks in
 OpenAI-compatible provider endpoints, Anthropic's included (its OpenAI-compatible endpoint, checked live on
 Claude Haiku 5.5 on 2026-10-30: tools, follow-ups, steering, a journal reopened and a retry answered from it, and
 `test_live_fx_chat_on_anthropic_reads_project_knowledge` through the public API when given
-`DOTRIX_LIVE_ANTHROPIC_API_KEY`); not Google's API. The `experiments/fx-chat` comparison also ran on Claude Haiku 5.5
+`DOTRIX_LIVE_ANTHROPIC_API_KEY`); not Google's API. The `experiments/fx-chat` comparison (since removed) also ran on Claude Haiku 5.5
 through that endpoint (2026-10-30): the scripted scenario and live delegation finished on both runtimes, with the same
 specialists chosen, the same recommendation, and similar caveats (one run each, not a ranking). The delegation team now
 names the evidence documents in its instructions; without them both runtimes guessed paths and found nothing. A run bound by an earlier pilot version is moved to this one when it works again: a libfx 0.0.16 binding keeps its journal, a 0.0.15 one starts its turn again (0.0.16 can't read its journal); an unknown version fails closed.
@@ -300,8 +300,8 @@ and outcome and distinguish it from an existing checkpoint response.
    Establish a rollback path, observability and operational ownership before any
    wider migration. Keep DeepAgents available until results justify a change.
 
-The experiment pins `libfx` 0.0.16 (from 0.0.15 on 2026-10-30: the same journal format and engine API;
-the experiment, handoff, journal, recovery, delegation, steering and continuity tests passed unchanged).
+The engine pins `libfx` 0.0.16 (from 0.0.15 on 2026-10-30: the same journal format and engine API;
+the comparison, handoff, journal, recovery, delegation, steering and continuity tests passed unchanged).
 A run bound to 0.0.15 refuses to resume on 0.0.16, and 0.0.15 can't read 0.0.16's journals, so let
 running fx conversations finish, then upgrade every worker together. Its [SDK documentation](https://github.com/vercel-labs/fx/tree/main/sdk)
 describes sessions, host tools, durability, steering, and provider support. Recheck
@@ -336,6 +336,6 @@ their own provider keys; missing keys never trigger a silent model downgrade.
 
 Dotrix uses personal BYOK, with no platform-supplied LLM or platform LLM budget.
 This change adds no budget controls. Existing optional per-run limits are unchanged.
-Measure cost/quality with paired saved evaluations and the supplied-price report
-in `experiments/fx-chat/costs.py`. No live savings claim is made without real-model
-usage and quality review.
+Measure cost/quality from real conversations' recorded usage on each runtime, priced
+from the providers' rates. No live savings claim is made without real-model usage and
+quality review.

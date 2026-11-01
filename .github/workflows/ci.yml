@@ -40,14 +40,12 @@ jobs:
         with:
           node-version: 24
       - run: uv sync
-      - name: Install the experimental fx runtime
+      - name: Install the fx runtime's host
         run: npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host
       - run: uv run ruff check apps packages
       - run: uv run pytest
-      - name: Exercise both chat runtimes and fx delegation handoff
-        run: |
-          uv run python -m unittest discover -s experiments/fx-chat -p 'test_*.py' -v
-          node --test packages/engine/src/dotrix_engine/runtimes/fx_host/handoff.test.mjs
+      - name: fx delegation handoff
+        run: node --test packages/engine/src/dotrix_engine/runtimes/fx_host/handoff.test.mjs
       - name: OpenAPI schema is up to date (run `pnpm openapi` if this fails)
         run: |
           uv run python apps/backend/scripts/export_openapi.py

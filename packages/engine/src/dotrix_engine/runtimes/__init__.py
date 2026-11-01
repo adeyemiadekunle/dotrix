@@ -1,4 +1,4 @@
-"""Experimental chat runtimes. The platform's durable runner remains authoritative."""
+"""The chat runtimes (DeepAgents and fx). The platform's durable runner remains authoritative."""
 
 from .contracts import (
     AgentRuntimeConfig,

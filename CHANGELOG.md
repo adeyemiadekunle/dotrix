@@ -70,6 +70,11 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - A local turn's worktree is removed once it has been untouched for 3 days, so they no longer pile up on your
   computer; an open file from a local turn stops refreshing once the turn is done.
 
+### Removed
+
+- The fx chat runtime comparison (`experiments/fx-chat`) is gone: fx has been a normal choice for a conversation since
+  2026-10-30, not an experiment. Developers only; nothing changes for people using dotrix.
+
 ## [0.1.0] - 2026-10-31
 
 The first versioned release: everything built before versioning began, through #199.
