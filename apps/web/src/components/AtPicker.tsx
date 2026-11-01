@@ -104,7 +104,7 @@ export function useAtPicker({
           className="pop"
           role="listbox"
           aria-label={label}
-          style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 260, maxHeight: 300, overflowY: "auto", zIndex: 80, textAlign: "left" }}
+          style={{ position: "absolute", bottom: "calc(100% + 4px)", left: 0, minWidth: 260, maxHeight: 300, overflowY: "auto", zIndex: 80, textAlign: "left" }}
         >
           {items.length ? (
             items.map((it, i) => (

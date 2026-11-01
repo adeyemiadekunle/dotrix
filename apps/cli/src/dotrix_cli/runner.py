@@ -10,8 +10,9 @@ session's branch or the base branch as the remote has it, so your working copy a
 never touched. A worktree separates directories, it isn't a security boundary, and nothing isolates
 the tool for now: so it only edits files (Claude Code's acceptEdits, no commands), with an
 environment that carries its own provider's settings and none of this machine's other credentials
-(`dotrix_cli.toolenv`). Worktrees are kept after the turn (nothing is deleted that you might want);
-`git worktree prune` and removing the folder clean them up.
+(`dotrix_cli.toolenv`). A worktree is kept after its turn, for a while: its patch is already on the
+platform, so the runner removes worktrees untouched for `WORKTREE_DAYS` days (never the one it's
+coding in) when it starts and after each turn.
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ from .toolenv import tool_environment
 
 TOOLS = ("claude-code", "opencode")
 EVENTS_PER_BEAT = 50
+WORKTREE_DAYS = 3  # a finished turn's worktree is removed once untouched this long
 EVENTS_SECONDS = 2.0  # waiting events go out this often (the lease is renewed every third of it regardless)
 STOP_GRACE_SECONDS = 5
 
@@ -227,6 +229,8 @@ class LocalRunner:
     # What the agent did reaches the platform this soon (a heartbeat as soon as events wait this long),
     # so the turn's view in the app keeps up as it does for a cloud turn.
     events_seconds: float = EVENTS_SECONDS
+    keep_days: float = WORKTREE_DAYS
+    _coding_in: Path | None = None  # the worktree of the turn in progress, never cleaned
 
     def tools(self) -> list[str]:
         if self.tool:
@@ -266,11 +270,48 @@ class LocalRunner:
         try:
             await self.work(claimed["run"])
         finally:
+            if self._coding_in is not None:
+                try:
+                    os.utime(self._coding_in)  # its age counts from when the turn ended
+                except OSError:
+                    pass
+            self._coding_in = None
             self.notify({"event": "done", "run_id": claimed["run"]["run_id"]})
+            await self.clean_worktrees()
         return True
+
+    async def clean_worktrees(self) -> list[Path]:
+        """Remove this project's worktrees untouched for `keep_days` (never the one in use); the removed."""
+        folder = self.worktrees / self.project_id
+        if not folder.is_dir():
+            return []
+        cutoff = time.time() - self.keep_days * 86400
+        removed: list[Path] = []
+        for tree in sorted(folder.iterdir()):
+            if not tree.is_dir() or tree == self._coding_in:
+                continue
+            try:
+                if tree.stat().st_mtime > cutoff:
+                    continue
+            except OSError:
+                continue
+            try:
+                await git(self.repo, "worktree", "remove", "--force", str(tree))
+            except RuntimeError:
+                shutil.rmtree(tree, ignore_errors=True)  # not this checkout's (or git lost track of it)
+            if not tree.exists():
+                removed.append(tree)
+        if removed:
+            try:
+                await git(self.repo, "worktree", "prune")
+            except RuntimeError:
+                pass
+            self.echo(f"Removed {len(removed)} old worktree{'s' if len(removed) > 1 else ''}")
+        return removed
 
     async def serve(self, *, poll_seconds: float = 5, stop: asyncio.Event | None = None) -> None:
         stop = stop or asyncio.Event()
+        await self.clean_worktrees()
         while not stop.is_set():
             try:
                 if await self.once():
@@ -321,6 +362,7 @@ class LocalRunner:
         # A worktree per attempt: a turn claimed again (after a crash) never reuses one that may hold work.
         tree = self.worktrees / run["project_id"] / f"{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
         tree.parent.mkdir(parents=True, exist_ok=True)
+        self._coding_in = tree
         await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), "FETCH_HEAD")
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
         pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]} (not isolated: the tool edits files only)"})

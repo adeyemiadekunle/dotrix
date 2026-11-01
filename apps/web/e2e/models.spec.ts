@@ -171,7 +171,7 @@ test("a new coding session picks a model, starting from your default, and leaves
   await page.route("**/coding/issues/*/runs", (route) => route.fulfill({ status: 409, json: { detail: "Test request captured" } }));
   await page.goto(`/w/${slug}/codes?new=1&issue=${issueKey}`);
   await expect(page.getByRole("button", { name: /Coding tool/ })).toHaveCount(0); // the engine is in Settings, not here
-  await page.getByRole("button", { name: "Model: gpt-5.5", exact: true }).click();
+  await page.getByRole("button", { name: "Model: GPT-5.5", exact: true }).click();
   await page.getByRole("option", { name: "grok-4.7", exact: true }).click();
   const sent = page.waitForRequest((r) => r.method() === "POST" && /\/coding\/issues\/[^/]+\/runs$/.test(r.url()));
   await page.getByRole("button", { name: "Start coding", exact: true }).click();

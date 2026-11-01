@@ -8,7 +8,8 @@
     "dev": "tsc && electron .",
     "typecheck": "tsc --noEmit",
     "bundle-cli": "uv run --no-project python ../cli/scripts/standalone.py",
-    "dist:win": "tsc && node scripts/build-config.mjs && electron-builder --win nsis --x64 --publish never"
+    "dist:win": "tsc && node scripts/build-config.mjs && electron-builder --win nsis --x64 --publish never",
+    "test": "tsc && node --test dist/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
@@ -33,6 +34,7 @@
     },
     "files": [
       "dist/**/*",
+      "!dist/**/*.test.js",
       "package.json"
     ],
     "extraResources": [
@@ -42,6 +44,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../../CHANGELOG.md",
+        "to": "CHANGELOG.md"
       }
     ],
     "asar": true,
@@ -63,6 +69,17 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "dotrix"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "adeyemiadekunle",
+        "repo": "dotrix",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
   }
 }

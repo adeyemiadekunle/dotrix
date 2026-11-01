@@ -297,3 +297,35 @@ async def test_stopping_the_runner_stops_the_tool_it_started(tmp_path: Path) -> 
     else:
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
+
+
+async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) -> None:
+    """A finished turn's worktree goes once untouched for a few days; recent ones and the one coding stay."""
+    import os
+    import subprocess
+    import time
+
+    checkout = tmp_path / "checkout"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(checkout)], check=True)
+    (checkout / "a.txt").write_text("a\n")
+    subprocess.run(["git", "-C", str(checkout), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(checkout), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
+    trees = tmp_path / "trees"
+    (trees / "p").mkdir(parents=True)
+    old, recent, busy, stray = (trees / "p" / name for name in ("kun-1-old", "kun-2-new", "kun-3-busy", "kun-4-stray"))
+    for tree in (old, recent, busy):
+        subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(tree), "HEAD"], check=True)
+    stray.mkdir()  # git lost track of it
+    week_ago = time.time() - 7 * 86400
+    for tree in (old, busy, stray):
+        os.utime(tree, (week_ago, week_ago))
+    (trees / "other-project").mkdir()
+    os.utime(trees / "other-project", (week_ago, week_ago))
+
+    runner = LocalRunner(api=None, repo=checkout, workspace_id="w", project_id="p", worktrees=trees, echo=lambda _: None)
+    runner._coding_in = busy
+    removed = await runner.clean_worktrees()
+    assert sorted(removed) == sorted([old, stray])
+    assert recent.is_dir() and busy.is_dir() and (trees / "other-project").is_dir()
+    listed = subprocess.run(["git", "-C", str(checkout), "worktree", "list"], capture_output=True, text=True).stdout
+    assert str(old) not in listed and str(recent) in listed
