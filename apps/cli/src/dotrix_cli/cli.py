@@ -38,8 +38,16 @@ from dotrix_engine.ingest import ingest_doc
 from dotrix_engine.jobs import get_job, list_jobs, resume_job, start_job
 
 from . import repo as repo_facts
-from .agent_client import ApprovalNotAllowed, Outcome, PlatformAgent
+from .agent_client import (
+    APPROVAL_MODES,
+    RUNTIMES,
+    WORK_MODES,
+    ApprovalNotAllowed,
+    Outcome,
+    PlatformAgent,
+)
 from .board import CODING_AGENTS, PlatformBoard
+from .codes import CODING_STATUS, codes_app
 from .platform import (
     CLIENT_NAME,
     KeychainUnavailable,
@@ -62,6 +70,7 @@ issue_app = typer.Typer(help="Work the platform issue board (needs `dotrix link`
 app.add_typer(issue_app, name="issue")
 architecture_app = typer.Typer(help="Project setup: the architecture overview (owners and admins).")
 app.add_typer(architecture_app, name="architecture")
+app.add_typer(codes_app, name="codes")
 
 ProjectOpt = typer.Option(".", "--project", "-p", help="Registered project name or path.")
 AuthorOpt = typer.Option("human", "--author", "-a", help="Who is making this change (shown in the task log).")
@@ -293,6 +302,21 @@ def chat(
     model: str | None = typer.Option(
         None, "--model", help="The model for a new conversation (provider:model); it stays for the whole conversation."
     ),
+    mode: str | None = typer.Option(
+        None,
+        "--mode",
+        help="Work mode: discuss, plan, build (Nova can hand an issue to Kai) or review. Default: the "
+        "conversation's last, else discuss. Change it in the chat with /mode NAME.",
+    ),
+    approvals: str | None = typer.Option(
+        None,
+        "--approvals",
+        help="Approval mode: manual, accept-edits or auto (you get the lowest of this, the workspace's cap "
+        "and yours). Change it in the chat with /approvals NAME.",
+    ),
+    runtime: str | None = typer.Option(
+        None, "--runtime", help="The chat runtime for a new conversation: deepagents (the default) or fx."
+    ),
 ):
     """Interactive session. Any write pauses for your approval. That pause IS Action Mode.
 
@@ -306,12 +330,36 @@ def chat(
             "a conversation keeps the model it started with; leave out --thread to start a new one",
             param_hint="--model",
         )
+    if runtime and thread:
+        raise typer.BadParameter(
+            "a conversation keeps the runtime it started with; leave out --thread to start a new one",
+            param_hint="--runtime",
+        )
+    work_mode = _work_mode(mode) if mode else None
+    if mode and work_mode is None:
+        raise typer.BadParameter(f"use one of {', '.join(WORK_MODES)}", param_hint="--mode")
+    approval_mode = _approval_mode(approvals) if approvals else None
+    if approvals and approval_mode is None:
+        raise typer.BadParameter("use manual, accept-edits or auto", param_hint="--approvals")
+    if runtime and runtime.strip().lower() not in RUNTIMES:
+        raise typer.BadParameter(f"use one of {', '.join(RUNTIMES)}", param_hint="--runtime")
     config = _resolve_project(project)
     if not local and LinkState.load(config.dotrix_dir) is not None:
-        _platform_chat(project, thread, agent=agent, model=model)
+        _platform_chat(
+            project,
+            thread,
+            agent=agent,
+            model=model,
+            work_mode=work_mode,
+            approval_mode=approval_mode,
+            runtime=runtime.strip().lower() if runtime else None,
+        )
         return
-    if agent != "auto" or model:
-        typer.secho("--agent and --model are for the platform; the local engine uses its own setup.", dim=True)
+    if agent != "auto" or model or mode or approvals or runtime:
+        typer.secho(
+            "--agent, --model, --mode, --approvals and --runtime are for the platform; the local engine uses its own setup.",
+            dim=True,
+        )
     checkpoint_path = os.path.join(config.dotrix_dir, "checkpoints.sqlite")
 
     with SqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
@@ -553,17 +601,32 @@ def code_command(
     key: str = typer.Argument(..., help="The issue, e.g. KUN-42"),
     note: str = typer.Option(None, "--note", help="Anything to add for the agent"),
     cloud: bool = typer.Option(False, "--cloud", help="Code in the platform's sandbox instead of on this computer"),
+    approvals: str | None = typer.Option(None, "--approvals", help="Approval mode: manual, accept-edits or auto"),
+    model: str | None = typer.Option(None, "--model", help="The provider:model to code on (default: your default model)"),
+    wait: bool = typer.Option(False, "--wait", help="Wait here for the turn, printing its steps"),
     project: str = ProjectOpt,
 ):
     """Ask Kai to code an issue: on this computer (run `dotrix runner` here), or with --cloud on the
-    platform. It waits for an approval unless your approval mode lets it start at once."""
+    platform. It waits for an approval unless your approval mode lets it start at once. Then
+    `dotrix codes show KEY` shows the session."""
+    approval_mode = _approval_mode(approvals) if approvals else None
+    if approvals and approval_mode is None:
+        raise typer.BadParameter("use manual, accept-edits or auto", param_hint="--approvals")
     _, state, client = _linked(project)
     base = f"/workspaces/{state.workspace_id}/projects/{state.project_id}/coding"
-    run = _platform_call(lambda: client.post(f"{base}/issues/{key.strip().upper()}/runs",
-                                             {"note": note, "location": "cloud" if cloud else "local"}))
+    body: dict = {"note": note, "location": "cloud" if cloud else "local"}
+    if approval_mode:
+        body["approval_mode"] = approval_mode
+    if model:
+        body["model"] = model
+    run = _platform_call(lambda: client.post(f"{base}/issues/{key.strip().upper()}/runs", body))
     where = "the platform" if cloud else "your computer"
     waiting = "waits for an approval" if run["status"] == "awaiting_approval" else "is queued"
     typer.echo(f"{run['issue_key']}: Kai's turn on {where} {waiting} (run {run['id']})")
+    if wait and run["status"] != "awaiting_approval":
+        from . import codes
+
+        codes._wait(sys.modules[__name__], codes.Codes(client, state), run)
 
 
 # ---------------------------------------------------------------------------
@@ -864,10 +927,15 @@ class _StreamPrinter:
     def __init__(self, tty: bool | None = None) -> None:
         self.open_line = False
         self.status_shown = False
+        self.thinking_open = False
         self.tty = sys.stdout.isatty() if tty is None else tty
 
     def __call__(self, text: str, new_message: bool) -> None:
         self.clear_status()
+        if self.thinking_open:  # the reply starts on a line of its own after the thinking
+            self.thinking_open = False
+            self.finish_line()
+            new_message = True
         if new_message:
             self.finish_line()
             typer.echo("")
@@ -875,7 +943,19 @@ class _StreamPrinter:
         sys.stdout.flush()
         self.open_line = not text.endswith("\n")
 
+    def thinking(self, text: str) -> None:
+        """More of the model's thinking, dimmed, on lines of its own before the reply."""
+        self.clear_status()
+        if not self.thinking_open:
+            self.finish_line()
+            typer.secho("Thinking: ", dim=True, nl=False)
+            self.thinking_open = True
+        typer.secho(text, dim=True, nl=False)
+        sys.stdout.flush()
+        self.open_line = not text.endswith("\n")
+
     def activity(self, label: str) -> None:
+        self.thinking_open = False
         self.finish_line()
         if self.tty:
             # (color=True keeps the control codes: this branch only runs on a terminal.)
@@ -914,6 +994,13 @@ def _echo_outcome(outcome: Outcome, printer: _StreamPrinter | None = None) -> No
         typer.secho(
             "\nThis change waits for an owner or admin to review it: they can approve or reject it "
             f"in the web app, and the run carries on then (run {run['id']}).",
+            fg=typer.colors.YELLOW,
+        )
+    elif run.get("error_kind") == "model_limit":
+        resets = f" It resets {_when(run['resumes_at'])}." if run.get("resumes_at") else ""
+        typer.secho(
+            f"\nThe run stopped at its model's limit.{resets} Type /continue to go on now, or /continue later "
+            f"to go on once it resets (run {run['id']}).",
             fg=typer.colors.YELLOW,
         )
     elif run["status"] == "failed":
@@ -979,48 +1066,197 @@ def _platform_brief(project: str) -> None:
         raise typer.Exit(1)
 
 
-def _platform_chat(project: str, thread: str | None, *, agent: str = "auto", model: str | None = None) -> None:
-    state, client = _platform_agent(project)
+MODE_NAMES = {"discuss": "Discuss", "plan": "Plan", "build": "Build", "review": "Review"}
+APPROVAL_NAMES = {"manual": "Manual", "accept_edits": "Accept edits", "auto": "Auto"}
+
+
+def _work_mode(value: str) -> str | None:
+    value = value.strip().lower()
+    return value if value in WORK_MODES else None
+
+
+def _approval_mode(value: str) -> str | None:
+    value = value.strip().lower().replace("-", "_").replace(" ", "_")
+    return value if value in APPROVAL_MODES else None
+
+
+def _when(iso: str) -> str:
+    """A time to come, in this computer's time: "at 14:05" today, else "on 3 Nov at 14:05"."""
+    at = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
+    clock = at.strftime("%H:%M")
+    return f"at {clock}" if at.date() == datetime.now().astimezone().date() else f"on {at.day} {at.strftime('%b')} at {clock}"
+
+
+class _ChatSession:
+    """One `dotrix chat` on the platform: the conversation, who answers, its work and approval
+    modes, and the run to continue after a model limit."""
+
+    def __init__(self, project: str, thread: str | None, *, agent: str, model: str | None, work_mode: str | None,
+                 approval_mode: str | None, runtime: str | None) -> None:
+        self.state, self.client = _platform_agent(project)
+        self.thread, self.agent, self.model, self.runtime = thread, agent, model, runtime
+        self.work_mode, self.approval_mode = work_mode, approval_mode
+        self.limited: dict | None = None  # the last run, when it stopped at its model's limit
+        self.sessions: set[str] = set()  # Kai's sessions from this conversation already named
+
+    def prompt(self) -> str:
+        return f"{MODE_NAMES[self.work_mode]} >" if self.work_mode else ">"
+
+    def command(self, message: str) -> bool:
+        """Handle a slash command; False to quit."""
+        name, _, arg = message.partition(" ")
+        arg = arg.strip()
+        if name in ("/quit", "/exit", "/q"):
+            return False
+        if name == "/new":
+            self.thread, self.limited = None, None
+            self.sessions.clear()
+            typer.echo("New conversation.")
+        elif name == "/agent":
+            handle = arg.lower() or "auto"
+            if not AGENT_HANDLE.match(handle):
+                typer.secho("Use auto or an agent's handle (`dotrix agents` lists them)", fg=typer.colors.RED)
+            else:
+                self.agent = handle
+                typer.echo("Talking to the team." if handle == "auto" else f"Talking to the {handle} agent.")
+        elif name == "/mode":
+            mode = _work_mode(arg) if arg else None
+            if mode is None:
+                now = MODE_NAMES[self.work_mode] if self.work_mode else "the conversation's last (else Discuss)"
+                typer.echo(f"Mode: {now}. Use /mode discuss, plan, build or review.")
+            else:
+                self.work_mode = mode
+                typer.echo(f"{MODE_NAMES[mode]} mode." + (" Nova can hand an issue to Kai." if mode == "build" else ""))
+        elif name == "/approvals":
+            mode = _approval_mode(arg) if arg else None
+            if mode is None:
+                now = APPROVAL_NAMES[self.approval_mode] if self.approval_mode else "your default"
+                typer.echo(f"Approvals: {now}. Use /approvals manual, accept-edits or auto.")
+            else:
+                self.approval_mode = mode
+                typer.echo(f"Approvals: {APPROVAL_NAMES[mode]} (the workspace's cap and your own still apply).")
+        elif name == "/continue":
+            self.continue_run(later=arg.lower() in ("later", "when-reset", "reset"))
+        else:
+            typer.secho(
+                "Commands: /mode NAME, /approvals NAME, /agent NAME, /continue [later], /new, /quit",
+                fg=typer.colors.RED,
+            )
+        return True
+
+    def send(self, message: str) -> None:
+        if self.work_mode == "build":
+            self.sessions |= self._kai_sessions().keys()
+        run = self.client.start(
+            message,
+            self.thread,
+            agent=self.agent,
+            model=self.model,
+            work_mode=self.work_mode,
+            approval_mode=self.approval_mode,
+            runtime=self.runtime,
+        )
+        self.thread = run["thread_id"]
+        self.follow(run)
+
+    def follow(self, run: dict) -> None:
+        """Follow a run here; Ctrl+C stops it and keeps the chat open."""
+        typer.secho("(working…)", dim=True)
+        printer = _StreamPrinter()
+        try:
+            outcome = self.client.converse(
+                run,
+                printer.deciding(_ask_decision),
+                on_text=printer,
+                on_activity=printer.activity,
+                on_thinking=printer.thinking,
+                on_note=_note,
+            )
+        except KeyboardInterrupt:
+            printer.finish_line()
+            try:
+                self.client.stop(run["id"])
+                typer.secho("Stopped.", fg=typer.colors.YELLOW)
+            except PlatformError as exc:
+                typer.secho(f"Couldn't stop the run: {exc}", fg=typer.colors.RED)
+            return
+        _echo_outcome(outcome, printer)
+        self.limited = outcome.run if outcome.run.get("error_kind") == "model_limit" else None
+        if self.work_mode == "build" or outcome.run.get("work_mode") == "build":
+            self._name_kai_sessions()
+
+    def continue_run(self, *, later: bool) -> None:
+        if self.limited is None:
+            typer.secho("Nothing to continue: /continue is for a run that stopped at its model's limit.", dim=True)
+            return
+        run = self.client.continue_run(self.limited["id"], when_reset=later)
+        self.limited = None
+        if later:
+            at = f" {_when(run['resumes_at'])}" if run.get("resumes_at") else ""
+            typer.echo(f"It goes on once the limit resets{at}. `dotrix jobs` shows how it's doing.")
+            return
+        self.follow(run)
+
+    def _kai_sessions(self) -> dict[str, dict]:
+        """Kai's coding sessions this conversation started, by id (none when the list can't be read)."""
+        if not self.thread:
+            return {}
+        try:
+            sessions = self.client.client.get(f"/workspaces/{self.state.workspace_id}/coding/sessions")
+        except PlatformError:
+            return {}
+        return {s["session_id"]: s for s in sessions if s.get("thread_id") == self.thread}
+
+    def _name_kai_sessions(self) -> None:
+        for session_id, session in self._kai_sessions().items():
+            if session_id in self.sessions:
+                continue
+            self.sessions.add(session_id)
+            key = session.get("issue_key") or session_id[:8]
+            status = CODING_STATUS.get(session.get("status") or "", session.get("status") or "")
+            typer.secho(f"Kai is on {key} ({status}): dotrix codes show {key}", fg=typer.colors.CYAN)
+
+
+def _platform_chat(
+    project: str,
+    thread: str | None,
+    *,
+    agent: str = "auto",
+    model: str | None = None,
+    work_mode: str | None = None,
+    approval_mode: str | None = None,
+    runtime: str | None = None,
+) -> None:
+    chat = _ChatSession(project, thread, agent=agent, model=model, work_mode=work_mode, approval_mode=approval_mode,
+                        runtime=runtime)
+    state = chat.state
     who = f"the {state.project_key} team" if agent == "auto" else f"the {agent} agent on {state.project_key}"
+    details = [f"on {model}" if model else "", f"with {runtime}" if runtime else "",
+               f"{MODE_NAMES[work_mode]} mode" if work_mode else "",
+               f"approvals {APPROVAL_NAMES[approval_mode]}" if approval_mode else ""]
+    extra = "".join(f", {d}" for d in details if d)
     typer.echo(
-        f"Talking to {who} ({state.project_name}) on the platform"
-        f"{f', on {model}' if model else ''}. Changes wait for your approval. "
-        "/agent NAME picks who answers, /new starts a new conversation, /quit exits.\n"
+        f"Talking to {who} ({state.project_name}) on the platform{extra}. Changes wait for your approval "
+        "unless your approval mode lets them through. /mode, /approvals and /agent change who answers and how; "
+        "/continue goes on after a model limit; /new starts a new conversation; Ctrl+C stops a reply; /quit exits.\n"
     )
     while True:
         try:
-            message = typer.prompt(">").strip()
+            message = typer.prompt(chat.prompt()).strip()
         except (KeyboardInterrupt, EOFError, typer.Abort):
             break
-        if message in ("/quit", "/exit", "/q"):
-            break
-        if message == "/new":
-            thread = None
-            typer.echo("New conversation.")
-            continue
-        if message.startswith("/agent"):
-            name = message.removeprefix("/agent").strip().lower() or "auto"
-            if not AGENT_HANDLE.match(name):
-                typer.secho("Use auto or an agent's handle (`dotrix agents` lists them)", fg=typer.colors.RED)
-            else:
-                agent = name
-                typer.echo("Talking to the team." if agent == "auto" else f"Talking to the {agent} agent.")
-            continue
         if not message:
             continue
         try:
-            run = client.start(message, thread, agent=agent, model=model)
-            thread = run["thread_id"]
-            typer.secho("(working…)", dim=True)
-            printer = _StreamPrinter()
-            _echo_outcome(
-                client.converse(run, printer.deciding(_ask_decision), on_text=printer, on_activity=printer.activity, on_note=_note),
-                printer,
-            )
+            if message.startswith("/"):
+                if not chat.command(message):
+                    break
+                continue
+            chat.send(message)
         except (PlatformError, TimeoutError) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
-    if thread:
-        typer.secho(f"Continue this conversation with: dotrix chat --thread {thread}", dim=True)
+    if chat.thread:
+        typer.secho(f"Continue this conversation with: dotrix chat --thread {chat.thread}", dim=True)
 
 
 def _follow_run(agent: PlatformAgent, run: dict) -> Outcome:
