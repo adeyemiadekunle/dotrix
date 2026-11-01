@@ -22,7 +22,7 @@ from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
-from dotrix_backend.modules.workspaces.models import Membership
+from dotrix_backend.modules.workspaces.models import Membership, Workspace
 
 from .schemas import (
     ObserveCounts,
@@ -41,10 +41,6 @@ class ObserveService:
     async def overview(self, member: Membership) -> ObserveOverview:
         """Workspace counts, visible runs and dispatches, and runs with lapsed leases."""
         return await self._overview(member)
-
-    async def platform_overview(self) -> ObserveOverview:
-        """The same overview for the whole deployment: ops sees every workspace's runs."""
-        return await self._overview(None)
 
     async def _overview(self, member: Membership | None) -> ObserveOverview:
         ws = member.workspace_id if member else None  # None: the whole deployment
@@ -225,12 +221,31 @@ class ObserveService:
         self,
         *,
         kind: Literal["chat", "coding"] | None = None,
+        failed: bool = False,
         before: datetime | None = None,
         before_id: uuid.UUID | None = None,
         limit: int = 50,
     ) -> list[ObservedRun]:
-        """Every workspace's runs, newest first (the ops console sees the whole platform)."""
-        return await self._runs(None, kind=kind, before=before, before_id=before_id, limit=limit)
+        """Every workspace's runs, newest first, for the admin console. It sees every workspace but
+        not what people wrote: a run is named by its workspace, project and issue, never by its
+        conversation's title or message."""
+        runs = await self._runs(None, kind=kind, failed=failed, before=before, before_id=before_id, limit=limit)
+        slugs = dict(
+            (await self.session.execute(
+                select(Workspace.id, Workspace.slug).where(Workspace.id.in_({r.workspace_id for r in runs}))
+            )).all()
+        )
+        keys = dict(
+            (await self.session.execute(
+                select(Project.id, Project.key).where(Project.id.in_({r.project_id for r in runs if r.project_id}))
+            )).all()
+        )
+        for r in runs:
+            r.workspace = slugs.get(r.workspace_id)
+            project = keys.get(r.project_id) if r.project_id else None
+            if r.kind == "chat":
+                r.label = " · ".join(filter(None, [project or "Across projects", r.work_mode]))
+        return runs
 
     async def runs(
         self,
@@ -252,6 +267,7 @@ class ObserveService:
         member: Membership | None,
         *,
         kind: Literal["chat", "coding"] | None = None,
+        failed: bool = False,
         before: datetime | None = None,
         before_id: uuid.UUID | None = None,
         limit: int = 50,
@@ -273,6 +289,7 @@ class ObserveService:
                 .where(
                     *( [AgentRun.workspace_id == ws] if ws is not None else [] ),
                     runs_visible_to(member) if member else true(),
+                    AgentRun.status == RunStatus.FAILED if failed else true(),
                 )
                 .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
                 .limit(limit)
@@ -284,6 +301,7 @@ class ObserveService:
                     ObservedRun(
                         kind="chat",
                         id=r.id,
+                        workspace_id=r.workspace_id,
                         status=r.status.value,
                         label=r.title or r.message[:100],
                         project_id=r.project_id,
@@ -307,6 +325,7 @@ class ObserveService:
                 .where(
                     *( [CodingRun.workspace_id == ws] if ws is not None else [] ),
                     visible_runs(member) if member else true(),
+                    CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true(),
                 )
                 .order_by(CodingRun.created_at.desc(), CodingRun.id.desc())
                 .limit(limit)
@@ -318,6 +337,8 @@ class ObserveService:
                     ObservedRun(
                         kind="coding",
                         id=r.id,
+                        workspace_id=r.workspace_id,
+                        started_at=r.started_at,
                         status=r.status.value,
                         label=r.issue_key,
                         project_id=r.project_id,

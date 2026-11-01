@@ -1121,14 +1121,14 @@
         }
       }
     },
-    "/v1/ops/observe/overview": {
+    "/v1/ops/observe/health": {
       "get": {
         "tags": [
           "ops"
         ],
-        "summary": "Observe Overview",
-        "description": "Platform health: every workspace's runs, the whole dispatch queue, lapsed leases.",
-        "operationId": "observe_overview",
+        "summary": "Observe Health",
+        "description": "Is the deployment working: the database's answer time, the run queue and when a worker last\ntook from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners.",
+        "operationId": "observe_health",
         "parameters": [
           {
             "name": "dtx_ops_access",
@@ -1153,7 +1153,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ObserveOverview"
+                  "$ref": "#/components/schemas/PlatformHealth"
                 }
               }
             }
@@ -1168,8 +1168,392 @@
               }
             }
           },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/observe/counts": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Observe Counts",
+        "description": "How big the deployment is: workspaces and people (all, new, active in the window), projects, documents.",
+        "operationId": "observe_counts",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "description": "How many days back",
+              "default": 7,
+              "title": "Days"
+            },
+            "description": "How many days back"
+          },
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformCounts"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/observe/trends": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Observe Trends",
+        "description": "Each UTC day: chat runs and coding turns started and failed, tokens, coding cost, and sign-ups.",
+        "operationId": "observe_trends",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "description": "How many days back",
+              "default": 14,
+              "title": "Days"
+            },
+            "description": "How many days back"
+          },
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DayStats"
+                  },
+                  "title": "Response Observe Trends"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/observe/failures": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Observe Failures",
+        "description": "What failed in the window: chat runs by error kind and by model, and every failure grouped by its\nerror's first line, most frequent first.",
+        "operationId": "observe_failures",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "description": "How many days back",
+              "default": 7,
+              "title": "Days"
+            },
+            "description": "How many days back"
+          },
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailureReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/observe/coding": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Observe Coding",
+        "description": "Coding turns by engine and by where they ran: outcomes, PRs, time to finish (p50, p95), tokens and cost.",
+        "operationId": "observe_coding",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "description": "How many days back",
+              "default": 7,
+              "title": "Days"
+            },
+            "description": "How many days back"
+          },
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CodingBreakdown"
+                  },
+                  "title": "Response Observe Coding"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ops/observe/workspaces": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Observe Workspaces",
+        "description": "Workspaces by their use in the window: runs, failures, tokens, coding cost, size, and the latest run.",
+        "operationId": "observe_workspaces",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "description": "How many days back",
+              "default": 7,
+              "title": "Days"
+            },
+            "description": "How many days back"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "dtx_ops_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Ops Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceUsage"
+                  },
+                  "title": "Response Observe Workspaces"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1197,7 +1581,7 @@
           "ops"
         ],
         "summary": "Observe Runs",
-        "description": "Run history across the platform: chat and coding merged, newest first. Page backwards\nwith `before` + `before_id` (the last row's `created_at` and `id`) so ties aren't skipped.",
+        "description": "Run history across the platform: chat and coding merged, newest first, named by workspace,\nproject and issue (never a conversation's words). Page backwards with `before` + `before_id`\n(the last row's `created_at` and `id`) so ties aren't skipped.",
         "operationId": "observe_runs",
         "parameters": [
           {
@@ -1219,6 +1603,18 @@
               ],
               "title": "Kind"
             }
+          },
+          {
+            "name": "failed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Only failed runs (and coding turns waiting to be recovered)",
+              "default": false,
+              "title": "Failed"
+            },
+            "description": "Only failed runs (and coding turns waiting to be recovered)"
           },
           {
             "name": "before",
@@ -1337,7 +1733,7 @@
           "ops"
         ],
         "summary": "Audit",
-        "description": "Audit events across the whole platform, newest first.",
+        "description": "Audit events across the whole platform, newest first: the action, who, and which workspace,\nwithout the details (they can carry words people wrote).",
         "operationId": "audit",
         "parameters": [
           {
@@ -1347,14 +1743,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 100
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Actions starting with this, e.g. `coding.`",
               "title": "Action"
-            }
+            },
+            "description": "Actions starting with this, e.g. `coding.`"
           },
           {
             "name": "before",
@@ -1410,7 +1809,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AuditEventRead"
+                    "$ref": "#/components/schemas/PlatformAuditEvent"
                   },
                   "title": "Response Audit"
                 }
@@ -25911,6 +26310,81 @@
         ],
         "title": "CodingAvailability"
       },
+      "CodingBreakdown": {
+        "properties": {
+          "engine": {
+            "type": "string",
+            "title": "Engine"
+          },
+          "location": {
+            "type": "string",
+            "title": "Location"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns"
+          },
+          "finished": {
+            "type": "integer",
+            "title": "Finished",
+            "description": "Ended with a PR, changes ready, or no changes"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "description": "Failed, or waiting to be recovered"
+          },
+          "prs": {
+            "type": "integer",
+            "title": "Prs"
+          },
+          "p50_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Seconds"
+          },
+          "p95_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Seconds"
+          },
+          "tokens": {
+            "type": "integer",
+            "title": "Tokens"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "engine",
+          "location",
+          "turns",
+          "finished",
+          "failed",
+          "prs",
+          "p50_seconds",
+          "p95_seconds",
+          "tokens",
+          "cost_usd"
+        ],
+        "title": "CodingBreakdown",
+        "description": "Coding turns for one engine in one place (cloud or local)."
+      },
       "CodingClaim": {
         "properties": {
           "run_id": {
@@ -27652,6 +28126,61 @@
         "type": "object",
         "title": "ContinueRun"
       },
+      "DayStats": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "chat_runs": {
+            "type": "integer",
+            "title": "Chat Runs",
+            "default": 0
+          },
+          "chat_failed": {
+            "type": "integer",
+            "title": "Chat Failed",
+            "default": 0
+          },
+          "coding_runs": {
+            "type": "integer",
+            "title": "Coding Runs",
+            "default": 0
+          },
+          "coding_failed": {
+            "type": "integer",
+            "title": "Coding Failed",
+            "default": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "coding_cost_usd": {
+            "type": "number",
+            "title": "Coding Cost Usd",
+            "default": 0.0
+          },
+          "signups": {
+            "type": "integer",
+            "title": "Signups",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "day"
+        ],
+        "title": "DayStats",
+        "description": "One UTC day: runs started and how many of them failed, tokens, coding cost, sign-ups."
+      },
       "Decision": {
         "properties": {
           "approval_id": {
@@ -28218,6 +28747,103 @@
           "percent"
         ],
         "title": "EpicProgress"
+      },
+      "FailureGroup": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "The error kind, the model, or the error's first line"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "chat",
+                  "coding"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "Messages: the chat error kind or the coding status"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "last_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "count",
+          "last_at"
+        ],
+        "title": "FailureGroup"
+      },
+      "FailureReport": {
+        "properties": {
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "chat_kinds": {
+            "items": {
+              "$ref": "#/components/schemas/FailureGroup"
+            },
+            "type": "array",
+            "title": "Chat Kinds"
+          },
+          "chat_models": {
+            "items": {
+              "$ref": "#/components/schemas/FailureGroup"
+            },
+            "type": "array",
+            "title": "Chat Models"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/FailureGroup"
+            },
+            "type": "array",
+            "title": "Messages",
+            "description": "Failures grouped by their error's first line, most frequent first"
+          }
+        },
+        "type": "object",
+        "required": [
+          "days",
+          "chat_kinds",
+          "chat_models",
+          "messages"
+        ],
+        "title": "FailureReport"
       },
       "FileEntry": {
         "properties": {
@@ -30988,7 +31614,24 @@
           "label": {
             "type": "string",
             "title": "Label",
-            "description": "The conversation's title or first message; the coding run's issue key"
+            "description": "The conversation's title or first message, or the coding run's issue key. The admin console sees the project and work mode instead of a conversation's words."
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace",
+            "description": "Admin console: the workspace's slug"
           },
           "project_id": {
             "anyOf": [
@@ -31110,6 +31753,19 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "Coding runs: when a worker started the turn"
+          },
           "finished_at": {
             "anyOf": [
               {
@@ -31129,6 +31785,7 @@
           "id",
           "status",
           "label",
+          "workspace_id",
           "project_id",
           "agent",
           "model",
@@ -31662,6 +32319,276 @@
           "depends_on"
         ],
         "title": "PlanTaskRead"
+      },
+      "PlatformAuditEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace",
+            "description": "The workspace's slug"
+          },
+          "actor_type": {
+            "type": "string",
+            "title": "Actor Type",
+            "description": "user, agent, or system"
+          },
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "workspace",
+          "actor_type",
+          "actor_user_id",
+          "agent",
+          "created_at"
+        ],
+        "title": "PlatformAuditEvent",
+        "description": "An audit event on the admin console: what happened, by whom and where, without its details\n(which can carry titles, paths and other words people wrote)."
+      },
+      "PlatformCounts": {
+        "properties": {
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "workspaces": {
+            "type": "integer",
+            "title": "Workspaces"
+          },
+          "workspaces_new": {
+            "type": "integer",
+            "title": "Workspaces New"
+          },
+          "workspaces_active": {
+            "type": "integer",
+            "title": "Workspaces Active",
+            "description": "Workspaces with a run in the window"
+          },
+          "people": {
+            "type": "integer",
+            "title": "People"
+          },
+          "people_new": {
+            "type": "integer",
+            "title": "People New"
+          },
+          "people_active": {
+            "type": "integer",
+            "title": "People Active",
+            "description": "People who started a run in the window"
+          },
+          "projects": {
+            "type": "integer",
+            "title": "Projects"
+          },
+          "documents": {
+            "type": "integer",
+            "title": "Documents"
+          },
+          "document_bytes": {
+            "type": "integer",
+            "title": "Document Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "days",
+          "workspaces",
+          "workspaces_new",
+          "workspaces_active",
+          "people",
+          "people_new",
+          "people_active",
+          "projects",
+          "documents",
+          "document_bytes"
+        ],
+        "title": "PlatformCounts"
+      },
+      "PlatformHealth": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment"
+          },
+          "jobs": {
+            "type": "string",
+            "title": "Jobs",
+            "description": "Where background work runs: local, worker, or inline"
+          },
+          "sandbox": {
+            "type": "string",
+            "title": "Sandbox",
+            "description": "Where cloud coding turns run: docker, docker-cloud, openshell, local, or off"
+          },
+          "database_ms": {
+            "type": "number",
+            "title": "Database Ms"
+          },
+          "queue_pending": {
+            "type": "integer",
+            "title": "Queue Pending",
+            "description": "Dispatches published but not yet taken by a worker"
+          },
+          "queue_oldest_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Oldest Seconds"
+          },
+          "queue_discarded_24h": {
+            "type": "integer",
+            "title": "Queue Discarded 24H"
+          },
+          "worker_last_took_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Last Took At",
+            "description": "When a worker last took a run off the queue"
+          },
+          "runs_running": {
+            "type": "integer",
+            "title": "Runs Running"
+          },
+          "runs_queued": {
+            "type": "integer",
+            "title": "Runs Queued"
+          },
+          "stuck": {
+            "items": {
+              "$ref": "#/components/schemas/StuckRun"
+            },
+            "type": "array",
+            "title": "Stuck"
+          },
+          "recovery_required": {
+            "type": "integer",
+            "title": "Recovery Required",
+            "description": "Coding turns waiting for someone to check and recover them"
+          },
+          "interrupted": {
+            "type": "integer",
+            "title": "Interrupted",
+            "description": "Chat runs that ran out of attempts after their worker stopped"
+          },
+          "sandboxes_warm": {
+            "type": "integer",
+            "title": "Sandboxes Warm"
+          },
+          "sandboxes_asleep": {
+            "type": "integer",
+            "title": "Sandboxes Asleep"
+          },
+          "runners_online": {
+            "type": "integer",
+            "title": "Runners Online",
+            "description": "People's computers that checked in during the last 2 minutes"
+          },
+          "runners": {
+            "type": "integer",
+            "title": "Runners"
+          },
+          "failed_24h": {
+            "type": "integer",
+            "title": "Failed 24H"
+          },
+          "finished_24h": {
+            "type": "integer",
+            "title": "Finished 24H"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "version",
+          "environment",
+          "jobs",
+          "sandbox",
+          "database_ms",
+          "queue_pending",
+          "queue_oldest_seconds",
+          "queue_discarded_24h",
+          "worker_last_took_at",
+          "runs_running",
+          "runs_queued",
+          "stuck",
+          "recovery_required",
+          "interrupted",
+          "sandboxes_warm",
+          "sandboxes_asleep",
+          "runners_online",
+          "runners",
+          "failed_24h",
+          "finished_24h"
+        ],
+        "title": "PlatformHealth",
+        "description": "Is the deployment working, in one read: the database, the run queue, workers, leases and sandboxes."
       },
       "PrState": {
         "type": "string",
@@ -34362,6 +35289,66 @@
         ],
         "title": "StaleSource"
       },
+      "StuckRun": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "coding"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "workspace": {
+            "type": "string",
+            "title": "Workspace",
+            "description": "The workspace's slug"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Coding: the issue key"
+          },
+          "lease_expired_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Expired At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "status",
+          "workspace",
+          "lease_expired_at"
+        ],
+        "title": "StuckRun",
+        "description": "An active run whose lease lapsed: the worker on it is gone, and the sweep should pick it up."
+      },
       "SubgraphRead": {
         "properties": {
           "nodes": {
@@ -35961,6 +36948,95 @@
         "type": "object",
         "title": "WorkspaceUpdate",
         "description": "Only the fields you send change."
+      },
+      "WorkspaceUsage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "members": {
+            "type": "integer",
+            "title": "Members"
+          },
+          "projects": {
+            "type": "integer",
+            "title": "Projects"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "chat_runs": {
+            "type": "integer",
+            "title": "Chat Runs"
+          },
+          "coding_runs": {
+            "type": "integer",
+            "title": "Coding Runs"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "tokens": {
+            "type": "integer",
+            "title": "Tokens"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "description": "An owner paused the workspace's agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "kind",
+          "members",
+          "projects",
+          "created_at",
+          "chat_runs",
+          "coding_runs",
+          "failed",
+          "tokens",
+          "cost_usd",
+          "last_run_at",
+          "paused"
+        ],
+        "title": "WorkspaceUsage"
       },
       "WorkspaceWithRole": {
         "properties": {
