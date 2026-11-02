@@ -1,6 +1,9 @@
 """Magic-link sign-in: request a link by email, follow it once to get a session."""
+import re
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
+import pytest
 from httpx import AsyncClient
 
 from dotrix_backend.core.email import OutboxEmailSender
@@ -117,3 +120,29 @@ async def test_requests_are_queued_and_rate_limited(db_client: AsyncClient, sign
         assert (await db_client.post("/v1/auth/magic-link/request", json={"email": "ada@example.com"})).status_code == 202
     assert queued[0] == ("send_magic_link", {"email": "ada@example.com"})  # the lookup is in the job
     assert (await db_client.post("/v1/auth/magic-link/request", json={"email": "ada@example.com"})).status_code == 429
+
+
+@pytest.mark.parametrize("existing", [False, True])
+async def test_email_links_preserve_a_local_invitation_or_setup_destination(
+    db_client: AsyncClient, signup, outbox: OutboxEmailSender, existing: bool
+) -> None:
+    if existing:
+        await signup(email="return@example.com")
+    outbox.messages.clear()
+    destination = "/invites/accept?token=sample-invite&next=%2Fw%2Fteam%2Fp%2FAPP%2Fboard"
+    response = await db_client.post("/v1/auth/magic-link/request", json={"email": "return@example.com", "next": destination})
+    assert response.status_code == 202
+    [message] = outbox.messages
+    link = re.search(r'https?://[^\s<>"\']+', message.body).group(0)
+    params = parse_qs(urlparse(link).query)
+    assert params["next"] == [destination]
+    assert urlparse(link).path == ("/magic-link" if existing else "/signup/finish")
+
+
+@pytest.mark.parametrize("destination", ["https://elsewhere.test", "//elsewhere.test", "/\\elsewhere.test", "/\n/elsewhere.test"])
+async def test_email_link_return_destinations_must_be_local(
+    db_client: AsyncClient, outbox: OutboxEmailSender, destination: str
+) -> None:
+    response = await db_client.post("/v1/auth/magic-link/request", json={"email": "new@example.com", "next": destination})
+    assert response.status_code == 422
+    assert not outbox.messages

@@ -187,10 +187,10 @@ async def convert_document(ctx: JobContext, *, document_id: str) -> None:
         await DocumentService(session, ctx.storage).convert(uuid.UUID(document_id))
 
 
-async def send_magic_link(ctx: JobContext, *, email: str) -> None:
+async def send_magic_link(ctx: JobContext, *, email: str, next_path: str | None = None) -> None:
     """Like password resets: the lookup happens here, so the response can't reveal accounts."""
     async with ctx.session_factory() as session:
-        await AuthService(session, ctx.settings, ctx.email).send_magic_link(email)
+        await AuthService(session, ctx.settings, ctx.email).send_magic_link(email, next_path=next_path)
 
 
 async def index_knowledge(ctx: JobContext, *, project_id: str | None = None) -> int:

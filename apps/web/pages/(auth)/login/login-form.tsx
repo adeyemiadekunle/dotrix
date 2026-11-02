@@ -34,7 +34,7 @@ export function LoginForm({
     setError(null);
     try {
       if (mode === "link") {
-        await unwrap(api.POST("/v1/auth/magic-link/request", { body: { email } }));
+        await unwrap(api.POST("/v1/auth/magic-link/request", { body: { email, next: next ? safeNext(next) : undefined } }));
         setSentTo(email);
         setPending(false);
         return;

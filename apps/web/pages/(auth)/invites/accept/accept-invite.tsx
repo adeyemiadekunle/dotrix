@@ -5,10 +5,10 @@ import { Link } from "@/lib/navigation";
 
 import { AuthCard } from "@/components/auth-card";
 import { FormError } from "@/components/form";
-import { api, errorMessage, unwrap } from "@/lib/api";
+import { api, errorMessage, hasSession, safeNext, unwrap } from "@/lib/api";
 import { ROLE_LABELS } from "@/lib/labels";
 
-export function AcceptInvite({ token }: { token: string }) {
+export function AcceptInvite({ token, next }: { token: string; next?: string | null }) {
   const preview = useQuery({
     queryKey: ["invite-preview", token],
     queryFn: () => unwrap(api.POST("/v1/invites/preview", { body: { token } })),
@@ -17,7 +17,13 @@ export function AcceptInvite({ token }: { token: string }) {
   });
   const accept = useMutation({
     mutationFn: () => unwrap(api.POST("/v1/invites/accept", { body: { token } })),
-    onSuccess: (workspace) => window.location.assign(`/w/${workspace.slug}`),
+    onSuccess: (workspace) => {
+      const home = `/w/${workspace.slug}`;
+      const destination = new URL(safeNext(next), location.origin);
+      window.location.assign(
+        destination.pathname === home || destination.pathname.startsWith(`${home}/`) ? destination.pathname + destination.search + destination.hash : home,
+      );
+    },
   });
 
   if (!token || preview.isError) {
@@ -53,10 +59,21 @@ export function AcceptInvite({ token }: { token: string }) {
     >
       <div className="grid gap-4">
         <FormError message={accept.isError ? errorMessage(accept.error) : null} />
-        <Button className="w-full" disabled={accept.isPending} onClick={() => accept.mutate()}>
-          {accept.isPending && <SpinnerGapIcon className="animate-spin" />}
-          Accept and join
-        </Button>
+        {hasSession() ? (
+          <Button className="w-full" disabled={accept.isPending} onClick={() => accept.mutate()}>
+            {accept.isPending && <SpinnerGapIcon className="animate-spin" />}
+            Accept and join
+          </Button>
+        ) : (
+          <>
+            <Button className="w-full" asChild>
+              <Link href={`/signup?next=${encodeURIComponent(location.pathname + location.search)}`}>Create an account to join</Link>
+            </Button>
+            <Button className="w-full" variant="outline" asChild>
+              <Link href={`/login?next=${encodeURIComponent(location.pathname + location.search)}`}>Sign in to join</Link>
+            </Button>
+          </>
+        )}
       </div>
     </AuthCard>
   );

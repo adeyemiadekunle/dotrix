@@ -49,6 +49,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- New project uses the same resumable setup as signup, with confirmed saves, optional description/access and recovery after a lost team or project save response. Invitees join their workspace/project first; email links preserve local return destinations.
+
 - Document the accepted solo/team project journeys and ordered delivery checklist: idea exploration, new codebases, existing GitHub projects, shared outcomes, backlog import and readiness.
 
 - The READMEs are up to date: the fixed team and personal model keys, Codes and Juno's reviews, the desktop app,

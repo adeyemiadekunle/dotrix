@@ -18,7 +18,7 @@ export async function signUp(page: Page, user = newUser()) {
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill(user.password);
   await page.getByRole("button", { name: "Create account" }).click();
-  // Signed in, it lands in the workspace (the seeded one until the API is wired).
+  // Explicit return destinations bypass first-account setup for independent workspace tests.
   await expect(page).toHaveURL(/\/w\/[^/]+$/);
   return user;
 }
@@ -26,11 +26,13 @@ export async function signUp(page: Page, user = newUser()) {
 /** Signs up, then creates a docs-only project (it opens on its Overview) and goes to its board. Returns the project key. */
 export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM") {
   const user = await signUp(page);
-  await page.getByRole("link", { name: "New project" }).first().click();
-  await page.getByText("Documents only", { exact: true }).click();
-  await page.getByLabel("Name").fill(name);
-  await page.getByLabel("Key").fill(key);
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
+  await page.getByLabel("Project name", { exact: true }).fill(name);
+  await page.getByLabel("Project key", { exact: true }).fill(key);
   await page.getByRole("button", { name: "Create project", exact: true }).click();
+  await page.getByRole("button", { name: "Continue with documents only" }).click();
+  await page.getByRole("button", { name: /^(Continue|Set up models later)$/ }).click();
+  await page.getByRole("link", { name: "Open project", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/p/${key}/overview`));
   await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Board", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/p/${key}/board`));

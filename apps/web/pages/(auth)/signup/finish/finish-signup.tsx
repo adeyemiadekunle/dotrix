@@ -5,13 +5,13 @@ import { useState, type FormEvent } from "react";
 
 import { AuthCard } from "@/components/auth-card";
 import { Field, FormError, SubmitButton } from "@/components/form";
-import { api, authPost, errorMessage, unwrap } from "@/lib/api";
+import { api, authPost, errorMessage, safeNext, unwrap } from "@/lib/api";
 
 /**
  * Finish creating an account from an emailed link: the address is already proved, so all that's
  * left is a name. Nothing happens until the form is sent (mail scanners open links).
  */
-export function FinishSignup({ token }: { token: string }) {
+export function FinishSignup({ token, next }: { token: string; next?: string | null }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const address = useQuery({
@@ -29,7 +29,7 @@ export function FinishSignup({ token }: { token: string }) {
     try {
       await authPost("signup-link", { token, display_name: form.get("display_name") });
       // A full load, so the server sees the new session cookie.
-      window.location.assign("/onboarding");
+      window.location.assign(next ? safeNext(next) : "/onboarding");
     } catch (e) {
       setError(errorMessage(e));
       setPending(false);
@@ -41,7 +41,7 @@ export function FinishSignup({ token }: { token: string }) {
       <AuthCard
         title={token ? "This link is invalid or has expired" : "This link is incomplete"}
         description="Sign-up links work once, for 15 minutes. Ask for a new one from the sign-in page."
-        footer={<Link href="/login">Back to sign in</Link>}
+        footer={<Link href={next ? `/login?next=${encodeURIComponent(safeNext(next))}` : "/login"}>Back to sign in</Link>}
       >
         <span />
       </AuthCard>
@@ -54,7 +54,7 @@ export function FinishSignup({ token }: { token: string }) {
       footer={
         <span>
           Already have an account?{" "}
-          <Link href="/login" className="text-foreground underline underline-offset-4">
+          <Link href={next ? `/login?next=${encodeURIComponent(safeNext(next))}` : "/login"} className="text-foreground underline underline-offset-4">
             Sign in
           </Link>
         </span>

@@ -96,3 +96,146 @@ test("team workspace creation is explicit and its saved project resumes after re
   }, saved.searchParams.get("workspace"));
   expect(state).toEqual({ kinds: ["organization", "personal"], projects: ["TEAM"] });
 });
+
+test("later projects use the shared setup in the selected workspace and recover a lost save response", async ({ page }) => {
+  await signUp(page);
+  const slug = new URL(page.url()).pathname.split("/")[2]!;
+  const workspace = await page.evaluate(
+    async (slug) => (await (await fetch("/v1/workspaces")).json()).find((item: { slug: string }) => item.slug === slug),
+    slug,
+  );
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Create a project", exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("workspace")).toBe(workspace.id);
+  await page.getByLabel("Project name", { exact: true }).fill("Saved once");
+  await page.getByLabel("Project key", { exact: true }).fill("ONCE");
+  await page.getByLabel("Description (optional)", { exact: true }).fill("The server must confirm this project.");
+  await page.getByLabel("Project access", { exact: true }).selectOption("restricted");
+  let posts = 0;
+  await page.route("**/projects", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    const response = await route.fetch();
+    expect(response.status()).toBe(201);
+    await route.abort("failed"); // Save succeeded, but the browser never received its confirmation.
+  });
+  await page.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(page.getByText(/A project with this key is already saved/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
+  await expect(page.getByRole("heading", { name: "Create a project", exact: true })).toBeVisible();
+  await page.getByLabel("Continue setting up an existing project", { exact: true }).selectOption({ label: "Saved once" });
+  await expect(page.getByRole("heading", { name: "Connect GitHub", exact: true })).toBeVisible();
+  const savedUrl = page.url();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Connect GitHub", exact: true })).toBeVisible();
+  expect(page.url()).toBe(savedUrl);
+  expect(new URL(savedUrl).searchParams.get("mode")).toBe("project");
+  await page.getByRole("button", { name: "Continue with documents only" }).click();
+  await page.getByRole("button", { name: /^(Continue|Set up models later)$/ }).click();
+  await page.getByRole("link", { name: "Open project", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${slug}/p/ONCE/overview`));
+  const projects = await page.evaluate(async (id) => await (await fetch(`/v1/workspaces/${id}/projects`)).json(), workspace.id);
+  expect(projects).toHaveLength(1);
+  expect(projects[0]).toMatchObject({ key: "ONCE", access: "restricted", description: "The server must confirm this project." });
+  expect(posts).toBe(1);
+});
+
+test("signed-out setup retains its saved workspace and project through sign-in", async ({ page, browser }) => {
+  const person = await signUp(page);
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
+  await page.getByLabel("Project name", { exact: true }).fill("Resume setup");
+  await page.getByLabel("Project key", { exact: true }).fill("RESUME");
+  await page.getByRole("button", { name: "Create project", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Connect GitHub", exact: true })).toBeVisible();
+  const saved = new URL(page.url());
+  const context = await browser.newContext();
+  const visitor = await context.newPage();
+  await visitor.goto(saved.href);
+  const login = new URL((await visitor.getByRole("link", { name: "Sign in", exact: true }).getAttribute("href")) ?? "", saved.origin);
+  expect(login.searchParams.get("next")).toBe(saved.pathname + saved.search);
+  await visitor.getByRole("link", { name: "Sign in", exact: true }).click();
+  await visitor.getByLabel("Email", { exact: true }).fill(person.email);
+  await visitor.getByLabel("Password", { exact: true }).fill(person.password);
+  await visitor.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(visitor.getByRole("heading", { name: "Connect GitHub", exact: true })).toBeVisible();
+  expect(visitor.url()).toBe(saved.href);
+  await context.close();
+});
+
+test("new invitees join the intended project without creating a personal project", async ({ page, browser }) => {
+  await signUp(page);
+  const setup = await page.evaluate(async () => {
+    const headers = { "Content-Type": "application/json", "X-Requested-With": "e2e" };
+    const team = await (
+      await fetch("/v1/workspaces", { method: "POST", headers, body: JSON.stringify({ name: "Inviting team", kind: "organization" }) })
+    ).json();
+    const project = await (
+      await fetch(`/v1/workspaces/${team.id}/projects`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name: "Team work", key: "JOIN", source: "docs_only" }),
+      })
+    ).json();
+    const link = await (await fetch(`/v1/workspaces/${team.id}/invites/links`, { method: "POST", headers, body: JSON.stringify({ role: "member" }) })).json();
+    return { team, project, link };
+  });
+  const context = await browser.newContext();
+  const member = await context.newPage();
+  const destination = `/w/${setup.team.slug}/p/JOIN/board`;
+  const inviteUrl = new URL(setup.link.url, page.url());
+  inviteUrl.searchParams.set("next", destination);
+  await member.goto(inviteUrl.href);
+  await expect(member.getByRole("heading", { name: "Join Inviting team", exact: true })).toBeVisible();
+  await member.getByRole("link", { name: "Create an account to join", exact: true }).click();
+  const person = newUser("New teammate");
+  await member.getByLabel("Name", { exact: true }).fill(person.name);
+  await member.getByLabel("Email", { exact: true }).fill(person.email);
+  await member.getByLabel("Password", { exact: true }).fill(person.password);
+  await member.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(member.getByRole("button", { name: "Accept and join", exact: true })).toBeVisible();
+  await member.getByRole("button", { name: "Accept and join", exact: true }).click();
+  await expect(member).toHaveURL(new URL(destination, page.url()).href);
+  const personalCount = await member.evaluate(async () => {
+    const workspaces = await (await fetch("/v1/workspaces")).json();
+    const personal = workspaces.find((workspace: { kind: string }) => workspace.kind === "personal");
+    return (await (await fetch(`/v1/workspaces/${personal.id}/projects`)).json()).length;
+  });
+  expect(personalCount).toBe(0);
+  await member.goto(`/onboarding?workspace=${setup.team.id}&mode=project`);
+  await expect(member.getByRole("heading", { name: "Open your team workspace", exact: true })).toBeVisible();
+  await expect(member.getByRole("button", { name: "Create project", exact: true })).toHaveCount(0);
+  await context.close();
+});
+
+test("a lost team-workspace save response resumes the saved team instead of creating another", async ({ page }) => {
+  await signUp(page);
+  await page.goto("/onboarding?team=1");
+  let posts = 0;
+  await page.route("**/v1/workspaces", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posts++;
+    const response = await route.fetch();
+    expect(response.status()).toBe(201);
+    await route.abort("failed");
+  });
+  await page.getByLabel("Team workspace name", { exact: true }).fill("Recovered team");
+  await page.getByRole("button", { name: "Create team workspace", exact: true }).click();
+  await expect(page.getByText("A team workspace with this name is already saved.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create team workspace", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Use saved team workspace", exact: true }).click();
+  await page.getByLabel("Project name", { exact: true }).fill("Recovered project");
+  await page.getByLabel("Project key", { exact: true }).fill("RECOVER");
+  await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeEnabled();
+  await page.getByLabel("Project key", { exact: true }).press("Enter");
+  await expect(page.getByRole("heading", { name: "Connect GitHub", exact: true })).toBeVisible();
+  const state = await page.evaluate(async (id) => {
+    const workspaces = await (await fetch("/v1/workspaces")).json();
+    const projects = await (await fetch(`/v1/workspaces/${id}/projects`)).json();
+    return {
+      teams: workspaces.filter((workspace: { kind: string }) => workspace.kind === "organization").length,
+      keys: projects.map((project: { key: string }) => project.key),
+    };
+  }, new URL(page.url()).searchParams.get("workspace"));
+  expect(state).toEqual({ teams: 1, keys: ["RECOVER"] });
+  expect(posts).toBe(1);
+});

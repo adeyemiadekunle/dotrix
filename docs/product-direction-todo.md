@@ -31,11 +31,13 @@ Dotrix helps a solo developer or an organisation turn an idea or an existing Git
 
 ### J01 — Unify onboarding and later project creation
 
-- [ ] Use one project-setup flow for the first project and subsequent projects, with shared validation and server-confirmed saves.
-- [ ] Default solo signup to the existing personal workspace; create a team workspace only when explicitly requested.
-- [ ] Give invited members a join-first route into the intended workspace/project, preserving invitation and return destinations. Do not require them to create an unrelated project.
-- [ ] Preserve setup across refresh, authentication and GitHub installation redirects. Resume an existing saved project instead of recreating it; make retry behaviour explicit after uncertain requests.
-- [ ] Keep GitHub and model setup deferrable for project-management-only work. Never put provider keys in URLs or browser storage.
+- [x] Use one project-setup flow for the first project and subsequent projects, with shared validation and server-confirmed saves.
+- [x] Default solo signup to the existing personal workspace; create a team workspace only when explicitly requested.
+- [x] Give invited members a join-first route into the intended workspace/project, preserving invitation and return destinations. Do not require them to create an unrelated project.
+- [x] Preserve setup across refresh, authentication and GitHub installation redirects. Resume an existing saved project instead of recreating it; make retry behaviour explicit after uncertain requests.
+- [x] Keep GitHub and model setup deferrable for project-management-only work. Never put provider keys in URLs or browser storage.
+
+Implementation: shared `/onboarding` setup for signup and live New project actions; current workspace/mode and confirmed project IDs survive return paths; failed saves refresh saved work before another attempt. Invitation signup joins first, and local return destinations survive password, GitHub and email-link authentication. Team/project save recovery requires explicit selection of saved work. GitHub and model setup remain optional. See `onboarding.spec.ts`, `auth.spec.ts` and `test_magic_link.py` for the regression scenarios. Deployment verification remains separate.
 
 Done when: a solo signup, a team founder, an invited member and an existing user adding another project each reach the correct saved workspace/project without duplicates or unnecessary setup.
 
@@ -119,4 +121,4 @@ Defer a large standalone Ideas system, portfolio features, cross-organisation jo
 
 ## First implementation slice
 
-After verifying the onboarding foundation, begin with J01 and J02: a shared project-setup flow with the three starting intentions, correct invited-member handling, and server-confirmed project saves. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.
+J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. The next implementation slice is J02: add the three starting intentions to this shared flow. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.

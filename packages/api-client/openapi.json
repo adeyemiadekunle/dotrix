@@ -30932,6 +30932,18 @@
             "type": "string",
             "format": "email",
             "title": "Email"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
           }
         },
         "type": "object",

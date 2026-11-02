@@ -59,3 +59,28 @@ test("ask for a sign-in link, and a used or made-up link is refused", async ({ p
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText("This link is invalid or has expired. Ask for a new link")).toBeVisible();
 });
+
+for (const mode of ["signup", "signin"] as const) {
+  test(`email-link ${mode} keeps the invitation return destination`, async ({ page }) => {
+    const destination = "/invites/accept?token=return-check";
+    await page.route("**/v1/invites/preview", (route) =>
+      route.fulfill({
+        json: {
+          workspace_name: "Return team",
+          workspace_kind: "organization",
+          role: "member",
+          invited_by: "Owner",
+          email: null,
+          expires_at: "2099-01-01T00:00:00Z",
+        },
+      }),
+    );
+    await page.route("**/v1/auth/magic-link/signup/lookup", (route) => route.fulfill({ json: { email: "return@example.com" } }));
+    await page.route(`**/api/auth/${mode === "signup" ? "signup-link" : "magic-link"}`, (route) => route.fulfill({ status: 200, json: {} }));
+    await page.goto(`/${mode === "signup" ? "signup/finish" : "magic-link"}?${new URLSearchParams({ token: "test-token", next: destination })}`);
+    if (mode === "signup") await page.getByLabel("Name", { exact: true }).fill("Returning invitee");
+    await page.getByRole("button", { name: mode === "signup" ? "Create account" : "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/invites/accept\\?token=return-check$`));
+    await expect(page.getByRole("heading", { name: "Join Return team", exact: true })).toBeVisible();
+  });
+}

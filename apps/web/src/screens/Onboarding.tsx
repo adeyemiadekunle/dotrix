@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
 import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
@@ -10,12 +10,16 @@ const steps: Step[] = ["project", "github", "model", "ready"];
 /** Only server-confirmed workspace/project IDs are retained across redirects. Keys stay in memory. */
 export function Onboarding() {
   const query = new URLSearchParams(location.search);
+  const addingProject = query.get("mode") === "project";
+  const submission = useRef(false);
   const [workspaceId, setWorkspace] = useState(query.get("workspace") ?? "");
   const [projectId, setProject] = useState(query.get("project") ?? "");
   const [step, setStep] = useState<Step>(steps.includes(query.get("step") as Step) ? (query.get("step") as Step) : "project");
   const [teamName, setTeamName] = useState("");
-  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [creatingTeam, setCreatingTeam] = useState(query.get("team") === "1");
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [accessLevel, setAccessLevel] = useState<"workspace" | "restricted">("workspace");
   const [key, setKey] = useState("");
   const [keyEdited, setKeyEdited] = useState(false);
   const [provider, setProvider] = useState("openai");
@@ -53,15 +57,17 @@ export function Onboarding() {
     enabled: !!workspace && (step === "model" || step === "ready"),
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-access", { params: { path } })),
   });
-  const move = (next: Step, id = projectId) => {
+  const move = (next: Step, id = projectId, ws = workspaceId) => {
     setError("");
     setStep(next);
-    const params = new URLSearchParams({ workspace: workspaceId, step: next });
+    const params = new URLSearchParams({ workspace: ws, step: next });
     if (id) params.set("project", id);
+    if (addingProject) params.set("mode", "project");
     history.replaceState(history.state, "", `/onboarding?${params}`);
   };
   const perform = async (action: () => Promise<void>) => {
-    if (busy) return;
+    if (submission.current) return;
+    submission.current = true;
     setBusy(true);
     setError("");
     try {
@@ -69,6 +75,7 @@ export function Onboarding() {
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
+      submission.current = false;
       setBusy(false);
     }
   };
@@ -76,15 +83,21 @@ export function Onboarding() {
     perform(async () => {
       if (!name.trim() || !/^[A-Z][A-Z0-9]{1,9}$/.test(key))
         throw new Error("Enter a project name and a key of 2–10 letters or digits, starting with a letter.");
-      const created = await unwrap(
-        api.POST("/v1/workspaces/{workspace_id}/projects", {
-          params: { path },
-          body: { name: name.trim(), key, source: "docs_only", description: "", access: "workspace" },
-        }),
-      );
-      setProject(created.id);
-      move("github", created.id);
-      await projects.refetch();
+      // Keep the same key on retries. Refresh after an uncertain response so saved work can be resumed explicitly.
+      try {
+        const created = await unwrap(
+          api.POST("/v1/workspaces/{workspace_id}/projects", {
+            params: { path },
+            body: { name: name.trim(), key, source: "docs_only", description: description.trim(), access: accessLevel },
+          }),
+        );
+        setProject(created.id);
+        move("github", created.id);
+        await projects.refetch();
+      } catch (cause) {
+        await projects.refetch();
+        throw cause;
+      }
     });
   const connectRepo = () =>
     perform(async () => {
@@ -111,10 +124,10 @@ export function Onboarding() {
       <div className="auth-card">
         <h1>Set up your workspace</h1>
         <p>Sign in or create an account to save your first project.</p>
-        <a className="btn btn-primary" href="/signup?next=%2Fonboarding">
+        <a className="btn btn-primary" href={`/signup?next=${encodeURIComponent(location.pathname + location.search)}`}>
           Create an account
         </a>
-        <a href="/login?next=%2Fonboarding">Sign in</a>
+        <a href={`/login?next=${encodeURIComponent(location.pathname + location.search)}`}>Sign in</a>
       </div>
     );
   if (workspaces.isLoading)
@@ -130,6 +143,19 @@ export function Onboarding() {
         <button onClick={() => void workspaces.refetch()}>Try again</button>
       </div>
     );
+  if (workspace && workspace.role !== "owner" && workspace.role !== "admin")
+    return (
+      <div className="auth-card">
+        <h1>Open your team workspace</h1>
+        <p>You already belong to {workspace.name}. Only owners and admins create projects; you can use the projects shared with you.</p>
+        <a className="btn btn-primary" href={`/w/${workspace.slug}`}>
+          Open workspace
+        </a>
+        <a href="/onboarding">Set up a project in your own workspace</a>
+      </div>
+    );
+  const duplicateKey = projects.data?.some((item) => item.key === key);
+  const existingTeam = workspaces.data?.find((item) => item.kind === "organization" && item.name.toLowerCase() === teamName.trim().toLowerCase());
   const modelReady =
     !!access.data?.ready &&
     !!((models.data?.default_model && access.data.models.includes(models.data.default_model)) || (project && access.data.models.includes(project.model)));
@@ -144,17 +170,19 @@ export function Onboarding() {
       <p className="faint">Project · GitHub · Model · Start working</p>
       {current === "project" && (
         <>
-          <h1>Create your first project</h1>
+          <h1>{addingProject || !!projects.data?.length ? "Create a project" : "Create your first project"}</h1>
           <p className="sub">Give your work a home. You can connect a repository in the next step.</p>
           <label className="field">
             Workspace
             <select
+              aria-label="Workspace"
               className="select"
               value={workspaceId}
               disabled={busy || (!!projectId && !!project)}
               onChange={(event) => {
                 setWorkspace(event.target.value);
                 setProject("");
+                move("project", "", event.target.value);
               }}
             >
               {workspaces.data?.map((item) => (
@@ -164,28 +192,51 @@ export function Onboarding() {
               ))}
             </select>
           </label>
+          {workspaceId && workspaces.isSuccess && !workspace && <p role="alert">This workspace is unavailable. Select another workspace to continue.</p>}
           {creatingTeam ? (
             <>
               <label className="field">
                 Team workspace name
-                <input className="input" value={teamName} onChange={(event) => setTeamName(event.target.value)} maxLength={100} />
+                <input className="input" disabled={busy} value={teamName} onChange={(event) => setTeamName(event.target.value)} maxLength={100} />
               </label>
               <button
                 className="btn"
-                disabled={busy || !teamName.trim()}
+                disabled={busy || !teamName.trim() || !!existingTeam}
                 onClick={() =>
                   void perform(async () => {
-                    const created = await unwrap(api.POST("/v1/workspaces", { body: { name: teamName.trim(), kind: "organization" } }));
-                    setWorkspace(created.id);
-                    setProject("");
-                    history.replaceState(history.state, "", `/onboarding?workspace=${encodeURIComponent(created.id)}&step=project`);
-                    setCreatingTeam(false);
-                    await workspaces.refetch();
+                    try {
+                      const created = await unwrap(api.POST("/v1/workspaces", { body: { name: teamName.trim(), kind: "organization" } }));
+                      setWorkspace(created.id);
+                      setProject("");
+                      move("project", "", created.id);
+                      setCreatingTeam(false);
+                      await workspaces.refetch();
+                    } catch (cause) {
+                      await workspaces.refetch();
+                      throw cause;
+                    }
                   })
                 }
               >
                 Create team workspace
               </button>
+              {existingTeam && (
+                <>
+                  <p role="status">A team workspace with this name is already saved.</p>
+                  <button
+                    className="btn btn-secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setWorkspace(existingTeam.id);
+                      setProject("");
+                      setCreatingTeam(false);
+                      move("project", "", existingTeam.id);
+                    }}
+                  >
+                    Use saved team workspace
+                  </button>
+                </>
+              )}
               <button className="btn btn-ghost" disabled={busy} onClick={() => setCreatingTeam(false)}>
                 Cancel
               </button>
@@ -204,6 +255,7 @@ export function Onboarding() {
                 <label className="field">
                   Continue setting up an existing project
                   <select
+                    aria-label="Continue setting up an existing project"
                     className="select"
                     disabled={busy}
                     value=""
@@ -221,44 +273,74 @@ export function Onboarding() {
                   </select>
                 </label>
               )}
-              <label className="field">
-                Project name
-                <input
-                  className="input"
-                  value={name}
-                  maxLength={100}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    if (!keyEdited)
-                      setKey(
-                        event.target.value
-                          .toUpperCase()
-                          .replace(/[^A-Z0-9]/g, "")
-                          .slice(0, 10),
-                      );
-                  }}
-                />
-              </label>
-              <label className="field">
-                Project key
-                <input
-                  className="input"
-                  value={key}
-                  maxLength={10}
-                  onChange={(event) => {
-                    setKeyEdited(true);
-                    setKey(event.target.value.toUpperCase());
-                  }}
-                  placeholder="APP"
-                />
-              </label>
-              <button
-                className="btn btn-primary"
-                disabled={busy || !workspace || !name.trim() || !/^[A-Z][A-Z0-9]{1,9}$/.test(key)}
-                onClick={() => void create()}
+              <form
+                style={{ display: "flex", flexDirection: "column", gap: 16 }}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!busy && !duplicateKey && workspace && projects.isSuccess) void create();
+                }}
               >
-                {busy ? "Creating project…" : "Create project"}
-              </button>
+                <label className="field">
+                  Project name
+                  <input
+                    className="input"
+                    disabled={busy}
+                    value={name}
+                    maxLength={100}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      if (!keyEdited)
+                        setKey(
+                          event.target.value
+                            .toUpperCase()
+                            .replace(/[^A-Z0-9]/g, "")
+                            .slice(0, 10),
+                        );
+                    }}
+                  />
+                </label>
+                <label className="field">
+                  Project key
+                  <input
+                    className="input"
+                    disabled={busy}
+                    value={key}
+                    maxLength={10}
+                    onChange={(event) => {
+                      setKeyEdited(true);
+                      setKey(event.target.value.toUpperCase());
+                    }}
+                    placeholder="APP"
+                  />
+                </label>
+                {duplicateKey && (
+                  <p role="alert">A project with this key is already saved. Continue setting up the existing project above, or choose a different key.</p>
+                )}
+                <label className="field">
+                  Description (optional)
+                  <textarea className="textarea" disabled={busy} value={description} maxLength={500} onChange={(event) => setDescription(event.target.value)} />
+                </label>
+                <label className="field">
+                  Project access
+                  <select
+                    aria-label="Project access"
+                    disabled={busy}
+                    className="select"
+                    value={accessLevel}
+                    onChange={(event) => setAccessLevel(event.target.value as "workspace" | "restricted")}
+                  >
+                    <option value="workspace">Workspace members</option>
+                    <option value="restricted">Only owners, admins and people added</option>
+                  </select>
+                </label>
+                <button
+                  className="btn btn-primary"
+                  disabled={busy || !workspace || !projects.isSuccess || duplicateKey || !name.trim() || !/^[A-Z][A-Z0-9]{1,9}$/.test(key)}
+                  type="submit"
+                >
+                  {busy ? "Creating project…" : "Create project"}
+                </button>
+              </form>
             </>
           )}
           {projects.isError && (
@@ -433,6 +515,11 @@ export function Onboarding() {
         <button className="btn btn-ghost" disabled={busy} onClick={() => move(steps[Math.max(0, steps.indexOf(current) - 1)]!)}>
           Back
         </button>
+      )}
+      {workspace && (
+        <a className="btn btn-ghost" href={`/w/${workspace.slug}`}>
+          {project ? "Finish setup later" : "Back to workspace"}
+        </a>
       )}
       {error && (
         <p className="err" role="alert">

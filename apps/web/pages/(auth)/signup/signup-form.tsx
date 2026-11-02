@@ -63,7 +63,7 @@ export function SignupForm({ next, github = false }: { next?: string; github?: b
           Create account
         </SubmitButton>
         <Button type="button" variant="ghost" className="w-full" asChild>
-          <Link href="/login?link=1">
+          <Link href={`/login?link=1&next=${encodeURIComponent(next ? safeNext(next) : "/onboarding")}`}>
             <EnvelopeSimpleIcon /> Sign up with an email link instead
           </Link>
         </Button>
