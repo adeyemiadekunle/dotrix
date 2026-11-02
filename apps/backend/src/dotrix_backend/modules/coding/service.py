@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.crypto import Secrets
-from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from dotrix_backend.core.errors import Conflict, DomainError, Forbidden, NotFound, Unprocessable
 from dotrix_backend.core.jobs import Jobs, QueuedJobs
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.core.storage import BlobStorage, StorageUnavailable
@@ -21,6 +21,7 @@ from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.connectors.github_app import GitHubApp, GitHubAppClient
 from dotrix_backend.modules.connectors.models import ConnectedRepo
+from dotrix_backend.modules.connectors.service import ConnectorService
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.execution.service import RunDispatcher, record_dispatch
 from dotrix_backend.modules.issues.models import AgentAssignee, Issue, IssueStatus, IssueType
@@ -120,9 +121,25 @@ class CodingBusy(Conflict):
 
 
 class CodingService:
-    def __init__(self, session: AsyncSession, settings: Settings, jobs: Jobs, *, secrets: Secrets | None = None) -> None:
+    def __init__(self, session: AsyncSession, settings: Settings, jobs: Jobs, *, secrets: Secrets | None = None,
+                 github: GitHubApp | None = None) -> None:
         self.session, self.settings, self.jobs = session, settings, jobs
         self.secrets = secrets or Secrets.from_settings(settings)
+        self.github = github or GitHubAppClient(settings)
+
+    async def _require_base(self, project: Project) -> None:
+        try:
+            ready = await ConnectorService(self.session, self.github).readiness(project)
+        except DomainError as exc:
+            raise CodingUnavailable(f"Couldn't verify the repository's default branch: {exc.detail}. "
+                                    "Check GitHub App access and try again before starting Kai.") from exc
+        if not ready.ready:
+            raise CodingUnavailable(ready.reason or "Check the connected repository before starting Kai")
+        repo = await self._repo(project)
+        assert repo is not None and ready.full_name and ready.default_branch
+        # Snapshot the current name and default branch into the new run, including a
+        # default-branch change made since this repository was connected.
+        repo.full_name, repo.default_branch = ready.full_name, ready.default_branch
 
     async def _keys(self, project: Project, user_id: uuid.UUID | None) -> dict[str, str]:
         keys = await run_keys(self.session, self.secrets, project.workspace_id, user_id)
@@ -245,6 +262,7 @@ class CodingService:
             if busy:
                 raise CodingBusy("Kai already has an active turn in this conversation")
         issue = await self._codable(access.project, access.member.user_id, key, location=data.location)
+        await self._require_base(access.project)
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START,
                                  approval=data.approval_mode, location=data.location,
                                  requested_agent=data.agent, requested_model=data.model)
@@ -260,6 +278,7 @@ class CodingService:
             return None
         try:
             issue = await self._codable(access.project, access.member.user_id, key)
+            await self._require_base(access.project)
         except (CodingUnavailable, CodingBusy, Conflict, Unprocessable):
             return None
         run = await self._create(access.project, access.member, issue, None, CodingOrigin.ASSIGNED)
@@ -335,6 +354,8 @@ class CodingService:
         with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
         if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
             with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
+        if with_branch is None:
+            await self._require_base(access.project)
         earlier = [(t.turn, _earlier(t)) for t in turns
                    if t.status not in (CodingRunStatus.REJECTED, CodingRunStatus.STOPPED) or t.summary]
         return turns, issue, with_branch, earlier

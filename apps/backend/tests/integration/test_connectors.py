@@ -258,3 +258,27 @@ async def test_creation_rechecks_the_confirmed_installation_before_writing(
     removed = await db_client.post(f"{ws}/github/repos", headers=ada.headers, json=body)
     assert removed.status_code in {403, 404}
     assert len(installation["repos"]) == 2
+
+
+async def test_readiness_checks_the_current_default_branch_without_initialising_the_repository(
+    db_client: AsyncClient, github_world, github
+) -> None:
+    ada, cat, ws, kun, _ = await github_world()
+    base = f"{ws}/projects/{kun['id']}/repository"
+    assert (await db_client.get(f"{base}/readiness", headers=ada.headers)).json()["ready"] is False
+    org = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                json={"installation_id": 111, "code": "code-1"})).json()
+    assert (await db_client.put(base, headers=ada.headers,
+                               json={"installation_ref": org["id"], "github_repo_id": 9001})).status_code == 200
+    empty = (await db_client.get(f"{base}/readiness", headers=cat.headers)).json()
+    assert empty["ready"] is False and "initial commit" in empty["reason"] and empty["commit_sha"] is None
+    github.installations[111]["repos"][0]["default_branch"] = "trunk"
+    github.branch_heads = lambda repo, branch: "a" * 40 if (repo, branch) == ("kunemi/api", "trunk") else None
+    ready = (await db_client.get(f"{base}/readiness", headers=ada.headers)).json()
+    assert ready == {"ready": True, "full_name": "kunemi/api", "default_branch": "trunk", "commit_sha": "a" * 40, "reason": None}
+    assert github.token_requests[-1] == {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "read"}}
+    # Checking is read-only; it neither changes the saved branch nor creates a commit.
+    assert (await db_client.get(base, headers=ada.headers)).json()["default_branch"] == "main"
+    github.installations[111]["suspended_at"] = "2026-11-02T00:00:00Z"
+    blocked = (await db_client.get(f"{base}/readiness", headers=ada.headers)).json()
+    assert blocked["ready"] is False and "suspended" in blocked["reason"]

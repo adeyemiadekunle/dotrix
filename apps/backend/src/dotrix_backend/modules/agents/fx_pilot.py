@@ -60,6 +60,7 @@ from .runtime_tools import RuntimeRunScope, scoped_project_tools
 from .storage_backend import SessionFactory
 from .unattended import Unattended
 from .work_modes import ModeContext, lead_tools
+from .workspace_runs import read_only
 
 # These are fixed platform endpoints, not URLs supplied by a model or browser. Anthropic's is its
 # OpenAI-compatible endpoint (checked with libfx 0.0.16 on Claude Haiku 5.5, 2026-10-30: tools, follow-ups,
@@ -178,10 +179,11 @@ async def _turn(
     session_id = f"fx-pilot-{uuid.uuid4().hex}"
     async with sessions() as session:
         run = await admit_runtime_run(session, workspace_id, run_id, token)
+        coding_outcome = run.source == "coding_outcome" and run.work_mode is WorkMode.REVIEW
         if (run.kind is not RunKind.CHAT or run.work_mode is None or run.parent_run_id is not None
                 or run.agent not in (None, PM_HANDLE) or run.automation_id is not None or run.mode is not None
-                or run.source != "user"):
-            raise Conflict("The fx pilot only supports an interactive Nova turn in a work mode")
+                or (run.source != "user" and not coding_outcome)):
+            raise Conflict("fx supports interactive Nova turns in a work mode, or read-only coding outcomes in Review mode")
         previous = list(await session.scalars(select(AgentRun).where(
             AgentRun.workspace_id == workspace_id, AgentRun.project_id == run.project_id,
             AgentRun.thread_id == run.thread_id, AgentRun.requested_by_id == run.requested_by_id,
@@ -210,11 +212,13 @@ async def _turn(
             person = await session.get(User, run.requested_by_id)
             specs = with_preferences(specs, preferences, person.display_name if person else "the person")
         spec = next(item for item in specs if item.handle == PM_HANDLE)
+        if coding_outcome:
+            spec = read_only(spec)
         keys = (await run_keys(session, secrets, workspace_id, run.requested_by_id)).keys
         connection = _connection(run.model, keys)
         scope = RuntimeRunScope(workspace_id, run.project_id, run_id, run.requested_by_id,
                                 PM_HANDLE, token, session_id)
-        guide = _DELEGATION_GUIDE if durable and spec.can("delegate") else _GUIDE
+        guide = _DELEGATION_GUIDE if durable and not coding_outcome and spec.can("delegate") else _GUIDE
         instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}{work_mode_guide(work_mode.value)}"
         if existing is not None and existing.encrypted_context:
             snapshot = json.loads(secrets.decrypt(existing.encrypted_context))
@@ -268,10 +272,11 @@ async def _turn(
         from .fx_tools import fx_change_tools
 
         lead, policy, unattended = effective
-        tools += fx_change_tools(sessions, secrets, scope=scope, spec=lead, policy=policy, unattended=unattended,
-                                 work_mode=work_mode, mode_context=mode_context, authorize=lambda: authorize())
+        if not coding_outcome:
+            tools += fx_change_tools(sessions, secrets, scope=scope, spec=lead, policy=policy, unattended=unattended,
+                                     work_mode=work_mode, mode_context=mode_context, authorize=lambda: authorize())
         tools += mode_reads(work_mode, mode_context, lambda: authorize())
-    if durable:
+    if durable and not coding_outcome:
         async def delegate(arguments: dict, context: RuntimeToolContext):
             await authorize()
             if context.session_id != session_id or not context.execution_id:

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
 import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
 import { Ic } from "../core/icons";
-import { PROJECT_STARTS, projectStart, projectDiscussionHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
+import { PROJECT_STARTS, projectStart, projectDiscussionHref, projectImplementationHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
 import { RepositoryCreate } from "./RepositoryCreate";
 
 type Step = "project" | "github" | "model" | "ready";
@@ -56,6 +56,17 @@ export function Onboarding() {
     queryKey: ["onboarding-repos", workspaceId],
     enabled: !!workspace && step === "github" && github.data?.configured === true,
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/github/repos", { params: { path } })),
+  });
+  const repositoryReady = useQuery({
+    queryKey: ["repository-readiness", workspaceId, projectId],
+    enabled: !!project?.repo_url && (step === "ready" || step === "github"),
+    retry: false,
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/readiness", {
+          params: { path: { workspace_id: workspaceId, project_id: projectId } },
+        }),
+      ),
   });
   const models = useQuery({ queryKey: ["my-models"], enabled: signedIn, queryFn: myModels });
   const access = useQuery({
@@ -619,6 +630,22 @@ export function Onboarding() {
                 : "No repository connected yet. Connect one before asking Kai to implement."}
           </p>
           <p>{access.data?.ready ? "Personal model connection available." : "Connect a model when you are ready to use agents."}</p>
+          {project?.repo_url && (
+            <section aria-label="Repository readiness">
+              {repositoryReady.isFetching && <p role="status">Checking the repository's default branch…</p>}
+              {repositoryReady.data?.ready && !repositoryReady.isError && !repositoryReady.isFetching && (
+                <p role="status">
+                  Ready for a new coding branch: {repositoryReady.data.full_name} · {repositoryReady.data.default_branch} ·{" "}
+                  {repositoryReady.data.commit_sha?.slice(0, 7)}.
+                </p>
+              )}
+              {repositoryReady.data && !repositoryReady.data.ready && <p role="alert">{repositoryReady.data.reason}</p>}
+              {repositoryReady.isError && <p role="alert">Couldn't verify the repository: {errorMessage(repositoryReady.error)}</p>}
+              <button className="btn btn-secondary" disabled={repositoryReady.isFetching} onClick={() => void repositoryReady.refetch()}>
+                Check repository again
+              </button>
+            </section>
+          )}
           <a className="btn btn-primary" href={`/w/${workspace?.slug}/p/${project?.key}/overview`}>
             Open project
           </a>
@@ -630,6 +657,11 @@ export function Onboarding() {
             <button className="btn btn-secondary" disabled={busy} onClick={() => move("model")}>
               Set up Nova
             </button>
+          )}
+          {modelReady && repositoryReady.data?.ready && !repositoryReady.isError && !repositoryReady.isFetching && intention === "new" && (
+            <a className="btn btn-secondary" href={projectImplementationHref(workspace!.slug, project!.key)}>
+              Plan first implementation
+            </a>
           )}
         </>
       )}

@@ -25,3 +25,11 @@ const STARTERS: Record<ProjectStart, string> = {
 export function projectDiscussionHref(slug: string, key: string, start: ProjectStart): string {
   return `/w/${slug}/chat?${new URLSearchParams({ project: key, q: STARTERS[start] })}`;
 }
+
+export function projectImplementationHref(slug: string, key: string): string {
+  return `/w/${slug}/chat?${new URLSearchParams({
+    project: key,
+    mode: "plan",
+    q: "Plan the first useful implementation from this project's saved goal and knowledge. Clarify scope and acceptance criteria, save an agreed plan and propose a small initial task. Do not start Kai or change code until I explicitly request implementation in Build mode. Keep checks, independent review and my merge decision explicit.",
+  })}`;
+}

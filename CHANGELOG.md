@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- New-project setup checks GitHub for a committed default branch and offers an editable first-implementation plan. Kai refuses new sessions on empty or inaccessible repositories and keeps the validated base branch while awaiting approval.
+
 - Shared project setup can create an organisation repository after owner/name/visibility confirmation, recover uncertain responses through repository selection, and guide personal accounts through creation on GitHub. Repository creation rechecks installation ownership and suspension.
 
 - Project setup offers Explore an idea, Start a new codebase and Connect an existing repository, with saved starting choices, goal-first planning and editable Nova discussion starters. Existing projects can connect a repository from Overview.
@@ -78,6 +80,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   conversation's title or first message, and audit events come without their details.
 
 ### Fixed
+
+- Coding outcomes return to Nova on the original chat runtime, so an fx conversation stays on fx after Kai and Juno finish.
 
 - Sample coding-session menus keep management actions read-only and never invoke live mutation hooks, including when a signed-in person opens the demo.
 

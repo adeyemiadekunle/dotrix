@@ -28,6 +28,7 @@ from dotrix_backend.core.errors import DomainError
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
+from dotrix_backend.modules.connectors.github_app import GitHubApp
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
@@ -57,6 +58,7 @@ class ModeContext:
     instructed_by_id: uuid.UUID | None
     approval: ApprovalMode | None = None  # the run's approval mode: Kai starts at once when it goes through
     jobs: Any = None  # where a coding run that starts at once goes (None: it waits for an approval)
+    github: GitHubApp | None = None
 
 
 class PlanTask(BaseModel):
@@ -143,7 +145,7 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
         ).order_by(ConversationPlan.version.desc()).limit(1))
         try:
             approval = ctx.approval if ctx.jobs is not None else None
-            service = CodingService(session, ctx.settings, ctx.jobs or _NO_JOBS)
+            service = CodingService(session, ctx.settings, ctx.jobs or _NO_JOBS, github=ctx.github)
             previous = await session.scalar(select(CodingRun).join(CodingSession, CodingSession.id == CodingRun.session_id).where(
                 CodingRun.workspace_id == ctx.workspace_id, CodingRun.project_id == ctx.project_id,
                 CodingRun.thread_id == ctx.thread_id, CodingRun.issue_key == ask.issue_key,
