@@ -183,7 +183,7 @@ async def _turn(
         if (run.kind is not RunKind.CHAT or run.work_mode is None or run.parent_run_id is not None
                 or run.agent not in (None, PM_HANDLE) or run.automation_id is not None or run.mode is not None
                 or (run.source != "user" and not coding_outcome)):
-            raise Conflict("fx supports interactive Nova turns and read-only coding outcomes in Review mode")
+            raise Conflict("fx supports interactive Nova turns in a work mode, or read-only coding outcomes in Review mode")
         previous = list(await session.scalars(select(AgentRun).where(
             AgentRun.workspace_id == workspace_id, AgentRun.project_id == run.project_id,
             AgentRun.thread_id == run.thread_id, AgentRun.requested_by_id == run.requested_by_id,
