@@ -25,7 +25,8 @@ Dotrix helps a solo developer or an organisation turn an idea or an existing Git
 - [x] Separate Chat/Codes sessions, Nova–Kai handoff, coding panes, PR outcomes and Juno reviews exist.
 - [x] Connected-repository inventory, explanation, coverage and stale-knowledge indicators exist.
 - [x] First-project onboarding, optional GitHub/personal-model setup, retained navigation without a key, and shared demo/live presentation are implemented in [PR #214](https://github.com/adeyemiadekunle/dotrix/pull/214).
-- [ ] Review, merge and verify the PR #214 onboarding foundation in the target environment. Implementation on a branch is not evidence of deployment.
+- [x] Merge the onboarding foundation: PR #214 merged into stage on 2026-11-02.
+- [ ] Verify the onboarding foundation in the target environment. A merge is not evidence of deployment.
 
 ## Delivery order
 
@@ -43,11 +44,13 @@ Done when: a solo signup, a team founder, an invited member and an existing user
 
 ### J02 — Offer three starting intentions
 
-- [ ] Present **Explore an idea**, **Start a new codebase**, and **Connect an existing repository** in the shared setup flow.
-- [ ] Explore an idea saves a lightweight project with a working title and opens a useful Nova discussion after model setup when needed.
-- [ ] New-codebase setup collects the goal before asking for repository details. Existing-repository setup asks for GitHub access and repository selection.
-- [ ] Let a documents-only or idea project connect a repository later without losing its tasks, knowledge or conversation links.
-- [ ] Ask Nova to clarify goals, users, constraints and uncertainties before proposing scope; delegate only where specialist input is useful.
+- [x] Present **Explore an idea**, **Start a new codebase**, and **Connect an existing repository** in the shared setup flow.
+- [x] Explore an idea saves a lightweight project with a working title and opens a useful Nova discussion after model setup when needed.
+- [x] New-codebase setup collects the goal before asking for repository details. Existing-repository setup asks for GitHub access and repository selection.
+- [x] Let a documents-only or idea project connect a repository later without losing its tasks, knowledge or conversation links.
+- [x] Ask Nova to clarify goals, users, constraints and uncertainties before proposing scope; delegate only where specialist input is useful.
+
+Implementation: three explicit choices in shared setup, retained through the project's existing source field and recovered from saved state. Ideas skip GitHub and can start with only a working title; new codebases require a saved goal before repository setup. Ready actions open editable Discuss starters without launching a run. Project Overview offers repository setup on the existing project; the connector regression checks preservation of tasks, knowledge and the conversation. See `project-start.spec.ts`, `onboarding.spec.ts` and `test_connectors.py`. Deployment verification remains separate.
 
 Done when: each intention leads to a suitable first action, and an idea can become an implementation project without starting over.
 
@@ -121,4 +124,4 @@ Defer a large standalone Ideas system, portfolio features, cross-organisation jo
 
 ## First implementation slice
 
-J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. The next implementation slice is J02: add the three starting intentions to this shared flow. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.
+J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. J02 now supplies the three starting intentions. The next implementation slice is J03: complete repository creation/connection through the first reviewed implementation. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.

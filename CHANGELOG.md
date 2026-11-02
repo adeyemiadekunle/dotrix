@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Project setup offers Explore an idea, Start a new codebase and Connect an existing repository, with saved starting choices, goal-first planning and editable Nova discussion starters. Existing projects can connect a repository from Overview.
+
 - New-account setup saves a first project, offers GitHub repository access and personal model setup, and resumes after GitHub installation.
 
 - Self-hosting: the admin console is part of the production deploy (`admin`, on its own domain such as admin.dotrix.cc),

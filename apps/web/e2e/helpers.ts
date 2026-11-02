@@ -27,10 +27,10 @@ export async function signUp(page: Page, user = newUser()) {
 export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM") {
   const user = await signUp(page);
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
+  await page.getByRole("radio", { name: "Explore an idea", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill(name);
   await page.getByLabel("Project key", { exact: true }).fill(key);
   await page.getByRole("button", { name: "Create project", exact: true }).click();
-  await page.getByRole("button", { name: "Continue with documents only" }).click();
   await page.getByRole("button", { name: /^(Continue|Set up models later)$/ }).click();
   await page.getByRole("link", { name: "Open project", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/p/${key}/overview`));
