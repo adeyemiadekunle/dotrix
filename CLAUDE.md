@@ -4,6 +4,12 @@ Guidance for Claude Code working in this repo. The product is **dotrix** (former
 Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.md](docs/agents-v2.md).
 Earlier proposals: [strategy and roadmap](docs/dotrix-product-strategy-and-roadmap.md), [durable agent harness](docs/dotrix-durable-agent-harness.md), [hybrid execution](docs/dotrix-hybrid-execution-architecture.md), [Repository Knowledge skill](docs/dotrix-repository-knowledge-skill.md). The Chat/Coding direction below is the current guidance where those proposals differ.
 
+## Accepted product direction (2026-11-02)
+
+Dotrix serves solo developers and organisation teams from a single account with personal/organisation workspaces. Its three starting intentions are Explore an idea, Start a new codebase, and Connect an existing repository. The accepted, ordered checklist and acceptance criteria are in [Product direction todo](docs/product-direction-todo.md). Keep production requirements first; begin product delivery with J01/J02, unifying first/subsequent project setup and the three starting intentions, including the distinct invited-member route.
+
+An early idea is a lightweight draft project, without mandatory GitHub, dates or a finished specification. Keep project management available without model keys. Shared knowledge and tasks come from explicit, permission-checked publication of selected chat outcomes, preserving private conversations. Reuse the fixed team, current runtimes, BYOK and Nova–Kai handoff; people keep the merge decision. A large separate Ideas system and enterprise expansion follow the core journeys. See the checklist for existing capabilities, incomplete repository-creation paths, deferred scope and release evidence; do not treat accepted todos or branch implementation as deployed behaviour.
+
 ## Built-in team and Nova orchestration
 
 The team is fixed: Nova advises and coordinates Lyra, Orion, Vega, Juno, and Echo; Kai executes coding turns. Interactive conversations keep Nova as the speaker, with mentions treated as requests to involve a specialist. The four work modes and approval controls remain in force. Built-in identity and core instructions live in the engine; workspace and project additional guidance and personal preferences are layered, versioned, and audited. Custom identities are retired, with historical attribution retained.
@@ -339,6 +345,7 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [ ] Search: pass the instructing person's key to embedding jobs; indexing without an explicit personal key uses keyword search
 
 ### P1: finish the coding loop and the chat controls
+- [ ] Product journeys: deliver J01–J05 of the [accepted product direction todo](docs/product-direction-todo.md) in order: shared project setup, three starting intentions, new repository to first PR, existing-repository baseline, and explicit publication of chat outcomes. J01/J02 are the first implementation slice; reuse the existing runtime and permission boundaries.
 - [ ] Codes: live text instead of polling, usage per session, subagent events nested (C)
 - [ ] PRs on the board: checks shown on the issue (Codes shows them, 2026-10-31); a PR check rejecting `.dotrix/` for PRs from elsewhere; the Reviewer's findings in `reviews/` (FR-22; on the PR, and as GitHub issues on request, since 2026-10-31)
 - [ ] fx chat (a choice, no switch) before it becomes a default: changes and approvals on real models, distributed failure testing, Google (Gemini's OpenAI-compatible stream ends a tool call with `finish_reason: "stop"` and no `index`, which libfx 0.0.16 treats as an error, so it needs a compatibility layer; checked 2026-10-30 until the key's prepaid credits ran out); measured quality and cost on real conversations before choosing model tiers
@@ -349,6 +356,7 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [ ] Delete `pages/(app)`, `components/` and `lib/` pieces only the old app uses
 
 ### P2: broaden
+- [ ] Product journeys: J06/J07 in the [product direction todo](docs/product-direction-todo.md), GitHub Issues backlog import with explicit ownership/retry rules, then consistent project readiness and next actions.
 - [ ] D. Running apps and MCP: the dotrix MCP server (board, documents, graph) over HTTP outside the sandbox with a per-turn credential the sandbox never holds; Playwright MCP inside it; the supervisor starts dev servers; preview through the platform; a live browser view in Codes; registries and the preview port in the egress allowlist and OpenShell's policy; OpenCode's and fx's browser
 - [ ] E. Local-file projects (a bare repo per project at setup) and the Codex adapter with resume
 - [ ] Local coding: the Windows installer and CLI built in CI (2026-10-31) and updating itself (2026-11-01); signing and macOS next, run on a real Windows machine; a folder without a remote (branch and diff, no PR); local turns in Docker Sandboxes checked on a real `sbx` (built 2026-11-01 against a fake); fx for local turns
@@ -362,7 +370,7 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [ ] A workspace-wide default model (decision), beside each project's, each agent's, and each person's
 
 ### P3: later
-- [ ] Space (agents v2 step 6): workspace knowledge above projects with space instructions for the Documentation agent; Ideas and "Start a project from this idea"; promote an answer or conversation to a document, decision, or issues; comments on documents with `@agent`
+- [ ] Space (agents v2 step 6): workspace knowledge above projects with space instructions for the Documentation agent; a standalone Ideas system and "Start a project from this idea" after the lightweight draft-project journey (J02); comments on documents with `@agent`. Explicit publication of selected outcomes into project knowledge/tasks is promoted to J05, above
 - [ ] Results: "Propose change" and "Fix now" per item; a severity rubric for findings; a person's edit of an agent's draft as a lesson; lessons per workspace
 - [ ] Graph: document sections, research findings, people, agents, commits, PRs, and files as nodes; triage finding duplicates through the graph
 - [ ] Updating a repo's `AGENTS.md` / `CLAUDE.md` as a coding session

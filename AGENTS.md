@@ -2,6 +2,12 @@
 
 Read [CLAUDE.md](CLAUDE.md) before any change: it has the repo map, commands, rules, conventions, implementation status, and detailed product direction. Keep this file's summary aligned with it when those decisions change.
 
+## Product direction
+
+- Serve solo developers and organisation teams through one account and personal/organisation workspaces. Support three starting intentions: Explore an idea, Start a new codebase, Connect an existing repository.
+- Follow the accepted [product direction todo](docs/product-direction-todo.md) in delivery order, after the P0 production requirements in CLAUDE.md. Start with shared first/subsequent project setup and the three starting intentions; invited members join their intended project instead of creating an unrelated one.
+- An idea can start as a lightweight draft project. GitHub is optional until needed for code; personal model setup is optional until the person uses agents. Preserve private conversations, explicit publication of shared outcomes, personal BYOK, Nova–Kai links and human merge decisions.
+
 ## Chat and Coding direction
 
 - Dotrix owns the built-in identities: Nova coordinates the thinking specialists, and Kai is the coding agent. Chat and coding sessions are separate, linked areas.
