@@ -32,7 +32,7 @@ export function Coding() {
   const sessions = found.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
   const ps = visibleProjects().filter(canSee);
   const hasSel = Boolean(sessionId || search.get("new") || issue);
-  const [listW, setListW] = useStoredSize("dotrix.coding.listWidth", 300, 220, 480);
+  const [listW, setListW] = useStoredSize("dotrix.coding.listWidth", 240, 220, 480);
   const [listMinSet, setListMin] = useStoredFlag("dotrix.coding.listMin");
   // While a session's side panel is open on a screen without room for all three, the list folds to its rail
   // (unless you open it again); it comes back when the panel closes.

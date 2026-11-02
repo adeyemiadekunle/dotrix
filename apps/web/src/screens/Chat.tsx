@@ -1315,7 +1315,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
               },
             ]}
           />
-          {!pid && (
+          {!pid && !!ps.length && (
             <div className="row" role="group" aria-label="Projects" style={{ gap: 6, marginTop: 12, flexWrap: "wrap", justifyContent: "center" }}>
               <span className="faint" style={{ fontSize: 12 }}>
                 Projects
@@ -2513,7 +2513,7 @@ function Conversations({ search }: { search: URLSearchParams }) {
     .sort((a, b) => b.at - a.at);
   const hasSel = Boolean(threadId || projectKey || across || search.get("q") || search.get("new"));
   // Column widths, dragged by their edges and kept in this browser.
-  const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
+  const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 240, 220, 480);
   // The list folds to a rail (like the sidebar) to give the conversation the room; not on phones.
   const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;

@@ -2,7 +2,7 @@
 @layer components {
   .chat-grid {
     display: grid;
-    grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--list-w, 240px)) minmax(0, 1fr);
     flex: 1;
     min-height: 0;
   }
@@ -1198,7 +1198,7 @@
 /* List, session, and panels side by side, each edge draggable (--list-w, --panel-w); below 1200px the
    panels take the list's place (the session's back arrow returns to it). */
 .chat-grid.with-panel {
-  grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 70vw));
+  grid-template-columns: minmax(0, var(--list-w, 240px)) minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 70vw));
 }
 @media (max-width: 1200px) {
   .chat-grid.with-panel {
@@ -2734,6 +2734,8 @@ section.side-panel-body[hidden] {
 /* A new chat or coding session, as Claude Code's: who and where in the middle (ChoiceCard), the message box at the
  * bottom. */
 .ns {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
