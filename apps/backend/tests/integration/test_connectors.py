@@ -206,3 +206,34 @@ async def test_create_a_repo_in_an_organisation(db_client: AsyncClient, github_w
     assert (await db_client.post(f"{ws}/github/repos", json={**body, "name": "bad name!"}, headers=ada.headers)).status_code == 422
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
     assert "github.repo_created" in {e["action"] for e in (audit["items"] if isinstance(audit, dict) else audit)}
+
+
+async def test_an_idea_can_connect_code_without_losing_its_project_work(
+    db_client: AsyncClient, github_world, github, agent_script
+) -> None:
+    ada, _, ws, _, _ = await github_world()
+    made = await db_client.post(f"{ws}/projects", headers=ada.headers,
+                               json={"key": "IDEA", "name": "Booking idea", "source": "docs_only", "description": "Explore booking needs"})
+    assert made.status_code == 201
+    project = made.json()
+    base = f"{ws}/projects/{project['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Interview first users"})).json()
+    saved = await db_client.put(f"{base}/knowledge/files/requirements/users.md", headers=ada.headers,
+                                json={"content": "# Users\nIndependent consultants."})
+    assert saved.status_code == 200
+    agent_script.say("Let's clarify the first booking workflow.")
+    run_response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={"message": "Help me explore booking needs."})
+    assert run_response.status_code == 202
+    run = run_response.json()
+    installation = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                        json={"installation_id": 111, "code": "code-1"})).json()
+    connected = await db_client.put(f"{base}/repository", headers=ada.headers,
+                                    json={"installation_ref": installation["id"], "github_repo_id": 9001})
+    assert connected.status_code == 200, connected.text
+    updated = (await db_client.get(base, headers=ada.headers)).json()
+    assert updated["id"] == project["id"] and updated["source"] == "docs_only"
+    assert updated["description"] == "Explore booking needs" and updated["repo_url"] == "https://github.com/kunemi/api"
+    assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["id"] == issue["id"]
+    assert (await db_client.get(f"{base}/knowledge/files/requirements/users.md", headers=ada.headers)).json()["content"] == "# Users\nIndependent consultants."
+    assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()["thread_id"] == run["thread_id"]

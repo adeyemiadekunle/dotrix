@@ -12,6 +12,7 @@ test("new accounts save a first project, resume setup and connect a personal mod
   await expect(page).toHaveURL(/\/onboarding/);
   await expect(page.getByRole("heading", { name: "Create your first project" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
+  await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("Customer portal");
   await page.getByLabel("Project key", { exact: true }).fill("PORTAL");
   await page.route(
@@ -59,6 +60,7 @@ test("GitHub installation returns to the saved onboarding project", async ({ pag
     route.fulfill({ json: { configured: true, install_url: "https://github.com/apps/test/installations/new", installations: [] } }),
   );
   await page.goto("/onboarding");
+  await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("GitHub project");
   await page.getByLabel("Project key", { exact: true }).fill("GITHUB");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
@@ -82,6 +84,7 @@ test("team workspace creation is explicit and its saved project resumes after re
   await page.getByLabel("Team workspace name", { exact: true }).fill("Delivery team");
   await page.getByRole("button", { name: "Create team workspace", exact: true }).click();
   await expect(page.getByRole("button", { name: "Create a team workspace", exact: true })).toBeVisible();
+  await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("Team project");
   await page.getByLabel("Project key", { exact: true }).fill("TEAM");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
@@ -107,6 +110,7 @@ test("later projects use the shared setup in the selected workspace and recover 
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create a project", exact: true })).toBeVisible();
   expect(new URL(page.url()).searchParams.get("workspace")).toBe(workspace.id);
+  await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("Saved once");
   await page.getByLabel("Project key", { exact: true }).fill("ONCE");
   await page.getByLabel("Description (optional)", { exact: true }).fill("The server must confirm this project.");
@@ -143,6 +147,7 @@ test("later projects use the shared setup in the selected workspace and recover 
 test("signed-out setup retains its saved workspace and project through sign-in", async ({ page, browser }) => {
   const person = await signUp(page);
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
+  await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("Resume setup");
   await page.getByLabel("Project key", { exact: true }).fill("RESUME");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
@@ -223,6 +228,7 @@ test("a lost team-workspace save response resumes the saved team instead of crea
   await expect(page.getByText("A team workspace with this name is already saved.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create team workspace", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Use saved team workspace", exact: true }).click();
+  await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("Recovered project");
   await page.getByLabel("Project key", { exact: true }).fill("RECOVER");
   await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeEnabled();

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
 import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
 import { Ic } from "../core/icons";
+import { PROJECT_STARTS, projectStart, projectDiscussionHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
 
 type Step = "project" | "github" | "model" | "ready";
 const steps: Step[] = ["project", "github", "model", "ready"];
@@ -12,6 +13,7 @@ export function Onboarding() {
   const query = new URLSearchParams(location.search);
   const addingProject = query.get("mode") === "project";
   const submission = useRef(false);
+  const [selectedStart, setStart] = useState<ProjectStart | null>(readProjectStart(query.get("intent")));
   const [workspaceId, setWorkspace] = useState(query.get("workspace") ?? "");
   const [projectId, setProject] = useState(query.get("project") ?? "");
   const [step, setStep] = useState<Step>(steps.includes(query.get("step") as Step) ? (query.get("step") as Step) : "project");
@@ -41,6 +43,8 @@ export function Onboarding() {
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects", { params: { path } })),
   });
   const project = projects.data?.find((item) => item.id === projectId);
+  const intention = project ? projectStart(project.source) : selectedStart;
+  const flowSteps: Step[] = intention === "idea" && step !== "github" && !project?.repo_url ? ["project", "model", "ready"] : steps;
   const github = useQuery({
     queryKey: ["onboarding-github", workspaceId],
     enabled: !!workspace && step === "github",
@@ -57,12 +61,13 @@ export function Onboarding() {
     enabled: !!workspace && (step === "model" || step === "ready"),
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-access", { params: { path } })),
   });
-  const move = (next: Step, id = projectId, ws = workspaceId) => {
+  const move = (next: Step, id = projectId, ws = workspaceId, startingPoint = intention) => {
     setError("");
     setStep(next);
     const params = new URLSearchParams({ workspace: ws, step: next });
     if (id) params.set("project", id);
     if (addingProject) params.set("mode", "project");
+    if (startingPoint) params.set("intent", startingPoint);
     history.replaceState(history.state, "", `/onboarding?${params}`);
   };
   const perform = async (action: () => Promise<void>) => {
@@ -81,6 +86,8 @@ export function Onboarding() {
   };
   const create = () =>
     perform(async () => {
+      if (!intention) throw new Error("Choose how you want to start this project.");
+      if (intention === "new" && !description.trim()) throw new Error("Describe the goal before setting up the new codebase.");
       if (!name.trim() || !/^[A-Z][A-Z0-9]{1,9}$/.test(key))
         throw new Error("Enter a project name and a key of 2–10 letters or digits, starting with a letter.");
       // Keep the same key on retries. Refresh after an uncertain response so saved work can be resumed explicitly.
@@ -88,11 +95,17 @@ export function Onboarding() {
         const created = await unwrap(
           api.POST("/v1/workspaces/{workspace_id}/projects", {
             params: { path },
-            body: { name: name.trim(), key, source: "docs_only", description: description.trim(), access: accessLevel },
+            body: {
+              name: name.trim(),
+              key,
+              source: PROJECT_STARTS.find((item) => item.id === intention)!.source,
+              description: description.trim(),
+              access: accessLevel,
+            },
           }),
         );
         setProject(created.id);
-        move("github", created.id);
+        move(intention === "idea" ? "model" : "github", created.id);
         await projects.refetch();
       } catch (cause) {
         await projects.refetch();
@@ -160,18 +173,54 @@ export function Onboarding() {
     !!access.data?.ready &&
     !!((models.data?.default_model && access.data.models.includes(models.data.default_model)) || (project && access.data.models.includes(project.model)));
   const current: Step = !project ? "project" : step;
+  const discussionStart = project?.repo_url ? "existing" : intention;
   return (
     <div className="auth-card onb" style={{ maxWidth: 560 }}>
-      <div className="steps" aria-label={`Step ${steps.indexOf(current) + 1} of 4`}>
-        {steps.map((item) => (
-          <i key={item} className={steps.indexOf(item) <= steps.indexOf(current) ? "on" : ""} />
+      <div className="steps" aria-label={`Step ${flowSteps.indexOf(current) + 1} of ${flowSteps.length}`}>
+        {flowSteps.map((item) => (
+          <i key={item} className={flowSteps.indexOf(item) <= flowSteps.indexOf(current) ? "on" : ""} />
         ))}
       </div>
-      <p className="faint">Project · GitHub · Model · Start working</p>
+      <p className="faint">{flowSteps.includes("github") ? "Project · GitHub · Model · Start working" : "Project · Model · Start working"}</p>
       {current === "project" && (
         <>
           <h1>{addingProject || !!projects.data?.length ? "Create a project" : "Create your first project"}</h1>
-          <p className="sub">Give your work a home. You can connect a repository in the next step.</p>
+          <p className="sub">
+            {intention === "idea"
+              ? "A working title is enough. Explore with Nova before deciding what to build."
+              : intention === "new"
+                ? "Define the goal first. Repository setup comes next."
+                : intention === "existing"
+                  ? "Save a project home, then choose the GitHub repository you want to connect."
+                  : "Choose a starting point for your project."}
+          </p>
+          <fieldset style={{ border: 0, padding: 0, margin: 0 }} disabled={busy || !!project}>
+            <legend className="label" style={{ marginBottom: 8 }}>
+              How would you like to start?
+            </legend>
+            <div className="opts">
+              {PROJECT_STARTS.map((item) => (
+                <label className={`opt ${intention === item.id ? "on" : ""}`} key={item.id}>
+                  <input
+                    type="radio"
+                    name="project-start"
+                    value={item.id}
+                    aria-label={item.label}
+                    checked={intention === item.id}
+                    onChange={() => {
+                      setStart(item.id);
+                      const params = new URLSearchParams(location.search);
+                      params.set("intent", item.id);
+                      history.replaceState(history.state, "", `/onboarding?${params}`);
+                    }}
+                  />
+                  <Ic n={item.icon} s={18} />
+                  <b>{item.label}</b>
+                  <span>{item.description}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <label className="field">
             Workspace
             <select
@@ -251,7 +300,7 @@ export function Onboarding() {
           ) : (
             <>
               {projectId && !project && <p role="alert">This saved project is unavailable. Choose an existing project or create one.</p>}
-              {projects.data && projects.data.length > 0 && (
+              {!project && projects.data && projects.data.length > 0 && (
                 <label className="field">
                   Continue setting up an existing project
                   <select
@@ -260,8 +309,11 @@ export function Onboarding() {
                     disabled={busy}
                     value=""
                     onChange={(event) => {
-                      setProject(event.target.value);
-                      move("github", event.target.value);
+                      const saved = projects.data?.find((item) => item.id === event.target.value);
+                      if (!saved) return;
+                      const start = projectStart(saved.source);
+                      setProject(saved.id);
+                      move(start === "idea" ? "model" : "github", saved.id, workspaceId, start);
                     }}
                   >
                     <option value="">Choose a project</option>
@@ -273,74 +325,101 @@ export function Onboarding() {
                   </select>
                 </label>
               )}
-              <form
-                style={{ display: "flex", flexDirection: "column", gap: 16 }}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!busy && !duplicateKey && workspace && projects.isSuccess) void create();
-                }}
-              >
-                <label className="field">
-                  Project name
-                  <input
-                    className="input"
-                    disabled={busy}
-                    value={name}
-                    maxLength={100}
-                    onChange={(event) => {
-                      setName(event.target.value);
-                      if (!keyEdited)
-                        setKey(
-                          event.target.value
-                            .toUpperCase()
-                            .replace(/[^A-Z0-9]/g, "")
-                            .slice(0, 10),
-                        );
-                    }}
-                  />
-                </label>
-                <label className="field">
-                  Project key
-                  <input
-                    className="input"
-                    disabled={busy}
-                    value={key}
-                    maxLength={10}
-                    onChange={(event) => {
-                      setKeyEdited(true);
-                      setKey(event.target.value.toUpperCase());
-                    }}
-                    placeholder="APP"
-                  />
-                </label>
-                {duplicateKey && (
-                  <p role="alert">A project with this key is already saved. Continue setting up the existing project above, or choose a different key.</p>
-                )}
-                <label className="field">
-                  Description (optional)
-                  <textarea className="textarea" disabled={busy} value={description} maxLength={500} onChange={(event) => setDescription(event.target.value)} />
-                </label>
-                <label className="field">
-                  Project access
-                  <select
-                    aria-label="Project access"
-                    disabled={busy}
-                    className="select"
-                    value={accessLevel}
-                    onChange={(event) => setAccessLevel(event.target.value as "workspace" | "restricted")}
-                  >
-                    <option value="workspace">Workspace members</option>
-                    <option value="restricted">Only owners, admins and people added</option>
-                  </select>
-                </label>
-                <button
-                  className="btn btn-primary"
-                  disabled={busy || !workspace || !projects.isSuccess || duplicateKey || !name.trim() || !/^[A-Z][A-Z0-9]{1,9}$/.test(key)}
-                  type="submit"
+              {project ? (
+                <>
+                  <p>
+                    <b>{project.name}</b> is saved. {project.description}
+                  </p>
+                  <button className="btn btn-primary" onClick={() => move(intention === "idea" && !project.repo_url ? "model" : "github")}>
+                    Continue setup
+                  </button>
+                </>
+              ) : (
+                <form
+                  style={{ display: "flex", flexDirection: "column", gap: 16 }}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!busy && !duplicateKey && workspace && projects.isSuccess && intention) void create();
+                  }}
                 >
-                  {busy ? "Creating project…" : "Create project"}
-                </button>
-              </form>
+                  <label className="field">
+                    Project name
+                    <input
+                      className="input"
+                      disabled={busy}
+                      value={name}
+                      maxLength={100}
+                      onChange={(event) => {
+                        setName(event.target.value);
+                        if (!keyEdited)
+                          setKey(
+                            event.target.value
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9]/g, "")
+                              .slice(0, 10),
+                          );
+                      }}
+                    />
+                  </label>
+                  <label className="field">
+                    Project key
+                    <input
+                      className="input"
+                      disabled={busy}
+                      value={key}
+                      maxLength={10}
+                      onChange={(event) => {
+                        setKeyEdited(true);
+                        setKey(event.target.value.toUpperCase());
+                      }}
+                      placeholder="APP"
+                    />
+                  </label>
+                  {duplicateKey && (
+                    <p role="alert">A project with this key is already saved. Continue setting up the existing project above, or choose a different key.</p>
+                  )}
+                  <label className="field">
+                    {intention === "new" ? "Project goal" : "Description (optional)"}
+                    <textarea
+                      className="textarea"
+                      required={intention === "new"}
+                      disabled={busy}
+                      value={description}
+                      maxLength={500}
+                      onChange={(event) => setDescription(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    Project access
+                    <select
+                      aria-label="Project access"
+                      disabled={busy}
+                      className="select"
+                      value={accessLevel}
+                      onChange={(event) => setAccessLevel(event.target.value as "workspace" | "restricted")}
+                    >
+                      <option value="workspace">Workspace members</option>
+                      <option value="restricted">Only owners, admins and people added</option>
+                    </select>
+                  </label>
+                  <button
+                    className="btn btn-primary"
+                    disabled={
+                      busy ||
+                      !intention ||
+                      (intention === "new" && !description.trim()) ||
+                      !workspace ||
+                      !projects.isSuccess ||
+                      duplicateKey ||
+                      !name.trim() ||
+                      !/^[A-Z][A-Z0-9]{1,9}$/.test(key)
+                    }
+                    type="submit"
+                  >
+                    {busy ? "Creating project…" : "Create project"}
+                  </button>
+                </form>
+              )}
             </>
           )}
           {projects.isError && (
@@ -491,18 +570,24 @@ export function Onboarding() {
       )}
       {current === "ready" && (
         <>
-          <h1>Your project is ready</h1>
+          <h1>{discussionStart === "idea" ? "Your idea has a home" : "Your project is ready"}</h1>
           <p>
             {project?.name} is saved in {workspace?.name}.
           </p>
-          <p>{project?.repo_url ? "GitHub repository connected." : "Documents-only project; GitHub can be connected later."}</p>
+          <p>
+            {project?.repo_url
+              ? "GitHub repository connected."
+              : intention === "idea"
+                ? "Explore now; connect a repository when you are ready to build."
+                : "No repository connected yet. Connect one before asking Kai to implement."}
+          </p>
           <p>{access.data?.ready ? "Personal model connection available." : "Connect a model when you are ready to use agents."}</p>
           <a className="btn btn-primary" href={`/w/${workspace?.slug}/p/${project?.key}/overview`}>
             Open project
           </a>
           {modelReady ? (
-            <a className="btn btn-secondary" href={`/w/${workspace?.slug}/chat?project=${project?.key}`}>
-              Start with Nova
+            <a className="btn btn-secondary" href={projectDiscussionHref(workspace!.slug, project!.key, discussionStart!)}>
+              {discussionStart === "idea" ? "Explore with Nova" : discussionStart === "new" ? "Plan with Nova" : "Discuss with Nova"}
             </a>
           ) : (
             <button className="btn btn-secondary" disabled={busy} onClick={() => move("model")}>
@@ -512,7 +597,7 @@ export function Onboarding() {
         </>
       )}
       {current !== "project" && (
-        <button className="btn btn-ghost" disabled={busy} onClick={() => move(steps[Math.max(0, steps.indexOf(current) - 1)]!)}>
+        <button className="btn btn-ghost" disabled={busy} onClick={() => move(flowSteps[Math.max(0, flowSteps.indexOf(current) - 1)]!)}>
           Back
         </button>
       )}

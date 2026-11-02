@@ -5,7 +5,7 @@ Read [CLAUDE.md](CLAUDE.md) before any change: it has the repo map, commands, ru
 ## Product direction
 
 - Serve solo developers and organisation teams through one account and personal/organisation workspaces. Support three starting intentions: Explore an idea, Start a new codebase, Connect an existing repository.
-- Follow the accepted [product direction todo](docs/product-direction-todo.md) in delivery order, after the P0 production requirements in CLAUDE.md. J01 now shares first/subsequent New project setup and preserves invitation/auth return paths; J02, the three starting intentions, is next. Invited members join their intended project instead of creating an unrelated one.
+- Follow the accepted [product direction todo](docs/product-direction-todo.md) in delivery order, after the P0 production requirements in CLAUDE.md. J01 shares first/subsequent New project setup and preserves invitation/auth return paths. J02 adds the three starting intentions; J03, new repository to first reviewed implementation, is next. Invited members join their intended project instead of creating an unrelated one.
 - An idea can start as a lightweight draft project. GitHub is optional until needed for code; personal model setup is optional until the person uses agents. Preserve private conversations, explicit publication of shared outcomes, personal BYOK, Nova–Kai links and human merge decisions.
 
 ## Chat and Coding direction
@@ -37,3 +37,5 @@ Work from the prioritized list at the end of CLAUDE.md (Remaining work, by prior
 Before pushing, run what CI runs: `uv run ruff check apps packages`, `uv run pytest`, `pnpm format:check`, `pnpm lint`, `pnpm build && pnpm typecheck`, `pnpm test`, `pnpm knip`; after an API change, `pnpm openapi` and commit `openapi.json` and `src/schema.ts`.
 
 - New-account onboarding saves a first project, then offers GitHub App/repository access and personal model setup before opening the project. Reuse the personal workspace by default; create a team workspace only on request. Support documents-only projects and deferred model setup, retaining navigation without a key. Resume across GitHub redirects with confirmed workspace/project IDs; keys stay out of URLs and browser storage. Demo and live share list, message, coding-pane and Settings presentation; sample actions remain local or read-only. Use Geist Sans/Mono typography, including sans-serif page titles.
+
+- Project setup records its starting intention through the existing project source (`docs_only`, `new_repo`, `existing_repo`); saved project state wins over query-string hints. Ideas skip GitHub, new codebases collect a goal first, and Nova starters are editable Discuss drafts, never automatic model calls. Repository attachment operates on the existing project and preserves its work; private names/goals stay out of starter URLs.

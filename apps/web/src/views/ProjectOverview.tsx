@@ -1,6 +1,7 @@
 // Project overview and activity. dotrix adds
 // "Ask in Chat" for a summary, and the agents' latest conversations about the project.
 
+import { allowed } from "../core/can";
 import { openPop } from "../core/actions";
 import { STATUSES } from "../core/constants";
 import { Ic } from "../core/icons";
@@ -47,6 +48,15 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-h">
               <h2>About</h2>
               <div className="acts">
+                {isLive() && live.ws && allowed("projects:manage") && (
+                  <a
+                    className="btn btn-sm btn-ghost"
+                    href={`/onboarding?${new URLSearchParams({ workspace: live.ws.id, project: p.id, mode: "project", step: "github" })}`}
+                  >
+                    <Ic n="github" s={13} />
+                    {p.repo ? "Repository setup" : "Connect repository"}
+                  </a>
+                )}
                 <button className="btn btn-sm btn-ghost" onClick={() => editProject(p.id)}>
                   <Ic n="pencil" s={13} />
                   Edit

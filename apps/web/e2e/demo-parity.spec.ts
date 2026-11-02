@@ -57,3 +57,29 @@ test("a live account uses the same navigation and typography without inheriting 
   await expect(page.locator(".cs-row")).toHaveCount(0);
   expect(await page.locator(".chat-side h1").evaluate((element) => getComputedStyle(element).fontFamily)).toBe(font);
 });
+
+for (const signedIn of [false, true]) {
+  test(`sample session mutations stay disabled for ${signedIn ? "signed-in" : "signed-out"} visitors`, async ({ page }) => {
+    if (signedIn) await signUp(page);
+    await page.goto("/w/dotrix/codes");
+    const errors: string[] = [];
+    const apiCalls: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.startsWith("/v1/")) apiCalls.push(request.url());
+    });
+    await page.reload();
+    await page.getByRole("button", { name: "More for WEB-154", exact: true }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByText("Sample session · Read-only", { exact: true })).toBeVisible();
+    for (const action of ["Pin", "Rename", "Close session", "Archive", "Delete"]) {
+      await expect(menu.getByRole("button", { name: action, exact: true })).toBeDisabled();
+    }
+    await expect(menu.getByRole("button", { name: "Open issue", exact: true })).toBeEnabled();
+    await expect(menu.getByRole("button", { name: "Open PR", exact: true })).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    expect(errors).toEqual([]);
+    expect(apiCalls).toEqual([]);
+  });
+}
