@@ -43,14 +43,15 @@ test("mobile Home keeps decisions and notices visible, and keyboard navigation w
   await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
 });
 
-test("demo decision opens its Inbox detail rather than an endless conversation loader", async ({ page }) => {
+test("demo decisions open Inbox details and their sample conversations are readable", async ({ page }) => {
   await page.goto("/w/dotrix");
   await page.getByRole("button", { name: /Nova wants to change/ }).click();
   await expect(page).toHaveURL(/\/inbox\?n=na1/);
   await expect(page.getByText("requirements/navigation.md").first()).toBeVisible();
   await page.goto("/w/dotrix/chat?thread=th1");
-  await expect(page.getByText("This conversation isn't available in the demo. Review the request in Inbox.")).toBeVisible();
-  await page.getByRole("button", { name: "Open Inbox" }).click();
+  await expect(page.getByText("Sample conversation · Sign in to work with Nova.")).toBeVisible();
+  await expect(page.locator(".chat-msg.agent").first()).toBeVisible();
+  await page.goto("/w/dotrix/inbox?tab=needs");
   await expect(page).toHaveURL(/\/inbox\?tab=needs/);
   const needs = page.getByRole("tab", { name: /Needs you/ });
   await expect(needs).toHaveAttribute("aria-selected", "true");

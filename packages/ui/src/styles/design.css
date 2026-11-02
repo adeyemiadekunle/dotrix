@@ -78,8 +78,8 @@
   /* type */
   --font: 'Geist Variable', 'Geist', ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  /* Page titles (.title-serif below): Geist Serif, one regular weight, never synthesised bold. */
-  --serif: 'Geist Serif Variable', 'Geist Serif', ui-serif, Georgia, 'Times New Roman', serif;
+  /* Compatibility token for surfaces using the shared heading family. */
+  --serif: var(--font);
   --fs-2xs: 11px;
   --fs-xs: 12px;
   --fs-sm: 12.5px;
@@ -1436,10 +1436,8 @@ svg.logo {
 }
 .ph h1 {
   font-size: var(--fs-2xl);
-  font-family: var(--serif);
-  font-weight: 400;
-  font-synthesis-weight: none;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.022em;
   margin: 0;
   line-height: 1.2;
   text-wrap: balance;
@@ -2351,11 +2349,9 @@ table.tbl {
 }
 .proj-h h1 {
   font-size: var(--fs-xl);
-  font-family: var(--serif);
-  font-weight: 400;
-  font-synthesis-weight: none;
+  font-weight: 600;
   margin: 0;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.018em;
 }
 /* tabs bleed to the edges; the first label still starts on the gutter (tab has 10px side padding) */
 .proj-h .tabs {
@@ -3498,10 +3494,8 @@ table.tbl {
 .fullstate h1 {
   font-size: var(--fs-xl);
   margin: 0;
-  font-family: var(--serif);
-  font-weight: 400;
-  font-synthesis-weight: none;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 .fullstate p {
   color: var(--text-2);
@@ -3542,11 +3536,9 @@ table.tbl {
 }
 .set-in h1 {
   font-size: var(--fs-xl);
-  font-family: var(--serif);
-  font-weight: 400;
-  font-synthesis-weight: none;
+  font-weight: 600;
   margin: 0 0 4px;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 .set-in > p.lead {
   color: var(--text-2);
@@ -3715,15 +3707,15 @@ table.tbl {
 }
 .auth-card h1 {
   font-size: var(--fs-2xl);
-  font-family: var(--serif);
-  font-weight: 400;
-  font-synthesis-weight: none;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.022em;
   margin: 0;
   text-align: center;
 }
 .auth-card .sub {
-  display: block; /* the sidebar's .sub (a project's sub-pages) is hidden until open */
+  display: block; /* Reset the sidebar sub-page styles for auth descriptions. */
+  padding-left: 0;
+  border-left: 0;
   text-align: center;
   color: var(--text-2);
   margin: -8px 0 4px;

@@ -12,7 +12,8 @@ export function newUser(name = "Ada Tester") {
 }
 
 export async function signUp(page: Page, user = newUser()) {
-  await page.goto("/signup");
+  // Independent workspace tests opt out of first-account setup; onboarding has its own flow tests.
+  await page.goto("/signup?next=%2F");
   await page.getByLabel("Name").fill(user.name);
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill(user.password);

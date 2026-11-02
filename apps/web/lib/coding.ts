@@ -39,9 +39,9 @@ export function statusLabel(run: Pick<CodingRun, "status" | "location" | "runner
   return STATUS_LABELS[run.status];
 }
 
-/** Where a session opens: Chat's Coding tab. */
+/** Where a coding session opens in Codes. */
 export function sessionHref(workspaceSlug: string, projectKey: string, sessionId: string): string {
-  return `/w/${workspaceSlug}/chat?tab=coding&project=${projectKey}&session=${sessionId}`;
+  return `/w/${workspaceSlug}/codes?project=${encodeURIComponent(projectKey)}&session=${encodeURIComponent(sessionId)}`;
 }
 
 const ACTIVE: CodingRunStatus[] = ["awaiting_approval", "queued", "running", "changes_ready"];

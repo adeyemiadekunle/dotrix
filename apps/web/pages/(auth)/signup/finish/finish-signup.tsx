@@ -29,7 +29,7 @@ export function FinishSignup({ token }: { token: string }) {
     try {
       await authPost("signup-link", { token, display_name: form.get("display_name") });
       // A full load, so the server sees the new session cookie.
-      window.location.assign("/");
+      window.location.assign("/onboarding");
     } catch (e) {
       setError(errorMessage(e));
       setPending(false);

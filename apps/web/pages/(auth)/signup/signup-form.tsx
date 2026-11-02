@@ -23,7 +23,7 @@ export function SignupForm({ next, github = false }: { next?: string; github?: b
         email: form.get("email"),
         password: form.get("password"),
       });
-      window.location.assign(safeNext(next));
+      window.location.assign(next ? safeNext(next) : "/onboarding");
     } catch (e) {
       setError(errorMessage(e));
       setPending(false);
@@ -46,7 +46,7 @@ export function SignupForm({ next, github = false }: { next?: string; github?: b
     >
       <form onSubmit={onSubmit} className="grid gap-4">
         <FormError message={error} />
-        {github && <GitHubSignIn next={next} />}
+        {github && <GitHubSignIn next={next ?? "/onboarding"} />}
         <Field label="Name" name="display_name" autoComplete="name" placeholder="Ada Lovelace" required maxLength={100} />
         <Field label="Email" name="email" type="email" autoComplete="email" placeholder="you@company.com" required />
         <Field

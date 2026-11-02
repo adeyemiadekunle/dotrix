@@ -368,9 +368,9 @@ export const installationRemoved = (ref: string) =>
       params: { path: { workspace_id: live.ws!.id, installation_ref: ref } },
     }),
   );
-export function installGitHub(status: Schemas["GitHubStatus"]) {
+export function installGitHub(status: Schemas["GitHubStatus"], workspaceId = live.ws!.id, next = location.pathname + location.search) {
   if (!status.install_url) return;
-  const params = new URLSearchParams({ workspace: live.ws!.id, install_url: status.install_url, next: location.pathname });
+  const params = new URLSearchParams({ workspace: workspaceId, install_url: status.install_url, next });
   location.assign(`/api/github/install?${params}`);
 }
 export async function repoConnected(pid: string, r: Schemas["RepoOption"] | null) {

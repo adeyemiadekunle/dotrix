@@ -1,333 +1,443 @@
-// Onboarding: six steps in the auth
-// shell. On the seeded data it renames the workspace, creates the first project from a template
-// (dotrix: with its documents for the agents), and adds the invites. Signed in, it creates a real
-// organisation instead (data/live.ts organisationCreated) and opens it.
-import { useState } from "react";
-
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
+import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
 import { Ic } from "../core/icons";
-import { TEMPLATES, createProject } from "../core/more";
-import { go } from "../core/nav";
-import { uid } from "../core/utils";
-import { errorMessage, hasSession } from "@/lib/api";
 
-import { organisationCreated } from "../data/live";
-import { D, mutate } from "../data/store";
+type Step = "project" | "github" | "model" | "ready";
+const steps: Step[] = ["project", "github", "model", "ready"];
 
-type Data = { use: string; ws: string; url: string; team: string; size: string; proj: string; tmpl: string; invites: string[] };
-const N = 6;
-
+/** Only server-confirmed workspace/project IDs are retained across redirects. Keys stay in memory. */
 export function Onboarding() {
-  const [st, setSt] = useState(0);
-  const [o, setO] = useState<Data>({
-    use: "product",
-    ws: "",
-    url: "",
-    team: "kanban",
-    size: "2-10",
-    proj: "My first project",
-    tmpl: "product",
-    invites: ["", "", ""],
-  });
-  const [err, setErr] = useState("");
+  const query = new URLSearchParams(location.search);
+  const [workspaceId, setWorkspace] = useState(query.get("workspace") ?? "");
+  const [projectId, setProject] = useState(query.get("project") ?? "");
+  const [step, setStep] = useState<Step>(steps.includes(query.get("step") as Step) ? (query.get("step") as Step) : "project");
+  const [teamName, setTeamName] = useState("");
+  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [name, setName] = useState("");
+  const [key, setKey] = useState("");
+  const [keyEdited, setKeyEdited] = useState(false);
+  const [provider, setProvider] = useState("openai");
+  const [apiKey, setApiKey] = useState("");
+  const [repoId, setRepo] = useState("");
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const set = (p: Partial<Data>) => setO({ ...o, ...p });
-  const next = (skip = false) => {
-    if (st === 1 && !o.ws.trim()) return setErr("Give your workspace a name");
-    setErr("");
-    if (st === 4 && skip) set({ invites: ["", "", ""] });
-    setSt(st + 1);
+  const signedIn = hasSession();
+  const workspaces = useQuery({ queryKey: ["workspaces"], enabled: signedIn, queryFn: () => unwrap(api.GET("/v1/workspaces")) });
+  const workspace = workspaces.data?.find((item) => item.id === workspaceId);
+  useEffect(() => {
+    if (!workspaces.data) return;
+    if (!workspaceId) setWorkspace((workspaces.data.find((item) => item.kind === "personal") ?? workspaces.data[0])?.id ?? "");
+  }, [workspaces.data, workspaceId]);
+  const path = { workspace_id: workspaceId };
+  const projects = useQuery({
+    queryKey: ["projects", workspaceId],
+    enabled: !!workspace,
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects", { params: { path } })),
+  });
+  const project = projects.data?.find((item) => item.id === projectId);
+  const github = useQuery({
+    queryKey: ["onboarding-github", workspaceId],
+    enabled: !!workspace && step === "github",
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/github", { params: { path } })),
+  });
+  const repos = useQuery({
+    queryKey: ["onboarding-repos", workspaceId],
+    enabled: !!workspace && step === "github" && github.data?.configured === true,
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/github/repos", { params: { path } })),
+  });
+  const models = useQuery({ queryKey: ["my-models"], enabled: signedIn, queryFn: myModels });
+  const access = useQuery({
+    queryKey: ["model-access", workspaceId],
+    enabled: !!workspace && (step === "model" || step === "ready"),
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/model-access", { params: { path } })),
+  });
+  const move = (next: Step, id = projectId) => {
+    setError("");
+    setStep(next);
+    const params = new URLSearchParams({ workspace: workspaceId, step: next });
+    if (id) params.set("project", id);
+    history.replaceState(history.state, "", `/onboarding?${params}`);
   };
-  const finish = () => {
-    if (hasSession()) {
-      const tm = TEMPLATES.find((t) => t.id === o.tmpl);
-      setBusy(true);
-      setErr("");
-      void organisationCreated({
-        name: o.ws.trim() || "My Workspace",
-        project: o.proj.trim() || "My first project",
-        icon: tm?.icon || "folder",
-        tasks: tm?.tasks ?? [],
-        invites: o.invites.map((x) => x.trim()).filter((x) => x.includes("@")),
-      })
-        .then((slug) => location.assign(`/w/${slug}`))
-        .catch((e) => {
-          setBusy(false);
-          setErr(errorMessage(e));
-        });
-      return;
+  const perform = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
     }
-    mutate(() => {
-      D().ws.name = o.ws.trim() || "My Workspace";
-      D().ws.url = o.url || "workspace";
-      const tm = TEMPLATES.find((t) => t.id === o.tmpl);
-      const p = createProject({ name: o.proj || "My first project", icon: tm?.icon || "folder", color: "indigo", lead: D().me }, o.tmpl);
-      D().knowledge.push({
-        path: "project.md",
-        project: p.id,
-        content: `# ${p.name}\n\nWhat this project is for, who it serves, and what done looks like.\n`,
-        version: 1,
-        by: D().me,
-        at: Date.now(),
-      });
-      for (const email of o.invites.filter((x) => x.includes("@")))
-        D().members.push({
-          id: uid("m"),
-          name: email.split("@")[0]!,
-          email,
-          role: "Member",
-
-          title: "",
-          c: "#8A867E",
-          status: "invited",
-          last: null,
-          tz: "",
-        });
-    });
-    go("home");
   };
-  const Opt = ({ k, v, icon, n, s }: { k: "use" | "team" | "tmpl"; v: string; icon: string; n: string; s?: string }) => (
-    <button className={`opt ${o[k] === v ? "on" : ""}`} role="radio" aria-checked={o[k] === v} onClick={() => set({ [k]: v })}>
-      <Ic n={icon} s={18} />
-      <b>{n}</b>
-      {s && <span>{s}</span>}
-    </button>
-  );
-  const Nav = ({ label = "Continue", skip = false }: { label?: string; skip?: boolean }) => (
-    <div className="row" style={{ marginTop: 6 }}>
-      {st > 0 && st < 5 && (
-        <button className="btn btn-ghost" onClick={() => setSt(st - 1)}>
-          <Ic n="arrow-left" s={14} />
+  const create = () =>
+    perform(async () => {
+      if (!name.trim() || !/^[A-Z][A-Z0-9]{1,9}$/.test(key))
+        throw new Error("Enter a project name and a key of 2–10 letters or digits, starting with a letter.");
+      const created = await unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects", {
+          params: { path },
+          body: { name: name.trim(), key, source: "docs_only", description: "", access: "workspace" },
+        }),
+      );
+      setProject(created.id);
+      move("github", created.id);
+      await projects.refetch();
+    });
+  const connectRepo = () =>
+    perform(async () => {
+      const repo = repos.data?.find((item) => `${item.installation_ref}:${item.github_repo_id}` === repoId);
+      if (!repo || !project) throw new Error("Select an available repository and project.");
+      await unwrap(
+        api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", {
+          params: { path: { ...path, project_id: project.id } },
+          body: { installation_ref: repo.installation_ref, github_repo_id: repo.github_repo_id },
+        }),
+      );
+      await projects.refetch();
+      move("model");
+    });
+  const saveKey = () =>
+    perform(async () => {
+      await myKeySaved(provider, apiKey.trim());
+      setApiKey("");
+      await models.refetch();
+      await access.refetch();
+    });
+  if (!signedIn)
+    return (
+      <div className="auth-card">
+        <h1>Set up your workspace</h1>
+        <p>Sign in or create an account to save your first project.</p>
+        <a className="btn btn-primary" href="/signup?next=%2Fonboarding">
+          Create an account
+        </a>
+        <a href="/login?next=%2Fonboarding">Sign in</a>
+      </div>
+    );
+  if (workspaces.isLoading)
+    return (
+      <div className="auth-card" role="status">
+        Loading your workspaces…
+      </div>
+    );
+  if (workspaces.isError)
+    return (
+      <div className="auth-card" role="alert">
+        {errorMessage(workspaces.error)}
+        <button onClick={() => void workspaces.refetch()}>Try again</button>
+      </div>
+    );
+  const modelReady =
+    !!access.data?.ready &&
+    !!((models.data?.default_model && access.data.models.includes(models.data.default_model)) || (project && access.data.models.includes(project.model)));
+  const current: Step = !project ? "project" : step;
+  return (
+    <div className="auth-card onb" style={{ maxWidth: 560 }}>
+      <div className="steps" aria-label={`Step ${steps.indexOf(current) + 1} of 4`}>
+        {steps.map((item) => (
+          <i key={item} className={steps.indexOf(item) <= steps.indexOf(current) ? "on" : ""} />
+        ))}
+      </div>
+      <p className="faint">Project · GitHub · Model · Start working</p>
+      {current === "project" && (
+        <>
+          <h1>Create your first project</h1>
+          <p className="sub">Give your work a home. You can connect a repository in the next step.</p>
+          <label className="field">
+            Workspace
+            <select
+              className="select"
+              value={workspaceId}
+              disabled={busy || (!!projectId && !!project)}
+              onChange={(event) => {
+                setWorkspace(event.target.value);
+                setProject("");
+              }}
+            >
+              {workspaces.data?.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {creatingTeam ? (
+            <>
+              <label className="field">
+                Team workspace name
+                <input className="input" value={teamName} onChange={(event) => setTeamName(event.target.value)} maxLength={100} />
+              </label>
+              <button
+                className="btn"
+                disabled={busy || !teamName.trim()}
+                onClick={() =>
+                  void perform(async () => {
+                    const created = await unwrap(api.POST("/v1/workspaces", { body: { name: teamName.trim(), kind: "organization" } }));
+                    setWorkspace(created.id);
+                    setProject("");
+                    history.replaceState(history.state, "", `/onboarding?workspace=${encodeURIComponent(created.id)}&step=project`);
+                    setCreatingTeam(false);
+                    await workspaces.refetch();
+                  })
+                }
+              >
+                Create team workspace
+              </button>
+              <button className="btn btn-ghost" disabled={busy} onClick={() => setCreatingTeam(false)}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-ghost" disabled={busy} onClick={() => setCreatingTeam(true)}>
+              Create a team workspace
+            </button>
+          )}
+          {projectId && projects.isLoading ? (
+            <p role="status">Loading your saved project…</p>
+          ) : (
+            <>
+              {projectId && !project && <p role="alert">This saved project is unavailable. Choose an existing project or create one.</p>}
+              {projects.data && projects.data.length > 0 && (
+                <label className="field">
+                  Continue setting up an existing project
+                  <select
+                    className="select"
+                    disabled={busy}
+                    value=""
+                    onChange={(event) => {
+                      setProject(event.target.value);
+                      move("github", event.target.value);
+                    }}
+                  >
+                    <option value="">Choose a project</option>
+                    {projects.data.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="field">
+                Project name
+                <input
+                  className="input"
+                  value={name}
+                  maxLength={100}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    if (!keyEdited)
+                      setKey(
+                        event.target.value
+                          .toUpperCase()
+                          .replace(/[^A-Z0-9]/g, "")
+                          .slice(0, 10),
+                      );
+                  }}
+                />
+              </label>
+              <label className="field">
+                Project key
+                <input
+                  className="input"
+                  value={key}
+                  maxLength={10}
+                  onChange={(event) => {
+                    setKeyEdited(true);
+                    setKey(event.target.value.toUpperCase());
+                  }}
+                  placeholder="APP"
+                />
+              </label>
+              <button
+                className="btn btn-primary"
+                disabled={busy || !workspace || !name.trim() || !/^[A-Z][A-Z0-9]{1,9}$/.test(key)}
+                onClick={() => void create()}
+              >
+                {busy ? "Creating project…" : "Create project"}
+              </button>
+            </>
+          )}
+          {projects.isError && (
+            <p role="alert">
+              {errorMessage(projects.error)}
+              <button onClick={() => void projects.refetch()}>Try again</button>
+            </p>
+          )}
+        </>
+      )}
+      {current === "github" && (
+        <>
+          <h1>Connect GitHub</h1>
+          <p className="sub">Connect a repository to {project?.name}. GitHub sign-in and repository access are separate connections.</p>
+          {github.isLoading && <p role="status">Checking GitHub…</p>}
+          {github.isError && (
+            <p role="alert">
+              {errorMessage(github.error)}
+              <button onClick={() => void github.refetch()}>Try again</button>
+            </p>
+          )}
+          {github.data && !github.data.configured && (
+            <p>The GitHub App is not available on this server yet. You can start with documents and connect a repository later.</p>
+          )}
+          {github.data?.install_url && (
+            <button
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => {
+                move("github");
+                installGitHub(github.data as Schemas["GitHubStatus"], workspaceId, location.pathname + location.search);
+              }}
+            >
+              <Ic n="github" s={16} />
+              Connect GitHub App
+            </button>
+          )}
+          {repos.isError && (
+            <p role="alert">
+              {errorMessage(repos.error)}
+              <button onClick={() => void repos.refetch()}>Try again</button>
+            </p>
+          )}
+          {!!repos.data?.length && (
+            <>
+              <label className="field">
+                Repository
+                <select aria-label="Repository" className="select" value={repoId} onChange={(event) => setRepo(event.target.value)}>
+                  <option value="">Select a repository</option>
+                  {repos.data.map((repo) => (
+                    <option key={`${repo.installation_ref}:${repo.github_repo_id}`} value={`${repo.installation_ref}:${repo.github_repo_id}`}>
+                      {repo.full_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="btn btn-primary" disabled={busy || !repoId} onClick={() => void connectRepo()}>
+                Use repository
+              </button>
+            </>
+          )}
+          {project?.repo_url && <p>Connected: {project.repo_url}</p>}
+          <button className="btn btn-secondary" disabled={busy} onClick={() => move("model")}>
+            {project?.repo_url ? "Continue" : "Continue with documents only"}
+          </button>
+        </>
+      )}
+      {current === "model" && (
+        <>
+          <h1>Connect your model</h1>
+          <p className="sub">Your personal API key powers Nova and Kai. It is stored encrypted and used for your runs.</p>
+          {models.isError && (
+            <p role="alert">
+              {errorMessage(models.error)}
+              <button onClick={() => void models.refetch()}>Try again</button>
+            </p>
+          )}
+          {access.data?.ready && <p role="status">A personal model connection is available.</p>}
+          {access.data && !access.data.can_store_keys && <p role="alert">Encrypted key storage is unavailable. Ask your administrator to configure it.</p>}
+          <label className="field">
+            Model provider
+            <select
+              aria-label="Model provider"
+              disabled={busy || !models.data}
+              className="select"
+              value={provider}
+              onChange={(event) => {
+                setProvider(event.target.value);
+                setApiKey("");
+              }}
+            >
+              {models.data?.keys.map((item) => (
+                <option key={item.provider} value={item.provider}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Model API key
+            <input
+              className="input"
+              type="password"
+              value={apiKey}
+              autoComplete="off"
+              maxLength={400}
+              spellCheck={false}
+              onChange={(event) => setApiKey(event.target.value)}
+            />
+          </label>
+          <button className="btn btn-primary" disabled={busy || !access.data?.can_store_keys || apiKey.trim().length < 20} onClick={() => void saveKey()}>
+            {busy ? "Saving…" : "Save personal key"}
+          </button>
+          {!!access.data?.models.length && (
+            <label className="field">
+              Default model
+              <select
+                aria-label="Default model"
+                disabled={busy}
+                className="select"
+                value={models.data?.default_model ?? ""}
+                onChange={(event) =>
+                  void perform(async () => {
+                    await myDefaultModelSaved(event.target.value || null);
+                    await models.refetch();
+                  })
+                }
+              >
+                <option value="">Choose a default model</option>
+                {access.data.models.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {access.isError && (
+            <p role="alert">
+              {errorMessage(access.error)}
+              <button onClick={() => void access.refetch()}>Try again</button>
+            </p>
+          )}
+          <button className="btn btn-secondary" disabled={busy || (!!access.data?.ready && !modelReady)} onClick={() => move("ready")}>
+            {access.data?.ready ? "Continue" : "Set up models later"}
+          </button>
+        </>
+      )}
+      {current === "ready" && (
+        <>
+          <h1>Your project is ready</h1>
+          <p>
+            {project?.name} is saved in {workspace?.name}.
+          </p>
+          <p>{project?.repo_url ? "GitHub repository connected." : "Documents-only project; GitHub can be connected later."}</p>
+          <p>{access.data?.ready ? "Personal model connection available." : "Connect a model when you are ready to use agents."}</p>
+          <a className="btn btn-primary" href={`/w/${workspace?.slug}/p/${project?.key}/overview`}>
+            Open project
+          </a>
+          {modelReady ? (
+            <a className="btn btn-secondary" href={`/w/${workspace?.slug}/chat?project=${project?.key}`}>
+              Start with Nova
+            </a>
+          ) : (
+            <button className="btn btn-secondary" disabled={busy} onClick={() => move("model")}>
+              Set up Nova
+            </button>
+          )}
+        </>
+      )}
+      {current !== "project" && (
+        <button className="btn btn-ghost" disabled={busy} onClick={() => move(steps[Math.max(0, steps.indexOf(current) - 1)]!)}>
           Back
         </button>
       )}
-      <span className="sp" />
-      {skip && (
-        <button className="btn btn-ghost" onClick={() => next(true)}>
-          Skip for now
-        </button>
-      )}
-      <button className="btn btn-primary btn-lg" onClick={() => next()} id="onb-next">
-        {label}
-        <Ic n="arrow-right" s={15} />
-      </button>
-    </div>
-  );
-  let body;
-  if (st === 0)
-    body = (
-      <>
-        <h1>What are you working on?</h1>
-        <p className="sub">We&apos;ll tailor templates, views, and the agents&apos; suggestions. You can change this later.</p>
-        <div className="opts" role="radiogroup">
-          {[
-            ["product", "target", "Product", "Roadmaps & launches"],
-            ["design", "palette", "Design", "Reviews & handoff"],
-            ["marketing", "megaphone", "Marketing", "Campaigns & content"],
-            ["engineering", "code", "Engineering", "Sprints & releases"],
-            ["personal", "user", "Personal", "Goals & side projects"],
-            ["other", "sparkles", "Other", "Something else"],
-          ].map(([v, i, n, s]) => (
-            <Opt key={v} k="use" v={v!} icon={i!} n={n!} s={s} />
-          ))}
-        </div>
-        <Nav />
-      </>
-    );
-  if (st === 1)
-    body = (
-      <>
-        <h1>Create your workspace</h1>
-        <p className="sub">A workspace is where your team&apos;s projects, documents, and agents live.</p>
-        <div className="field">
-          <label className="label" htmlFor="o-ws">
-            Workspace name
-          </label>
-          <input
-            className={`input input-lg ${err ? "is-error" : ""}`}
-            id="o-ws"
-            value={o.ws}
-            onChange={(e) => set({ ws: e.target.value, url: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "") })}
-            placeholder="e.g. Meridian Studio"
-            autoFocus
-          />
-          {err && (
-            <span className="err">
-              <Ic n="circle-alert" s={12} />
-              {err}
-            </span>
-          )}
-        </div>
-        <div className="field">
-          <label className="label" htmlFor="o-url">
-            Workspace URL
-          </label>
-          <div className="row" style={{ gap: 0 }}>
-            <span
-              className="input input-lg"
-              style={{
-                width: "auto",
-                background: "var(--surface-2)",
-                borderRight: 0,
-                borderRadius: "6px 0 0 6px",
-                display: "flex",
-                alignItems: "center",
-                color: "var(--text-2)",
-              }}
-            >
-              dotrix.app/w/
-            </span>
-            <input
-              className="input input-lg"
-              id="o-url"
-              value={o.url}
-              onChange={(e) => set({ url: e.target.value })}
-              style={{ borderRadius: "0 6px 6px 0" }}
-              placeholder="acme"
-            />
-          </div>
-          {o.url && (
-            <span className="hint" style={{ color: "var(--green)", display: "flex", gap: 4, alignItems: "center" }}>
-              <Ic n="check" s={12} />
-              dotrix.app/w/{o.url} is available
-            </span>
-          )}
-        </div>
-        <Nav />
-      </>
-    );
-  if (st === 2)
-    body = (
-      <>
-        <h1>How does your team work?</h1>
-        <p className="sub">We&apos;ll set your default project view.</p>
-        <div className="opts" role="radiogroup" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))" }}>
-          {[
-            ["kanban", "square-kanban", "Boards", "Move cards through stages"],
-            ["list", "list-checks", "Lists", "Checklists and priorities"],
-          ].map(([v, i, n, s]) => (
-            <Opt key={v} k="team" v={v!} icon={i!} n={n!} s={s} />
-          ))}
-        </div>
-        <div className="field">
-          <span className="label">Team size</span>
-          <div className="seg" style={{ width: "fit-content" }}>
-            {["Just me", "2-10", "11-50", "51-200", "200+"].map((s) => (
-              <button key={s} className={o.size === s ? "on" : ""} onClick={() => set({ size: s })}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        <Nav />
-      </>
-    );
-  if (st === 3)
-    body = (
-      <>
-        <h1>Create your first project</h1>
-        <p className="sub">Start from a template. The agents get a project.md to build on; add documents or a repo later.</p>
-        <div className="field">
-          <label className="label" htmlFor="o-proj">
-            Project name
-          </label>
-          <input className="input input-lg" id="o-proj" value={o.proj} onChange={(e) => set({ proj: e.target.value })} autoFocus />
-        </div>
-        <div className="tmpls" role="radiogroup">
-          {TEMPLATES.filter((t) => t.id !== "blank").map((t) => (
-            <Opt key={t.id} k="tmpl" v={t.id} icon={t.icon} n={t.name} s={`${t.tasks.length} starter tasks`} />
-          ))}
-        </div>
-        <Nav />
-      </>
-    );
-  if (st === 4)
-    body = (
-      <>
-        <h1>Invite your team</h1>
-        <p className="sub">dotrix works best with your teammates. They&apos;ll get an email invite.</p>
-        <div className="col" style={{ gap: 8 }}>
-          {[0, 1, 2].map((i) => (
-            <input
-              key={i}
-              className="input input-lg"
-              placeholder="teammate@company.com"
-              type="email"
-              value={o.invites[i]}
-              onChange={(e) => set({ invites: o.invites.map((x, j) => (j === i ? e.target.value : x)) })}
-              aria-label={`Teammate email ${i + 1}`}
-            />
-          ))}
-        </div>
-        <Nav label="Send invites" skip />
-      </>
-    );
-  if (st === 5) {
-    const n = o.invites.filter((x) => x.includes("@")).length;
-    const tm = TEMPLATES.find((t) => t.id === o.tmpl);
-    body = (
-      <>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <span className="ftype ready-badge" style={{ "--c": "var(--green)", width: 48, height: 48, borderRadius: 12 } as React.CSSProperties}>
-            <Ic n="circle-check" s={22} />
-          </span>
-        </div>
-        <h1>Your workspace is ready</h1>
-        <p className="sub">Here&apos;s what we set up for you.</p>
-        <div className="panel">
-          {[
-            ["building-2", `Workspace “${o.ws || "My Workspace"}”`, "dotrix.app/w/" + (o.url || "workspace")],
-            [tm?.icon || "folder", `Project “${o.proj}”`, `${tm?.tasks.length || 0} starter tasks · ${{ kanban: "Board", list: "List" }[o.team]} view`],
-            ["sparkles", "Six agents, ready in Chat", "They read your documents and propose changes for you to approve"],
-            [
-              "user-plus",
-              n ? `${n} invite${n > 1 ? "s" : ""} sent` : "No invites yet",
-              n ? "They'll appear in Members once they join" : "Invite people any time from the sidebar",
-            ],
-          ].map(([i, t, s]) => (
-            <div key={t} className="row ready-row" style={{ padding: "12px 14px", borderTop: "1px solid var(--divider)", gap: 12 }}>
-              <span className="ftype" style={{ "--c": "var(--acc)" } as React.CSSProperties}>
-                <Ic n={i!} s={14} />
-              </span>
-              <div className="grow">
-                <div style={{ fontWeight: 500 }}>{t}</div>
-                <div className="faint" style={{ fontSize: 12 }}>
-                  {s}
-                </div>
-              </div>
-              <span className="ok" style={{ color: "var(--green)", display: "inline-flex" }}>
-                <Ic n="check" s={15} />
-              </span>
-            </div>
-          ))}
-        </div>
-        {err && (
-          <span className="err" role="alert">
-            <Ic n="circle-alert" s={12} />
-            {err}
-          </span>
-        )}
-        <button className="btn btn-primary btn-lg btn-block" onClick={finish} disabled={busy} aria-busy={busy}>
-          {busy ? "Creating your workspace…" : "Open workspace"}
-          {!busy && <Ic n="arrow-right" s={15} />}
-        </button>
-      </>
-    );
-  }
-  return (
-    <div className="auth-card onb" style={{ maxWidth: st === 5 ? 440 : 560 }}>
-      <div className="steps" aria-label={`Step ${st + 1} of ${N}`}>
-        {Array.from({ length: N }, (_, i) => (
-          <i key={i} className={`${i <= st ? "on" : ""} ${i === st ? "cur" : ""}`} />
-        ))}
-      </div>
-      <div className="faint" style={{ textAlign: "center", fontSize: 12 }}>
-        Step {st + 1} of {N}
-      </div>
-      {body}
-      {st < 5 && (
-        <button className="btn btn-ghost btn-sm" style={{ alignSelf: "center" }} onClick={() => go("home")}>
-          Exit setup
-        </button>
+      {error && (
+        <p className="err" role="alert">
+          {error}
+        </p>
       )}
     </div>
   );

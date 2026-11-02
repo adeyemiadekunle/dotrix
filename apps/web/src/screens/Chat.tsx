@@ -120,32 +120,42 @@ interface Row {
 }
 
 function useRows(ws: string | undefined) {
-  const own = useWorkspaceThreads(ws);
-  const cross = useCrossConversations(ws);
-  const rows: Row[] = [
-    ...(own.data ?? []).map((t) => ({
-      id: t.thread_id,
-      title: t.title,
-      at: ms(t.updated_at),
-      projectId: t.project_id,
-      projectKey: t.project_key,
-      projectKeys: [],
-      waiting: t.waiting,
-    })),
-    ...(cross.data ?? []).map((c) => ({
-      id: c.thread_id,
-      title: c.title,
-      at: ms(c.updated_at),
-      projectId: null,
-      projectKey: null,
-      projectKeys: c.project_keys,
-      waiting: false,
-    })),
-  ];
+  const own = useWorkspaceThreads(isLive() ? ws : undefined);
+  const cross = useCrossConversations(isLive() ? ws : undefined);
+  const rows: Row[] = !isLive()
+    ? D().threads.map((thread) => ({
+        id: thread.id,
+        title: thread.title,
+        at: thread.at,
+        projectId: thread.project,
+        projectKey: thread.project ? (proj(thread.project)?.key ?? null) : null,
+        projectKeys: (thread.projects ?? []).flatMap((id) => proj(id)?.key ?? []),
+        waiting: thread.messages.some((message) => message.changes?.some((change) => change.status === "pending")),
+      }))
+    : [
+        ...(own.data ?? []).map((t) => ({
+          id: t.thread_id,
+          title: t.title,
+          at: ms(t.updated_at),
+          projectId: t.project_id,
+          projectKey: t.project_key,
+          projectKeys: [],
+          waiting: t.waiting,
+        })),
+        ...(cross.data ?? []).map((c) => ({
+          id: c.thread_id,
+          title: c.title,
+          at: ms(c.updated_at),
+          projectId: null,
+          projectKey: null,
+          projectKeys: c.project_keys,
+          waiting: false,
+        })),
+      ];
   return {
     rows,
-    loaded: own.isFetched && cross.isFetched,
-    failed: own.isError || cross.isError,
+    loaded: !isLive() || (own.isFetched && cross.isFetched),
+    failed: isLive() && (own.isError || cross.isError),
     retry: () => {
       void own.refetch();
       void cross.refetch();
@@ -398,7 +408,7 @@ function refsOf(
   return { tasks, docs };
 }
 
-function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | null; tag?: string; children?: React.ReactNode }) {
+export function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | null; tag?: string; children?: React.ReactNode }) {
   const w = who(m.by);
   const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
   const [openSteps, setOpenSteps] = useState(false);
@@ -2484,6 +2494,24 @@ function ToCoding({ search }: { search: URLSearchParams }) {
   return null;
 }
 
+function DemoConversation({ id }: { id: string }) {
+  const thread = D().threads.find((item) => item.id === id);
+  if (!thread) return <Pending text="This sample conversation is no longer available." />;
+  return (
+    <>
+      <div className="chat-scroll">
+        <div className="chat-col">
+          <h2>{thread.title}</h2>
+          <p className="muted">Sample conversation · Sign in to work with Nova.</p>
+          {thread.messages.map((message) => (
+            <Message key={message.id} m={message} projectId={thread.project} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function Chat() {
   const { search } = useRoute();
   if (search.has("session") || search.get("tab") === "coding") return <ToCoding search={search} />;
@@ -2589,7 +2617,7 @@ function Conversations({ search }: { search: URLSearchParams }) {
         </aside>
         <section className="chat-main">
           {!isLive() && threadId ? (
-            <Pending text="This conversation isn't available in the demo. Review the request in Inbox." inbox />
+            <DemoConversation key={threadId} id={threadId} />
           ) : threadId ? (
             thread ? (
               <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />

@@ -28,7 +28,7 @@ const narrowPanel = () => window.matchMedia("(max-width: 1200px)").matches;
 
 /** The panel's frame: the drag edge, a one-line header (what it shows, the turn, close), and the body.
  *  Stacked (Codes' panes, several at once in one column), it has no edge of its own: the column has it. */
-function PanelFrame({
+export function PanelFrame({
   label,
   widthKey,
   title,
