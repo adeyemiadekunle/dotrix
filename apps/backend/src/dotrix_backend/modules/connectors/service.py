@@ -134,6 +134,13 @@ class ConnectorService:
                 f"GitHub lets the app create repositories only in organisations; create it on GitHub under "
                 f"{row.account_login}, give the app access to it, then pick it"
             )
+        # The setup page may have been open before an installation was suspended,
+        # removed or transferred. Do not create under a stale confirmed owner.
+        current = await self.app.installation(row.installation_id)
+        if row.suspended_at is not None or current.suspended:
+            raise Forbidden("This GitHub installation is suspended; restore access before creating a repository")
+        if current.account_type != row.account_type or current.account_login.lower() != row.account_login.lower():
+            raise Forbidden("The GitHub installation's owner changed; reconnect it before creating a repository")
         repo = await self.app.create_repository(
             row.installation_id, row.account_login, data.name, private=data.private, description=data.description
         )

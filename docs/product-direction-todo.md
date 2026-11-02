@@ -56,11 +56,13 @@ Done when: each intention leads to a suitable first action, and an idea can beco
 
 ### J03 — Complete new repository to first reviewed implementation
 
-- [ ] Expose the existing organisation-repository creation capability in the shared flow, subject to the person's current rights and GitHub installation permissions.
-- [ ] Confirm repository owner, name and visibility before creation. Handle cancellation, name conflicts, revoked access and uncertain responses without silently creating duplicates.
-- [ ] Provide a clear personal-GitHub path: create the repository on GitHub, grant the App access, refresh and connect it. Do not imply that the current App integration can create personal-account repositories. Evaluate another authorised creation mechanism only as a separate decision.
+- [x] Expose the existing organisation-repository creation capability in the shared flow, subject to the person's current rights and GitHub installation permissions.
+- [x] Confirm repository owner, name and visibility before creation. Handle cancellation, name conflicts, revoked access and uncertain responses without silently creating duplicates.
+- [x] Provide a clear personal-GitHub path: create the repository on GitHub, grant the App access, refresh and connect it. Do not imply that the current App integration can create personal-account repositories. Evaluate another authorised creation mechanism only as a separate decision.
 - [ ] Verify fresh/empty repository initialisation and a valid base branch before a coding session starts; show an actionable prerequisite when it cannot start.
 - [ ] Carry an approved initial task and its project knowledge through Nova → Kai → checks → PR → Juno → Nova, with the person performing the merge.
+
+Repository-setup slice: shared onboarding exposes organisation creation with an explicit owner/name/visibility review and cancellation before submission. Created repositories still require explicit attachment. An unconfirmed response refreshes available repositories and blocks automatic creation retries; an existing name is selected rather than silently adopted. Personal accounts receive the GitHub-create → README → App access → refresh/select path. The API rechecks the current installation owner and suspension before creation. See `repository-create.spec.ts` and `test_connectors.py`. There is no durable creation-attempt journal; refresh recovers from GitHub’s repository list and owner/name uniqueness, not from a saved Dotrix attempt. Base-branch admission and the end-to-end first-PR acceptance scenario remain open.
 
 Done when: a solo developer using personal GitHub and a team using a GitHub organisation can each reach a first reviewed PR through a supported, clearly explained path.
 

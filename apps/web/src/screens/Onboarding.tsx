@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
 import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
 import { Ic } from "../core/icons";
 import { PROJECT_STARTS, projectStart, projectDiscussionHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
+import { RepositoryCreate } from "./RepositoryCreate";
 
 type Step = "project" | "github" | "model" | "ready";
 const steps: Step[] = ["project", "github", "model", "ready"];
 
 /** Only server-confirmed workspace/project IDs are retained across redirects. Keys stay in memory. */
 export function Onboarding() {
+  const queryClient = useQueryClient();
   const query = new URLSearchParams(location.search);
   const addingProject = query.get("mode") === "project";
   const submission = useRef(false);
@@ -462,6 +464,41 @@ export function Onboarding() {
               {errorMessage(repos.error)}
               <button onClick={() => void repos.refetch()}>Try again</button>
             </p>
+          )}
+          {github.data?.configured && (
+            <>
+              <button
+                className="btn btn-secondary"
+                disabled={busy || repos.isFetching}
+                onClick={() =>
+                  void perform(async () => {
+                    const status = await github.refetch();
+                    if (status.error) throw status.error;
+                    const result = await repos.refetch();
+                    if (result.error) throw result.error;
+                  })
+                }
+              >
+                Refresh repositories
+              </button>
+              <RepositoryCreate
+                key={`${workspaceId}:${projectId}`}
+                workspaceId={workspaceId}
+                installations={github.data.installations}
+                repositories={repos.data ?? []}
+                refresh={async () => {
+                  const result = await repos.refetch();
+                  if (result.error) throw result.error;
+                }}
+                onCreated={(repo) => {
+                  queryClient.setQueryData<Schemas["RepoOption"][]>(["onboarding-repos", workspaceId], (items = []) => [
+                    ...items.filter((item) => item.github_repo_id !== repo.github_repo_id),
+                    repo,
+                  ]);
+                  setRepo(`${repo.installation_ref}:${repo.github_repo_id}`);
+                }}
+              />
+            </>
           )}
           {!!repos.data?.length && (
             <>

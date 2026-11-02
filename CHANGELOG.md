@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Shared project setup can create an organisation repository after owner/name/visibility confirmation, recover uncertain responses through repository selection, and guide personal accounts through creation on GitHub. Repository creation rechecks installation ownership and suspension.
+
 - Project setup offers Explore an idea, Start a new codebase and Connect an existing repository, with saved starting choices, goal-first planning and editable Nova discussion starters. Existing projects can connect a repository from Overview.
 
 - New-account setup saves a first project, offers GitHub repository access and personal model setup, and resumes after GitHub installation.
