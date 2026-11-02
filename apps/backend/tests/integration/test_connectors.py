@@ -237,3 +237,24 @@ async def test_an_idea_can_connect_code_without_losing_its_project_work(
     assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["id"] == issue["id"]
     assert (await db_client.get(f"{base}/knowledge/files/requirements/users.md", headers=ada.headers)).json()["content"] == "# Users\nIndependent consultants."
     assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()["thread_id"] == run["thread_id"]
+
+
+async def test_creation_rechecks_the_confirmed_installation_before_writing(
+    db_client: AsyncClient, github_world, github
+) -> None:
+    ada, _, ws, _, _ = await github_world()
+    org = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                json={"installation_id": 111, "code": "code-1"})).json()
+    body = {"installation_ref": org["id"], "name": "must-not-create", "private": True}
+    installation = github.installations[111]
+    installation["suspended_at"] = "2026-11-02T00:00:00Z"
+    suspended = await db_client.post(f"{ws}/github/repos", headers=ada.headers, json=body)
+    assert suspended.status_code == 403 and "suspended" in suspended.json()["detail"]
+    installation.pop("suspended_at")
+    installation["account"]["login"] = "transferred-owner"
+    changed = await db_client.post(f"{ws}/github/repos", headers=ada.headers, json=body)
+    assert changed.status_code == 403 and "owner changed" in changed.json()["detail"]
+    del github.installations[111]
+    removed = await db_client.post(f"{ws}/github/repos", headers=ada.headers, json=body)
+    assert removed.status_code in {403, 404}
+    assert len(installation["repos"]) == 2
