@@ -185,9 +185,23 @@ function MiniCal({ p, val, onPick }: { p: P; val: string | null | undefined; onP
   );
 }
 
-function Mi({ icon, label, onClick, r, danger }: { icon: string; label: ReactNode; onClick: () => void; r?: ReactNode; danger?: boolean }) {
+function Mi({
+  icon,
+  label,
+  onClick,
+  r,
+  danger,
+  disabled,
+}: {
+  icon: string;
+  label: ReactNode;
+  onClick?: () => void;
+  r?: ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
   return (
-    <button className={`mi ${danger ? "danger" : ""}`} onClick={onClick}>
+    <button className={`mi ${danger ? "danger" : ""}`} disabled={disabled} onClick={onClick}>
       <Ic n={icon} s={15} />
       {label}
       {r != null && <span className="r">{r}</span>}
@@ -985,21 +999,50 @@ function FilterBuilder({ p }: { p: P }) {
   );
 }
 
-/** The one floating popover. */
-/** A coding session's actions, on the API. */
-function SessionMenu({ cs }: { cs: CodingSession }) {
-  const scope = live.ws ? { workspaceId: live.ws.id, projectId: cs.project_id } : undefined;
-  const update = useUpdateSession(scope, cs.session_id, cs.issue_key);
-  const close = useCloseSession(scope, cs.session_id, cs.issue_key);
-  const remove = useDeleteSession(scope, cs.session_id, cs.issue_key);
-  const dropSandbox = useDeleteSandbox(scope, cs.session_id, cs.issue_key);
-  const it = isLive() ? { id: cs.issue_key } : D().tasks.find((t) => t.key === cs.issue_key);
+/** Navigation shared by live and sample session menus. */
+function SessionLinks({ cs }: { cs: CodingSession }) {
+  const it = isLive() ? { id: cs.issue_key } : D().tasks.find((task) => task.key === cs.issue_key);
   const act = (f: () => void) => () => (closePop(), f());
   return (
     <>
       {cs.pr_url && <Mi icon="git-pull-request" label="Open PR" onClick={act(() => window.open(cs.pr_url!, "_blank", "noopener"))} />}
       {it && <Mi icon="panel-right-open" label="Open issue" onClick={act(() => openTask(it.id))} />}
       <Sep />
+    </>
+  );
+}
+
+// Sample menus never mount the live mutation hooks, even for a signed-in browser viewing the demo.
+function SessionMenu({ cs }: { cs: CodingSession }) {
+  const workspace = isLive() ? live.ws : null;
+  if (!workspace)
+    return (
+      <>
+        <SessionLinks cs={cs} />
+        <div className="faint" style={{ padding: "6px 10px", fontSize: 12 }}>
+          {live.mode === "demo" ? "Sample session · Read-only" : "Session actions unavailable"}
+        </div>
+        <Mi icon={cs.pinned ? "pin-off" : "pin"} label={cs.pinned ? "Unpin" : "Pin"} disabled />
+        <Mi icon="pencil" label="Rename" disabled />
+        {cs.state !== "closed" && <Mi icon="power" label="Close session" disabled />}
+        {cs.sandbox && <Mi icon="box" label="Delete sandbox" disabled />}
+        <Mi icon="archive" label={cs.archived ? "Unarchive" : "Archive"} disabled />
+        <Mi icon="trash-2" label="Delete" danger disabled />
+      </>
+    );
+  return <LiveSessionMenu cs={cs} workspaceId={workspace.id} />;
+}
+
+function LiveSessionMenu({ cs, workspaceId }: { cs: CodingSession; workspaceId: string }) {
+  const scope = { workspaceId, projectId: cs.project_id };
+  const update = useUpdateSession(scope, cs.session_id, cs.issue_key);
+  const close = useCloseSession(scope, cs.session_id, cs.issue_key);
+  const remove = useDeleteSession(scope, cs.session_id, cs.issue_key);
+  const dropSandbox = useDeleteSandbox(scope, cs.session_id, cs.issue_key);
+  const act = (f: () => void) => () => (closePop(), f());
+  return (
+    <>
+      <SessionLinks cs={cs} />
       <Mi icon={cs.pinned ? "pin-off" : "pin"} label={cs.pinned ? "Unpin" : "Pin"} onClick={act(() => update.mutate({ pinned: !cs.pinned }))} />
       <Mi
         icon="pencil"

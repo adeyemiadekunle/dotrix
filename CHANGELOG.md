@@ -77,6 +77,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Sample coding-session menus keep management actions read-only and never invoke live mutation hooks, including when a signed-in person opens the demo.
+
 - Seeded Chat/Codes and Rules/GitHub Settings share live presentation; restore Geist Sans/Mono headings and keep workspace navigation available before model setup.
 
 - A local turn's worktree is removed once it has been untouched for 3 days, so they no longer pile up on your
