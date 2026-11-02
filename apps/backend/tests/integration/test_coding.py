@@ -6,6 +6,7 @@ import base64
 import dataclasses
 import json
 import re
+import shlex
 import subprocess
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -18,6 +19,9 @@ from httpx import AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import select, update
 
+from apps.backend.tests.integration.test_runtime_tools import (
+    nova_pilot_world,  # noqa: F401 (fixture)
+)
 from dotrix_backend.core.crypto import Secrets
 from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
 from dotrix_backend.modules.coding.recovery import recover_uncertain_runs
@@ -47,6 +51,8 @@ class ScriptedClaude:
         self.briefs: list[str] = []
         self.argv: list[str] = []
         self.env: dict[str, str] = {}
+        self.checks: list[list[str]] = []
+        self.check_events: list[dict] = []
 
     def lines(self) -> list[str]:
         events: list[dict[str, Any]] = [{"type": "system", "subtype": "init", "model": "claude-test"}]
@@ -55,6 +61,7 @@ class ScriptedClaude:
                 {"type": "text", "text": f"Editing {path}"},
                 {"type": "tool_use", "name": "Edit", "input": {"file_path": f"/sandbox/repo/{path}"}},
             ], "usage": {"input_tokens": 1000, "output_tokens": 200}}})
+        events.extend(self.check_events)
         events.append({"type": "result", "subtype": "success", "result": self.result, "total_cost_usd": 0.12,
                        "usage": {"input_tokens": 1000 * len(self.edits), "output_tokens": 200 * len(self.edits)}})
         return [json.dumps(e) + "\n" for e in events]
@@ -104,6 +111,16 @@ class ScriptedSession(LocalSession):
             target = self.root / "repo" / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text)
+        for index, command in enumerate(self.agent.checks):
+            checked = await super().exec(command, timeout=timeout, cancel=cancel)
+            ref = f"check-{index}"
+            self.agent.check_events.extend([
+                {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": ref,
+                    "name": "Bash", "input": {"command": shlex.join(command)}}]}},
+                {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": ref,
+                    "content": checked.stdout + checked.stderr, "is_error": checked.code != 0}]}},
+            ])
+            assert checked.code == 0, checked.stderr
         for line in self.agent.lines():
             assert on_line is not None
             await on_line(line)
@@ -163,6 +180,8 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
     client = app.dependency_overrides[get_github_app]()
+    app.state.runner.github = client
+    github.branch_heads = _heads(origin)
     settings.coding_sandbox = "local"
     settings.encryption_key = SecretStr(Fernet.generate_key().decode())
     app.state.secrets = app.state.runner.secrets = Secrets.from_settings(settings)
@@ -1772,3 +1791,275 @@ async def test_a_turns_files_diff_and_command_output_are_kept_for_the_panels(
     after = (await db_client.get(f"{base}/coding/runs/{run['id']}/file", params={"path": "tests/test_refund.py"},
                                  headers=ada.headers)).json()
     assert after["status"] == "added" and after["before"] is None and after["after"].startswith("def test_refund")
+
+
+@pytest.mark.parametrize("entry", ["direct", "handoff", "assignment", "local"])
+async def test_empty_default_branch_blocks_new_sessions_from_every_entry(
+    db_client: AsyncClient, coding, github, agent_script, entry, checkout: Path, tmp_path: Path
+) -> None:
+    ada, _, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    github.branch_heads = lambda repo, branch: None
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "First implementation"})).json()
+    if entry == "handoff":
+        model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "Initialise the repository first.")
+        response = await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                       json={"message": "Implement the first task", "work_mode": "build"})
+        assert response.status_code == 202 and response.json()["status"] == "completed", response.text
+        assert "initial commit" in next(m.content for m in model.received[1] if m.type == "tool")
+    elif entry == "assignment":
+        response = await db_client.patch(f"{base}/issues/{issue['key']}", headers=ada.headers,
+                                        json={"assignee_agent": "coding-agent"})
+        assert response.status_code == 200, response.text  # the task is still saved
+    else:
+        if entry == "local":
+            await _local_runner(db_client, coding, checkout, tmp_path, "true").register()
+        response = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers,
+                                       json={"location": "local" if entry == "local" else "cloud"})
+        assert response.status_code == 409 and "initial commit" in response.json()["detail"], response.text
+    assert (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json() == []
+    assert sandbox.opened == 0 and github.pulls == []
+
+
+async def test_admission_uses_a_changed_default_branch_and_rechecks_after_preview(
+    db_client: AsyncClient, coding, github, origin: Path
+) -> None:
+    ada, _, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    assert (await db_client.get(f"{base}/repository/readiness", headers=ada.headers)).json()["ready"]
+    github.branch_heads = lambda repo, branch: None
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Use current default"})).json()
+    refused = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})
+    assert refused.status_code == 409 and sandbox.opened == 0
+    _git(origin, "branch", "trunk")
+    github.branch_heads = _heads(origin)
+    github.installations[111]["repos"][0]["default_branch"] = "trunk"
+    started = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})
+    assert started.status_code == 201, started.text
+    assert started.json()["base_branch"] == "trunk" and started.json()["status"] == "awaiting_approval"
+
+
+async def test_a_base_deleted_after_admission_fails_before_the_model_runs(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, _, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Missing base"})).json()
+    started = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})).json()
+    _git(origin, "branch", "-m", "gone")
+    failed = await _approve(db_client, base, started, ada.headers)
+    assert failed["status"] == "failed" and "initial commit" in failed["error"], failed
+    assert sandbox.opened == 0 and claude.briefs == [] and github.pulls == []
+
+
+@pytest.fixture
+async def first_pr_coding(db_client, github, nova_pilot_world, outbox, storage, checkouts, agent_script, account):  # noqa: F811
+    """Real committed sessions: fx authorisation and journal callbacks run concurrently."""
+    from types import SimpleNamespace
+
+    from apps.backend.tests.integration.test_fx_changes import fx_chat
+    from dotrix_backend.core.security import create_access_token
+    from dotrix_backend.modules.workspaces.models import Membership, Workspace, WorkspaceKind
+
+    old_app = db_client._transport.app
+    settings = old_app.state.settings
+    github_client = old_app.dependency_overrides[get_github_app]()
+    settings.coding_sandbox = "local"
+    settings.encryption_key = SecretStr(Fernet.generate_key().decode())
+    settings.github_app_id, settings.github_app_slug = "4242", "dotrix-test"
+    settings.github_app_private_key = SecretStr(github_client.private_key)
+    existing, sessions, _ = nova_pilot_world
+    async with sessions() as session:
+        colleague = await session.scalar(select(Membership.user_id).where(
+            Membership.workspace_id == existing.workspace_id, Membership.user_id != existing.requested_by_id))
+        if account == "personal":
+            workspace = await session.get(Workspace, existing.workspace_id)
+            workspace.kind = WorkspaceKind.PERSONAL
+            member = await session.scalar(select(Membership).where(
+                Membership.workspace_id == existing.workspace_id, Membership.user_id == colleague))
+            await session.delete(member)
+            await session.commit()
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        client = fx.client
+        app = client._transport.app
+        app.dependency_overrides.update(old_app.dependency_overrides)
+        # Request sessions must use the real sessionmaker, not the rollback fixture's connection.
+        from dotrix_backend.api.deps import get_session
+        app.dependency_overrides.pop(get_session, None)
+        app.state.secrets = app.state.runner.secrets = Secrets.from_settings(settings)
+        app.state.runner.github = github_client
+        # Replace the world's synthetic key with this app's personal credential through the normal API.
+        assert (await client.delete("/v1/me/model-keys/openai", headers=fx.headers)).status_code == 200
+        await _save_key(client, fx.headers, "anthropic", "test-personal-first-pr-key-123456")
+        sandbox = ScriptedSandbox(ScriptedClaude())
+        app.state.jobs.ctx = dataclasses.replace(app.state.jobs.ctx, coding=CodingWorker(
+            sessions, settings, sandbox, github_client, reviewer=app.state.runner,
+            secrets=app.state.secrets, pool=WarmPool(3600, 0),
+        ))
+        ws = f"/v1/workspaces/{existing.workspace_id}"
+        if account == "organisation":
+            installed = await client.post(f"{ws}/github/installations", headers=fx.headers,
+                                          json={"installation_id": 111, "code": "code-1"})
+            assert installed.status_code == 200, installed.text
+        token = create_access_token(colleague, secret=settings.jwt_secret.get_secret_value(),
+                                    issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+        ada = SimpleNamespace(id=str(existing.requested_by_id), headers=fx.headers)
+        cat = SimpleNamespace(id=str(colleague), headers={"Authorization": f"Bearer {token}"})
+        yield client, (ada, cat, ws, None, None, sandbox)
+
+
+@pytest.mark.parametrize("account", ["personal", "organisation"])
+@pytest.mark.parametrize("runtime", ["deepagents", "fx"])
+async def test_new_repository_reaches_a_reviewed_pr_in_its_original_conversation(
+    db_client: AsyncClient, db_session, first_pr_coding, github, agent_script,
+    tmp_path: Path, monkeypatch, account, runtime,
+) -> None:
+    from contextlib import nullcontext
+
+    from apps.backend.tests.integration.test_fx_changes import _has_fx, scripted_model
+    from dotrix_backend.modules.agents import fx_pilot
+    from dotrix_backend.modules.agents.coding_outcomes import sync_coding_outcomes
+    from dotrix_backend.modules.agents.models import AgentRun, AgentRuntimeBinding
+
+    if runtime == "fx" and not _has_fx():
+        pytest.skip("Install the fx host to check the fx first-PR journey")
+    db_client, coding = first_pr_coding
+    ada, cat, ws, _, _, sandbox = coding
+    claude = sandbox.agent
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    if account == "personal":
+        personal = next(w for w in (await db_client.get("/v1/workspaces", headers=ada.headers)).json() if w["kind"] == "personal")
+        ws = f"/v1/workspaces/{personal['id']}"
+        installation = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                            json={"installation_id": 333, "code": "code-2"})).json()
+        # Personal repository creation happens on GitHub, outside Dotrix. Grant the App access afterwards.
+        github.installations[333]["repos"].append({"id": 9600, "full_name": "ada-gh/first", "private": True,
+            "default_branch": "main", "html_url": "https://github.com/ada-gh/first"})
+        repo = (await db_client.get(f"{ws}/github/repos", headers=ada.headers)).json()[0]
+        assert repo["installation_ref"] == installation["id"]
+    else:
+        installation = (await db_client.get(f"{ws}/github", headers=ada.headers)).json()["installations"][0]
+        response = await db_client.post(f"{ws}/github/repos", headers=ada.headers,
+                                       json={"installation_ref": installation["id"], "name": "first", "private": True})
+        assert response.status_code == 201, response.text
+        repo = response.json()
+    project = (await db_client.post(f"{ws}/projects", headers=ada.headers,
+        json={"key": "FIRST", "name": "First application", "source": "new_repo", "description": "Return a greeting."})).json()
+    base = f"{ws}/projects/{project['id']}"
+    connected = await db_client.put(f"{base}/repository", headers=ada.headers,
+                                   json={"installation_ref": repo["installation_ref"], "github_repo_id": repo["github_repo_id"]})
+    assert connected.status_code == 200, connected.text
+    remote = tmp_path / "new-origin"
+    remote.mkdir()
+    _git(remote, "init", "-q", "-b", "main")
+    (remote / "README.md").write_text("# First application\n")
+    _git(remote, "add", "README.md")
+    _git(remote, "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "Initial README")
+    _git(remote, "config", "receive.denyCurrentBranch", "refuse")
+    initial_sha = _git(remote, "rev-parse", "main")
+    github.branch_heads = _heads(remote)
+
+    async def repo_url(ref):
+        assert ref.full_name == repo["full_name"] and ref.default_branch == "main"
+        return str(remote)
+
+    app.state.jobs.ctx.coding.repo_url = repo_url
+    ready = (await db_client.get(f"{base}/repository/readiness", headers=ada.headers)).json()
+    assert ready["ready"] and ready["commit_sha"] == initial_sha
+    assert (await db_client.put(f"{base}/knowledge/files/requirements/first.md", headers=ada.headers,
+        json={"content": "# Requirement\nThe greeting is Hello. Do not add authentication yet."})).status_code == 200
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+        json={"type": "task", "title": "Return a greeting", "description": "Implement requirements/first.md. Acceptance: greeting() returns Hello."})).json()
+    plan_args = {"title": "First greeting", "summary": "Deliver the smallest greeting implementation.",
+                 "acceptance_criteria": ["greeting() returns Hello"], "tasks": [{"title": "Return a greeting"}]}
+
+    async def ask(tool, args, mode, message, thread=None):
+        if runtime == "deepagents":
+            agent_script.say(tool_call(tool, **args), "Saved; waits for your next instruction.")
+        with scripted_model(tool, args) if runtime == "fx" else nullcontext() as endpoint:
+            if endpoint:
+                monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "anthropic", endpoint)
+            response = await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                json={"message": message, "work_mode": mode, "chat_runtime": runtime, "thread_id": thread})
+        assert response.status_code == 202 and response.json()["status"] == "completed", response.text
+        return response.json()
+
+    planned = await ask("save_plan", plan_args, "plan", "Plan the first implementation")
+    thread = planned["thread_id"]
+    plans = (await db_client.get(f"{base}/agent/threads/{thread}/plans", headers=ada.headers)).json()
+    assert len(plans) == 1 and sandbox.opened == 0
+    built = await ask("start_coding", {"issue_key": issue["key"], "note": "Implement the approved first milestone."},
+                      "build", "Implement this task; retain Manual approvals", thread)
+    [run] = (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval"
+    stored_run = await db_session.get(CodingRun, uuid.UUID(run["id"]))
+    assert stored_run and stored_run.origin_run_id == uuid.UUID(built["id"])
+    assert run["thread_id"] == thread and run["plan_id"] == plans[0]["id"]
+    assert "The greeting is Hello" in run["brief"] and "Acceptance: greeting() returns Hello" in run["brief"]
+    assert sandbox.opened == 0 and github.pulls == []
+    claude.edits = {"app.py": "def greeting():\n    return 'Hello'\n", "tests/test_app.py": "import unittest\nfrom app import greeting\n\nclass GreetingTest(unittest.TestCase):\n    def test_greeting(self):\n        self.assertEqual(greeting(), 'Hello')\n"}
+    claude.checks = [["python", "-B", "-m", "unittest", "discover", "-s", "tests", "-v"]]
+    claude.result = "Added greeting and its test. One check passed; broader checks are unverified."
+    # Juno and Nova are separate scheduled runs; model responses are deterministic evidence, not paid calls.
+    agent_script.say(tool_call("submit_specialist_result", summary="Greeting matches the criterion; check execution is unverified.",
+                               evidence=["app.py:1", "tests/test_app.py:1"]), "Review complete; checks are unverified.",
+                     "Kai opened the first PR. Juno reviewed it; checks are unverified. You decide whether to merge.")
+    first = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", headers=ada.headers, json={"decision": "approve"})
+    assert first.status_code == 200, first.text
+    waiting = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert waiting["status"] == "changes_ready" and github.pulls == []
+    assert any("unittest discover" in event["text"] for event in waiting["events"] if event["kind"] == "tool")
+    assert any("Ran 1 test" in event["text"] and "OK" in event["text"] for event in waiting["events"] if event["kind"] == "output")
+    outcome_requests = []
+    with scripted_model("coding_evidence", {}, requests=outcome_requests) if runtime == "fx" else nullcontext() as endpoint:
+        if endpoint:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "anthropic", endpoint)
+        done = await _approve(db_client, base, waiting, ada.headers)
+        await sync_coding_outcomes(app.state.runner)  # repeat callback must not duplicate the outcome
+    assert done["status"] == "pr_opened" and done["pr_url"] and done["review_run_id"], done
+    assert _git(remote, "rev-parse", "main") == initial_sha  # opening a PR never merges it
+    assert _git(remote, "show", f"{done['branch']}:app.py").startswith("def greeting()")
+    assert _git(remote, "ls-tree", "-r", "--name-only", done["branch"]).splitlines() == ["README.md", "app.py", "tests/test_app.py"]
+    assert len(github.pulls) == 1 and github.pulls[0]["base"] == "main"
+    outcomes = list(await db_session.scalars(select(AgentRun).where(AgentRun.project_id == uuid.UUID(project["id"]),
+                                                                   AgentRun.source == "coding_outcome")))
+    assert len(outcomes) == 1 and outcomes[0].thread_id == uuid.UUID(thread)
+    assert outcomes[0].status.value == "completed" and outcomes[0].chat_runtime.value == runtime, outcomes[0].error
+    if runtime == "fx":
+        binding = await db_session.scalar(select(AgentRuntimeBinding).where(AgentRuntimeBinding.run_id == outcomes[0].id))
+        assert binding and binding.runtime == "fx"
+        offered = {tool["function"]["name"] for request in outcome_requests for tool in request.get("tools", [])}
+        assert "coding_evidence" in offered
+        assert not offered & {"delegate_tasks", "write_file", "edit_file", "create_issue", "update_issue", "start_coding"}
+        assert "check execution is unverified" in json.dumps(outcome_requests)
+    review = await db_session.get(AgentRun, uuid.UUID(done["review_run_id"]))
+    assert review and review.agent == "reviewer" and review.status.value == "completed"
+    assert review.parent_run_id == outcomes[0].id and review.thread_id != outcomes[0].thread_id
+    assert "unverified" in review.reply.lower()
+    assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["status"] == "review"
+    assert (await db_client.get(f"{base}/agent/runs/{outcomes[0].id}", headers=ada.headers)).status_code == 200
+    assert (await db_client.get(f"{base}/agent/runs/{outcomes[0].id}", headers=cat.headers)).status_code == 404
+
+
+async def test_a_waiting_run_keeps_its_validated_base_when_a_later_session_refreshes_the_default(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    first = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "First base"})).json()
+    waiting = (await db_client.post(f"{base}/coding/issues/{first['key']}/runs", headers=ada.headers, json={})).json()
+    _git(origin, "branch", "trunk")
+    github.installations[111]["repos"][0]["default_branch"] = "trunk"
+    second = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                  json={"type": "task", "title": "Later default"})).json()
+    later = await db_client.post(f"{base}/coding/issues/{second['key']}/runs", headers=ada.headers, json={})
+    assert later.status_code == 201 and later.json()["base_branch"] == "trunk", later.text
+    claude.edits = {"src/greeting.py": "def greeting():\n    return 'Hello'\n"}
+    agent_script.say("Checked the small change; test execution remains unverified.")
+    done = await _approve(db_client, base, waiting, ada.headers)
+    assert done["status"] == "pr_opened" and done["base_branch"] == "main", done
+    assert github.pulls[0]["base"] == "main"

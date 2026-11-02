@@ -414,7 +414,7 @@ class CodingWorker:
             if installation.suspended_at is not None:
                 raise RunFailed(f"The GitHub App is suspended on {installation.account_login}")
             ref = RepoRef(run.workspace_id, run.project_id, installation.installation_id, repo.full_name,
-                          repo.default_branch)
+                          run.base_branch)
             github_repo_id, agent, brief, model = repo.github_repo_id, run.agent, run.brief, run.model
             workspace_id, session_id = run.workspace_id, run.session_id
             sess = await _session_row(session, run)
@@ -472,7 +472,8 @@ class CodingWorker:
                           f"refs/heads/{session_branch or ref.default_branch}", env=source.env, timeout=FETCH_TIMEOUT)
         except CheckoutError as exc:
             if session_branch is None:
-                raise
+                raise RunFailed(f"Couldn't fetch the base branch {ref.default_branch}. Check GitHub App access and "
+                                "make sure the repository has an initial commit on that branch before starting Kai.") from exc
             raise RunFailed(f"The session's branch {session_branch} is gone (merged or deleted?): "
                             "start a new session from the issue") from exc
         await run_git(host, "checkout", "-q", "--detach", "FETCH_HEAD")

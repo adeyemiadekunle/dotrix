@@ -27,6 +27,7 @@ from .schemas import (
     RepoConnect,
     RepoCreate,
     RepoOption,
+    RepositoryReadiness,
 )
 from .service import ConnectorService
 
@@ -93,6 +94,12 @@ project_router = APIRouter(
 async def get_project_repository(access: ProjectViewer, session: SessionDep, app: GitHubAppDep) -> ConnectedRepoRead | None:
     """The repo the project's code lives in, connected through the GitHub App (null if none)."""
     return await ConnectorService(session, app).connected(access)
+
+
+@project_router.get("/readiness", responses=errors(403, 503))
+async def repository_readiness(access: ProjectViewer, session: SessionDep, app: GitHubAppDep) -> RepositoryReadiness:
+    """Check GitHub for a usable default branch before a new coding branch starts. Does not write or run a model."""
+    return await ConnectorService(session, app).readiness(access.project)
 
 
 @project_router.put("", responses=errors(403, 409, 422, 503))

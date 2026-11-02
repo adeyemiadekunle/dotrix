@@ -42,6 +42,7 @@ from dotrix_backend.modules.automations.events import record_event
 from dotrix_backend.modules.automations.models import Automation, AutomationEvent
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.code.service import CodeService
+from dotrix_backend.modules.connectors.github_app import GitHubApp
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.execution.service import (
     DispatchOperation,
@@ -227,10 +228,12 @@ class AgentRunner:
         unattended_limits: tuple[int, int] = (20, 200),
         secrets: Secrets | None = None,
         settings: Settings | None = None,
+        github: GitHubApp | None = None,
     ) -> None:
         self.session_factory = session_factory
         # The server's settings, for asking Kai to code from a conversation (None: Build can't).
         self.settings = settings
+        self.github = github
         # Where a coding run asked for from a conversation goes when it starts at once (set once the
         # app's jobs exist; None: it waits for an approval).
         self.jobs: Any = None
@@ -650,7 +653,7 @@ class AgentRunner:
                     effective=(policy.spec(PM_ROLE), policy, unattended),
                     mode_context=ModeContext(
                         self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
-                        approval=approval, jobs=self.jobs,
+                        approval=approval, jobs=self.jobs, github=self.github,
                     ),
                 )
                 reported = turn.usage or {}
@@ -709,7 +712,7 @@ class AgentRunner:
             read_tools, pm_write_tools, _ = build_board_tools(board_context)
             mode_tools = lead_tools(work_mode, ModeContext(
                 self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
-                approval=approval, jobs=self.jobs,
+                approval=approval, jobs=self.jobs, github=self.github,
             ))
             if read_only_run or child:
                 mode_tools = []

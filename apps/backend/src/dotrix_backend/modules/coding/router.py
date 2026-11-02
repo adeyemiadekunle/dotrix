@@ -61,9 +61,10 @@ CodingApprover = Annotated[ProjectAccess, Depends(require_project_permission(Per
 
 
 def get_coding_service(
-    request: Request, session: SessionDep, settings: SettingsDep, jobs: Annotated[Jobs, Depends(get_jobs)]
+    request: Request, session: SessionDep, settings: SettingsDep, jobs: Annotated[Jobs, Depends(get_jobs)],
+    github: Annotated[GitHubApp, Depends(get_github_app)],
 ) -> CodingService:
-    return CodingService(session, settings, jobs, secrets=request.app.state.secrets)
+    return CodingService(session, settings, jobs, secrets=request.app.state.secrets, github=github)
 
 
 Coding = Annotated[CodingService, Depends(get_coding_service)]

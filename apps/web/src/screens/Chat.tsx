@@ -1270,7 +1270,19 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   );
 }
 
-function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null; across: boolean; q: string; agent0: string | null }) {
+function NewChat({
+  projectKey,
+  across,
+  q,
+  agent0,
+  mode0,
+}: {
+  projectKey: string | null;
+  across: boolean;
+  q: string;
+  agent0: string | null;
+  mode0: string | null;
+}) {
   const ws = wsId();
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
@@ -1278,7 +1290,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
   const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
-  const [mode, setMode] = useState<WorkMode>("discuss");
+  const [mode, setMode] = useState<WorkMode>(mode0 === "plan" ? "plan" : "discuss");
   const [runtime, setRuntime] = useState<ChatRuntime>("deepagents");
   const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
@@ -2633,6 +2645,7 @@ function Conversations({ search }: { search: URLSearchParams }) {
               across={across}
               q={search.get("q") ?? ""}
               agent0={search.get("agent")}
+              mode0={search.get("mode")}
             />
           )}
         </section>
