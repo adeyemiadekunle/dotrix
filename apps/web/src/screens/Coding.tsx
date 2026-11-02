@@ -9,9 +9,14 @@ import { useCodingSessions } from "@/lib/coding";
 import { Ic } from "../core/icons";
 import { useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
-import { S, canSee, pColor, render, visibleProjects } from "../data/store";
+import { D, S, canSee, pColor, render, visibleProjects } from "../data/store";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
-import { NewSession, Pending, Session, SessionRow, openCoding } from "./Chat";
+import { Message, NewSession, Pending, Session, SessionRow, openCoding } from "./Chat";
+
+import { buildTree, parseDiff } from "../core/kaiWork";
+import { ChangeList, CommandList, FileTree } from "../components/TurnViews";
+import { PanelFrame, type CodingView } from "../components/SidePanel";
+import { demoCodingSessions } from "../core/demoSessions";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
@@ -19,12 +24,12 @@ const toList = (): [string, () => void] => ["Back to sessions", () => openCoding
 
 export function Coding() {
   const { search } = useRoute();
-  const ws = live.ws?.id;
+  const ws = isLive() ? live.ws?.id : undefined;
   const sessionId = search.get("session");
   // With nothing picked, the main column is the new-session form, as Chat's is a new chat.
   const issue = search.get("issue");
   const sessionsQ = useCodingSessions(ws);
-  const all = sessionsQ.data ?? [];
+  const all = isLive() ? (sessionsQ.data ?? []) : demoCodingSessions(D());
   const cs = all.find((c) => c.session_id === sessionId) ?? null;
   const q = S.ui.codingQ.toLowerCase();
   const found = all.filter((c) => !q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q));
@@ -131,7 +136,7 @@ export function Coding() {
         </aside>
         <section className="chat-main">
           {!isLive() && sessionId ? (
-            <Pending text="This session isn't available in the demo. Review the request in Inbox." inbox back={toList()} />
+            <DemoSession key={sessionId} id={sessionId} />
           ) : sessionId ? (
             cs ? (
               <Session key={cs.session_id} cs={cs} />
@@ -149,6 +154,122 @@ export function Coding() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function DemoSession({ id }: { id: string }) {
+  const session = D().coding.find((item) => item.id === id);
+  const [views, setViews] = useState<CodingView[]>([]);
+  const [opened, setOpened] = useState<string | null>(null);
+  const turn = session ? session.turns.length - 1 : 0;
+  if (!session) return <Pending text="This sample session is no longer available." back={toList()} />;
+  // Seeded diffs are excerpts; parse each file independently so a truncated hunk cannot consume the next file.
+  const files = Object.entries(session.diffs ?? {}).flatMap(([path, diff]) => {
+    const status = session.files?.find((file) => file.path === path)?.status;
+    const mode = status === "added" ? "new file mode 100644\n" : status === "deleted" ? "deleted file mode 100644\n" : "";
+    return parseDiff(`diff --git a/${path} b/${path}\n${mode}--- a/${path}\n+++ b/${path}\n${diff}`);
+  });
+  const entries = (session.tree ?? session.files?.map((item) => item.path) ?? []).map((path) => ({
+    path,
+    status: session.files?.find((item) => item.path === path)?.status ?? "unchanged",
+    size: 0,
+  }));
+  const tree = buildTree(entries);
+  const title = session.title ?? D().tasks.find((item) => item.id === session.task)?.title ?? "Coding session";
+  const active = session.turns[turn];
+  const labels: Record<CodingView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review" };
+  return (
+    <div style={{ display: "flex", height: "100%", minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+        <div className="conv-head">
+          <b className="trunc">{title}</b>
+          <span className="sp" />
+          <div className="cs-views" role="group" aria-label="Session panes">
+            {(Object.keys(labels) as CodingView[]).map((view) => (
+              <button
+                key={view}
+                className={`cs-view ${views.includes(view) ? "on" : ""}`}
+                aria-pressed={views.includes(view)}
+                onClick={() => setViews((current) => (current.includes(view) ? current.filter((item) => item !== view) : [...current, view]))}
+              >
+                {labels[view]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="chat-scroll">
+          <div className="chat-col">
+            <p className="muted">Sample session · Sign in to work with Kai.</p>
+            {session.turns.map((item, index) => (
+              <div key={index}>
+                <Message m={{ id: `${index}-user`, role: "user", by: session.by, at: item.at, text: item.ask }} projectId={session.project} />
+                {item.summary && (
+                  <Message
+                    m={{ id: `${index}-agent`, role: "agent", by: "coding-agent", at: item.at, text: item.summary, activity: item.events }}
+                    projectId={session.project}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {views.length > 0 && (
+        <aside className="side-panel panes" style={{ width: 460 }} aria-label="Session panes">
+          {views.map((view) => (
+            <PanelFrame
+              key={view}
+              label={labels[view]}
+              title={<b>{labels[view]}</b>}
+              widthKey="dotrix.demo.panes.width"
+              stacked
+              onClose={() => setViews((current) => current.filter((item) => item !== view))}
+              tools={<span className="badge">Recorded excerpts</span>}
+            >
+              {view === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
+              {view === "files" && (
+                <>
+                  <p className="faint">
+                    Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
+                  </p>
+                  {opened ? (
+                    <>
+                      <button className="btn btn-ghost" onClick={() => setOpened(null)}>
+                        Back to the files
+                      </button>
+                      <p className="mono">{opened}</p>
+                      {files.some((file) => file.path === opened) ? (
+                        <ChangeList files={files.filter((file) => file.path === opened)} turn={{ status: session.status, turn: turn + 1 }} loading={false} />
+                      ) : (
+                        <p className="muted">This sample includes the file path; its contents were not recorded.</p>
+                      )}
+                    </>
+                  ) : (
+                    <FileTree nodes={tree.children} onOpen={setOpened} />
+                  )}
+                </>
+              )}
+              {view === "terminal" && (
+                <>
+                  <p className="faint">Recorded sample commands</p>
+                  <CommandList
+                    working={false}
+                    entries={(session.terminal ?? []).map((command, index) => ({
+                      ref: String(index),
+                      command: command.cmd,
+                      output: command.out ?? null,
+                      failed: false,
+                      at: new Date(active?.at ?? session.at).toISOString(),
+                    }))}
+                  />
+                </>
+              )}
+              {view === "review" && <p className="muted">No saved Juno review for this sample session.</p>}
+            </PanelFrame>
+          ))}
+        </aside>
+      )}
     </div>
   );
 }

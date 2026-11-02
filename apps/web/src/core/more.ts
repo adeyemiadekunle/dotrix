@@ -30,6 +30,7 @@ import {
   fileDuplicated,
   fileRenamed,
   isLive,
+  live,
   liveCommentsOf,
   projectChanged,
   projectCreated,
@@ -233,6 +234,10 @@ export function createProject(f: { name: string; desc?: string; icon: string; co
 }
 export function newProject() {
   if (!allowed("projects:manage")) return;
+  if (isLive() && live.ws) {
+    location.assign(`/onboarding?${new URLSearchParams({ workspace: live.ws.id, mode: "project" })}`);
+    return;
+  }
   openModal({ type: "project", form: { name: "", desc: "", icon: "folder", color: "indigo", lead: D().me, due: dOff(30), tmpl: "blank" } });
 }
 export function editProject(id: string) {

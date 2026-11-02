@@ -7784,6 +7784,8 @@ export interface components {
              * Format: email
              */
             email: string;
+            /** Next */
+            next?: string | null;
         };
         /** Manifest */
         Manifest: {

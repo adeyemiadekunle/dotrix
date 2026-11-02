@@ -38,8 +38,15 @@ class PasswordResetRequest(BaseModel):
     email: Email
 
 
+def local_return_path(value: str) -> str:
+    if not value.startswith("/") or value.startswith("//") or "\\" in value or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("Use a local app path for the return destination")
+    return value
+
+
 class MagicLinkRequest(BaseModel):
     email: Email
+    next: Annotated[str, Field(max_length=2048), AfterValidator(local_return_path)] | None = None
 
 
 class EmailSignupFinish(BaseModel):

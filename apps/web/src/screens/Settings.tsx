@@ -1264,10 +1264,30 @@ function VersionedText({
 function LiveRules() {
   const r = useApi(rules);
   const sk = useApi(skills);
-  const [open, setOpen] = useState<string | null>(null);
   if (r.error || sk.error) return <div className="alert danger">{r.error || sk.error}</div>;
   if (!r.data || !sk.data) return <div className="faint">Loading…</div>;
-  const base = r.data.find((x) => x.handle === "base");
+  return (
+    <RulesEditor
+      base={r.data.find((item) => item.handle === "base")}
+      items={sk.data}
+      saveRule={(text, version) => ruleSaved("base", text, version).then((saved) => (r.reload(), saved))}
+      saveSkill={(name, text, version) => skillSaved(name, text, version).then((saved) => (sk.reload(), saved))}
+    />
+  );
+}
+
+function RulesEditor({
+  base,
+  items,
+  saveRule,
+  saveSkill,
+}: {
+  base: { content: string; version: number } | undefined;
+  items: { name: string; description: string; content: string; version: number }[];
+  saveRule: (text: string, version: number) => Promise<{ version: number }>;
+  saveSkill: (name: string, text: string, version: number) => Promise<{ version: number }>;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <>
       <div className="sblock" style={{ marginTop: 0 }}>
@@ -1275,19 +1295,14 @@ function LiveRules() {
         <p className="muted" style={{ fontSize: 13 }}>
           Layered under each project's own <span className="mono">agent-rules/</span>, so a project's rules win.
         </p>
-        <VersionedText
-          title="Rules"
-          content={base?.content ?? ""}
-          version={base?.version ?? 0}
-          save={(t, b) => ruleSaved("base", t, b).then((x) => (r.reload(), x))}
-        />
+        <VersionedText title="Rules" content={base?.content ?? ""} version={base?.version ?? 0} save={(t, b) => saveRule(t, b)} />
       </div>
       <div className="sblock">
         <h2>Skills</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           Procedures every project's agents can read when the work calls for one. A project's own skill of the same name wins.
         </p>
-        {sk.data.map((x) => (
+        {items.map((x) => (
           <div key={x.name}>
             <SRow
               t={
@@ -1304,18 +1319,12 @@ function LiveRules() {
             </SRow>
             {open === x.name && (
               <div style={{ padding: "4px 0 14px" }}>
-                <VersionedText
-                  title={x.name}
-                  content={x.content}
-                  version={x.version}
-                  rows={12}
-                  save={(t, b) => skillSaved(x.name, t, b).then((y) => (sk.reload(), y))}
-                />
+                <VersionedText title={x.name} content={x.content} version={x.version} rows={12} save={(t, b) => saveSkill(x.name, t, b)} />
               </div>
             )}
           </div>
         ))}
-        {!sk.data.length && <p className="faint">No workspace skills yet. Each project starts with its own in agent-rules/skills/.</p>}
+        {!items.length && <p className="faint">No workspace skills yet. Each project starts with its own in agent-rules/skills/.</p>}
         <div style={{ marginTop: 12 }}>
           <button
             className="btn btn-secondary btn-sm"
@@ -1331,8 +1340,8 @@ function LiveRules() {
                     .replace(/[^a-z0-9]+/g, "-")
                     .replace(/^-+|-+$/g, "");
                   if (!name) return;
-                  skillSaved(name, `Description: what this skill is for.\n\n1. The first step.\n2. The next.`, 0)
-                    .then(() => (sk.reload(), setOpen(name), toast(`Added ${name}: describe its steps`)))
+                  saveSkill(name, `Description: what this skill is for.\n\n1. The first step.\n2. The next.`, 0)
+                    .then(() => (setOpen(name), toast(`Added ${name}: describe its steps`)))
                     .catch((e: unknown) => toast(`The skill wasn't added: ${errText(e)}`, { kind: "err" }));
                 },
               })
@@ -1349,52 +1358,40 @@ function LiveRules() {
 
 const Rules = () => (isLive() ? <LiveRules /> : <SeedRules />);
 function SeedRules() {
-  const [base, setBase] = useState("- Write in plain English.\n- Link issues by key (WEB-12).\n- Never promise dates the board doesn't support.");
+  const [base, setBase] = useState({
+    content: "- Write in plain English.\n- Link issues by key (WEB-12).\n- Never promise dates the board doesn't support.",
+    version: 1,
+  });
+  const [items, setItems] = useState([
+    {
+      name: "write-an-adr",
+      description: "Write an architecture decision record",
+      content: "Description: Write an architecture decision record.\n\n1. Describe the decision and alternatives.\n2. Link the supporting evidence.",
+      version: 1,
+    },
+    ...[
+      ["triage-a-bug", "Triage a bug", "Reproduce the issue, identify its impact, and link evidence."],
+      ["break-down-a-feature", "Break down a feature", "Define acceptance criteria and split the work into ordered tasks."],
+      ["scope-a-failing-build", "Scope a failing build", "Read the failing check, identify affected files, and propose a focused fix."],
+    ].map(([name, description, steps]) => ({ name: name!, description: description!, content: `Description: ${description}.\n\n${steps}`, version: 1 })),
+  ]);
   return (
     <>
-      <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>Rules for every project</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          Layered under each project's own <span className="mono">agent-rules/</span>, so a project's rules win.
-        </p>
-        <textarea
-          className="textarea mono"
-          rows={7}
-          value={base}
-          onChange={(e) => setBase(e.target.value)}
-          style={{ fontSize: 12.5 }}
-          aria-label="Workspace rules"
-        />
-        <div style={{ marginTop: 10 }}>
-          <button className="btn btn-primary" onClick={() => toast("Rules saved (v4)")}>
-            Save rules
-          </button>
-        </div>
-      </div>
-      <div className="sblock">
-        <h2>Skills</h2>
-        {[
-          ["write-an-adr", "Write an architecture decision record"],
-          ["triage-a-bug", "Turn a bug report into an issue with steps and severity"],
-          ["break-down-a-feature", "Split a feature into an epic and stories"],
-          ["scope-a-failing-build", "Find what a failing build touches"],
-        ].map(([n, d]) => (
-          <SRow
-            key={n}
-            t={
-              <span className="row" style={{ gap: 6 }}>
-                <Ic n="scroll-text" s={14} />
-                <span className="mono">{n}</span>
-              </span>
-            }
-            d={d}
-          >
-            <button className="btn btn-secondary btn-sm" onClick={() => toast("Skill editing opens here when the API is wired", { kind: "info" })}>
-              Edit
-            </button>
-          </SRow>
-        ))}
-      </div>
+      <p className="muted">Sample settings. Changes last until you leave this page.</p>
+      <RulesEditor
+        base={base}
+        items={items}
+        saveRule={async (text, version) => {
+          const saved = { content: text, version: version + 1 };
+          setBase(saved);
+          return saved;
+        }}
+        saveSkill={async (name, text, version) => {
+          const saved = { name, description: text.split("\n")[0]!.replace(/^Description:\s*/, ""), content: text, version: version + 1 };
+          setItems((current) => [...current.filter((item) => item.name !== name), saved]);
+          return saved;
+        }}
+      />
     </>
   );
 }
@@ -1508,8 +1505,6 @@ function LiveGitHub() {
   const admin = ["owner", "admin"].includes(live.ws?.role ?? "");
   if (st.error) return <div className="alert danger">{st.error}</div>;
   if (!st.data) return <div className="faint">Loading…</div>;
-  const s = st.data;
-  const byProject = new Map((repos.data ?? []).filter((r) => r.project_key).map((r) => [r.project_key!, r]));
   const connect = (pid: string, key: string, id: string) => {
     const r = id ? ((repos.data ?? []).find((x) => `${x.installation_ref}:${x.github_repo_id}` === id) ?? null) : null;
     setBusy(key);
@@ -1523,6 +1518,46 @@ function LiveGitHub() {
       .catch((e: unknown) => toast(`The repository didn't change: ${errText(e)}`, { kind: "err", ms: 6000 }))
       .finally(() => setBusy(""));
   };
+  return (
+    <GitHubContent
+      status={st.data}
+      options={repos.data}
+      admin={admin}
+      busy={busy}
+      onConnect={connect}
+      onRemove={(id, login) => {
+        void installationRemoved(id)
+          .then(() => (st.reload(), repos.reload(), toast(`Removed ${login}`)))
+          .catch((error: unknown) => toast(`It wasn't removed: ${errText(error)}`, { kind: "err" }));
+      }}
+      onInstall={() => installGitHub(st.data!)}
+    />
+  );
+}
+
+type GitHubViewStatus = {
+  configured: boolean;
+  install_url: string | null;
+  installations: { id: string; account_login: string; account_type: string; suspended: boolean; created_at: string }[];
+};
+function GitHubContent({
+  status: s,
+  options,
+  admin,
+  busy,
+  onConnect,
+  onRemove,
+  onInstall,
+}: {
+  status: GitHubViewStatus;
+  options: Awaited<ReturnType<typeof githubRepos>> | undefined;
+  admin: boolean;
+  busy: string;
+  onConnect: (projectId: string, key: string, repo: string) => void;
+  onRemove: (id: string, login: string) => void;
+  onInstall: () => void;
+}) {
+  const byProject = new Map((options ?? []).filter((repo) => repo.project_key).map((repo) => [repo.project_key!, repo]));
   if (!s.configured)
     return (
       <div className="alert info">
@@ -1557,9 +1592,7 @@ function LiveGitHub() {
                     danger: true,
                     icon: "github",
                     run: () => {
-                      installationRemoved(i.id)
-                        .then(() => (st.reload(), repos.reload(), toast(`Removed ${i.account_login}`)))
-                        .catch((e: unknown) => toast(`It wasn't removed: ${errText(e)}`, { kind: "err" }));
+                      onRemove(i.id, i.account_login);
                     },
                   })
                 }
@@ -1574,7 +1607,7 @@ function LiveGitHub() {
         )}
         {admin && s.install_url && (
           <div style={{ marginTop: 12 }}>
-            <button className="btn btn-secondary" onClick={() => installGitHub(s)}>
+            <button className="btn btn-secondary" onClick={onInstall}>
               <Ic n="plus" s={14} />
               Add a GitHub account
             </button>
@@ -1600,12 +1633,12 @@ function LiveGitHub() {
                 className="select"
                 style={{ width: "auto", minWidth: 200 }}
                 value={cur ? `${cur.installation_ref}:${cur.github_repo_id}` : ""}
-                disabled={!admin || busy === p.key || !repos.data}
-                onChange={(e) => connect(p.id, p.key, e.target.value)}
+                disabled={!admin || busy === p.key || !options}
+                onChange={(e) => onConnect(p.id, p.key, e.target.value)}
                 aria-label={`Repository for ${p.name}`}
               >
                 <option value="">No repository</option>
-                {(repos.data ?? [])
+                {(options ?? [])
                   .filter((r) => !r.project_key || r.project_key === p.key)
                   .map((r) => (
                     <option key={`${r.installation_ref}:${r.github_repo_id}`} value={`${r.installation_ref}:${r.github_repo_id}`}>
@@ -1742,50 +1775,38 @@ function SandboxNetworkSettings() {
 
 function GitHub() {
   if (isLive()) return <LiveGitHub />;
-  const ps = visibleProjects();
+  const options = visibleProjects().flatMap((project, index) =>
+    project.repo
+      ? [
+          {
+            installation_ref: "sample-github",
+            github_repo_id: index + 1,
+            full_name: project.repo.replace(/^https:\/\/github.com\//, ""),
+            private: false,
+            default_branch: "main",
+            html_url: project.repo.startsWith("https://") ? project.repo : `https://github.com/${project.repo}`,
+            project_key: project.key,
+          },
+        ]
+      : [],
+  );
+  const sampleAction = () => toast("Sign in to connect your GitHub account. Sample connections are read-only.", { kind: "info" });
   return (
     <>
-      <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>Installations</h2>
-        <SRow
-          t={
-            <span className="row" style={{ gap: 8 }}>
-              <Ic n="github" s={15} />
-              dotrix
-            </span>
-          }
-          d="Organisation · 12 repositories · added by Tanjim Islam"
-        >
-          <button className="btn btn-secondary btn-sm" onClick={() => toast("Opens the app's settings on GitHub", { kind: "info" })}>
-            Configure
-          </button>
-        </SRow>
-        <div style={{ marginTop: 12 }}>
-          <button className="btn btn-secondary" onClick={() => toast("Installing the GitHub App opens GitHub", { kind: "info" })}>
-            <Ic n="plus" s={14} />
-            Add a GitHub account
-          </button>
-        </div>
-      </div>
-      <div className="sblock">
-        <h2>Connected repositories</h2>
-        {ps.map((p) => (
-          <SRow
-            key={p.id}
-            t={
-              <span className="row" style={{ gap: 8 }}>
-                <PIcon p={p} s={13} />
-                {p.name}
-              </span>
-            }
-            d={p.repo ? <span className="mono">{p.repo}</span> : "No repository"}
-          >
-            <button className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "overview" })}>
-              {p.repo ? "Change" : "Connect"}
-            </button>
-          </SRow>
-        ))}
-      </div>
+      <p className="muted">Sample GitHub connections. Your live workspace uses your own installations and repository permissions.</p>
+      <GitHubContent
+        status={{
+          configured: true,
+          install_url: "sample",
+          installations: [{ id: "sample-github", account_login: "dotrix", account_type: "Organization", suspended: false, created_at: "2026-01-01T00:00:00Z" }],
+        }}
+        options={options}
+        admin
+        busy=""
+        onConnect={sampleAction}
+        onRemove={sampleAction}
+        onInstall={sampleAction}
+      />
     </>
   );
 }

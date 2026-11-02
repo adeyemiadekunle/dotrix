@@ -203,13 +203,15 @@ export function Studio() {
       );
   }
   return (
-    <ModelGate>
+    <>
       <Shell>
-        <Screen />
+        <ModelGate>
+          <Screen />
+        </ModelGate>
       </Shell>
       <Drawer />
       <ModalLayer />
       <Palette />
-    </ModelGate>
+    </>
   );
 }

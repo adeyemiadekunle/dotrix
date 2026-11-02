@@ -135,5 +135,11 @@ export function useAuthProviders(): { github: boolean } {
 
 /** Only same-site paths are followed after sign-in, never another origin. */
 export function safeNext(next: string | null | undefined): string {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
+  return next &&
+    next.startsWith("/") &&
+    !next.startsWith("//") &&
+    !next.includes("\\") &&
+    !Array.from(next).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+    ? next
+    : "/";
 }

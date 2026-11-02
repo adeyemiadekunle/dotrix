@@ -7,9 +7,9 @@ import { myKeySaved, myModels } from "../data/account";
 import { isLive, live } from "../data/live";
 import { D } from "../data/store";
 
-/** A real workspace needs at least one authorized provider before the app can be used. */
+/** Model setup gates agent sessions while keeping project management and Settings available. */
 export function ModelGate({ children }: { children: ReactNode }) {
-  const { route, params } = useRoute();
+  const { route } = useRoute();
   const workspace = isLive() ? live.ws?.id : undefined;
   const qc = useQueryClient();
   const access = useQuery({
@@ -23,9 +23,21 @@ export function ModelGate({ children }: { children: ReactNode }) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // Key settings remain reachable so members can fix policy/configuration without being trapped.
-  const keySettings = route === "settings" && (params.sec === "my-models" || params.sec === "models");
-  if (!workspace || access.data?.ready || keySettings) return children;
+  if (!workspace || access.data?.ready || route === "settings") return children;
+  if (route !== "chat" && route !== "codes")
+    return (
+      <>
+        {access.data?.ready === false && (
+          <div className="alert info" role="status" style={{ margin: 16 }}>
+            <span>Connect your personal model to use Chat and Codes. Your projects remain available.</span>
+            <button className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+              Connect a model
+            </button>
+          </div>
+        )}
+        {children}
+      </>
+    );
   const d = access.data;
   const allowed = d?.can_store_keys;
   const connect = async (e: React.FormEvent) => {
@@ -45,7 +57,7 @@ export function ModelGate({ children }: { children: ReactNode }) {
     }
   };
   return (
-    <main className="fullstate" style={{ minHeight: "100svh" }}>
+    <section aria-label="Model setup" className="fullstate" style={{ minHeight: "100%" }}>
       <div className="box" style={{ width: "min(100% - 32px, 480px)", textAlign: "left" }}>
         <h1>{d ? "Connect a model to continue" : "Checking your models…"}</h1>
         <p className="muted">
@@ -120,6 +132,6 @@ export function ModelGate({ children }: { children: ReactNode }) {
           </button>
         </div>
       </div>
-    </main>
+    </section>
   );
 }

@@ -4,6 +4,12 @@ Guidance for Claude Code working in this repo. The product is **dotrix** (former
 Engine notes: [docs/engine.md](docs/engine.md). Agents v2 spec: [docs/agents-v2.md](docs/agents-v2.md).
 Earlier proposals: [strategy and roadmap](docs/dotrix-product-strategy-and-roadmap.md), [durable agent harness](docs/dotrix-durable-agent-harness.md), [hybrid execution](docs/dotrix-hybrid-execution-architecture.md), [Repository Knowledge skill](docs/dotrix-repository-knowledge-skill.md). The Chat/Coding direction below is the current guidance where those proposals differ.
 
+## Accepted product direction (2026-11-02)
+
+Dotrix serves solo developers and organisation teams from a single account with personal/organisation workspaces. Its three starting intentions are Explore an idea, Start a new codebase, and Connect an existing repository. The accepted, ordered checklist and acceptance criteria are in [Product direction todo](docs/product-direction-todo.md). Keep production requirements first; J01 now unifies first/subsequent New project setup and the invited-member return path. J02, the three starting intentions, is the next product slice.
+
+An early idea is a lightweight draft project, without mandatory GitHub, dates or a finished specification. Keep project management available without model keys. Shared knowledge and tasks come from explicit, permission-checked publication of selected chat outcomes, preserving private conversations. Reuse the fixed team, current runtimes, BYOK and Nova–Kai handoff; people keep the merge decision. A large separate Ideas system and enterprise expansion follow the core journeys. See the checklist for existing capabilities, incomplete repository-creation paths, deferred scope and release evidence; do not treat accepted todos or branch implementation as deployed behaviour.
+
 ## Built-in team and Nova orchestration
 
 The team is fixed: Nova advises and coordinates Lyra, Orion, Vega, Juno, and Echo; Kai executes coding turns. Interactive conversations keep Nova as the speaker, with mentions treated as requests to involve a specialist. The four work modes and approval controls remain in force. Built-in identity and core instructions live in the engine; workspace and project additional guidance and personal preferences are layered, versioned, and audited. Custom identities are retired, with historical attribution retained.
@@ -266,7 +272,7 @@ packages/ui/src/                 consumed as source (no build step), by path: `@
   - A new page is a `Route` in `core/nav.ts` (with its path in `href` / `routeOf`), a screen in `screens/`, a case in `shell/Studio.tsx`, and a title in `src/router.tsx`.
 - **UI:**
   - The design lives in `packages/ui/src/styles/design.css`: warm paper neutrals and one accent (indigo, or the one picked in Settings → Appearance, `data-accent` on `<html>`). Build with its classes and CSS variables (`row`, `grow`, `muted`, `btn`, `--acc`, `--bg`…) and the helpers in `ui/helpers.tsx`, never raw colours, so light and dark mode both work. Dotrix's own surfaces go in `dotrix.css` on the same tokens.
-  - Icons are Phosphor (https://phosphoricons.com, regular weight): `Ic` (`core/icons.tsx`), which bundles only the names `src/` uses (`icons-plugin.ts`; a Phosphor name, or one of dotrix's own names in its `ALIASES`, kept because projects store theirs in the database), and `@phosphor-icons/react` (`…Icon` components) in `packages/ui` and the sign-in pages. Page titles use Geist Serif (`--serif`, regular weight only: `apps/web/src/fonts/`, vendored from the `geist` package under the OFL); everything else is Geist Sans and Mono. Toasts are `toast()` (`ui/toast.tsx`). Agents' faces are `ui/face.tsx`, and what each agent is doing comes from `core/presence.ts`.
+  - Icons are Phosphor (https://phosphoricons.com, regular weight): `Ic` (`core/icons.tsx`), which bundles only the names `src/` uses (`icons-plugin.ts`; a Phosphor name, or one of dotrix's own names in its `ALIASES`, kept because projects store theirs in the database), and `@phosphor-icons/react` (`…Icon` components) in `packages/ui` and the sign-in pages. Typography uses Geist Sans and Geist Mono, including page titles. Restore the pre-#202 sans-serif heading weights and spacing; do not reintroduce Geist Serif titles. Toasts are `toast()` (`ui/toast.tsx`). Agents' faces are `ui/face.tsx`, and what each agent is doing comes from `core/presence.ts`.
   - Write copy in sentence case.
   - Show people only what they can do. Hide a control they can't use (`allowed(...)` / `canInvite()` in `src/core/can.ts`, from the permissions the API reports for them) rather than letting it fail; the API is what enforces access.
 - **Theme:** Settings → Appearance (System / Light / Dark, the accent, density, motion) is kept in the store's preferences in this browser and applied before the first paint (`applyPrefs` in `core/theme.ts`).
@@ -339,6 +345,7 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [ ] Search: pass the instructing person's key to embedding jobs; indexing without an explicit personal key uses keyword search
 
 ### P1: finish the coding loop and the chat controls
+- [ ] Product journeys: deliver J01–J05 of the [accepted product direction todo](docs/product-direction-todo.md) in order: shared project setup, three starting intentions, new repository to first PR, existing-repository baseline, and explicit publication of chat outcomes. J01 is implemented; J02 is next. Reuse the existing runtime and permission boundaries.
 - [ ] Codes: live text instead of polling, usage per session, subagent events nested (C)
 - [ ] PRs on the board: checks shown on the issue (Codes shows them, 2026-10-31); a PR check rejecting `.dotrix/` for PRs from elsewhere; the Reviewer's findings in `reviews/` (FR-22; on the PR, and as GitHub issues on request, since 2026-10-31)
 - [ ] fx chat (a choice, no switch) before it becomes a default: changes and approvals on real models, distributed failure testing, Google (Gemini's OpenAI-compatible stream ends a tool call with `finish_reason: "stop"` and no `index`, which libfx 0.0.16 treats as an error, so it needs a compatibility layer; checked 2026-10-30 until the key's prepaid credits ran out); measured quality and cost on real conversations before choosing model tiers
@@ -349,6 +356,7 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [ ] Delete `pages/(app)`, `components/` and `lib/` pieces only the old app uses
 
 ### P2: broaden
+- [ ] Product journeys: J06/J07 in the [product direction todo](docs/product-direction-todo.md), GitHub Issues backlog import with explicit ownership/retry rules, then consistent project readiness and next actions.
 - [ ] D. Running apps and MCP: the dotrix MCP server (board, documents, graph) over HTTP outside the sandbox with a per-turn credential the sandbox never holds; Playwright MCP inside it; the supervisor starts dev servers; preview through the platform; a live browser view in Codes; registries and the preview port in the egress allowlist and OpenShell's policy; OpenCode's and fx's browser
 - [ ] E. Local-file projects (a bare repo per project at setup) and the Codex adapter with resume
 - [ ] Local coding: the Windows installer and CLI built in CI (2026-10-31) and updating itself (2026-11-01); signing and macOS next, run on a real Windows machine; a folder without a remote (branch and diff, no PR); local turns in Docker Sandboxes checked on a real `sbx` (built 2026-11-01 against a fake); fx for local turns
@@ -362,7 +370,7 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [ ] A workspace-wide default model (decision), beside each project's, each agent's, and each person's
 
 ### P3: later
-- [ ] Space (agents v2 step 6): workspace knowledge above projects with space instructions for the Documentation agent; Ideas and "Start a project from this idea"; promote an answer or conversation to a document, decision, or issues; comments on documents with `@agent`
+- [ ] Space (agents v2 step 6): workspace knowledge above projects with space instructions for the Documentation agent; a standalone Ideas system and "Start a project from this idea" after the lightweight draft-project journey (J02); comments on documents with `@agent`. Explicit publication of selected outcomes into project knowledge/tasks is promoted to J05, above
 - [ ] Results: "Propose change" and "Fix now" per item; a severity rubric for findings; a person's edit of an agent's draft as a lesson; lessons per workspace
 - [ ] Graph: document sections, research findings, people, agents, commits, PRs, and files as nodes; triage finding duplicates through the graph
 - [ ] Updating a repo's `AGENTS.md` / `CLAUDE.md` as a coding session
@@ -382,3 +390,15 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [x] Personal BYOK for every model run, with no workspace, server, or dotrix fallback; BYOK limits (2026-10-26): no platform token budgets, two cloud turns per worker
 - [x] Model setup and coding preferences (2026-10-25): each person's own provider key; the coding engine in Account → Your models; follow-ups keep their engine and model; Dev Compose builds the coding image and gives only the worker the restricted Docker proxy
 - [x] (you) The GitHub App registered with code permissions; Sendly with a verified domain
+
+
+## Onboarding and demo/live parity
+
+Default new-account signup opens `/onboarding` (explicit invitation/return destinations are preserved). Setup uses the existing personal workspace, with explicit team-workspace creation available, and requires a server-saved first project before completion. The four steps are Project, GitHub, Model, and Start working. GitHub App installation and repository selection are separate from GitHub sign-in; documents-only projects and deferred personal model setup remain supported. Resume across installation redirects with confirmed workspace/project IDs in the URL. Provider keys stay in memory until encrypted server storage; never retain them in URLs or browser storage. Readiness means an available connected model, not a successful paid inference. Invitations remain available in workspace Settings.
+
+Missing model keys keep the workspace shell, projects and Settings available; Chat and Codes present model setup inside the shell. Dotrix remains personal BYOK, with no platform LLM budget.
+
+Seeded and live views use the same session rows, message renderer, coding diff/file-tree/terminal/frame components and Rules/GitHub Settings presentation. Seed data is explicitly sample history, never a real execution or connection; absent file contents and reviews are reported as absent. Live actions retain backend authorization. Geist Sans and Geist Mono supply the shared typography, including sans-serif page headings. See [demo/live parity](docs/demo-live-parity.md) for verification and intentional differences.
+
+
+J01 implementation: live New project actions use the same `/onboarding` flow as signup, pinning the current workspace with `mode=project`. The form validates and waits for confirmed project saves, includes optional description/access, refreshes after uncertain team/project saves and offers explicit reuse rather than a duplicate request. Confirmed IDs/mode survive refresh, GitHub installation and sign-in; email-link requests carry a validated local `next` destination through their job and emailed link. New invitees return to acceptance before entering the joined workspace or an authorised project path there, without creating a personal project. Members reaching setup for a team they cannot manage are offered the workspace instead. GitHub/model setup remain deferrable; no new model-key storage or approval rules are introduced. The shared New project path replaces the live optimistic creation modal; project editing and sample actions retain their existing controls.

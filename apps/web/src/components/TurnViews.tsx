@@ -45,7 +45,7 @@ export function ChangesView({
       </button>
     </p>
   ) : (
-    <Changes files={files} loading={loading} turn={run} notes={notes} onNote={onNote} />
+    <ChangeList files={files} loading={loading} turn={run} notes={notes} onNote={onNote} />
   );
 }
 
@@ -96,12 +96,12 @@ export function TerminalView({ scope, run, enabled = true }: { scope: Scope | un
         </button>
       </p>
     );
-  return <Terminal entries={commands} working={run.status === "running"} />;
+  return <CommandList entries={commands} working={run.status === "running"} />;
 }
 
 /* ---------- Changes: each file's diff ---------- */
 
-function Changes({
+export function ChangeList({
   files,
   loading,
   turn,
@@ -110,7 +110,7 @@ function Changes({
 }: {
   files: DiffFile[];
   loading: boolean;
-  turn: CodingRun;
+  turn: Pick<CodingRun, "status" | "turn">;
   notes?: Map<string, DiffNote[]>;
   onNote?: () => void;
 }) {
@@ -288,12 +288,18 @@ function Files({
         <span className="sp" />
         <span className="mono">{run.base_sha.slice(0, 7)}</span>
       </label>
-      <div className="kp-tree mono" role="tree" aria-label="Files">
-        {root.children.map((n) => (
-          <Node key={n.path} node={n} depth={0} onOpen={setOpen} expanded={changedOnly} />
-        ))}
-      </div>
+      <FileTree nodes={root.children} onOpen={setOpen} expanded={changedOnly} />
       {tree.data?.truncated && <p className="faint kp-note">Only the first 20,000 files are listed.</p>}
+    </div>
+  );
+}
+
+export function FileTree({ nodes, onOpen, expanded = false }: { nodes: TreeNode[]; onOpen: (path: string) => void; expanded?: boolean }) {
+  return (
+    <div className="kp-tree mono" role="tree" aria-label="Files">
+      {nodes.map((node) => (
+        <Node key={node.path} node={node} depth={0} onOpen={onOpen} expanded={expanded} />
+      ))}
     </div>
   );
 }
@@ -411,7 +417,7 @@ function FileView({
 
 /* ---------- Terminal: each command with its output ---------- */
 
-function Terminal({ entries, working }: { entries: ReturnType<typeof terminal>; working: boolean }) {
+export function CommandList({ entries, working }: { entries: ReturnType<typeof terminal>; working: boolean }) {
   if (!entries.length) return <p className="muted">{working ? "No commands run yet." : "It ran no commands."}</p>;
   return (
     <div className="kp-term mono" aria-label="Commands">

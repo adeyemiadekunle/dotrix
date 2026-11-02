@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- New-account setup saves a first project, offers GitHub repository access and personal model setup, and resumes after GitHub installation.
+
 - Self-hosting: the admin console is part of the production deploy (`admin`, on its own domain such as admin.dotrix.cc),
   and `pnpm docker:up` also runs the public site (http://localhost:3200) beside the web app and the admin console.
 - Local coding in a Docker sandbox: with Docker Sandboxes (`sbx`) installed, each turn on your computer runs in a microVM
@@ -47,6 +49,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- New project uses the same resumable setup as signup, with confirmed saves, optional description/access and recovery after a lost team or project save response. Invitees join their workspace/project first; email links preserve local return destinations.
+
+- Document the accepted solo/team project journeys and ordered delivery checklist: idea exploration, new codebases, existing GitHub projects, shared outcomes, backlog import and readiness.
+
 - The READMEs are up to date: the fixed team and personal model keys, Codes and Juno's reviews, the desktop app,
   `dotrix codes` and local turns in Docker Sandboxes, the admin console and site, and how to deploy.
 - New chats and Codes sessions look like Claude Code's: a card in the middle to choose the project (or where Kai codes:
@@ -68,6 +74,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   conversation's title or first message, and audit events come without their details.
 
 ### Fixed
+
+- Seeded Chat/Codes and Rules/GitHub Settings share live presentation; restore Geist Sans/Mono headings and keep workspace navigation available before model setup.
 
 - A local turn's worktree is removed once it has been untouched for 3 days, so they no longer pile up on your
   computer; an open file from a local turn stops refreshing once the turn is done.

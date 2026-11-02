@@ -49,7 +49,7 @@ test("project agent models can be saved and reset", async ({ page }) => {
   await expect(dialog.getByLabel("Specialist model")).toHaveValue("");
 });
 
-test("a missing provider blocks the workspace until an encrypted personal key is connected", async ({ page }) => {
+test("a missing provider preserves workspace navigation and requires a key for agents", async ({ page }) => {
   let ready = false;
   await page.route("**/model-access", (route) =>
     route.fulfill({
@@ -62,6 +62,8 @@ test("a missing provider blocks the workspace until an encrypted personal key is
     }),
   );
   await signUp(page);
+  await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect and continue" })).toBeDisabled();
   await page.getByLabel("Model provider").selectOption("xai");
@@ -91,6 +93,7 @@ test("every user connects a personal key without shared-key controls", async ({ 
     }),
   );
   await signUp(page);
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
   await expect(page.getByLabel("Model API key")).toBeVisible();
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await expect(page.getByText("Connect a workspace key for everyone")).toHaveCount(0);
@@ -119,6 +122,8 @@ test("saving a personal key in Settings refreshes the mounted setup gate", async
     await route.fulfill({ response });
   });
   await signUp(page);
+  await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toBeVisible();
   await page.getByRole("button", { name: "Model settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/my-models$/);

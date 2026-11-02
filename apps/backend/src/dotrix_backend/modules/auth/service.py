@@ -166,26 +166,26 @@ class AuthService:
 
     # -- magic-link sign-in ------------------------------------------------------
 
-    async def request_magic_link(self, email: str) -> None:
+    async def request_magic_link(self, email: str, *, next_path: str | None = None) -> None:
         """Always succeeds from the caller's view, so it can't be used to find accounts: the
         lookup and the email happen in a background job (`send_magic_link`)."""
         assert self.jobs is not None
-        await self.jobs.enqueue("send_magic_link", email=email)
+        await self.jobs.enqueue("send_magic_link", email=email, **({"next_path": next_path} if next_path is not None else {}))
 
-    async def send_magic_link(self, email: str) -> None:
+    async def send_magic_link(self, email: str, *, next_path: str | None = None) -> None:
         """A sign-in link for an account; for an address without one, a link to create it."""
         ttl = self.settings.magic_link_ttl_minutes
         user = await self.users.get_by_email(email)
         if user is None:
             token = await self._new_signup_token(email)
             await self.session.commit()
-            await self.email.send(email_templates.finish_signup(email, self._link("/signup/finish", token), ttl))
+            await self.email.send(email_templates.finish_signup(email, self._link("/signup/finish", token, next_path=next_path), ttl))
             return
         if not user.is_active:
             return
         token = await self._new_action_token(user, ActionTokenPurpose.MAGIC_LINK)
         await self.session.commit()
-        await self.email.send(email_templates.magic_link(user.email, self._link("/magic-link", token), ttl))
+        await self.email.send(email_templates.magic_link(user.email, self._link("/magic-link", token, next_path=next_path), ttl))
 
     async def email_signup_address(self, token: str) -> str:
         """The address a sign-up link is for (without using the link up)."""
@@ -384,5 +384,8 @@ class AuthService:
     async def _send_verification(self, user: User, token: str) -> None:
         await self.email.send(email_templates.verify_email(user.email, self._link("/verify-email", token)))
 
-    def _link(self, path: str, token: str) -> str:
-        return f"{self.settings.app_url.rstrip('/')}{path}?{urlencode({'token': token})}"
+    def _link(self, path: str, token: str, *, next_path: str | None = None) -> str:
+        params = {"token": token}
+        if next_path is not None:
+            params["next"] = next_path
+        return f"{self.settings.app_url.rstrip('/')}{path}?{urlencode(params)}"

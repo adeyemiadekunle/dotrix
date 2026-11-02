@@ -5,13 +5,13 @@ import { useState } from "react";
 
 import { AuthCard } from "@/components/auth-card";
 import { FormError } from "@/components/form";
-import { authPost, errorMessage } from "@/lib/api";
+import { authPost, errorMessage, safeNext } from "@/lib/api";
 
 /**
  * Sign in from an emailed link. It takes a click rather than happening when the page opens:
  * mail scanners open links in emails, and would otherwise use the one-time link up.
  */
-export function MagicLinkSignIn({ token }: { token: string }) {
+export function MagicLinkSignIn({ token, next }: { token: string; next?: string | null }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,7 +21,7 @@ export function MagicLinkSignIn({ token }: { token: string }) {
     try {
       await authPost("magic-link", { token });
       // A full load, so the server sees the new session cookie.
-      window.location.assign("/");
+      window.location.assign(next ? safeNext(next) : "/");
     } catch (e) {
       setError(errorMessage(e));
       setPending(false);
@@ -30,13 +30,20 @@ export function MagicLinkSignIn({ token }: { token: string }) {
 
   if (!token) {
     return (
-      <AuthCard title="This link is incomplete" footer={<Link href="/login">Back to sign in</Link>}>
+      <AuthCard
+        title="This link is incomplete"
+        footer={<Link href={next ? `/login?next=${encodeURIComponent(safeNext(next))}` : "/login"}>Back to sign in</Link>}
+      >
         <p className="text-muted-foreground text-sm">Open the link from your email again, or ask for a new one.</p>
       </AuthCard>
     );
   }
   return (
-    <AuthCard title="Sign in to dotrix" description="You opened a sign-in link from your email." footer={<Link href="/login">Sign in another way</Link>}>
+    <AuthCard
+      title="Sign in to dotrix"
+      description="You opened a sign-in link from your email."
+      footer={<Link href={next ? `/login?next=${encodeURIComponent(safeNext(next))}` : "/login"}>Sign in another way</Link>}
+    >
       <div className="grid gap-4">
         <FormError message={error ? `${error.replace(/\.$/, "")}. Ask for a new link from the sign-in page.` : null} />
         <Button className="w-full" disabled={pending} onClick={() => void signIn()}>

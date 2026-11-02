@@ -125,7 +125,7 @@ async def request_magic_link(data: MagicLinkRequest, auth: Auth, throttle: Throt
     address without one, a link to create it (`/v1/auth/magic-link/signup`). Always 202 (the
     lookup happens in the background). Rate-limited per IP and per email."""
     await throttle(MAGIC_LINK, data.email)
-    await auth.request_magic_link(data.email)
+    await auth.request_magic_link(data.email, next_path=data.next)
 
 
 @router.post("/magic-link/verify", responses=errors(400, 422))
