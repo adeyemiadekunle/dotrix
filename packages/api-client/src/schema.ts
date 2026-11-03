@@ -3884,6 +3884,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Repository Baseline
+         * @description Current evidence and the latest shared human review; confirmation never implies full understanding.
+         */
+        get: operations["repository_baseline"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/baseline/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Repository Baseline
+         * @description Review an exact evidence digest. Stale submissions fail; retry the same request ID safely. No model runs.
+         */
+        post: operations["review_repository_baseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding": {
         parameters: {
             query?: never;
@@ -5735,6 +5775,77 @@ export interface components {
             max_runs_per_day?: number | null;
             /** Unattended */
             unattended?: boolean | null;
+        };
+        /** BaselineHumanContextRead */
+        BaselineHumanContextRead: {
+            /**
+             * Revision
+             * Format: uuid
+             */
+            revision: string;
+            /** Notes */
+            notes: string;
+            /** Updated By Id */
+            updated_by_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** BaselineReviewCreate */
+        BaselineReviewCreate: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Digest */
+            digest: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "confirmed" | "corrections";
+            /**
+             * Notes
+             * @description Revised shared human context; blank retains the last explicitly saved context
+             * @default
+             */
+            notes: string;
+            /**
+             * Acknowledge Limits
+             * @default false
+             */
+            acknowledge_limits: boolean;
+        };
+        /** BaselineReviewRead */
+        BaselineReviewRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Digest */
+            digest: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "confirmed" | "corrections";
+            /** Notes */
+            notes: string;
+            /** Evidence */
+            evidence: {
+                [key: string]: unknown;
+            };
+            /** Reviewed By Id */
+            reviewed_by_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** Board */
         Board: {
@@ -8909,6 +9020,27 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** RepoBaselineRead */
+        RepoBaselineRead: {
+            /** Digest */
+            digest: string;
+            /** Can Confirm */
+            can_confirm: boolean;
+            /**
+             * Current
+             * @description A person confirmed this exact evidence revision, with its stated limits
+             */
+            current: boolean;
+            /** Blockers */
+            blockers: string[];
+            /** Evidence */
+            evidence: {
+                [key: string]: unknown;
+            };
+            review: components["schemas"]["BaselineReviewRead"] | null;
+            /** @description Current shared context, independent of blank attestation notes */
+            human_context?: components["schemas"]["BaselineHumanContextRead"] | null;
+        };
         /** RepoConnect */
         RepoConnect: {
             /**
@@ -8989,6 +9121,11 @@ export interface components {
              * @description Domains to start with (the coverage's `domain`s); none: the agent picks
              */
             domains?: string[];
+            /**
+             * Pages
+             * @description Stale wiki pages to refresh; empty selects all stale pages
+             */
+            pages?: string[];
             /**
              * Refresh
              * @description Update the stale pages first (`GET .../pages`)
@@ -22811,6 +22948,128 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    repository_baseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBaselineRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    review_repository_baseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BaselineReviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoBaselineRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

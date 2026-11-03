@@ -194,6 +194,7 @@ class AgentService:
         mode: str | None = None,
         automation_id: uuid.UUID | None = None,
         queued_input: ChatInput | None = None,
+        repository_write_paths: list[str] | None = None,
     ) -> AgentRunRead:
         """Start a run. A new thread gets a title: `title` if given (built-in requests), else one
         made from the message (`titles.py`; no model call), and its model, fixed from then on.
@@ -286,6 +287,7 @@ class AgentService:
             updated_at=now,
             # Nova's specialists are child runs under the platform's scheduler (delegation.py), on either runtime.
             orchestration=interactive,
+            repository_write_paths=repository_write_paths if mode == "docs.repository" else None,
         )
         self.session.add(run)
         if interactive and data.thread_id is not None:
@@ -380,6 +382,7 @@ class AgentService:
                         f"paths changed): {', '.join(stale)}.")
         return await self.create_run(
             access, RunCreate(message=message, agent=DOCS), title="Explain the repository", mode="docs.repository",
+            repository_write_paths=stale if stale else None,
         )
 
     async def briefing(self, access: ProjectAccess) -> AgentRunRead:

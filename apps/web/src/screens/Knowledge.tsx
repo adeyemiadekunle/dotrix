@@ -123,7 +123,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
   );
   if (view === "files") return <Files pid={p.id} lead={seg} />;
   if (view === "lessons" && manage) return <Lessons p={p} lead={seg} />;
-  if (view === "coverage" && isLive()) return <Coverage pid={p.id} lead={seg} />;
+  if (view === "coverage" && isLive()) return <Coverage pid={p.id} lead={seg} openPage={(path) => openDocument(p, path)} />;
   return (
     <>
       <div className="toolbar">{seg}</div>

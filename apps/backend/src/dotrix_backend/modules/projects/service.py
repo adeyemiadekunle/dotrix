@@ -29,7 +29,7 @@ from dotrix_backend.modules.issues.models import (
 )
 from dotrix_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from dotrix_backend.modules.knowledge.service import KnowledgeService
-from dotrix_backend.modules.repo_knowledge.models import RepoPath, RepoSnapshot
+from dotrix_backend.modules.repo_knowledge.models import RepoBaselineReview, RepoPath, RepoSnapshot
 from dotrix_backend.modules.research.models import ResearchSource
 from dotrix_backend.modules.search.models import KnowledgeChunk
 from dotrix_backend.modules.workspaces.models import Membership, Role
@@ -55,7 +55,7 @@ class RepoTaken(Conflict):
 # too: it belongs to the workspace, not the project.
 _PROJECT_ROWS = (
     KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, AgentRunOutput, ResearchSource, Document,
-    KnowledgeChunk, ProjectMember, IssueAttachment, RepoSnapshot,
+    KnowledgeChunk, ProjectMember, IssueAttachment, RepoSnapshot, RepoBaselineReview,
 )
 
 

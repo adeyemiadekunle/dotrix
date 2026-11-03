@@ -696,6 +696,8 @@ class AgentRunner:
                         approved_by_id=approved_by_id,
                         policy=policy,
                         unattended=unattended,
+                        write_prefix="docs/wiki/" if mode == "docs.repository" else None,
+                        write_paths=run.repository_write_paths if mode == "docs.repository" else None,
                     )
                 },
             )

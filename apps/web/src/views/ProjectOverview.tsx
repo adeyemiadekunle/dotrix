@@ -67,6 +67,20 @@ export function ProjectOverview({ p }: { p: Project }) {
               {p.desc}
             </div>
           </section>
+          {isLive() && p.repo && (
+            <section className="panel" aria-label="Repository baseline">
+              <div className="panel-b">
+                <h2>Understand this repository</h2>
+                <p>
+                  Inventory the code, review cited explanations and add goals that code cannot establish. Confirm the baseline’s limits before planning
+                  substantial changes.
+                </p>
+                <button className="btn btn-secondary" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=coverage" })}>
+                  Review repository baseline
+                </button>
+              </div>
+            </section>
+          )}
           <section className="panel">
             <div className="panel-h">
               <h2>Progress</h2>

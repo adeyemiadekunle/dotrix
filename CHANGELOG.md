@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Existing repositories have a guided baseline review: inspect coverage and citations, add shared goals or corrections, and confirm an exact evidence revision before opening a planning draft. Changed evidence makes the review out of date; retries retain drafts and avoid duplicate review records.
+
 - New-project setup checks GitHub for a committed default branch and offers an editable first-implementation plan. Kai refuses new sessions on empty or inaccessible repositories and keeps the validated base branch while awaiting approval.
 
 - Shared project setup can create an organisation repository after owner/name/visibility confirmation, recover uncertain responses through repository selection, and guide personal accounts through creation on GitHub. Repository creation rechecks installation ownership and suspension.
@@ -80,6 +82,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   conversation's title or first message, and audit events come without their details.
 
 ### Fixed
+
+- Baseline confirmations include the shared human-context revision. An intervening correction rejects stale confirmations, and confirming without new notes preserves the context instead of erasing it from Nova’s summary.
+
+- Repository discovery writes only wiki pages; selected-page refreshes retain their allowed paths across approvals and recovery, preserving human requirements, decisions and unselected pages.
 
 - Coding outcomes return to Nova on the original chat runtime, so an fx conversation stays on fx after Kai and Juno finish.
 
