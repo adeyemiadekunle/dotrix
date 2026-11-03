@@ -67,6 +67,7 @@ class RepoBaselineReview(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     request_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    request_digest: Mapped[str | None] = mapped_column(String(64))  # legacy/rolling-upgrade rows may omit it
     digest: Mapped[str] = mapped_column(String(64))
     decision: Mapped[str] = mapped_column(String(24))
     evidence: Mapped[dict] = mapped_column(JSONB)

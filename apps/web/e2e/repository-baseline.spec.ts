@@ -45,6 +45,7 @@ test("baseline reviews retain drafts, retry safely and require a fresh acknowled
   );
   let digest = "a".repeat(64);
   let review: null | { id: string; digest: string; decision: string; notes: string; evidence: object; reviewed_by_id: null; created_at: string } = null;
+  let humanContext: null | { revision: string; notes: string; updated_by_id: null; updated_at: string } = null;
   const state = () => ({
     digest,
     can_confirm: true,
@@ -52,23 +53,29 @@ test("baseline reviews retain drafts, retry safely and require a fresh acknowled
     blockers: [],
     evidence: { coverage: { snapshot } },
     review,
+    human_context: humanContext,
   });
   await page.route("**/repository/knowledge/baseline", (route) => route.fulfill({ json: state() }));
   const requests: { request_id: string; digest: string; decision: string; notes: string }[] = [];
   await page.route("**/repository/knowledge/baseline/reviews", (route) => {
     const body = route.request().postDataJSON();
     requests.push(body);
+    // An unconfirmed request can be retried with the same ID before it has saved anything.
+    if (requests.length === 1) return route.abort("failed");
+    if (body.notes.trim()) {
+      digest = String.fromCharCode(97 + requests.length).repeat(64);
+      humanContext = { revision: `context-${requests.length}`, notes: body.notes, updated_by_id: null, updated_at: snapshot.created_at };
+    }
     review = {
-      id: "review-1",
-      digest: body.digest,
+      id: `review-${requests.length}`,
+      digest,
       decision: body.decision,
       notes: body.notes,
       evidence: {},
       reviewed_by_id: null,
       created_at: snapshot.created_at,
     };
-    // The server saved it, but the first reply was lost.
-    return requests.length === 1 ? route.abort("failed") : route.fulfill({ json: state() });
+    return route.fulfill({ json: state() });
   });
   const modelCalls: string[] = [];
   page.on("request", (request) => {
@@ -96,14 +103,28 @@ test("baseline reviews retain drafts, retry safely and require a fresh acknowled
   expect(requests[0]!.request_id).toBe(requests[1]!.request_id);
   await expect(panel.getByRole("button", { name: "Plan from reviewed baseline", exact: true })).toBeVisible();
   digest = "b".repeat(64);
+  humanContext = {
+    revision: "another-editor",
+    notes: "Another editor clarified: only self-hosted authentication.",
+    updated_by_id: null,
+    updated_at: snapshot.created_at,
+  };
   await panel.getByRole("button", { name: "Reload baseline", exact: true }).click();
   await expect(panel).toContainText("Evidence changed — review this baseline again");
   await expect(panel.getByRole("checkbox")).not.toBeChecked();
   await expect(confirm).toBeDisabled();
   await expect(panel.getByRole("button", { name: "Plan from reviewed baseline", exact: true })).toHaveCount(0);
+  await expect(panel.getByText("Another editor clarified: only self-hosted authentication.", { exact: true })).toBeVisible();
+  await notes.fill("");
+  await panel.getByRole("checkbox").check();
+  await confirm.click();
+  await expect(panel).toContainText("Reviewed scope — current evidence");
+  await expect(panel.getByText("Another editor clarified: only self-hosted authentication.", { exact: true })).toBeVisible();
+  expect(requests[2]!.notes).toBe("");
   await notes.fill("Hosting needs a human decision before planning.");
   await panel.getByRole("button", { name: "Save corrections and context", exact: true }).click();
   await expect(panel).toContainText("Corrections requested — resolve them before planning");
   expect(requests[2]!.request_id).not.toBe(requests[1]!.request_id);
+  expect(requests[3]!.request_id).not.toBe(requests[2]!.request_id);
   expect(modelCalls).toEqual([]);
 });

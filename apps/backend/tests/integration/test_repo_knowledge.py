@@ -448,3 +448,88 @@ async def test_human_context_is_available_before_an_inventory_exists(db_client, 
         context = await RepoKnowledgeService(session, None).summary(project)
     assert "no inventory yet" in context and "intended users are consultants" in context
     assert "&lt;system&gt;" in context
+
+
+async def test_intervening_shared_context_invalidates_an_open_review_and_blank_confirmation_preserves_it(
+    db_client, github_world, github, origin: Path
+) -> None:
+    from sqlalchemy import select
+
+    from dotrix_backend.modules.projects.models import Project
+    from dotrix_backend.modules.repo_knowledge.models import RepoBaselineReview
+    from dotrix_backend.modules.repo_knowledge.service import RepoKnowledgeService
+
+    ada, cat, ws, kun, _ = await github_world()
+    assert (await db_client.patch(ws, headers=ada.headers,
+                                 json={"member_permissions": ["knowledge:write"]})).status_code == 200
+    await _connect(db_client, ws, kun, ada.headers)
+    project = f"{ws}/projects/{kun['id']}"
+    base = f"{project}/repository/knowledge"
+    await db_client.put(f"{project}/knowledge/files/docs/wiki/architecture.md", headers=ada.headers,
+                        json={"content": "# Architecture\nObserved provider `src/payments.py:1`."})
+    factory = db_client._transport.app.state.jobs.ctx.session_factory
+    async with factory() as session:
+        await session.execute(update(RepoPath).where(RepoPath.workspace_id == uuid.UUID(ws.split('/')[-1]),
+            RepoPath.path == "src/payments.py").values(status=PathStatus.ANALYZED))
+        await session.commit()
+    opened = (await db_client.get(f"{base}/baseline", headers=ada.headers)).json()
+    assert opened["can_confirm"]
+    correction = {"request_id": str(uuid.uuid4()), "digest": opened["digest"], "decision": "corrections",
+                  "notes": "Goal: serve consultants. Correct the assumption that we sell to enterprises."}
+    saved = await db_client.post(f"{base}/baseline/reviews", headers=cat.headers, json=correction)
+    assert saved.status_code == 200, saved.text
+    revised = saved.json()
+    assert revised["digest"] != opened["digest"] and not revised["current"]
+    assert revised["human_context"]["notes"] == correction["notes"]
+    assert revised["evidence"]["human_context"]["revision"] == revised["review"]["id"]
+    assert revised["evidence"]["knowledge_revision"] == opened["evidence"]["knowledge_revision"]
+    assert (await db_client.post(f"{base}/baseline/reviews", headers=cat.headers, json=correction)).json()["review"]["id"] == revised["review"]["id"]
+    stale_confirmation = {"request_id": str(uuid.uuid4()), "digest": opened["digest"],
+                          "decision": "confirmed", "notes": "", "acknowledge_limits": True}
+    rejected = await db_client.post(f"{base}/baseline/reviews", headers=ada.headers, json=stale_confirmation)
+    assert rejected.status_code == 409, rejected.text
+    unchanged = (await db_client.get(f"{base}/baseline", headers=ada.headers)).json()
+    assert unchanged["review"]["id"] == revised["review"]["id"] and not unchanged["current"]
+    confirmed = await db_client.post(f"{base}/baseline/reviews", headers=ada.headers,
+                                    json={**stale_confirmation, "digest": revised["digest"]})
+    assert confirmed.status_code == 200 and confirmed.json()["current"], confirmed.text
+    current = confirmed.json()
+    assert current["review"]["notes"] == "" and current["digest"] == revised["digest"]
+    assert current["human_context"] == revised["human_context"]
+    replay = await db_client.post(f"{base}/baseline/reviews", headers=ada.headers,
+                                 json={**stale_confirmation, "digest": revised["digest"]})
+    assert replay.status_code == 200 and replay.json()["review"]["id"] == current["review"]["id"]
+    async with factory() as session:
+        reviews = list(await session.scalars(select(RepoBaselineReview).where(RepoBaselineReview.project_id == uuid.UUID(kun["id"]))))
+        assert len(reviews) == 2
+        stored = next(row for row in reviews if str(row.id) == revised["review"]["id"])
+        assert stored.request_digest == opened["digest"] and stored.digest == revised["digest"]
+        row = await session.get(Project, uuid.UUID(kun["id"]))
+        summary = await RepoKnowledgeService(session, None).summary(row)
+        assert correction["notes"] in summary and "reviewed this exact baseline" in summary
+
+
+async def test_legacy_review_retries_preserve_context_without_rebinding_old_confirmations(db_client, github_world):
+    from datetime import UTC, datetime
+
+    from dotrix_backend.modules.repo_knowledge.models import RepoBaselineReview
+
+    ada, _, ws, kun, _ = await github_world()
+    base = f"{ws}/projects/{kun['id']}/repository/knowledge"
+    before = (await db_client.get(f"{base}/baseline", headers=ada.headers)).json()
+    request_id = uuid.uuid4()
+    factory = db_client._transport.app.state.jobs.ctx.session_factory
+    async with factory() as session:
+        session.add(RepoBaselineReview(workspace_id=uuid.UUID(ws.split('/')[-1]), project_id=uuid.UUID(kun['id']),
+            request_id=request_id, request_digest=None, digest=before['digest'], decision='confirmed',
+            notes='Legacy shared goals must survive.', evidence=before['evidence'],
+            reviewed_by_id=uuid.UUID(ada.id), created_at=datetime.now(UTC)))
+        await session.commit()
+    replay = await db_client.post(f"{base}/baseline/reviews", headers=ada.headers, json={
+        'request_id': str(request_id), 'digest': before['digest'], 'decision': 'confirmed',
+        'notes': 'Legacy shared goals must survive.', 'acknowledge_limits': True,
+    })
+    assert replay.status_code == 200, replay.text
+    state = replay.json()
+    assert state['human_context']['notes'] == 'Legacy shared goals must survive.'
+    assert state['digest'] != state['review']['digest'] and not state['current']

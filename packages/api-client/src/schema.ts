@@ -5776,6 +5776,23 @@ export interface components {
             /** Unattended */
             unattended?: boolean | null;
         };
+        /** BaselineHumanContextRead */
+        BaselineHumanContextRead: {
+            /**
+             * Revision
+             * Format: uuid
+             */
+            revision: string;
+            /** Notes */
+            notes: string;
+            /** Updated By Id */
+            updated_by_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** BaselineReviewCreate */
         BaselineReviewCreate: {
             /**
@@ -5792,6 +5809,7 @@ export interface components {
             decision: "confirmed" | "corrections";
             /**
              * Notes
+             * @description Revised shared human context; blank retains the last explicitly saved context
              * @default
              */
             notes: string;
@@ -9020,6 +9038,8 @@ export interface components {
                 [key: string]: unknown;
             };
             review: components["schemas"]["BaselineReviewRead"] | null;
+            /** @description Current shared context, independent of blank attestation notes */
+            human_context?: components["schemas"]["BaselineHumanContextRead"] | null;
         };
         /** RepoConnect */
         RepoConnect: {

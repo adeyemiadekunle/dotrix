@@ -129,7 +129,7 @@ class BaselineReviewCreate(BaseModel):
     request_id: uuid.UUID
     digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     decision: Literal["confirmed", "corrections"]
-    notes: str = Field(default="", max_length=8000)
+    notes: str = Field(default="", max_length=8000, description="Revised shared human context; blank retains the last explicitly saved context")
     acknowledge_limits: bool = False
 
 
@@ -145,6 +145,13 @@ class BaselineReviewRead(BaseModel):
     created_at: datetime
 
 
+class BaselineHumanContextRead(BaseModel):
+    revision: uuid.UUID
+    notes: str
+    updated_by_id: uuid.UUID | None
+    updated_at: datetime
+
+
 class RepoBaselineRead(BaseModel):
     digest: str
     can_confirm: bool
@@ -152,3 +159,4 @@ class RepoBaselineRead(BaseModel):
     blockers: list[str]
     evidence: dict
     review: BaselineReviewRead | None
+    human_context: BaselineHumanContextRead | None = Field(default=None, description="Current shared context, independent of blank attestation notes")

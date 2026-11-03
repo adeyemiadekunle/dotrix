@@ -53,6 +53,12 @@ export function BaselineReview({ scope, projectKey }: { scope: Scope | undefined
                 {blocker}
               </p>
             ))}
+            {baseline.human_context && (
+              <div aria-label="Current shared human context">
+                <b>Current shared human context</b>
+                <p style={{ whiteSpace: "pre-wrap" }}>{baseline.human_context.notes}</p>
+              </div>
+            )}
             {baseline.review && (
               <div>
                 <b>Latest shared review: {baseline.review.decision}</b>
@@ -67,8 +73,8 @@ export function BaselineReview({ scope, projectKey }: { scope: Scope | undefined
                   <textarea className="textarea" maxLength={8000} value={notes} disabled={save.isPending} onChange={(e) => setNotes(e.target.value)} />
                 </label>
                 <p className="faint">
-                  These notes are shared with people who can see this project. Your private conversations stay private. Existing requirements and decisions are
-                  not overwritten.
+                  Leave blank to keep the current shared context. Enter a revised version to replace it. These notes are shared with people who can see this
+                  project. Your private conversations stay private. Existing requirements and decisions are not overwritten.
                 </p>
                 <label>
                   <input

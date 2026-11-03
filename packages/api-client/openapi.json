@@ -26237,6 +26237,44 @@
         "title": "AutomationUpdate",
         "description": "Fields left out stay as they are; send null to clear the schedule or the daily cap."
       },
+      "BaselineHumanContextRead": {
+        "properties": {
+          "revision": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "notes",
+          "updated_by_id",
+          "updated_at"
+        ],
+        "title": "BaselineHumanContextRead"
+      },
       "BaselineReviewCreate": {
         "properties": {
           "request_id": {
@@ -26261,6 +26299,7 @@
             "type": "string",
             "maxLength": 8000,
             "title": "Notes",
+            "description": "Revised shared human context; blank retains the last explicitly saved context",
             "default": ""
           },
           "acknowledge_limits": {
@@ -33803,6 +33842,17 @@
                 "type": "null"
               }
             ]
+          },
+          "human_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaselineHumanContextRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current shared context, independent of blank attestation notes"
           }
         },
         "type": "object",
