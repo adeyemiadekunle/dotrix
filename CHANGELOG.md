@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Published chat outcomes can link shared documents and tasks, and explicitly supersede a reviewed decision. Changed document versions require renewed review; replacement links preserve the original text and history, and Knowledge shows shared relationships.
+
 - Explicit publication of edited private-chat outcomes as new requirements, decisions, research documents or unassigned tasks. Preview content and project visibility before confirming; retries are duplicate-safe, existing knowledge is preserved, and private conversations remain private.
 
 - Existing repositories have a guided baseline review: inspect coverage and citations, add shared goals or corrections, and confirm an exact evidence revision before opening a planning draft. Changed evidence makes the review out of date; retries retain drafts and avoid duplicate review records.

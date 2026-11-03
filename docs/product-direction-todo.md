@@ -85,12 +85,12 @@ Done when: an existing project reaches a useful, evidence-backed summary and nex
 - [x] Offer explicit actions to save selected outcomes as requirements, decisions, research or tasks, using the existing knowledge and issue services.
 - [x] Preview the selected content, destination and project visibility before applying the existing permission and approval rules.
 - [ ] Preserve permitted provenance and links among the saved artifact, task, coding session, review and PR. Never give teammates access to a private transcript through a source link.
-- [ ] Support correction and superseding decisions without silently replacing human-authored knowledge or losing version history.
+- [x] Support correction and superseding decisions without silently replacing human-authored knowledge or losing version history.
 - [ ] Return implementation and review outcomes to the originating conversation and keep shared task status accurate, distinguishing an open PR from merged work.
 
 Done when: a teammate can understand agreed scope, its rationale and its implementation outcome from shared project records without reading another person's chat.
 
-Publication foundation implemented: completed private project replies expose an edited selection and explicit visibility preview for new requirements/decisions/research documents or unassigned tasks. Existing permissions, atomic retry records and create-only documents prevent duplicate retries and silent replacement. Owners retain private destination links after reconnect; shared records have no automatic transcript links. Later human edits keep Knowledge versions. Remaining J05: explicit supersession and permitted links between existing shared records, coding sessions, reviews and PR outcomes. Do not mark the whole journey complete yet.
+Publication foundation implemented: completed private project replies expose an edited selection and explicit visibility preview for new requirements/decisions/research documents or unassigned tasks. Existing permissions, atomic retry records and create-only documents prevent duplicate retries and silent replacement. Owners retain private destination links after reconnect; shared records have no automatic transcript links. Later human edits keep Knowledge versions. Shared relationships now include reviewed, version-pinned document/task references and explicit decision supersession, with atomic new-version annotation of the predecessor and graph navigation in Knowledge. Remaining J05: coding sessions, reviews and PR outcomes connected to those shared records. Do not mark the whole journey complete yet.
 
 ### J06 — Bring in an existing GitHub backlog
 

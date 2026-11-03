@@ -2,6 +2,8 @@
 // (Markdown), edit it with a note, see who wrote it (a person or an agent). Agents' edits arrive
 // as changes to approve in Chat and the Inbox.
 import { useState } from "react";
+import { useGraphNeighbors } from "@/lib/graph";
+import { openTask } from "../core/actions";
 
 import { Ic } from "../core/icons";
 import { go } from "../core/nav";
@@ -38,6 +40,16 @@ export function openDocument(p: Project, path: string) {
   go("project", { id: p.key, tab: "knowledge" });
 }
 
+function relationshipLabel(kind: string, direction: "in" | "out") {
+  const labels: Record<string, [string, string]> = {
+    supersedes: ["Supersedes", "Superseded by"],
+    implements: ["Implements", "Implemented by"],
+    decided_by: ["Decided by", "Guides"],
+    affects: ["Affects", "Affected by"],
+  };
+  return labels[kind]?.[direction === "out" ? 0 : 1] ?? "Related";
+}
+
 export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "files" | "lessons" | "coverage" }) {
   const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
   const liveFiles = useLiveKnowledgeFiles(scope);
@@ -54,6 +66,11 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
   const curEntry = files.find((f) => f.path === (open.path ?? "project.md")) ?? files[0];
   const liveCur = useLiveKnowledgeFile(scope, curEntry?.path);
   const cur = isLive() ? (liveCur ?? curEntry) : curEntry;
+  const relationships = useGraphNeighbors(view === "docs" && !cur?.path.startsWith("agent-rules/") ? scope : undefined, cur?.path);
+  const visibleLinks = (relationships.data?.links ?? []).filter(
+    (link, _, links) =>
+      link.node.kind !== "module" && !(link.kind === "mentions" && links.some((other) => other.node.ref === link.node.ref && other.kind !== "mentions")),
+  );
   const [draft, setDraft] = useState("");
   const [note, setNote] = useState("");
   const pick = (f: KnowledgeFile) => {
@@ -209,6 +226,29 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                   </div>
                 </div>
                 <div className="panel-b" style={{ paddingTop: 14 }}>
+                  {!!visibleLinks.length && (
+                    <section aria-label="Shared document relationships" style={{ marginBottom: 14 }}>
+                      <b>Related project work</b>
+                      <div className="col" style={{ gap: 6, marginTop: 6 }}>
+                        {visibleLinks.map((link) => (
+                          <button
+                            key={link.id}
+                            className="btn btn-sm btn-ghost"
+                            style={{ justifyContent: "flex-start" }}
+                            onClick={() => {
+                              if (link.node.kind === "issue") openTask(link.node.ref);
+                              else {
+                                openDocument(p, link.node.ref);
+                                render();
+                              }
+                            }}
+                          >
+                            {relationshipLabel(link.kind, link.direction)} · {link.node.ref} · {link.node.title}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   {open.editing ? (
                     <div className="col" style={{ gap: 10 }}>
                       <textarea

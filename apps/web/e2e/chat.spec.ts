@@ -355,3 +355,64 @@ test("selected chat outcomes preview project visibility, retry safely and retain
   await publish.click();
   await expect(page.getByRole("button", { name: "Open shared task PUB-1", exact: true })).toBeVisible();
 });
+
+test("decision publication pins the reviewed predecessor and shares versioned supersession links", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Decisions", "DEC");
+  const base = await page.evaluate(async () => {
+    const h = { "Content-Type": "application/json", "X-Requested-With": "e2e" };
+    const [ws] = await (await fetch("/v1/workspaces")).json();
+    const projects = await (await fetch(`/v1/workspaces/${ws.id}/projects`)).json();
+    const project = projects.find((item: { key: string }) => item.key === "DEC");
+    const root = `/v1/workspaces/${ws.id}/projects/${project.id}`;
+    const saved = await fetch(`${root}/knowledge/files/decisions/original.md`, {
+      method: "PUT",
+      headers: h,
+      body: JSON.stringify({ content: "# Original choice\n\nHuman rationale v1", base_version: 0 }),
+    });
+    if (!saved.ok) throw new Error(`knowledge: ${saved.status}`);
+    const task = await fetch(`${root}/issues`, { method: "POST", headers: h, body: JSON.stringify({ title: "Implementation task" }) });
+    if (!task.ok) throw new Error(`task: ${task.status}`);
+    return root;
+  });
+  await openChat(page, "?project=DEC");
+  await page.getByLabel("Message").fill("Discuss a replacement decision");
+  await page.getByLabel("Message").press("Enter");
+  await page.getByRole("button", { name: "Share selected outcome", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Publish selected outcome", exact: true });
+  await panel.getByLabel("Destination", { exact: true }).selectOption("decisions");
+  await panel.getByLabel("Outcome title", { exact: true }).fill("Replacement choice");
+  await panel.getByLabel("Selected content", { exact: true }).fill("Replacement rationale and scope");
+  await expect(panel.getByLabel("Supersede decision", { exact: true }).locator('option[value="decisions/original.md"]')).toHaveCount(1);
+  await panel.getByLabel("Supersede decision", { exact: true }).selectOption("decisions/original.md");
+  await panel.getByLabel("Link existing task", { exact: true }).selectOption("DEC-1");
+  await panel.getByRole("button", { name: "Preview publication", exact: true }).click();
+  await expect(panel).toContainText("Human rationale v1");
+  await expect(panel).toContainText("The previous decision's text is retained");
+  // Another person's correction invalidates this preview; no automatic new-version admission.
+  await page.evaluate(async (root) => {
+    const r = await fetch(`${root}/knowledge/files/decisions/original.md`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "e2e" },
+      body: JSON.stringify({ content: "# Original choice\n\nHuman correction v2", base_version: 1 }),
+    });
+    if (!r.ok) throw new Error(`correction: ${r.status}`);
+  }, base);
+  await panel.getByRole("checkbox").check();
+  await panel.getByRole("button", { name: "Publish to project", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Linked knowledge changed");
+  await expect(panel).toContainText("Human rationale v1");
+  await panel.getByRole("button", { name: "Edit selection", exact: true }).click();
+  await panel.getByRole("button", { name: "Preview publication", exact: true }).click();
+  await expect(panel).toContainText("Human correction v2");
+  await expect(panel.getByRole("button", { name: "Publish to project", exact: true })).toBeDisabled();
+  await panel.getByRole("checkbox").check();
+  await panel.getByRole("button", { name: "Publish to project", exact: true }).click();
+  await expect(panel).toBeHidden();
+  await page.getByRole("button", { name: "Open shared decisions", exact: true }).click();
+  const links = page.getByRole("region", { name: "Shared document relationships", exact: true });
+  await expect(links.getByRole("button", { name: /Supersedes.*decisions\/original.md/ })).toBeVisible();
+  await links.getByRole("button", { name: /Supersedes.*decisions\/original.md/ }).click();
+  await expect(links.getByRole("button", { name: /Superseded by/ })).toBeVisible();
+  await expect(page.locator(".kn-grid")).toContainText("Human correction v2");
+});
