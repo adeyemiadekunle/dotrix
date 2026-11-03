@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.settings import Settings
@@ -13,7 +13,7 @@ from dotrix_backend.modules.agents.models import AgentRun, RunStatus
 from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
 from dotrix_backend.modules.issues.models import Issue, IssueStatus
-from dotrix_backend.modules.knowledge.models import KnowledgeFile
+from dotrix_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from dotrix_backend.modules.model_keys.models import UserModelKey
 from dotrix_backend.modules.repo_knowledge.baseline import BaselineService
 from dotrix_backend.modules.workspaces.permissions import Permission, can
@@ -66,12 +66,20 @@ async def project_readiness(
         KnowledgeFile.deleted.is_(False), func.length(func.trim(KnowledgeFile.content)) > 0,
         KnowledgeFile.content_hash.notin_([hashlib.sha256(content.encode()).hexdigest()
                                          for content in skeleton(project.name, project.description).values()]),
+        ~exists(select(KnowledgeVersion.id).where(
+            KnowledgeVersion.workspace_id == project.workspace_id, KnowledgeVersion.project_id == project.id,
+            KnowledgeVersion.file_id == KnowledgeFile.id, KnowledgeVersion.version == 1,
+            KnowledgeVersion.author_type == AuthorType.SYSTEM, KnowledgeVersion.message == "Project created",
+            KnowledgeVersion.content_hash == KnowledgeFile.content_hash,
+        )),
         (KnowledgeFile.path.startswith("requirements/", autoescape=True)
          | KnowledgeFile.path.startswith("decisions/", autoescape=True)
          | KnowledgeFile.path.startswith("research/", autoescape=True)
          | KnowledgeFile.path.startswith("architecture/", autoescape=True)
          | KnowledgeFile.path.startswith("design/", autoescape=True)
-         | KnowledgeFile.path.startswith("docs/wiki/", autoescape=True)),
+         | KnowledgeFile.path.startswith("docs/wiki/", autoescape=True)
+         | KnowledgeFile.path.startswith("docs/normalized/", autoescape=True)
+         | KnowledgeFile.path.in_(["project.md", "vision.md", "roadmap.md", "current-state.md"])),
     ))
     add("knowledge", "Project knowledge", "ready" if count else "missing",
         f"{count} saved scope, decision, research or repository documents. Review their relevance before using them."
@@ -101,13 +109,13 @@ async def project_readiness(
     model = user.default_model or project.model
     provider = model.partition(":")[0]
     key = await session.scalar(select(UserModelKey).where(UserModelKey.user_id == user.id, UserModelKey.provider == provider))
-    available = bool(key and secrets_configured and model in available_models(settings, connected={provider}))
+    available = bool(key and secrets_configured and model in available_models(settings, model, connected={provider}))
     success = None
     if available:
         success = await session.scalar(select(func.max(AgentRun.finished_at)).where(
             AgentRun.workspace_id == project.workspace_id, AgentRun.project_id == project.id,
             AgentRun.requested_by_id == user.id, AgentRun.model == model, AgentRun.status == RunStatus.COMPLETED,
-            AgentRun.created_at >= key.updated_at, AgentRun.model_calls > 0,
+            AgentRun.created_at >= key.credential_saved_at, AgentRun.model_calls > 0,
             AgentRun.input_tokens + AgentRun.output_tokens > 0,
         ))
     model_state = "blocked" if key and (key.limit_reached_at or not available) else "ready" if success else "unverified" if available else "missing"

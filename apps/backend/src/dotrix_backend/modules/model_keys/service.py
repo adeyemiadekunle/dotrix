@@ -97,10 +97,13 @@ class PersonalKeys:
         provider = _provider(provider)
         token = self.secrets.encrypt(data.api_key)
         row = (await self._rows(user.id)).get(provider)
+        saved_at = _now()
         if row is None:
-            self.session.add(UserModelKey(user_id=user.id, provider=provider, encrypted=token, last4=data.api_key[-4:]))
+            self.session.add(UserModelKey(user_id=user.id, provider=provider, encrypted=token,
+                                         last4=data.api_key[-4:], credential_saved_at=saved_at))
         else:
-            row.encrypted, row.last4, row.updated_at = token, data.api_key[-4:], _now()
+            row.encrypted, row.last4 = token, data.api_key[-4:]
+            row.updated_at = row.credential_saved_at = saved_at
             row.limit_reached_at = row.limit_message = None
         await self.session.commit()
         return await self.read(user, settings)
