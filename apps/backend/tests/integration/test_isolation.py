@@ -223,6 +223,11 @@ def _fill(template: str, params: dict[str, str]) -> str:
 # up. Routes resolve the workspace and project in dependencies, before the body; these look
 # their resource up in the service, after it.
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
+    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/publications"): {
+        "request_id": "01a0e000-0000-7000-8000-000000000011",
+        "destination": "task", "title": "Selected outcome", "content": "Only selected shared content",
+        "acknowledge_shared": True,
+    },
     ("PATCH", "/v1/workspaces/{workspace_id}/members/{user_id}"): {"role": "admin"},
     ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/inputs"): {
         "client_id": "01a0e000-0000-7000-8000-000000000010", "kind": "queue", "message": "Compare alternatives afterward",

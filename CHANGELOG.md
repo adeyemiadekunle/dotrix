@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Explicit publication of edited private-chat outcomes as new requirements, decisions, research documents or unassigned tasks. Preview content and project visibility before confirming; retries are duplicate-safe, existing knowledge is preserved, and private conversations remain private.
+
 - Existing repositories have a guided baseline review: inspect coverage and citations, add shared goals or corrections, and confirm an exact evidence revision before opening a planning draft. Changed evidence makes the review out of date; retries retain drafts and avoid duplicate review records.
 
 - New-project setup checks GitHub for a committed default branch and offers an editable first-implementation plan. Kai refuses new sessions on empty or inaccessible repositories and keeps the validated base branch while awaiting approval.
