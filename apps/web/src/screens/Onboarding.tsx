@@ -59,7 +59,7 @@ export function Onboarding() {
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/github/repos", { params: { path } })),
   });
   const repositoryReady = useQuery({
-    queryKey: ["repository-readiness", workspaceId, projectId],
+    queryKey: ["repository-readiness", workspaceId, projectId, project?.repo_url],
     enabled: !!project?.repo_url && step === "github",
     retry: false,
     queryFn: () =>
@@ -636,7 +636,7 @@ export function Onboarding() {
               {repositoryReady.data && !repositoryReady.data.ready && <p role="alert">{repositoryReady.data.reason}</p>}
               {repositoryReady.isError && <p role="alert">Couldn't verify the repository: {errorMessage(repositoryReady.error)}</p>}
               <button className="btn btn-secondary" disabled={repositoryReady.isFetching} onClick={() => void repositoryReady.refetch()}>
-                Check repository again
+                {repositoryReady.data || repositoryReady.isError ? "Check repository again" : "Check repository"}
               </button>
             </section>
           )}

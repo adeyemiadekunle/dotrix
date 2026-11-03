@@ -44,6 +44,10 @@ test("an empty repository gives a prerequisite and a fresh check unlocks an edit
   });
   saved.searchParams.set("step", "ready");
   await page.goto(saved.href);
+  const check = page.getByRole("button", { name: "Check repository", exact: true });
+  await expect(check).toBeVisible();
+  expect(checks).toBe(0); // Saved readiness never makes a live GitHub check implicitly.
+  await check.click();
   await expect(page.getByRole("region", { name: "Repository readiness" })).toContainText("Create an initial commit");
   await expect(page.getByRole("link", { name: "Plan first implementation", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Open project", exact: true })).toBeVisible();
