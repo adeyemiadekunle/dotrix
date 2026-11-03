@@ -95,6 +95,7 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     source: Mapped[str] = mapped_column(String(24), default="user", server_default="user")
     outcome_key: Mapped[str | None] = mapped_column(String(160))
     review_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    repository_write_paths: Mapped[list[str] | None] = mapped_column(JSONB)
 
     # The project it's about; null for a conversation across projects (or about none), which
     # lists its projects in `project_ids` and is read-only (workspace_runs.py).

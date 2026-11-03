@@ -658,6 +658,11 @@ export function Onboarding() {
               Set up Nova
             </button>
           )}
+          {project?.repo_url && intention === "existing" && (
+            <a className="btn btn-secondary" href={`/w/${workspace!.slug}/p/${project.key}/knowledge?view=coverage`}>
+              Understand repository first
+            </a>
+          )}
           {modelReady && repositoryReady.data?.ready && !repositoryReady.isError && !repositoryReady.isFetching && intention === "new" && (
             <a className="btn btn-secondary" href={projectImplementationHref(workspace!.slug, project!.key)}>
               Plan first implementation

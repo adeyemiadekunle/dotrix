@@ -20,6 +20,7 @@ import { live } from "../data/live";
 import { proj } from "../data/store";
 import { go } from "../core/nav";
 import { Empty } from "../ui/helpers";
+import { BaselineReview } from "./RepositoryBaseline";
 
 const STATES: Record<DomainCoverage["status"], [string, string]> = {
   gap: ["Gap", "red"],
@@ -41,7 +42,7 @@ const STALE_WORDS: Record<RepoPage["stale"][number]["why"], string> = {
   unread: "not read yet",
 };
 
-export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
+export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNode; openPage?: (path: string) => void }) {
   const scope = live.ws ? { workspaceId: live.ws.id, projectId: pid } : undefined;
   const coverage = useRepoCoverage(scope);
   const take = useTakeInventory(scope);
@@ -72,7 +73,7 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
             Refresh {stale.length} stale {stale.length === 1 ? "page" : "pages"}
           </button>
         )}
-        {canExplain && c?.snapshot && !c.discovery_complete && (
+        {canExplain && c?.snapshot && (!c.discovery_complete || pages.length === 0) && (
           <button className="btn btn-sm btn-primary" disabled={explain.isPending} onClick={() => explain.mutate({})}>
             <Ic n="book-open" s={12} />
             Explain the repository
@@ -80,6 +81,12 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
         )}
       </div>
       <div className="page wide" style={{ paddingTop: 16 }}>
+        <BaselineReview scope={scope} projectKey={proj(pid)?.key ?? ""} />
+        {coverage.isError && (
+          <p role="alert">
+            Couldn’t load repository coverage. <button onClick={() => void coverage.refetch()}>Try again</button>
+          </p>
+        )}
         {!c?.snapshot ? (
           <Empty
             icon="git-branch"
@@ -132,14 +139,33 @@ export function Coverage({ pid, lead }: { pid: string; lead?: ReactNode }) {
                 {pages.map((p) => (
                   <div key={p.path} className="row" style={{ padding: "8px 14px", gap: 10, borderTop: "1px solid var(--border)" }}>
                     <div className="grow">
-                      <code>{p.path}</code>
+                      {openPage ? (
+                        <button className="btn btn-sm btn-ghost" onClick={() => openPage(p.path)}>
+                          {p.path}
+                        </button>
+                      ) : (
+                        <code>{p.path}</code>
+                      )}
                       <div className="muted" style={{ fontSize: 12 }}>
                         {p.stale.length
                           ? p.stale.map((s) => `${s.path} (${STALE_WORDS[s.why]})`).join(", ")
-                          : `${p.citations} citations, all read at this commit`}
+                          : p.citations
+                            ? `${p.citations} citations, all read at this commit`
+                            : "No source citations; review assumptions and missing evidence"}
                       </div>
                     </div>
-                    <span className={`badge ${p.stale.length ? "amber" : "green"}`}>{p.stale.length ? "Stale" : "Fresh"}</span>
+                    {canExplain && p.stale.length > 0 && (
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        disabled={explain.isPending}
+                        onClick={() => explain.mutate({ refresh: true, pages: [p.path] })}
+                      >
+                        Refresh this page
+                      </button>
+                    )}
+                    <span className={`badge ${p.stale.length || !p.citations ? "amber" : "green"}`}>
+                      {p.stale.length ? "Stale" : p.citations ? "Fresh" : "Uncited"}
+                    </span>
                   </div>
                 ))}
               </div>

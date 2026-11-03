@@ -19318,6 +19318,194 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/baseline": {
+      "get": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "Repository Baseline",
+        "description": "Current evidence and the latest shared human review; confirmation never implies full understanding.",
+        "operationId": "repository_baseline",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoBaselineRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/baseline/reviews": {
+      "post": {
+        "tags": [
+          "repository knowledge"
+        ],
+        "summary": "Review Repository Baseline",
+        "description": "Review an exact evidence digest. Stale submissions fail; retry the same request ID safely. No model runs.",
+        "operationId": "review_repository_baseline",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BaselineReviewCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoBaselineRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding": {
       "get": {
         "tags": [
@@ -26048,6 +26236,104 @@
         "type": "object",
         "title": "AutomationUpdate",
         "description": "Fields left out stay as they are; send null to clear the schedule or the daily cap."
+      },
+      "BaselineReviewCreate": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Digest"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "corrections"
+            ],
+            "title": "Decision"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Notes",
+            "default": ""
+          },
+          "acknowledge_limits": {
+            "type": "boolean",
+            "title": "Acknowledge Limits",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "digest",
+          "decision"
+        ],
+        "title": "BaselineReviewCreate"
+      },
+      "BaselineReviewRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "digest": {
+            "type": "string",
+            "title": "Digest"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "corrections"
+            ],
+            "title": "Decision"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Evidence"
+          },
+          "reviewed_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "digest",
+          "decision",
+          "notes",
+          "evidence",
+          "reviewed_by_id",
+          "created_at"
+        ],
+        "title": "BaselineReviewRead"
       },
       "Board": {
         "properties": {
@@ -33481,6 +33767,55 @@
         ],
         "title": "RefreshRequest"
       },
+      "RepoBaselineRead": {
+        "properties": {
+          "digest": {
+            "type": "string",
+            "title": "Digest"
+          },
+          "can_confirm": {
+            "type": "boolean",
+            "title": "Can Confirm"
+          },
+          "current": {
+            "type": "boolean",
+            "title": "Current",
+            "description": "A person confirmed this exact evidence revision, with its stated limits"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Evidence"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaselineReviewRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "digest",
+          "can_confirm",
+          "current",
+          "blockers",
+          "evidence",
+          "review"
+        ],
+        "title": "RepoBaselineRead"
+      },
       "RepoConnect": {
         "properties": {
           "installation_ref": {
@@ -33634,6 +33969,15 @@
             "maxItems": 12,
             "title": "Domains",
             "description": "Domains to start with (the coverage's `domain`s); none: the agent picks"
+          },
+          "pages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Pages",
+            "description": "Stale wiki pages to refresh; empty selects all stale pages"
           },
           "refresh": {
             "type": "boolean",

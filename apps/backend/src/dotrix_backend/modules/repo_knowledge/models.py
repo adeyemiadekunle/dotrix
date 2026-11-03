@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin, str_enum
@@ -57,3 +57,19 @@ class RepoPath(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # When the skill read it, and in which agent run (kept for unchanged content across snapshots).
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     analyzed_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+
+
+class RepoBaselineReview(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A person's review of an exact evidence revision; never an agent's assertion of understanding."""
+
+    __tablename__ = "repo_baseline_reviews"
+    __table_args__ = (UniqueConstraint("project_id", "request_id"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    request_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    digest: Mapped[str] = mapped_column(String(64))
+    decision: Mapped[str] = mapped_column(String(24))
+    evidence: Mapped[dict] = mapped_column(JSONB)
+    notes: Mapped[str] = mapped_column(Text)
+    reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

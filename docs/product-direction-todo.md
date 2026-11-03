@@ -68,11 +68,15 @@ Done when: a solo developer using personal GitHub and a team using a GitHub orga
 
 ### J04 — Establish a baseline for existing repositories
 
-- [ ] Guide a connected project through inventory, repository explanation and a review of the resulting baseline.
-- [ ] Show the inspected commit, coverage, exclusions, unsupported files and unresolved questions. Repository access must not imply complete understanding.
-- [ ] Invite the person to add goals, requirements and existing documents that code cannot establish; distinguish these from inferred implementation facts.
-- [ ] Let the person confirm or correct the baseline before using it to propose substantial changes.
-- [ ] Surface stale knowledge after repository changes and offer a scoped refresh that preserves human-authored decisions and requirements.
+- [x] Guide a connected project through inventory, repository explanation and a review of the resulting baseline.
+- [x] Show the inspected commit, coverage, exclusions, unsupported files and unresolved questions. Repository access must not imply complete understanding.
+- [x] Invite the person to add goals, requirements and existing documents that code cannot establish; distinguish these from inferred implementation facts.
+- [x] Let the person confirm or correct the baseline before using it to propose substantial changes.
+- [x] Surface stale knowledge after repository changes and offer a scoped refresh that preserves human-authored decisions and requirements.
+
+Implementation: existing-project onboarding and Overview lead to Knowledge → Coverage. The existing inventory, per-domain gaps, exclusions, unsupported paths, cited wiki pages and stale-source indicators remain visible; pages can be opened for review. A shared human review records goals/corrections separately from inferred wiki facts and binds confirmation to a server digest of repository identity, known commit/checkouts, coverage, wiki revisions and the project knowledge revision. Missing inventory/citations or stale sources block confirmation, and partial coverage requires an explicit acknowledgement. A lost-response retry reuses its request ID; changed evidence requires a new acknowledgement and stale submissions fail. Reviews are shared project records, never private transcript publication or approval to implement. Shared context tells both chat runtimes whether a baseline is confirmed and quotes human notes as evidence; regular Chat/Code remain available for independently instructed work. The reviewed-baseline action opens an editable Plan draft and makes no model call.
+
+Refresh can select individual stale pages; the selected write paths persist on the run and survive approval/recovery. The storage boundary confines discovery to docs/wiki/ and confines a selected refresh to those exact pages, preserving requirements, decisions and unselected pages even if the model requests an approved write elsewhere. Reviews follow a moved project and become out of date when its evidence or human documents change. Tests: `test_repo_knowledge.py`, `repository-baseline.spec.ts`, existing Coverage/project-start scenarios. GitHub/model metadata in tests is synthetic; deployment and real-model explanation quality remain separately unverified.
 
 Done when: an existing project reaches a useful, evidence-backed summary and next-step proposal, with its uncertainties and freshness visible.
 
@@ -126,4 +130,4 @@ Defer a large standalone Ideas system, portfolio features, cross-organisation jo
 
 ## First implementation slice
 
-J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. J02 now supplies the three starting intentions. J03 now implements the new-repository-to-reviewed-PR journey with regression coverage; target-environment verification remains separate. The next product slice is J04: establish a reviewed baseline for existing repositories. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.
+J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. J02 now supplies the three starting intentions. J03 now implements the new-repository-to-reviewed-PR journey with regression coverage; target-environment verification remains separate. J04 now implements the reviewed existing-repository baseline. The next product slice is J05: explicit publication of private discussion outcomes into shared project work. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.

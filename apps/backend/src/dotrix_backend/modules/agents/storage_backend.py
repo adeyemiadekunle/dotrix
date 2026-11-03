@@ -78,6 +78,8 @@ class PlatformKnowledgeBackend(BackendProtocol):
         approved_by_id: uuid.UUID | None = None,
         policy: AgentPolicy | None = None,
         unattended: Unattended | None = None,
+        write_prefix: str | None = None,
+        write_paths: list[str] | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.policy = policy  # the run's agent contracts (built-ins when None)
@@ -88,6 +90,8 @@ class PlatformKnowledgeBackend(BackendProtocol):
         self.approved_by_id = approved_by_id
         # Owners' standing rules: writes an agent may make without a person approving them.
         self.unattended = unattended
+        self.write_prefix = write_prefix
+        self.write_paths = frozenset(write_paths) if write_paths is not None else None
 
     # -- reads -------------------------------------------------------------------------
 
@@ -180,6 +184,10 @@ class PlatformKnowledgeBackend(BackendProtocol):
             return "Permission denied: writes need a person's instruction and approval"
         agent = current_agent_role()
         path = file_path.lstrip("/")
+        if self.write_prefix is not None and not path.startswith(self.write_prefix):
+            return "Permission denied: repository discovery only writes docs/wiki/; keep human requirements and decisions separate"
+        if self.write_paths is not None and path not in self.write_paths:
+            return "Permission denied: this repository refresh only writes the selected wiki pages"
         approved_by_id, rule = self.approved_by_id, None
         if approved_by_id is None:
             # Not approved by a person in this step: only an owner's standing rule lets it through,
