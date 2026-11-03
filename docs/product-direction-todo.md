@@ -96,13 +96,15 @@ Publication foundation implemented: completed private project replies expose an 
 
 ### J06 — Bring in an existing GitHub backlog
 
-- [ ] Start with an explicit, previewed import of GitHub Issues into the selected project, mapping supported states, labels, assignees and source links.
-- [ ] Define the authoritative system for each imported field and explain what is imported once versus kept in sync. Begin with a bounded import rather than implying full two-way synchronisation.
-- [ ] Deduplicate by repository and source issue identity; handle repeat imports, partial failures and revoked access without duplicate tasks or cross-project leakage.
-- [ ] Keep unknown users, unsupported fields and mapping conflicts visible for review.
-- [ ] Treat GitHub Projects boards, ongoing synchronisation and other trackers as follow-on scope, with separate migration and conflict rules.
+- [x] Start with an explicit, previewed import of GitHub Issues into the selected project, mapping supported states, labels, assignees and source links.
+- [x] Define the authoritative system for each imported field and explain what is imported once versus kept in sync. Begin with a bounded import rather than implying full two-way synchronisation.
+- [x] Deduplicate by repository and source issue identity; handle repeat imports, partial failures and revoked access without duplicate tasks or cross-project leakage.
+- [x] Keep unknown users, unsupported fields and mapping conflicts visible for review.
+- [x] Treat GitHub Projects boards, ongoing synchronisation and other trackers as follow-on scope, with separate migration and conflict rules.
 
 Done when: a team imports a representative existing backlog, verifies the mapping and retries safely without rebuilding its tasks manually.
+
+Implementation: project Board/List import entry opens a bounded, selectable preview with field mappings, provenance and warnings. Confirmation rechecks the current source and permissions and commits all selected new tasks atomically. Stable source records skip existing/imported/deleted work; saved preview selections make lost-response retries safe. Dotrix owns fields after this one-time import. Live GitHub verification remains separate from synthetic transport tests.
 
 ### J07 — Explain project readiness and the next useful action
 
@@ -134,4 +136,4 @@ Defer a large standalone Ideas system, portfolio features, cross-organisation jo
 
 ## First implementation slice
 
-J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. J02 now supplies the three starting intentions. J03 now implements the new-repository-to-reviewed-PR journey with regression coverage; target-environment verification remains separate. J04 now implements the reviewed existing-repository baseline. The next product slice is J05: explicit publication of private discussion outcomes into shared project work. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.
+J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. J02 now supplies the three starting intentions. J03 now implements the new-repository-to-reviewed-PR journey with regression coverage; target-environment verification remains separate. J04 now implements the reviewed existing-repository baseline. J05 implements explicit publication of private discussion outcomes into shared project work, and J06 adds reviewed one-time GitHub Issues imports. The next product slice is J07: consistent project readiness and next actions. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.

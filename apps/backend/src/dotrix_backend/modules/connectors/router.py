@@ -13,12 +13,24 @@ from dotrix_backend.api.deps import JobsDep, SessionDep, SettingsDep, require_pe
 from dotrix_backend.core.errors import NotFound, Unprocessable
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.modules.auth.github import GitHubDep
-from dotrix_backend.modules.projects.deps import ProjectManager, ProjectViewer
+from dotrix_backend.modules.projects.deps import (
+    ProjectAccess,
+    ProjectManager,
+    ProjectViewer,
+    require_project_permission,
+)
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
 from . import webhook
 from .github_app import GitHubAppDep
+from .import_schemas import (
+    GitHubImportConfirm,
+    GitHubImportPreviewCreate,
+    GitHubImportPreviewRead,
+    GitHubImportResult,
+)
+from .issue_import import GitHubIssueImport
 from .schemas import (
     ConnectedRepoRead,
     GitHubStatus,
@@ -174,3 +186,22 @@ async def github_webhook(
             await webhook.forget_delivery(session, x_github_delivery)
         raise
     return {"result": done}
+
+
+IssueImporter = Annotated[ProjectAccess, Depends(require_project_permission(Permission.EDIT_ISSUES))]
+
+
+@project_router.post("/issues/preview", responses=errors(403, 409, 422, 503))
+async def preview_github_issue_import(
+    data: GitHubImportPreviewCreate, access: IssueImporter, session: SessionDep, app: GitHubAppDep,
+) -> GitHubImportPreviewRead:
+    """Preview a bounded GitHub Issues page and explicit one-time mappings; pull requests are excluded."""
+    return await GitHubIssueImport(session, app).preview(access, data)
+
+
+@project_router.post("/issues/import", responses=errors(403, 409, 422, 503))
+async def confirm_github_issue_import(
+    data: GitHubImportConfirm, access: IssueImporter, session: SessionDep, app: GitHubAppDep,
+) -> GitHubImportResult:
+    """Import reviewed selected issues atomically, preserving existing work on retries. No ongoing sync."""
+    return await GitHubIssueImport(session, app).confirm(access, data)
