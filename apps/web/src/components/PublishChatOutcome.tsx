@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
-import type { Scope } from "@/lib/issues";
+import { useAllIssues, type Scope } from "@/lib/issues";
+import { useKnowledge, useKnowledgeFile } from "@/lib/knowledge";
 import { allowed } from "../core/can";
 import { openTask } from "../core/actions";
 import { live } from "../data/live";
@@ -30,6 +31,27 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
   const [destination, setDestination] = useState<Draft["destination"]>(canWriteDocs ? "requirements" : "task");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState(reply);
+  const [relatedPath, setRelatedPath] = useState("");
+  const [supersedesPath, setSupersedesPath] = useState("");
+  const [relatedIssue, setRelatedIssue] = useState("");
+  const files = useKnowledge(open ? scope : undefined);
+  const issues = useAllIssues(open ? scope : undefined);
+  const document = useKnowledgeFile(open ? scope : undefined, relatedPath || undefined);
+  const predecessor = useKnowledgeFile(open ? scope : undefined, supersedesPath || undefined);
+  // Freeze exactly what the person sees. Background refreshes must never silently
+  // admit a new version while the confirmation preview is open.
+  const [reviewed, setReviewed] = useState<{ document?: Schemas["FileRead"]; predecessor?: Schemas["FileRead"] }>({});
+  const sharedFiles = (files.data?.files ?? []).filter(
+    (file) => !file.deleted && /^(requirements|decisions|research)\/[\w./-]+\.md$/.test(file.path) && !file.path.includes(".."),
+  );
+  const ref = (file: Schemas["FileRead"] | undefined) => (file ? { path: file.path, version: file.version } : null);
+  const relationships = [
+    reviewed.predecessor ? `Supersedes: /dotrix/${reviewed.predecessor.path} (reviewed version ${reviewed.predecessor.version})` : "",
+    reviewed.document ? `Shared context: /dotrix/${reviewed.document.path} (reviewed version ${reviewed.document.version})` : "",
+    relatedIssue ? `Related task: ${relatedIssue}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const attempt = useRef<{ signature: string; body: Draft } | null>(null);
   const save = useMutation({
     mutationFn: (body: Draft) =>
@@ -39,12 +61,21 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
       void client.invalidateQueries({ queryKey: ["knowledge", scope.projectId] });
       void client.invalidateQueries({ queryKey: ["issues"] });
       void client.invalidateQueries({ queryKey: ["activity"] });
+      void client.invalidateQueries({ queryKey: ["graph", scope.projectId] });
       setOpen(false);
     },
   });
   const publish = () => {
     if (!acknowledged || save.isPending) return;
-    const fields = { destination, title, content, acknowledge_shared: true as const };
+    const fields = {
+      destination,
+      title,
+      content,
+      acknowledge_shared: true as const,
+      related_document: ref(reviewed.document),
+      supersedes: ref(reviewed.predecessor),
+      related_issue: relatedIssue || null,
+    };
     const signature = JSON.stringify(fields);
     if (attempt.current?.signature !== signature) attempt.current = { signature, body: { ...fields, request_id: crypto.randomUUID() } };
     save.mutate(attempt.current.body);
@@ -88,7 +119,10 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                     aria-label="Destination"
                     className="input"
                     value={destination}
-                    onChange={(e) => setDestination(e.target.value as Draft["destination"])}
+                    onChange={(e) => {
+                      setDestination(e.target.value as Draft["destination"]);
+                      setSupersedesPath("");
+                    }}
                   >
                     {destinations
                       .filter((d) => (d === "task" ? canWriteTasks : canWriteDocs))
@@ -114,13 +148,59 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                     onChange={(e) => setContent(e.target.value)}
                   />
                 </label>
+                <label className="field">
+                  Link shared document (optional)
+                  <select aria-label="Link shared document" className="input" value={relatedPath} onChange={(e) => setRelatedPath(e.target.value)}>
+                    <option value="">No document link</option>
+                    {sharedFiles.map((file) => (
+                      <option key={file.path} value={file.path}>
+                        {file.path}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Link existing task (optional)
+                  <select aria-label="Link existing task" className="input" value={relatedIssue} onChange={(e) => setRelatedIssue(e.target.value)}>
+                    <option value="">No task link</option>
+                    {(issues.data ?? []).map((issue) => (
+                      <option key={issue.key} value={issue.key}>
+                        {issue.key} — {issue.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {destination === "decisions" && (
+                  <label className="field">
+                    Supersede decision (optional)
+                    <select aria-label="Supersede decision" className="input" value={supersedesPath} onChange={(e) => setSupersedesPath(e.target.value)}>
+                      <option value="">A separate new decision</option>
+                      {sharedFiles
+                        .filter((file) => file.path.startsWith("decisions/"))
+                        .map((file) => (
+                          <option key={file.path} value={file.path}>
+                            {file.path}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
+                {(document.isError || predecessor.isError || files.isError || issues.isError) && (
+                  <p role="alert">Could not load shared context. Reload it before selecting a link.</p>
+                )}
                 <p className="faint">
                   Remove private details, secrets and transcript links. Include the agreed scope, rationale and any open questions a teammate needs.
                 </p>
                 <button
                   className="btn btn-sm btn-primary"
-                  disabled={!title.trim() || !content.trim()}
+                  disabled={
+                    !title.trim() ||
+                    !content.trim() ||
+                    (!!relatedPath && (!document.data || document.isFetching || document.isError)) ||
+                    (!!supersedesPath && (!predecessor.data || predecessor.isFetching || predecessor.isError))
+                  }
                   onClick={() => {
+                    setReviewed({ document: relatedPath ? document.data : undefined, predecessor: supersedesPath ? predecessor.data : undefined });
                     setPreview(true);
                     setAcknowledged(false);
                     save.reset();
@@ -140,8 +220,24 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                 </p>
                 <div aria-label="Publication preview">
                   <h3>{title}</h3>
-                  <Markdown>{content}</Markdown>
+                  <Markdown>{content.trim() + (relationships ? `\n\n${relationships}` : "")}</Markdown>
                 </div>
+                {[reviewed.document, reviewed.predecessor]
+                  .filter((file): file is Schemas["FileRead"] => !!file)
+                  .map((file, index) => (
+                    <details key={`${file.path}-${index}`} open={file === reviewed.predecessor}>
+                      <summary>
+                        Reviewed shared document: {file.path}, version {file.version}
+                      </summary>
+                      <Markdown>{file.content}</Markdown>
+                    </details>
+                  ))}
+                {reviewed.predecessor && (
+                  <p role="note">
+                    The previous decision's text is retained. A new version appends a “Superseded by” link to this new decision. If it changes before
+                    publication, you must review it again.
+                  </p>
+                )}
                 <p className="faint">
                   This is a human publication. It does not start coding, approve agent changes, or mark implementation complete. Documents can be corrected
                   later in Knowledge with version history.
@@ -152,7 +248,16 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                 </label>
                 {save.isError && <p role="alert">{errorMessage(save.error)} Your draft is retained. Retry the same publication safely.</p>}
                 <div className="row" style={{ gap: 8, marginTop: 12 }}>
-                  <button className="btn btn-sm btn-secondary" disabled={save.isPending} onClick={() => setPreview(false)}>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    disabled={save.isPending}
+                    onClick={() => {
+                      setPreview(false);
+                      setAcknowledged(false);
+                      if (relatedPath) void document.refetch();
+                      if (supersedesPath) void predecessor.refetch();
+                    }}
+                  >
                     Edit selection
                   </button>
                   <button className="btn btn-sm btn-primary" disabled={!acknowledged || save.isPending} onClick={publish}>

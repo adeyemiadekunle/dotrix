@@ -26824,6 +26824,39 @@
             "type": "boolean",
             "const": true,
             "title": "Acknowledge Shared"
+          },
+          "related_document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicationDocumentRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "related_issue": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^[A-Z][A-Z0-9]*-[1-9][0-9]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Issue"
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicationDocumentRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -33973,6 +34006,27 @@
         },
         "type": "object",
         "title": "ProjectUpdate"
+      },
+      "PublicationDocumentRef": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "version"
+        ],
+        "title": "PublicationDocumentRef"
       },
       "QuoteCheck": {
         "properties": {
