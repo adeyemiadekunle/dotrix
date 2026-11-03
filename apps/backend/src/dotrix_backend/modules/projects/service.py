@@ -13,6 +13,7 @@ from dotrix_backend.modules.agents.models import (
     AgentApproval,
     AgentRun,
     AgentRunOutput,
+    ChatPublication,
 )
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.models import User
@@ -55,7 +56,7 @@ class RepoTaken(Conflict):
 # too: it belongs to the workspace, not the project.
 _PROJECT_ROWS = (
     KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, AgentRunOutput, ResearchSource, Document,
-    KnowledgeChunk, ProjectMember, IssueAttachment, RepoSnapshot, RepoBaselineReview,
+    KnowledgeChunk, ProjectMember, IssueAttachment, RepoSnapshot, RepoBaselineReview, ChatPublication,
 )
 
 

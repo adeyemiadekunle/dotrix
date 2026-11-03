@@ -307,3 +307,51 @@ test("active project chat can queue, cancel, and steer without losing a failed d
     await page.unrouteAll({ behavior: "wait" });
   }
 });
+
+test("selected chat outcomes preview project visibility, retry safely and retain private provenance", async ({ page }) => {
+  await signUp(page);
+  await addProject(page, "Publication", "PUB");
+  await openChat(page, "?project=PUB");
+  await page.getByLabel("Message").fill("Private discussion about database choices");
+  await page.getByLabel("Message").press("Enter");
+  await page.getByRole("button", { name: "Share selected outcome", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Publish selected outcome", exact: true });
+  await panel.getByLabel("Outcome title", { exact: true }).fill("Database decision");
+  await panel.getByLabel("Selected content", { exact: true }).fill("Use PostgreSQL. Rationale: transactions. Open question: hosting.");
+  await panel.getByRole("button", { name: "Preview publication", exact: true }).click();
+  await expect(panel).toContainText("People with access to this project");
+  await expect(panel.getByLabel("Publication preview", { exact: true })).not.toContainText("Private discussion");
+  const publish = panel.getByRole("button", { name: "Publish to project", exact: true });
+  await expect(publish).toBeDisabled();
+  await panel.getByRole("checkbox").check();
+  const requests: { request_id: string; content: string }[] = [];
+  await page.route("**/agent/runs/*/publications", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    requests.push(route.request().postDataJSON());
+    // Simulate a lost response after the real service committed the publication.
+    if (requests.length === 1) {
+      await route.fetch();
+      return route.abort("failed");
+    }
+    return route.continue();
+  });
+  await publish.click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel).toContainText("Use PostgreSQL");
+  await publish.click();
+  await expect(panel).toBeHidden();
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toEqual(requests[1]);
+  await expect(page.getByRole("button", { name: "Open shared requirements", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Open shared requirements", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Share selected outcome", exact: true }).click();
+  await panel.getByLabel("Destination", { exact: true }).selectOption("task");
+  await panel.getByLabel("Outcome title", { exact: true }).fill("Implement database");
+  await panel.getByLabel("Selected content", { exact: true }).fill("Add the schema. Acceptance: migrations run. Hosting remains open.");
+  await panel.getByRole("button", { name: "Preview publication", exact: true }).click();
+  await expect(panel).toContainText("A new unassigned task, To do");
+  await panel.getByRole("checkbox").check();
+  await publish.click();
+  await expect(page.getByRole("button", { name: "Open shared task PUB-1", exact: true })).toBeVisible();
+});

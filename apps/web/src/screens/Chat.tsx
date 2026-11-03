@@ -63,6 +63,7 @@ import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
 import { D, S, canSee, me, pColor, proj, projByKey, render, task, visibleProjects, who } from "../data/store";
 import { Markdown } from "@/components/markdown";
+import { PublishChatOutcome } from "../components/PublishChatOutcome";
 import { RunApprovals } from "../components/RunApprovals";
 import { openDocument } from "./Knowledge";
 import { Av, PIcon } from "../ui/helpers";
@@ -507,6 +508,9 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
       )}
       {shows && (reply.text || run.approvals?.length || limited) ? (
         <Message m={reply} projectId={projectId}>
+          {scope && !stream && run.status === "completed" && run.requested_by_id === D().me && !!run.reply && (
+            <PublishChatOutcome scope={scope} runId={run.id} reply={run.reply} />
+          )}
           {projectId && <RunApprovals run={run} scope={scope} />}
           {projectId && !stream && <RunSteps scope={scope} runId={run.id} />}
           {limited && projectId && (
