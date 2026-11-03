@@ -1260,6 +1260,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Project Readiness
+         * @description Saved project evidence and this person's model readiness; no provider calls or writes.
+         */
+        get: operations["get_project_readiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects": {
         parameters: {
             query?: never;
@@ -9131,6 +9151,27 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ProjectReadiness */
+        ProjectReadiness: {
+            source: components["schemas"]["ProjectSource"];
+            /** Checks */
+            checks: components["schemas"]["ReadinessCheck"][];
+            /**
+             * Next Action
+             * @enum {string}
+             */
+            next_action: "purpose" | "knowledge" | "repository" | "models" | "tasks" | "discuss" | "plan";
+            /** Next Title */
+            next_title: string;
+            /** Next Detail */
+            next_detail: string;
+            /** Next Allowed */
+            next_allowed: boolean;
+            /** Next Restriction */
+            next_restriction: string | null;
+            /** Model Success At */
+            model_success_at: string | null;
+        };
         /**
          * ProjectSource
          * @enum {string}
@@ -9245,6 +9286,32 @@ export interface components {
              * @description How long the database took to answer, in milliseconds
              */
             database_ms: number;
+        };
+        /** ReadinessCheck */
+        ReadinessCheck: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "missing" | "optional" | "review" | "unverified" | "blocked";
+            /** Detail */
+            detail: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "purpose" | "knowledge" | "repository" | "models" | "tasks" | "discuss" | "plan";
+            /**
+             * Allowed
+             * @default true
+             */
+            allowed: boolean;
+            /** Restriction */
+            restriction?: string | null;
         };
         /**
          * Recurrence
@@ -14124,6 +14191,56 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_project_readiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectReadiness"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

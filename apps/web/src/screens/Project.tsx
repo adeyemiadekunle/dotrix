@@ -18,6 +18,7 @@ import { Board } from "../views/Board";
 import { ProjectActivity, ProjectOverview } from "../views/ProjectOverview";
 import { Knowledge } from "./Knowledge";
 import { GitHubIssueImport } from "../views/GitHubIssueImport";
+import { ProjectReadiness } from "../views/ProjectReadiness";
 
 const PTABS: [string, string, string][] = [
   ["overview", "Overview", "layout-dashboard"],
@@ -61,12 +62,15 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   );
   const noTasks = !base.length;
   const emptyAll = (
-    <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
-      <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
-        <Ic n="plus" s={14} />
-        Add task
-      </button>
-    </Empty>
+    <>
+      <ProjectReadiness workspaceId={isLive() ? live.ws?.id : undefined} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} compact />
+      <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
+        <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+          <Ic n="plus" s={14} />
+          Add task
+        </button>
+      </Empty>
+    </>
   );
   if (type === "board")
     return (

@@ -5,7 +5,7 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from dotrix_backend.api.deps import CurrentUser, SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.errors import Unprocessable
@@ -15,6 +15,7 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
 from .deps import ProjectManager, ProjectViewer
+from .readiness import ProjectReadiness, project_readiness
 from .repo_urls import normalize_repo_url
 from .schemas import ProjectCreate, ProjectMemberRead, ProjectMove, ProjectRead, ProjectUpdate
 from .service import ProjectService
@@ -32,6 +33,16 @@ Viewer = Annotated[Membership, Depends(require_permission(Permission.VIEW))]
 Storage = Annotated[BlobStorage | None, Depends(optional_storage)]
 logger = logging.getLogger(__name__)
 Creator = Annotated[Membership, Depends(require_permission(Permission.MANAGE_PROJECTS))]
+
+
+@router.get("/{project_id}/readiness")
+async def get_project_readiness(
+    access: ProjectViewer, user: CurrentUser, session: SessionDep, settings: SettingsDep,
+    request: Request, response: Response,
+) -> ProjectReadiness:
+    """Saved project evidence and this person's model readiness; no provider calls or writes."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return await project_readiness(session, access, user, settings, secrets_configured=request.app.state.secrets.configured)
 
 
 @router.get("", responses=errors(422))

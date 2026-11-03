@@ -15,6 +15,7 @@ import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PStatus, StIcon } from "../ui/helpers";
+import { ProjectReadiness } from "./ProjectReadiness";
 
 function goFilteredList(p: Project, st: string) {
   const v = viewOf("p:" + p.id);
@@ -42,9 +43,10 @@ export function ProjectOverview({ p }: { p: Project }) {
     .slice(0, 3);
   return (
     <div className="page" style={{ maxWidth: 1160, paddingTop: 22 }}>
+      <ProjectReadiness workspaceId={scope?.workspaceId} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} />
       <div className="grid2">
         <div className="stack">
-          <section className="panel">
+          <section className="panel" id="project-purpose">
             <div className="panel-h">
               <h2>About</h2>
               <div className="acts">

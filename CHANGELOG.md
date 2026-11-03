@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Project readiness across setup, Overview and empty task views, with private model evidence and next actions that explain missing prerequisites and permissions.
+
 - Preview and import selected GitHub Issues into project tasks with explicit state/label/assignee mappings, shared visibility confirmation and source links. Retries skip imported work and preserve human edits; later GitHub changes are not automatically synchronized.
 
 - Published chat outcomes can link shared documents and tasks, and explicitly supersede a reviewed decision. Changed document versions require renewed review; replacement links preserve the original text and history, and Knowledge shows shared relationships.
