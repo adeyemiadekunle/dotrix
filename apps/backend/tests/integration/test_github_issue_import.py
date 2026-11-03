@@ -270,3 +270,51 @@ async def test_removed_manual_link_requires_verification_retry(db_client, backlo
     retry = await db_client.post(f"{base}/repository/issues/import", headers=owner.headers, json=confirmation(data))
     assert retry.status_code == 200, retry.text
     assert len((await db_client.get(f"{base}/issues", headers=owner.headers)).json()) == 3
+
+
+async def test_import_keeps_history_and_notifications_without_starting_automations(db_client, backlog, db_session, agent_script):
+    from dotrix_backend.modules.agents.models import AgentRun
+    from dotrix_backend.modules.audit.models import AuditEvent
+    from dotrix_backend.modules.automations.models import AutomationEventRow
+    from dotrix_backend.modules.issues.models import Issue, IssueEvent, IssueEventKind, IssueWatcher
+    from dotrix_backend.modules.notifications.models import Notification, NotificationKind
+
+    owner, member, base, _, sources, _, _ = await backlog()
+    project_id = uuid.UUID(base.rsplit("/", 1)[-1])
+    db_session.add(OAuthAccount(user_id=uuid.UUID(member.id), provider="github", provider_user_id="42", login="cat-gh", created_at=datetime.now(UTC)))
+    await db_session.commit()
+    sources[0]["assignees"] = [{"id": 42, "login": "cat-gh"}]
+    automation = await db_client.post(f"{base}/automations", headers=owner.headers, json={
+        "name": "Triage new tasks", "instructions": "Triage the new issues.", "events": ["issue.created"],
+    })
+    assert automation.status_code == 201, automation.text
+    assert automation.json()["enabled"]
+    model = agent_script.say("Triaged the manually created issue.")
+    data = await preview(db_client, base, owner)
+    imported = await db_client.post(f"{base}/repository/issues/import", headers=owner.headers, json=confirmation(data))
+    assert imported.status_code == 200, imported.text
+    assert not list(await db_session.scalars(select(AutomationEventRow).where(AutomationEventRow.project_id == project_id)))
+    events = list(await db_session.scalars(select(IssueEvent).join(Issue).where(Issue.project_id == project_id)))
+    assert len(events) == 2 and all(e.kind == IssueEventKind.CREATED and str(e.author_user_id) == owner.id for e in events)
+    audits = list(await db_session.scalars(select(AuditEvent).where(AuditEvent.project_id == project_id, AuditEvent.action == "issue.create")))
+    assert len(audits) == 2 and all(str(e.actor_user_id) == owner.id for e in audits)
+    assert len(list(await db_session.scalars(select(IssueWatcher).where(IssueWatcher.issue_id.in_([e.issue_id for e in events]))))) == 2
+    notices = list(await db_session.scalars(select(Notification).where(Notification.project_id == project_id)))
+    assert len(notices) == 1 and notices[0].kind == NotificationKind.ASSIGNED and str(notices[0].user_id) == member.id
+
+    jobs = db_client._transport.app.state.jobs
+    await jobs.enqueue("run_automations")
+    retry = await db_client.post(f"{base}/repository/issues/import", headers=owner.headers, json=confirmation(data))
+    assert retry.json() == imported.json()
+    await jobs.enqueue("run_automations")
+    assert model.received == []
+    assert not list(await db_session.scalars(select(AgentRun).where(AgentRun.project_id == project_id)))
+
+    # Ordinary human creation still emits the event and starts the eligible automation.
+    normal = await db_client.post(f"{base}/issues", headers=owner.headers, json={"title": "New work"})
+    assert normal.status_code == 201, normal.text
+    assert len(list(await db_session.scalars(select(AutomationEventRow).where(AutomationEventRow.project_id == project_id)))) == 1
+    await jobs.enqueue("run_automations")
+    runs = list(await db_session.scalars(select(AgentRun).where(AgentRun.project_id == project_id)))
+    assert len(runs) == 1 and str(runs[0].automation_id) == automation.json()["id"]
+    assert len(model.received) == 1

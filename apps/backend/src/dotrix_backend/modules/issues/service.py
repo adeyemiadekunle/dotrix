@@ -211,8 +211,14 @@ class IssueService:
         await self.session.commit()
         return await self.get(project, issue.key)
 
-    async def _insert(self, project: Project, actor: IssueActor, data: IssueCreate) -> Issue:
-        """Add an issue to the transaction (with its log, audit, and events); the caller commits."""
+    async def _insert(
+        self, project: Project, actor: IssueActor, data: IssueCreate, *, emit_automation_events: bool = True,
+    ) -> Issue:
+        """Stage an issue with history, audit and notifications; the caller commits.
+
+        Snapshot imports disable automation events so copying a backlog cannot start agent work.
+        This host-only option does not change the issue's human actor or normal creation history.
+        """
         parent = await self._by_key(project, data.parent) if data.parent else None
         if actor.agent is not None:
             if data.type is not IssueType.SUB_TASK or parent is None or parent.assignee_agent is not actor.agent:
@@ -276,7 +282,7 @@ class IssueService:
             self._notify_assignee(project, issue, actor)
         self._event(issue, actor, IssueEventKind.CREATED)
         self._audit(project, actor, "issue.create", issue)
-        if actor.agent_name is None:  # people's changes set automations off; an agent's never do
+        if emit_automation_events and actor.agent_name is None:
             await record_event(
                 self.session, workspace_id=project.workspace_id, project_id=project.id,
                 event=AutomationEvent.ISSUE_CREATED, summary=f"{issue.key} created: {issue.title}",

@@ -261,7 +261,7 @@ class GitHubIssueImport:
                 title=item.title, description=item.description, status=IssueStatus(item.status), labels=item.labels,
                 assignee_user_id=item.assignee_user_id,
                 links=[Link(kind="other", url=item.source_url, title=f"GitHub #{item.number}")],
-            ))
+            ), emit_automation_events=False)
             self.session.add(GitHubImportedIssue(
                 workspace_id=project.workspace_id, project_id=project.id, github_repo_id=repo_id,
                 github_issue_id=item.source_id, source_number=item.number, source_url=item.source_url,
