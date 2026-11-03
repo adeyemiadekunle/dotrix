@@ -5,6 +5,7 @@ import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../dat
 import { Ic } from "../core/icons";
 import { PROJECT_STARTS, projectStart, projectDiscussionHref, projectImplementationHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
 import { RepositoryCreate } from "./RepositoryCreate";
+import { ProjectReadiness } from "../views/ProjectReadiness";
 
 type Step = "project" | "github" | "model" | "ready";
 const steps: Step[] = ["project", "github", "model", "ready"];
@@ -59,7 +60,7 @@ export function Onboarding() {
   });
   const repositoryReady = useQuery({
     queryKey: ["repository-readiness", workspaceId, projectId],
-    enabled: !!project?.repo_url && (step === "ready" || step === "github"),
+    enabled: !!project?.repo_url && step === "github",
     retry: false,
     queryFn: () =>
       unwrap(
@@ -618,18 +619,11 @@ export function Onboarding() {
       )}
       {current === "ready" && (
         <>
-          <h1>{discussionStart === "idea" ? "Your idea has a home" : "Your project is ready"}</h1>
+          <h1>{discussionStart === "idea" ? "Your idea has a home" : "Your project is saved"}</h1>
           <p>
             {project?.name} is saved in {workspace?.name}.
           </p>
-          <p>
-            {project?.repo_url
-              ? "GitHub repository connected."
-              : intention === "idea"
-                ? "Explore now; connect a repository when you are ready to build."
-                : "No repository connected yet. Connect one before asking Kai to implement."}
-          </p>
-          <p>{access.data?.ready ? "Personal model connection available." : "Connect a model when you are ready to use agents."}</p>
+          {project && workspace && <ProjectReadiness workspaceId={workspace.id} projectId={project.id} slug={workspace.slug} projectKey={project.key} />}
           {project?.repo_url && (
             <section aria-label="Repository readiness">
               {repositoryReady.isFetching && <p role="status">Checking the repository's default branch…</p>}

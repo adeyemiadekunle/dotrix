@@ -74,7 +74,7 @@ test("new codebases require a goal before repository setup and restore their sav
     project: saved.searchParams.get("project"),
   });
   expect(project).toMatchObject({ source: "new_repo", description: "Help independent consultants schedule bookings.", repo_url: null });
-  await expect(page.getByText("No repository connected yet. Connect one before asking Kai to implement.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Project readiness", exact: true })).toContainText("Connect a GitHub repository before implementation");
 });
 
 test("existing repositories start with GitHub selection and require confirmation before attachment", async ({ page }) => {

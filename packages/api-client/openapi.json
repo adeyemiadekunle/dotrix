@@ -4245,6 +4245,85 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/readiness": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get Project Readiness",
+        "description": "Saved project evidence and this person's model readiness; no provider calls or writes.",
+        "operationId": "get_project_readiness",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectReadiness"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects": {
       "get": {
         "tags": [
@@ -34415,6 +34494,80 @@
         ],
         "title": "ProjectRead"
       },
+      "ProjectReadiness": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ProjectSource"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "next_action": {
+            "type": "string",
+            "enum": [
+              "purpose",
+              "knowledge",
+              "repository",
+              "models",
+              "tasks",
+              "discuss",
+              "plan"
+            ],
+            "title": "Next Action"
+          },
+          "next_title": {
+            "type": "string",
+            "title": "Next Title"
+          },
+          "next_detail": {
+            "type": "string",
+            "title": "Next Detail"
+          },
+          "next_allowed": {
+            "type": "boolean",
+            "title": "Next Allowed"
+          },
+          "next_restriction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Restriction"
+          },
+          "model_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Success At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "checks",
+          "next_action",
+          "next_title",
+          "next_detail",
+          "next_allowed",
+          "next_restriction",
+          "model_success_at"
+        ],
+        "title": "ProjectReadiness"
+      },
       "ProjectSource": {
         "type": "string",
         "enum": [
@@ -34716,6 +34869,72 @@
           "database_ms"
         ],
         "title": "Readiness"
+      },
+      "ReadinessCheck": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "missing",
+              "optional",
+              "review",
+              "unverified",
+              "blocked"
+            ],
+            "title": "State"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "purpose",
+              "knowledge",
+              "repository",
+              "models",
+              "tasks",
+              "discuss",
+              "plan"
+            ],
+            "title": "Action"
+          },
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed",
+            "default": true
+          },
+          "restriction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restriction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "state",
+          "detail",
+          "action"
+        ],
+        "title": "ReadinessCheck"
       },
       "Recurrence": {
         "type": "string",

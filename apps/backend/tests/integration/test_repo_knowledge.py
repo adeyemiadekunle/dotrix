@@ -353,6 +353,8 @@ async def test_a_human_baseline_review_is_bound_to_evidence_and_never_edits_proj
     assert saved.status_code == 200, saved.text
     reviewed = saved.json()
     assert reviewed["current"] and reviewed["review"]["reviewed_by_id"] == ada.id
+    readiness = (await db_client.get(f"{project}/readiness", headers=ada.headers)).json()
+    assert next(c for c in readiness["checks"] if c["key"] == "baseline")["state"] == "ready"
     retry = await db_client.post(f"{base}/baseline/reviews", headers=ada.headers, json=body)
     assert retry.status_code == 200 and retry.json()["review"]["id"] == reviewed["review"]["id"]
     assert (await db_client.post(f"{base}/baseline/reviews", headers=ada.headers,
@@ -366,6 +368,8 @@ async def test_a_human_baseline_review_is_bound_to_evidence_and_never_edits_proj
                         json={"content": "# Decision\nSelf-host authentication."})
     changed = (await db_client.get(f"{base}/baseline", headers=ada.headers)).json()
     assert not changed["current"] and changed["digest"] != candidate["digest"]
+    readiness = (await db_client.get(f"{project}/readiness", headers=ada.headers)).json()
+    assert next(c for c in readiness["checks"] if c["key"] == "baseline")["state"] != "ready"
     assert changed["review"]["id"] == reviewed["review"]["id"]
     assert (await db_client.post(f"{base}/baseline/reviews", headers=ada.headers,
                                 json={**body, "request_id": str(uuid.uuid4())})).status_code == 409

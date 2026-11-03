@@ -108,13 +108,15 @@ Implementation: project Board/List import entry opens a bounded, selectable prev
 
 ### J07 — Explain project readiness and the next useful action
 
-- [ ] Show project readiness from saved state: purpose captured, relevant knowledge available, repository connected when needed, baseline freshness, and implementation prerequisites.
-- [ ] Show personal model readiness to the current person only; distinguish stored credentials from a verified successful model call.
-- [ ] Recommend the next useful action for the current intention: clarify the idea, explain the repository, review scope, create a task, connect prerequisites or implement an approved task.
-- [ ] Explain permission restrictions and unavailable integrations without blocking unrelated work or presenting simulated success.
-- [ ] Apply the same readiness rules and presentation to onboarding, project pages and empty states; keep demo content explicitly illustrative.
+- [x] Show project readiness from saved state: purpose captured, relevant knowledge available, repository connected when needed, baseline freshness, and implementation prerequisites.
+- [x] Show personal model readiness to the current person only; distinguish stored credentials from a verified successful model call.
+- [x] Recommend the next useful action for the current intention: clarify the idea, explain the repository, review scope, create a task, connect prerequisites or implement an approved task.
+- [x] Explain permission restrictions and unavailable integrations without blocking unrelated work or presenting simulated success.
+- [x] Apply the same readiness rules and presentation to onboarding, project pages and empty states; keep demo content explicitly illustrative.
 
 Done when: a new or returning person can tell what is ready, what is missing and how to proceed without guessing from an empty screen.
+
+Implementation: a shared saved-state readiness API and panel serve onboarding, Overview and empty task views. Readiness distinguishes real repository bindings from URLs, baseline revision freshness, meaningful knowledge from untouched templates, personal key availability from current-key successful-run evidence, and implementation preparation from live execution admission. Viewing guidance never invokes a provider or changes project state; actions open existing setup, manual work or editable Nova drafts. Live journey verification remains separate.
 
 ## Verification and release checklist
 
@@ -136,4 +138,4 @@ Defer a large standalone Ideas system, portfolio features, cross-organisation jo
 
 ## First implementation slice
 
-J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. J02 now supplies the three starting intentions. J03 now implements the new-repository-to-reviewed-PR journey with regression coverage; target-environment verification remains separate. J04 now implements the reviewed existing-repository baseline. J05 implements explicit publication of private discussion outcomes into shared project work, and J06 adds reviewed one-time GitHub Issues imports. The next product slice is J07: consistent project readiness and next actions. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.
+J01 implements shared project setup, correct invited-member handling, and server-confirmed project saves. Verify the onboarding foundation in the target environment separately. J02 now supplies the three starting intentions. J03 now implements the new-repository-to-reviewed-PR journey with regression coverage; target-environment verification remains separate. J04 now implements the reviewed existing-repository baseline. J05 implements explicit publication of private discussion outcomes into shared project work, and J06 adds reviewed one-time GitHub Issues imports. J07 now provides consistent saved project readiness and next actions; live journey verification and release readiness remain. Reuse current workspace, GitHub, model, project and conversation services. Do not replace the agent runtime to implement this product direction.

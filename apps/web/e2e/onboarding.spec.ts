@@ -43,7 +43,7 @@ test("new accounts save a first project, resume setup and connect a personal mod
   const stored = await page.evaluate(() => JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)]));
   expect(stored).not.toContain(fakeKey);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Your project is ready" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your project is saved" })).toBeVisible();
   await page.getByRole("link", { name: "Open project", exact: true }).click();
   await expect(page).toHaveURL(/\/p\/PORTAL\/overview/);
   const counts = await page.evaluate(async () => {
