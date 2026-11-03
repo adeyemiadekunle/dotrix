@@ -69,6 +69,7 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
     in the API process in local mode); safe to run any time, from any number of processes."""
     # Imported here: it imports the issues service, which needs every model loaded first.
     from .modules.coding.runner import end_cut_off_runs
+    from .modules.connectors.issue_import import cleanup_import_previews
 
     at = datetime.fromisoformat(now) if now else datetime.now(UTC)
     token_cutoff, invite_cutoff = at - TOKEN_RETENTION, at - INVITE_RETENTION
@@ -88,6 +89,7 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
             "cut_off_coding_runs": await end_cut_off_runs(session, ctx.settings)
             if ctx.settings.jobs != "worker" else 0,
             "github_deliveries": await delete_stale_deliveries(session, token_cutoff),
+            "github_import_previews": await cleanup_import_previews(session, at),
         }
         await session.commit()
         if ctx.checkouts is not None:

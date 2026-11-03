@@ -17,6 +17,7 @@ import { AvStack, Empty, PIcon } from "../ui/helpers";
 import { Board } from "../views/Board";
 import { ProjectActivity, ProjectOverview } from "../views/ProjectOverview";
 import { Knowledge } from "./Knowledge";
+import { GitHubIssueImport } from "../views/GitHubIssueImport";
 
 const PTABS: [string, string, string][] = [
   ["overview", "Overview", "layout-dashboard"],
@@ -46,10 +47,17 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const base = isLive() ? (liveTasks ?? []) : tasksOf(p.id);
   const ts = applyView(base, v);
   const addBtn = (
-    <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
-      <Ic n="plus" s={13} />
-      New task
-    </button>
+    <div className="row" style={{ gap: 8 }}>
+      {isLive() && live.ws?.permissions?.includes("issues:write") && (
+        <button className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "import" })}>
+          Import from GitHub
+        </button>
+      )}
+      <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+        <Ic n="plus" s={13} />
+        New task
+      </button>
+    </div>
   );
   const noTasks = !base.length;
   const emptyAll = (
@@ -102,7 +110,14 @@ export function Project() {
       }
       body = <TaskViewBody type={sv.type} k={k} p={p} />;
     }
-  } else if (tab === "overview") body = <ProjectOverview p={p} />;
+  } else if (tab === "import")
+    body =
+      isLive() && !live.ws?.permissions?.includes("issues:write") ? (
+        <Empty icon="lock" title="You cannot import issues" text="Your role does not allow adding project tasks." />
+      ) : (
+        <GitHubIssueImport scope={isLive() && live.ws ? { workspaceId: live.ws.id, projectId: p.id } : undefined} projectKey={p.key} />
+      );
+  else if (tab === "overview") body = <ProjectOverview p={p} />;
   else if (tab === "knowledge")
     body = (
       <Knowledge

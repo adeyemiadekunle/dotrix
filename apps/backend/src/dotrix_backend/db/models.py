@@ -7,6 +7,7 @@ from dotrix_backend.modules.audit import models as _audit  # noqa: F401
 from dotrix_backend.modules.auth import models as _auth  # noqa: F401
 from dotrix_backend.modules.automations import models as _automations  # noqa: F401
 from dotrix_backend.modules.coding import models as _coding  # noqa: F401
+from dotrix_backend.modules.connectors import import_models as _connector_imports  # noqa: F401
 from dotrix_backend.modules.connectors import models as _connectors  # noqa: F401
 from dotrix_backend.modules.documents import models as _documents  # noqa: F401
 from dotrix_backend.modules.execution import models as _execution  # noqa: F401

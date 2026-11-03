@@ -3778,6 +3778,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/issues/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Github Issue Import
+         * @description Preview a bounded GitHub Issues page and explicit one-time mappings; pull requests are excluded.
+         */
+        post: operations["preview_github_issue_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/issues/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Github Issue Import
+         * @description Import reviewed selected issues atomically, preserving existing work on retries. No ongoing sync.
+         */
+        post: operations["confirm_github_issue_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge": {
         parameters: {
             query?: never;
@@ -7317,6 +7357,116 @@ export interface components {
              * @description The `code` GitHub sent back
              */
             code: string;
+        };
+        /** GitHubImportConfirm */
+        GitHubImportConfirm: {
+            /**
+             * Preview Id
+             * Format: uuid
+             */
+            preview_id: string;
+            /** Issue Ids */
+            issue_ids: number[];
+            /**
+             * Acknowledge Shared
+             * @constant
+             */
+            acknowledge_shared: true;
+        };
+        /** GitHubImportItem */
+        GitHubImportItem: {
+            /** Source Id */
+            source_id: number;
+            /** Number */
+            number: number;
+            /** Source Url */
+            source_url: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "backlog" | "todo" | "done";
+            /** Labels */
+            labels: string[];
+            /** Assignee User Id */
+            assignee_user_id: string | null;
+            /** Assignee Name */
+            assignee_name: string | null;
+            /** Github Assignees */
+            github_assignees: string[];
+            /** Warnings */
+            warnings: string[];
+            /** Existing Key */
+            existing_key?: string | null;
+            /**
+             * Blocked
+             * @default false
+             */
+            blocked: boolean;
+        };
+        /** GitHubImportPreviewCreate */
+        GitHubImportPreviewCreate: {
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * State
+             * @default all
+             * @enum {string}
+             */
+            state: "open" | "closed" | "all";
+            /**
+             * Open Status
+             * @default backlog
+             * @enum {string}
+             */
+            open_status: "backlog" | "todo";
+        };
+        /** GitHubImportPreviewRead */
+        GitHubImportPreviewRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Repository */
+            repository: string;
+            /** Page */
+            page: number;
+            /** Has More */
+            has_more: boolean;
+            /** Skipped Pull Requests */
+            skipped_pull_requests: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Items */
+            items: components["schemas"]["GitHubImportItem"][];
+        };
+        /** GitHubImportResult */
+        GitHubImportResult: {
+            /** Items */
+            items: components["schemas"]["GitHubImportResultItem"][];
+        };
+        /** GitHubImportResultItem */
+        GitHubImportResultItem: {
+            /** Source Id */
+            source_id: number;
+            /** Issue Key */
+            issue_key: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "created" | "already_imported" | "already_linked" | "deleted_task";
         };
         /** GitHubStart */
         GitHubStart: {
@@ -22847,6 +22997,168 @@ export interface operations {
             };
             /** @description Validation Error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    preview_github_issue_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitHubImportPreviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubImportPreviewRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    confirm_github_issue_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitHubImportConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubImportResult"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
