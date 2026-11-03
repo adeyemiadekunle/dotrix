@@ -6000,6 +6000,10 @@ export interface components {
              * @constant
              */
             acknowledge_shared: true;
+            related_document?: components["schemas"]["PublicationDocumentRef"] | null;
+            /** Related Issue */
+            related_issue?: string | null;
+            supersedes?: components["schemas"]["PublicationDocumentRef"] | null;
         };
         /** ChatPublicationRead */
         ChatPublicationRead: {
@@ -9034,6 +9038,13 @@ export interface components {
              * @description true archives it (out of the sidebar and Projects, kept as it is), false restores it
              */
             archived?: boolean | null;
+        };
+        /** PublicationDocumentRef */
+        PublicationDocumentRef: {
+            /** Path */
+            path: string;
+            /** Version */
+            version: number;
         };
         /** QuoteCheck */
         QuoteCheck: {

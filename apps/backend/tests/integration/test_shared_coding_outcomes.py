@@ -84,3 +84,44 @@ async def test_unpublished_followups_and_stale_checks_do_not_replace_published_e
     await db_session.commit()
     assert (await db_client.get(url, headers=colleague.headers)).json()[0]["pr_state"] == "merged"
     assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=owner.headers)).json()["status"] == "todo"
+
+
+@pytest.mark.parametrize("field", ["review_posted_url", "ci_review_posted_url"])
+async def test_posting_review_claims_are_not_shared_as_urls(db_client, shared_code, db_session, field):
+    _, colleague, _, base, issue, run = await shared_code()
+    setattr(run, field, "posting")
+    await db_session.commit()  # the worker's durable claim survives a crash
+    url = f"{base}/coding/issues/{issue['key']}/outcomes"
+    [outcome] = (await db_client.get(url, headers=colleague.headers)).json()
+    shared_field = "review_url" if field == "review_posted_url" else "ci_review_url"
+    assert outcome[shared_field] is None
+    assert "posting" not in str(outcome)
+    if field == "ci_review_posted_url":
+        assert outcome["review_url"] == run.review_posted_url
+    posted = "https://github.com/acme/app/pull/17#issuecomment-123"
+    setattr(run, field, posted)
+    await db_session.commit()
+    [outcome] = (await db_client.get(url, headers=colleague.headers)).json()
+    assert outcome[shared_field] == posted
+
+
+async def test_teammate_can_follow_published_scope_to_code_without_private_chat(db_client, shared_code, agent_script):
+    owner, colleague, _, base, issue, _ = await shared_code()
+    await db_client.patch(f"{base}/issues/{issue['key']}", headers=owner.headers, json={"status": "review"})
+    agent_script.say("PRIVATE conversation rationale, not automatically shared")
+    run = (await db_client.post(f"{base}/agent/runs", headers=owner.headers, json={"message": "Discuss scope"})).json()
+    saved = await db_client.post(f"{base}/agent/runs/{run['id']}/publications", headers=owner.headers, json={
+        "request_id": str(uuid.uuid4()), "destination": "requirements", "title": "Agreed scope",
+        "content": "Shared acceptance and rationale selected by a person.", "acknowledge_shared": True,
+        "related_issue": issue["key"],
+    })
+    assert saved.status_code == 200, saved.text
+    path = saved.json()["target"]
+    document = (await db_client.get(f"{base}/knowledge/files/{path}", headers=colleague.headers)).json()
+    assert "Shared acceptance and rationale" in document["content"] and "PRIVATE" not in document["content"]
+    links = (await db_client.get(f"{base}/graph/neighbors", headers=colleague.headers, params={"ref": path})).json()["links"]
+    assert any(link["node"]["ref"] == issue["key"] for link in links)
+    [outcome] = (await db_client.get(f"{base}/coding/issues/{issue['key']}/outcomes", headers=colleague.headers)).json()
+    assert outcome["pr_number"] == 17 and outcome["review_url"] and outcome["session_id"] is None
+    assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=colleague.headers)).status_code == 404
+    assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=colleague.headers)).json()["status"] == "review"

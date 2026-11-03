@@ -21,6 +21,7 @@ test("a shared task shows published PR evidence while coding sessions stay priva
   });
   let state: "open" | "merged" | "closed" | null = "open";
   let ci: "passed" | null = "passed";
+  let reviewUrl: string | null = "https://github.com/acme/app/pull/17#pullrequestreview-1";
   await page.route("**/coding/issues/PUB-1/outcomes", (route) =>
     route.fulfill({
       json: [
@@ -32,7 +33,7 @@ test("a shared task shows published PR evidence while coding sessions stay priva
           turn: 1,
           finished_at: new Date().toISOString(),
           ci_state: ci,
-          review_url: "https://github.com/acme/app/pull/17#pullrequestreview-1",
+          review_url: reviewUrl,
           ci_review_url: null,
           session_id: null,
         },
@@ -60,7 +61,10 @@ test("a shared task shows published PR evidence while coding sessions stay priva
   await expect(panel).toContainText("Closed without merging");
   state = null;
   ci = null;
+  reviewUrl = null;
   await openTask();
   await expect(panel).toContainText("PR state unconfirmed");
   await expect(panel).toContainText("CI for this commit: not confirmed");
+  await expect(panel.getByRole("link", { name: "Juno review on GitHub", exact: true })).toHaveCount(0);
+  await expect(panel).toContainText("No published review for this turn.");
 });

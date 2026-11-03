@@ -8,6 +8,7 @@ from dotrix_backend.modules.projects.deps import ProjectAccess
 
 from .models import CodingRun, CodingRunStatus
 from .schemas import SharedCodingOutcomeRead
+from .service import _posted
 
 
 async def shared_outcomes(session: AsyncSession, access: ProjectAccess, key: str) -> list[SharedCodingOutcomeRead]:
@@ -35,8 +36,8 @@ async def shared_outcomes(session: AsyncSession, access: ProjectAccess, key: str
             pr_number=run.pr_number, pr_url=run.pr_url, pr_state=run.pr_state,
             commit_sha=run.commit_sha, turn=run.turn, finished_at=run.finished_at,
             ci_state=run.ci_state if current_ci else None,
-            review_url=run.review_posted_url,
-            ci_review_url=run.ci_review_posted_url if current_ci else None,
+            review_url=_posted(run.review_posted_url),
+            ci_review_url=_posted(run.ci_review_posted_url) if current_ci else None,
             # Only the requester can open a published coding session. Never
             # include a Chat thread or a private Juno run in shared metadata.
             session_id=run.session_id if run.requested_by_id == access.member.user_id else None,
