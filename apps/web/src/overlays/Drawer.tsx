@@ -30,6 +30,7 @@ import type { CodingSession, Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
+import { SharedCodingOutcomes } from "../components/SharedCodingOutcomes";
 import { useCodingRuns } from "@/lib/coding";
 import { useIssue } from "@/lib/issues";
 import { logActivity, logComment, toAttachment } from "@/lib/view-models";
@@ -601,7 +602,7 @@ function CodingSection({ t }: { t: Task }) {
     <div className="dsec">
       <div className="dsec-h">
         <h3>Coding</h3>
-        <span className="cnt">{sessions.length}</span>
+        {sessions.length > 0 && <span className="cnt">{sessions.length}</span>}
         <div className="acts">
           <button className="btn btn-sm btn-ghost" onClick={start}>
             <Ic n="bot" s={13} />
@@ -643,6 +644,7 @@ function CodingSection({ t }: { t: Task }) {
           {CODING_AGENT.name}, the coding agent, can work on this in a sandbox and open a pull request. Someone who may approve agent changes starts it.
         </p>
       )}
+      <SharedCodingOutcomes scope={scope} issueKey={t.key} />
     </div>
   );
 }

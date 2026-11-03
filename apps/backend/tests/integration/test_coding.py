@@ -568,18 +568,24 @@ async def test_assigning_to_a_coding_tool_starts_a_session_and_approvers_are_tol
 async def test_a_merged_pr_is_recorded_on_the_session_and_the_issue(
     db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, deliver
 ) -> None:
-    ada, _, ws, kun, _, _ = coding
+    ada, colleague, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Ship"}, headers=ada.headers)).json()
     claude.edits = {"src/ship.py": "SHIP = True\n"}
     agent_script.say("Fine.")
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
     run = await _approve(db_client, base, run, ada.headers)
+    shared = f"{base}/coding/issues/{task['key']}/outcomes"
+    [published] = (await db_client.get(shared, headers=colleague.headers)).json()
+    assert published["pr_state"] == "open" and published["session_id"] is None
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=colleague.headers)).status_code == 404
     payload = {"action": "closed", "pull_request": {"number": run["pr_number"], "merged": True},
                "repository": {"id": 9001, "full_name": "kunemi/api"}}
     assert (await deliver("pull_request", payload)).status_code == 202
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["pr_state"] == "merged"
+    [published] = (await db_client.get(shared, headers=colleague.headers)).json()
+    assert published["pr_state"] == "merged" and published["pr_url"] == run["pr_url"]
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
     assert issue["status"] == "review"  # a person closes it
     assert any(e.get("body") == f"PR #{run['pr_number']} was merged on GitHub" for e in issue["log"])

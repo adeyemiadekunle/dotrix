@@ -21918,6 +21918,98 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/outcomes": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Shared Issue Coding Outcomes",
+        "description": "Latest published PR evidence for a shared task, without access to private sessions.",
+        "operationId": "shared_issue_coding_outcomes",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SharedCodingOutcomeRead"
+                  },
+                  "title": "Response Shared Issue Coding Outcomes"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/coding/sessions": {
       "get": {
         "tags": [
@@ -35716,6 +35808,120 @@
         ],
         "title": "SessionRead",
         "description": "A browser or the desktop app you're signed in on (the CLI and tools use API tokens)."
+      },
+      "SharedCodingOutcomeRead": {
+        "properties": {
+          "pr_number": {
+            "type": "integer",
+            "title": "Pr Number"
+          },
+          "pr_url": {
+            "type": "string",
+            "title": "Pr Url"
+          },
+          "pr_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commit_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Sha"
+          },
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "ci_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "passed",
+                  "failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci State"
+          },
+          "review_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Url"
+          },
+          "ci_review_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Review Url"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id",
+            "description": "Only present for the coding session's owner"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pr_number",
+          "pr_url",
+          "pr_state",
+          "commit_sha",
+          "turn",
+          "finished_at",
+          "ci_state",
+          "review_url",
+          "ci_review_url",
+          "session_id"
+        ],
+        "title": "SharedCodingOutcomeRead",
+        "description": "Published PR evidence; no private brief, summary, events, keys or Chat references."
       },
       "SignInMethods": {
         "properties": {

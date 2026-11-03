@@ -12,6 +12,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Added
 
 - Explicit publication of edited private-chat outcomes as new requirements, decisions, research documents or unassigned tasks. Preview content and project visibility before confirming; retries are duplicate-safe, existing knowledge is preserved, and private conversations remain private.
+- Shared tasks show published PR, commit, current-check and GitHub review evidence while coding conversations stay private. PR merge state remains separate from task completion.
+
 
 - Existing repositories have a guided baseline review: inspect coverage and citations, add shared goals or corrections, and confirm an exact evidence revision before opening a planning draft. Changed evidence makes the review out of date; retries retain drafts and avoid duplicate review records.
 

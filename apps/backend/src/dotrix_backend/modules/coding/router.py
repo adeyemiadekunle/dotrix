@@ -23,6 +23,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission
 from .files import TurnFiles
 from .local import LocalRunners
 from .network import SandboxNetwork
+from .outcomes import shared_outcomes
 from .schemas import (
     CodingAvailability,
     CodingClaimed,
@@ -45,6 +46,7 @@ from .schemas import (
     RunnerResult,
     SandboxNetworkRead,
     SandboxNetworkUpdate,
+    SharedCodingOutcomeRead,
 )
 from .service import CodingService
 
@@ -363,3 +365,11 @@ async def set_project_sandbox_network(
     """Set the hosts this project's coding sandboxes may also reach, on top of the workspace's. Owners and
     admins; audited."""
     return await SandboxNetwork(session).set_project(access.member, access.project, data)
+
+
+@router.get("/issues/{key}/outcomes")
+async def shared_issue_coding_outcomes(
+    key: str, access: ProjectViewer, session: SessionDep,
+) -> list[SharedCodingOutcomeRead]:
+    """Latest published PR evidence for a shared task, without access to private sessions."""
+    return await shared_outcomes(session, access, key)

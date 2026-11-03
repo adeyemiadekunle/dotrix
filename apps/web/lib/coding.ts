@@ -343,3 +343,18 @@ export function useCodingEvents(scope: Scope | undefined, run: Pick<CodingRun, "
     refetchInterval: run && ACTIVE_TURN.includes(run.status) ? 2_000 : false,
   });
 }
+
+/** Published code evidence is shared with the task; coding conversations remain private. */
+export function useSharedCodingOutcomes(scope: Scope | undefined, key: string) {
+  return useQuery({
+    queryKey: ["shared-coding-outcomes", scope?.workspaceId, scope?.projectId, key],
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/outcomes", {
+          params: { path: { ...path(scope!), key } },
+        }),
+      ),
+    enabled: Boolean(scope && key),
+    refetchInterval: 15000,
+  });
+}

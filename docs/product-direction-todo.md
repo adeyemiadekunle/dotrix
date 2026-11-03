@@ -86,7 +86,9 @@ Done when: an existing project reaches a useful, evidence-backed summary and nex
 - [x] Preview the selected content, destination and project visibility before applying the existing permission and approval rules.
 - [ ] Preserve permitted provenance and links among the saved artifact, task, coding session, review and PR. Never give teammates access to a private transcript through a source link.
 - [ ] Support correction and superseding decisions without silently replacing human-authored knowledge or losing version history.
-- [ ] Return implementation and review outcomes to the originating conversation and keep shared task status accurate, distinguishing an open PR from merged work.
+- [x] Return implementation and review outcomes to the originating conversation and keep shared task status accurate, distinguishing an open PR from merged work.
+
+Shared coding evidence implemented: teammates see published PR/commit evidence, current-commit CI and already-posted review links on the task, without private coding/Chat access. Open, merged, closed without merging and unconfirmed states remain distinct; only a person closes the task. Existing Nova/Juno private outcome delivery is retained. This is independent of #220's document/task relationships and decision supersession; verify the combined journey after both PRs land.
 
 Done when: a teammate can understand agreed scope, its rationale and its implementation outcome from shared project records without reading another person's chat.
 
