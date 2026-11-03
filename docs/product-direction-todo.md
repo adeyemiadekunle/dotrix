@@ -84,13 +84,15 @@ Done when: an existing project reaches a useful, evidence-backed summary and nex
 
 - [x] Offer explicit actions to save selected outcomes as requirements, decisions, research or tasks, using the existing knowledge and issue services.
 - [x] Preview the selected content, destination and project visibility before applying the existing permission and approval rules.
-- [ ] Preserve permitted provenance and links among the saved artifact, task, coding session, review and PR. Never give teammates access to a private transcript through a source link.
+- [x] Preserve permitted provenance and links among the saved artifact, task, coding session, review and PR. Never give teammates access to a private transcript through a source link.
 - [x] Support correction and superseding decisions without silently replacing human-authored knowledge or losing version history.
-- [ ] Return implementation and review outcomes to the originating conversation and keep shared task status accurate, distinguishing an open PR from merged work.
+- [x] Return implementation and review outcomes to the originating conversation and keep shared task status accurate, distinguishing an open PR from merged work.
+
+Shared coding evidence implemented: teammates see published PR/commit evidence, current-commit CI and already-posted review links on the task, without private coding/Chat access. Open, merged, closed without merging and unconfirmed states remain distinct; only a person closes the task. Existing Nova/Juno private outcome delivery is retained. Combined integration tests follow published scope through the shared task to PR/review evidence while denying private conversation access.
 
 Done when: a teammate can understand agreed scope, its rationale and its implementation outcome from shared project records without reading another person's chat.
 
-Publication foundation implemented: completed private project replies expose an edited selection and explicit visibility preview for new requirements/decisions/research documents or unassigned tasks. Existing permissions, atomic retry records and create-only documents prevent duplicate retries and silent replacement. Owners retain private destination links after reconnect; shared records have no automatic transcript links. Later human edits keep Knowledge versions. Shared relationships now include reviewed, version-pinned document/task references and explicit decision supersession, with atomic new-version annotation of the predecessor and graph navigation in Knowledge. Remaining J05: coding sessions, reviews and PR outcomes connected to those shared records. Do not mark the whole journey complete yet.
+Publication foundation implemented: completed private project replies expose an edited selection and explicit visibility preview for new requirements/decisions/research documents or unassigned tasks. Existing permissions, atomic retry records and create-only documents prevent duplicate retries and silent replacement. Owners retain private destination links after reconnect; shared records have no automatic transcript links. Later human edits keep Knowledge versions. Shared relationships now include reviewed, version-pinned document/task references and explicit decision supersession, with atomic new-version annotation of the predecessor and graph navigation in Knowledge. Shared task evidence connects those records to published PR/commit/check/review metadata without exposing private coding or Chat sessions. Deployment verification and paid-model quality remain separate.
 
 ### J06 — Bring in an existing GitHub backlog
 

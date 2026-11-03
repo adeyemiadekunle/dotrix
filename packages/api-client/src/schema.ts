@@ -4346,6 +4346,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Shared Issue Coding Outcomes
+         * @description Latest published PR evidence for a shared task, without access to private sessions.
+         */
+        get: operations["shared_issue_coding_outcomes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/coding/sessions": {
         parameters: {
             query?: never;
@@ -9815,6 +9835,34 @@ export interface components {
              * @description The one making this request
              */
             current: boolean;
+        };
+        /**
+         * SharedCodingOutcomeRead
+         * @description Published PR evidence; no private brief, summary, events, keys or Chat references.
+         */
+        SharedCodingOutcomeRead: {
+            /** Pr Number */
+            pr_number: number;
+            /** Pr Url */
+            pr_url: string;
+            pr_state: components["schemas"]["PrState"] | null;
+            /** Commit Sha */
+            commit_sha: string | null;
+            /** Turn */
+            turn: number;
+            /** Finished At */
+            finished_at: string | null;
+            /** Ci State */
+            ci_state: ("passed" | "failed") | null;
+            /** Review Url */
+            review_url: string | null;
+            /** Ci Review Url */
+            ci_review_url: string | null;
+            /**
+             * Session Id
+             * @description Only present for the coding session's owner
+             */
+            session_id: string | null;
         };
         /** SignInMethods */
         SignInMethods: {
@@ -24610,6 +24658,57 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    shared_issue_coding_outcomes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedCodingOutcomeRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

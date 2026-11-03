@@ -335,3 +335,18 @@ class SandboxNetworkRead(BaseModel):
     effective: list[str] = Field(
         description="Everything a sandbox here may reach besides the model API (a project: the workspace's too)")
     available_presets: dict[str, dict[str, Any]] = Field(description="Each preset's name and its hosts")
+
+
+class SharedCodingOutcomeRead(BaseModel):
+    """Published PR evidence; no private brief, summary, events, keys or Chat references."""
+
+    pr_number: int
+    pr_url: str
+    pr_state: PrState | None
+    commit_sha: str | None
+    turn: int
+    finished_at: datetime | None
+    ci_state: Literal["passed", "failed"] | None
+    review_url: str | None
+    ci_review_url: str | None
+    session_id: uuid.UUID | None = Field(description="Only present for the coding session's owner")
