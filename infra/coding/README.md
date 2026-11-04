@@ -122,9 +122,9 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
 | `DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES` | 3, 30 | Warm sandboxes kept per workspace, and for how long idle (0: every turn starts fresh and resumes from the saved session) |
-| `DOTRIX_CODING_MAX_RUNS` | 2 | Runs working at once per worker (0: no limit) |
+| `DOTRIX_CODING_MAX_RUNS` | 2 | Runs working at once per worker (0: no limit in development; must be positive in staging/production) |
 | `DOTRIX_CODING_MEMORY`, `DOTRIX_CODING_CPUS` | `4g`, 2 | Each Docker sandbox |
-| `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's | `runsc` for gVisor |
+| `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's in development; `runsc` in the deployment example | Deployed Docker coding requires `runsc` (gVisor installed and registered on the Docker host) |
 | `DOTRIX_CODING_FORK_OWNER` | none | The organisation branches are pushed to as a fork (required in staging and production) |
 
 You also need the GitHub App, with Contents (write) and Pull requests (write). For Juno on Kai's PRs
@@ -185,7 +185,11 @@ Each run gets:
   (above) and refuses everything else.
 - **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
   capabilities dropped, `no-new-privileges`, the `sandbox` user, `DOTRIX_CODING_MEMORY` and
-  `DOTRIX_CODING_CPUS`, 512 processes. The repo is copied in as a tar extracted by that user.
+  `DOTRIX_CODING_CPUS`, 512 processes, with swap disabled. The egress container is limited to
+  256 MiB without swap, 0.25 CPU and 128 processes. Both use the configured runtime. Before
+  repository files are copied in, the worker inspects each container's actual runtime; a missing,
+  mismatched or uninspectable runtime ends the attempt and cleans up without retrying on plain
+  Docker. The repo is copied in as a tar extracted by the unprivileged user.
 - **Cleanup:** both containers, the volume, and the network are removed when the run (or, for a
   warm session, the session) ends, however it ends. Each carries the label `dotrix.run=<run id>`
   (`docker ps -a --filter label=dotrix.run` finds any a crash left behind).

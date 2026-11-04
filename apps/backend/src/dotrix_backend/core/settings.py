@@ -169,8 +169,8 @@ class Settings(DatabaseSettings):
     # Coding runs working at once in one worker; the rest wait for a free sandbox ("Waiting for a
     # free sandbox"). 0: no limit. Size it to the machine: each run may use the memory and CPUs below.
     coding_max_runs: int = Field(default=2, ge=0, le=100)
-    # Each Docker sandbox's limits, and its container runtime ("runsc" for gVisor, once installed
-    # and registered on the host; unset: Docker's default).
+    # Each Docker sandbox's limits. Deployed Docker coding requires gVisor ("runsc", installed
+    # and registered on the host); development may use Docker's default runtime.
     coding_memory: str = Field(default="4g", pattern=r"^[1-9][0-9]*[mg]$")
     coding_cpus: float = Field(default=2.0, gt=0, le=64)
     coding_docker_runtime: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,64}$")
@@ -317,6 +317,11 @@ class Settings(DatabaseSettings):
         if self.is_deployed and self.coding_sandbox != "off" and not self.coding_fork_owner:
             raise ValueError("coding runs need DOTRIX_CODING_FORK_OWNER in staging and production (branches pushed "
                              "to the repo itself get its secrets in CI)")
+        if self.is_deployed and self.coding_sandbox == "docker" and self.coding_docker_runtime != "runsc":
+            raise ValueError("Docker coding needs DOTRIX_CODING_DOCKER_RUNTIME=runsc in staging and production; "
+                             "install and register gVisor on the Docker host, or keep coding off")
+        if self.is_deployed and self.coding_sandbox != "off" and self.coding_max_runs == 0:
+            raise ValueError("DOTRIX_CODING_MAX_RUNS must be positive in staging and production")
         if self.is_deployed and self.e2e_models:
             raise ValueError("e2e_models is for end-to-end tests; not allowed in staging or production")
         return self

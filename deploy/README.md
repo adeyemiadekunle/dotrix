@@ -177,11 +177,37 @@ uv run python -m dotrix_backend.worker   # or as a systemd service
 
 Then remove the `worker` and `docker-proxy` services from the compose file.
 
-## Hardening (recommended before other people's code runs here)
+## Isolation requirements and host verification
 
-- **gVisor:** install `runsc` on the VPS ([gvisor.dev](https://gvisor.dev/docs/user_guide/install/)),
+- **gVisor is required for `DOTRIX_CODING_SANDBOX=docker` in staging and production.** Install
+  `runsc` on the Docker host ([gvisor.dev](https://gvisor.dev/docs/user_guide/install/)),
   register it in `/etc/docker/daemon.json`, restart Docker (this restarts every Dokploy app), then set
-  `DOTRIX_CODING_DOCKER_RUNTIME=runsc`. Each sandbox then runs on its own kernel layer.
+  `DOTRIX_CODING_DOCKER_RUNTIME=runsc`. The deployment example sets this explicitly. An unset or
+  ordinary runtime is refused at API/worker startup. If gVisor cannot start, coding fails; it never
+  retries using ordinary Docker. Both the agent and egress containers use it, and their actual
+  runtime is checked before any repository content is copied. Docker Cloud uses its own microVMs;
+  this Docker runtime requirement does not apply to it. Keep coding `off` until the selected
+  backend is ready.
+- **Finite capacity:** `DOTRIX_CODING_MAX_RUNS` must be positive when deployed coding is enabled.
+  This limits active turns per worker process, not across workers or per workspace. Agent memory,
+  CPU and process limits remain in effect; swap is disabled. Egress is separately limited to
+  256 MiB, 0.25 CPU and 128 processes. Idle cached sandboxes can retain processes and memory;
+  budget for them separately or set `DOTRIX_CODING_WARM_MAX=0`. Distributed workspace limits
+  are still pending.
 - **A second VPS for coding:** keeps untrusted code off the machine with your database. Run the
   worker there (as above), pointing at this VPS's Postgres and Redis over a private network.
 - **Snapshots:** take one before upgrading; back up the `pgdata` and `storagedata` volumes.
+
+Before enabling Docker coding, run `docker info --format '{{json .Runtimes}}'` against the
+worker's Docker daemon and verify `runsc` is registered. Then run the real Docker sandbox
+regressions on that host with `DOTRIX_CODING_DOCKER_RUNTIME=runsc` and the coding image built:
+
+```shell
+uv run pytest apps/backend/tests/unit/test_coding_docker.py -v
+```
+
+These exercise file edits, network restrictions, read-only system paths, Stop and cleanup with
+the selected runtime. Finally run an explicitly authorised coding turn through the deployed
+worker and record its checks, PR and container runtime. Configuration/unit tests alone do not
+verify the host's isolation or establish production readiness. No host runtime installation or
+Docker restart is performed by the application.

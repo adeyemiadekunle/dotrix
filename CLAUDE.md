@@ -342,7 +342,7 @@ One list, most urgent first. Coding phases keep their detail in Plan: coding age
 - [ ] A first fx turn through the platform's own Docker sandbox on the production host
 - [x] Codex on a real model (2026-10-31: GPT-5.5 in the Docker sandbox through the egress proxy, issue to PR)
 - [ ] Paid turns on the engines' other providers (OpenCode and fx beyond Anthropic and OpenAI, checked 2026-10-31; Google for fx), and the OpenShell profiles (`dotrix-*.yaml`) on a gateway
-- [ ] Harden the cloud sandbox for other people's code: a gVisor runtime, per-workspace limits
+- [ ] Harden the cloud sandbox for other people's code: deployed Docker coding now requires gVisor (`DOTRIX_CODING_DOCKER_RUNTIME=runsc`) and a positive per-worker run limit. Both agent and egress containers use and verify the configured runtime before repository upload; failure cleans up without an ordinary-runtime fallback. Swap is disabled and egress CPU/memory/processes are bounded. Still required: real gVisor host verification and distributed per-workspace limits (the active-turn semaphore and warm cache remain per worker process).
 - [ ] Several people on one key (decision, proposed): retry a run on a provider's 429 with backoff before stopping it; a per-workspace limit on runs working at once, the rest queued ("Waiting for a free slot"); usage per person in Settings → Models, and the tokens of runs on a person's own key
 - [ ] Search: pass the instructing person's key to embedding jobs; indexing without an explicit personal key uses keyword search
 

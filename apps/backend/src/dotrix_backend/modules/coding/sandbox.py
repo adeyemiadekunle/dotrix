@@ -483,6 +483,14 @@ class DockerSandbox:
             raise SandboxError(f"docker {args[0]} failed: {lines[-1][:300] if lines else result.code}")
         return result.stdout
 
+    async def _check_runtime(self, name: str) -> None:
+        """Do not copy repository content into a container using an unexpected runtime."""
+        if self.runtime is not None:
+            actual = await self.cli("inspect", "--format", "{{.HostConfig.Runtime}}", name)
+            if actual.strip() != self.runtime:
+                raise SandboxError("The coding sandbox did not use its configured isolation runtime; "
+                                   "check the Docker host's runtime configuration")
+
     async def open(
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
     ) -> SandboxSession:
@@ -499,11 +507,16 @@ class DockerSandbox:
         try:
             # A network with no route out. The proxy is on it (as "egress") and on the default bridge.
             await self.cli("network", "create", "--internal", "--label", label, name)
-            await self.cli("run", "-d", "--name", f"{name}-egress", "--label", label, "--read-only",
+            # Attach both networks before starting gVisor: its network stack is initialized at start.
+            await self.cli("create", "--name", f"{name}-egress", "--label", label, "--read-only",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m",
-                           "--pids-limit", "128", "-e", f"DOTRIX_EGRESS_ALLOW={egress_allow(tool)}",
+                           "--memory-swap", "256m", "--cpus", "0.25", "--pids-limit", "128",
+                           *(["--runtime", self.runtime] if self.runtime else []),
+                           "-e", f"DOTRIX_EGRESS_ALLOW={egress_allow(tool)}",
                            self.image, "node", "/opt/dotrix/egress-proxy.mjs")
             await self.cli("network", "connect", "--alias", "egress", name, f"{name}-egress")
+            await self.cli("start", f"{name}-egress")
+            await self._check_runtime(f"{name}-egress")
             # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
             proxy = f"http://egress:{EGRESS_PORT}"
             # localhost stays local: the agent's own dev server, opened by its browser.
@@ -515,7 +528,8 @@ class DockerSandbox:
             await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
                            "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
-                           "--memory", self.memory, "--cpus", f"{self.cpus:g}", "--pids-limit", "512",
+                           "--memory", self.memory, "--memory-swap", self.memory,
+                           "--cpus", f"{self.cpus:g}", "--pids-limit", "512",
                            *(["--runtime", self.runtime] if self.runtime else []),
                            *[a for k in credentials for a in ("-e", k)],
                            *[a for k, value in container_env.items() for a in ("-e", f"{k}={value}")],
@@ -523,6 +537,7 @@ class DockerSandbox:
                            # Docker's TCP daemon must not use the agent-only egress proxy.
                            # Credentials stay off argv; the fixed, non-secret container settings don't.
                            env=self.cli_env(**credentials))
+            await self._check_runtime(name)
             await self.cli("exec", "-i", "-w", DOCKER_HOME, name, "tar", "-x", "-f", "-",
                            stdin=await asyncio.to_thread(_tar_of, source))
         except BaseException:
