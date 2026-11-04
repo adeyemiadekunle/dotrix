@@ -2221,6 +2221,83 @@
         ]
       }
     },
+    "/v1/me/onboarding-workspace": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Choose Onboarding Workspace",
+        "description": "Save the first optional workspace choice. Personal is the default; no conversion or projects.",
+        "operationId": "choose_onboarding_workspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FirstWorkspaceChoice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceWithRole"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/me/sessions": {
       "get": {
         "tags": [
@@ -3187,105 +3264,6 @@
           },
           "404": {
             "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Request body or parameters failed validation",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/workspaces/{workspace_id}/convert-to-organization": {
-      "post": {
-        "tags": [
-          "workspaces"
-        ],
-        "summary": "Convert To Organization",
-        "description": "Turn your personal workspace into an organisation, with its projects, so it can invite\npeople; optionally rename it. You get a new, empty personal workspace. Owners only; 409 if\nit's already an organisation.",
-        "operationId": "convert_to_organization",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "workspace_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Workspace Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OrganizationConversion"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkspaceWithRole"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, or expired credentials",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but your role or token scope doesn't allow this",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found, or not visible to you",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflicts with the current state",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -30259,6 +30237,35 @@
         ],
         "title": "FileWrite"
       },
+      "FirstWorkspaceChoice": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "organization"
+            ],
+            "title": "Kind",
+            "default": "personal"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FirstWorkspaceChoice"
+      },
       "GitHubFinish": {
         "properties": {
           "code": {
@@ -33351,26 +33358,6 @@
         ],
         "title": "ObservedRun",
         "description": "One agent run or coding turn in the unified run history."
-      },
-      "OrganizationConversion": {
-        "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name",
-            "description": "A new name, e.g. the team's"
-          }
-        },
-        "type": "object",
-        "title": "OrganizationConversion"
       },
       "OutputItemUpdate": {
         "properties": {
@@ -37530,6 +37517,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "onboarding_workspace_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Onboarding Workspace Id"
           }
         },
         "type": "object",

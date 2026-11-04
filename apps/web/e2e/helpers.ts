@@ -23,6 +23,37 @@ export async function signUp(page: Page, user = newUser()) {
   return user;
 }
 
+/** Explicitly create a separate team; the person's personal workspace stays private. */
+export async function createOrganisation(page: Page, name = "Test organisation") {
+  const response = await page.request.post("/v1/workspaces", {
+    headers: { "X-Requested-With": "e2e" },
+    data: { kind: "organization", name },
+  });
+  expect(response.status()).toBe(201);
+  const workspace = await response.json();
+  await page.goto(`/w/${workspace.slug}`);
+  return workspace;
+}
+
+/** Existing projects move explicitly; workspace kinds never change. */
+export async function moveProjectToOrganisation(page: Page, projectKey: string, name: string) {
+  const slug = new URL(page.url()).pathname.split("/")[2]!;
+  const workspaces = await (await page.request.get("/v1/workspaces")).json();
+  const source = workspaces.find((workspace: { slug: string }) => workspace.slug === slug);
+  if (!source) throw new Error("Source workspace not found");
+  const projects = await (await page.request.get(`/v1/workspaces/${source.id}/projects`)).json();
+  const project = projects.find((item: { key: string }) => item.key === projectKey);
+  if (!project) throw new Error("Source project not found");
+  const target = await createOrganisation(page, name);
+  const moved = await page.request.post(`/v1/workspaces/${source.id}/projects/${project.id}/move`, {
+    headers: { "X-Requested-With": "e2e" },
+    data: { workspace_id: target.id },
+  });
+  expect(moved.status()).toBe(200);
+  await page.goto(`/w/${target.slug}/p/${projectKey}/board`);
+  return target;
+}
+
 /** Signs up, then creates a docs-only project (it opens on its Overview) and goes to its board. Returns the project key. */
 export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM") {
   const user = await signUp(page);

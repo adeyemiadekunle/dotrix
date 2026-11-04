@@ -1166,7 +1166,9 @@ function InviteModal() {
         {personal ? (
           <div className="alert warn">
             <Ic n="info" s={14} />
-            <span>A personal workspace is just for you. Turn it into an organisation in Settings → Workspace to invite people.</span>
+            <span>
+              A personal workspace is just for you. Create a separate organisation workspace to invite people, then move selected projects explicitly.
+            </span>
           </div>
         ) : (
           <div className="alert info">

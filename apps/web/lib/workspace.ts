@@ -1,4 +1,4 @@
-// Workspace-level writes (rename, convert to an organisation, transfer ownership) and the
+// Workspace-level writes (rename and transfer ownership) and the
 // search endpoints.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,18 +27,6 @@ export function useUpdateWorkspace(workspaceId: string | undefined) {
   return useWorkspaceMutation(workspaceId, (body: Schemas["WorkspaceUpdate"]) =>
     unwrap(
       api.PATCH("/v1/workspaces/{workspace_id}", {
-        params: { path: { workspace_id: workspaceId! } },
-        body,
-      }),
-    ),
-  );
-}
-
-/** Turn a personal workspace into an organisation. */
-export function useConvertToOrganization(workspaceId: string | undefined) {
-  return useWorkspaceMutation(workspaceId, (body: Schemas["OrganizationConversion"]) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", {
         params: { path: { workspace_id: workspaceId! } },
         body,
       }),

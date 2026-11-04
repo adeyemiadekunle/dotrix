@@ -20,7 +20,6 @@ import {
   agentDetail,
   agentReset,
   agentSaved,
-  convertedToOrganization,
   fieldsOf,
   githubRepos,
   githubStatus,
@@ -302,20 +301,6 @@ function Workspace() {
     mutate(() => Object.assign(d.ws, { name: name.trim(), url: url.trim() }));
     toast("Workspace saved");
   };
-  const convert = () => {
-    if (!isLive()) return toast("Turned into an organisation");
-    confirmDlg({
-      title: "Turn into an organisation?",
-      body: "This workspace and its projects become an organisation that can invite people. You get a new, empty personal workspace.",
-      ok: "Turn into an organisation",
-      icon: "building-2",
-      run: () => {
-        convertedToOrganization(null)
-          .then(() => toast("It's an organisation now: invite people from Members"))
-          .catch((er: unknown) => toast(`It didn't change: ${errText(er)}`, { kind: "err" }));
-      },
-    });
-  };
   return (
     <>
       <form onSubmit={saveWs}>
@@ -387,11 +372,17 @@ function Workspace() {
       </form>
       {d.ws.kind === "personal" && (
         <div className="sblock">
-          <h2>Turn into an organisation</h2>
-          <SRow t="Work with a team" d="A personal workspace is just for you. An organisation can invite people; you get a new personal workspace.">
-            <button className="btn btn-secondary" onClick={convert} disabled={isLive() && live.ws?.role !== "owner"}>
-              Turn into an organisation
-            </button>
+          <h2>Work with a team</h2>
+          <SRow t="Create an organisation" d="Keep this workspace personal. Create a separate organisation, then move selected projects when needed.">
+            {isLive() ? (
+              <a className="btn btn-secondary" href="/onboarding?mode=project&team=1">
+                Create organisation workspace
+              </a>
+            ) : (
+              <button className="btn btn-secondary" onClick={() => toast("Sample workspace setup is read-only")}>
+                Create organisation workspace
+              </button>
+            )}
           </SRow>
         </div>
       )}
@@ -2305,7 +2296,7 @@ function LivePermissions() {
       {ws.kind === "personal" ? (
         <div className="alert info" style={{ marginBottom: 14 }}>
           <Ic n="info" s={15} />
-          <span>A personal workspace is just for you. Turn it into an organisation (Workspace) to invite people and decide what they can do.</span>
+          <span>A personal workspace is just for you. Create a separate organisation workspace to invite people and decide what they can do.</span>
         </div>
       ) : null}
       <div className="sblock" style={{ marginTop: 0 }}>

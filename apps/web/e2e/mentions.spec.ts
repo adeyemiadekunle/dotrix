@@ -1,21 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-import { NOT_WIRED, newUser, signUp, signUpWithProject } from "./helpers";
+import { NOT_WIRED, moveProjectToOrganisation, newUser, signUp, signUpWithProject } from "./helpers";
 
 test.fixme(true, NOT_WIRED);
 
 test("@mention a colleague in a comment, and they find it in Notifications", async ({ page, browser }) => {
   const { key } = await signUpWithProject(page);
+  const organisation = await moveProjectToOrganisation(page, key, "Mention Ltd");
   const board = page.url();
-  // Turning it into an organisation keeps its address.
-  const slug = /\/w\/([^/]+)/.exec(board)![1]!;
-
-  // Turn the workspace into an organisation and invite Bob with a link.
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Invites" }).click();
-  await page.getByLabel("Organisation name").fill("Mention Ltd");
-  await page.getByRole("button", { name: "Turn into an organisation" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Turn into an organisation" }).click();
+  const slug = organisation.slug;
+  await page.goto(`/w/${slug}/members`);
   await page.getByRole("button", { name: "Create link" }).click();
   const link = (await page.getByText(/\/invites\/accept\?token=/).textContent())!.trim();
 

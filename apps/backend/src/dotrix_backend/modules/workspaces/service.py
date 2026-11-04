@@ -21,8 +21,8 @@ from .models import Membership, Role, Workspace, WorkspaceKind
 from .permissions import Permission, can
 from .repository import MembershipRepository, WorkspaceRepository
 from .schemas import (
+    FirstWorkspaceChoice,
     MemberRead,
-    OrganizationConversion,
     WorkspaceCreate,
     WorkspaceUpdate,
     WorkspaceWithRole,
@@ -87,24 +87,36 @@ class WorkspaceService:
             WorkspaceWithRole.of(ws, role) for ws, role in await self.workspaces.list_for_user(user.id)
         ]
 
-    async def convert_to_organization(self, owner: Membership, data: OrganizationConversion) -> WorkspaceWithRole:
-        """Turn a personal workspace into an organisation, with its projects; its owner gets a
-        new, empty personal workspace. Owners only (the route checks it)."""
-        workspace = await self.session.get(Workspace, owner.workspace_id, with_for_update=True)
-        assert workspace is not None  # the route found it
-        if workspace.kind is not WorkspaceKind.PERSONAL:
-            raise Conflict("This workspace is already an organisation")
-        workspace.kind = WorkspaceKind.ORGANIZATION
-        details: dict[str, object] = {}
-        if data.name and data.name != workspace.name:
-            details = {"from": workspace.name, "to": data.name}
-            workspace.name = data.name
-        await self._audit(owner, "workspace.converted_to_organization", **details)
-        user = await UserRepository(self.session).get(owner.user_id)
-        assert user is not None
-        await self.create_personal(user)
+    async def choose_first(self, user: User, data: FirstWorkspaceChoice) -> WorkspaceWithRole:
+        """One saved registration choice, serialized per person; retries cannot create teams twice."""
+        user = await self.session.scalar(select(User).where(User.id == user.id).with_for_update()
+                                         .execution_options(populate_existing=True))
+        if user is None or not user.is_active:
+            raise NotFound("Account is no longer available")
+        if user.onboarding_workspace_id:
+            membership = await self.members.get(user.onboarding_workspace_id, user.id)
+            if membership is None:
+                raise NotFound("The selected workspace is no longer available")
+            workspace = await self.session.get(Workspace, user.onboarding_workspace_id)
+            if workspace.kind.value != data.kind or data.kind == "organization" and workspace.name != data.name:
+                raise Conflict("Your first workspace is already selected. Refresh to continue setup; create other organisations separately.")
+            return WorkspaceWithRole.of(workspace, membership.role)
+        if data.kind == "personal":
+            workspace = await self.session.scalar(select(Workspace).join(Membership).where(
+                Workspace.created_by_id == user.id, Workspace.kind == WorkspaceKind.PERSONAL,
+                Membership.user_id == user.id, Membership.role == Role.OWNER,
+            ).order_by(Workspace.created_at, Workspace.id).limit(1))
+            if workspace is None:
+                workspace = await self.create_personal(user)
+        else:
+            workspace = self._create(data.name, WorkspaceKind.ORGANIZATION, user)
+            await self.session.flush()
+            owner = Membership(workspace_id=workspace.id, user_id=user.id, role=Role.OWNER)
+            self.members.add(owner)
+            await self._audit(owner, "workspace.created", name=workspace.name, kind="organization", source="onboarding")
+        user.onboarding_workspace_id = workspace.id
         await self.session.commit()
-        return WorkspaceWithRole.of(workspace, owner.role)
+        return WorkspaceWithRole.of(workspace, Role.OWNER)
 
     async def update(self, member: Membership, data: WorkspaceUpdate) -> WorkspaceWithRole:
         workspace = member.workspace

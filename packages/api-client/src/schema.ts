@@ -773,6 +773,26 @@ export interface paths {
         patch: operations["update_profile"];
         trace?: never;
     };
+    "/v1/me/onboarding-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Onboarding Workspace
+         * @description Save the first optional workspace choice. Personal is the default; no conversion or projects.
+         */
+        post: operations["choose_onboarding_workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/sessions": {
         parameters: {
             query?: never;
@@ -1041,28 +1061,6 @@ export interface paths {
          *     working the board (`member_permissions`). Owners and admins.
          */
         patch: operations["update_workspace"];
-        trace?: never;
-    };
-    "/v1/workspaces/{workspace_id}/convert-to-organization": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Convert To Organization
-         * @description Turn your personal workspace into an organisation, with its projects, so it can invite
-         *     people; optionally rename it. You get a new, empty personal workspace. Owners only; 409 if
-         *     it's already an organisation.
-         */
-        post: operations["convert_to_organization"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/v1/workspaces/{workspace_id}/members": {
@@ -7370,6 +7368,17 @@ export interface components {
             /** Message */
             message?: string | null;
         };
+        /** FirstWorkspaceChoice */
+        FirstWorkspaceChoice: {
+            /**
+             * Kind
+             * @default personal
+             * @enum {string}
+             */
+            kind: "personal" | "organization";
+            /** Name */
+            name?: string | null;
+        };
         /** GitHubFinish */
         GitHubFinish: {
             /**
@@ -8633,14 +8642,6 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at: string | null;
-        };
-        /** OrganizationConversion */
-        OrganizationConversion: {
-            /**
-             * Name
-             * @description A new name, e.g. the team's
-             */
-            name?: string | null;
         };
         /** OutputItemUpdate */
         OutputItemUpdate: {
@@ -10438,6 +10439,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Onboarding Workspace Id */
+            onboarding_workspace_id?: string | null;
         };
         /** VersionDiff */
         VersionDiff: {
@@ -12704,6 +12707,66 @@ export interface operations {
             };
         };
     };
+    choose_onboarding_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FirstWorkspaceChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceWithRole"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_sessions: {
         parameters: {
             query?: never;
@@ -13443,77 +13506,6 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    convert_to_organization: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrganizationConversion"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceWithRole"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };

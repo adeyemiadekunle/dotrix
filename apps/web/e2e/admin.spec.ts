@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { NOT_WIRED, signUp, signUpWithProject } from "./helpers";
+import { NOT_WIRED, moveProjectToOrganisation, signUp, signUpWithProject } from "./helpers";
 
 test.fixme(true, NOT_WIRED);
 
@@ -88,15 +88,12 @@ test("the project graph: a document names an issue, and each shows the other as 
   await expect(page.getByRole("img", { name: "The project graph around vision.md" })).toBeVisible();
 });
 
-test("turn the personal workspace into an organisation, then restrict a project", async ({ page }) => {
+test("move a personal project into an organisation, then restrict it", async ({ page }) => {
   await signUpWithProject(page, "Kuturn", "KUT");
+  const organisation = await moveProjectToOrganisation(page, "KUT", "Kunemi Ltd");
   const projectSettings = page.url().replace(/\/board.*$/, "/settings");
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Invites" }).click();
-  await page.getByLabel("Organisation name").fill("Kunemi Ltd");
-  await page.getByRole("button", { name: "Turn into an organisation" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Turn into an organisation" }).click();
-  // It can invite now, and keeps its project; a new personal workspace is in the switcher.
+  await page.goto(`/w/${organisation.slug}/members`);
+  // The organisation can invite; the original personal workspace stays in the switcher.
   await expect(page.getByRole("button", { name: "Create link" })).toBeVisible();
   await page
     .getByRole("button", { name: /Kunemi Ltd/ })

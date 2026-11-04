@@ -69,14 +69,11 @@ async def test_removals_and_invites_are_audited(signup, create_team, add_member,
     assert token not in str(events)
 
 
-async def test_turning_personal_into_an_organisation_is_audited(signup, db_client: AsyncClient) -> None:
+async def test_onboarding_organisation_creation_is_audited(signup, db_client: AsyncClient) -> None:
     ada = await signup()
-    personal = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()[0]
-    res = await db_client.post(
-        f"/v1/workspaces/{personal['id']}/convert-to-organization", json={"name": "Kunemi"}, headers=ada.headers
-    )
-    assert res.status_code == 200
-    events = await audit(db_client, personal["id"], ada.headers)
+    res = await db_client.post("/v1/me/onboarding-workspace", json={"kind": "organization", "name": "Kunemi"}, headers=ada.headers)
+    assert res.status_code == 200, res.text
+    events = await audit(db_client, res.json()["id"], ada.headers)
     assert [(e["action"], e["details"]) for e in events] == [
-        ("workspace.converted_to_organization", {"from": "Personal", "to": "Kunemi"})
+        ("workspace.created", {"name": "Kunemi", "kind": "organization", "source": "onboarding"})
     ]

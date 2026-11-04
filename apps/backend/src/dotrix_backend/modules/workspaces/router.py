@@ -15,7 +15,6 @@ from .permissions import Permission
 from .schemas import (
     MemberRead,
     MemberRoleUpdate,
-    OrganizationConversion,
     OwnershipTransfer,
     WorkspaceCreate,
     WorkspaceUpdate,
@@ -50,16 +49,6 @@ async def create_workspace(
 async def get_workspace(member: Viewer) -> WorkspaceWithRole:
     """A workspace you belong to."""
     return WorkspaceWithRole.of(member.workspace, member.role)
-
-
-@router.post("/{workspace_id}/convert-to-organization", responses=errors(403, 404, 409, 422))
-async def convert_to_organization(
-    data: OrganizationConversion, member: Owner, session: SessionDep
-) -> WorkspaceWithRole:
-    """Turn your personal workspace into an organisation, with its projects, so it can invite
-    people; optionally rename it. You get a new, empty personal workspace. Owners only; 409 if
-    it's already an organisation."""
-    return await WorkspaceService(session).convert_to_organization(member, data)
 
 
 @router.patch("/{workspace_id}", responses=errors(403, 404, 422))

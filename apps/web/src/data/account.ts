@@ -1,6 +1,6 @@
 // Settings and Members against the API, for a real workspace (live.ts loads the rest). Your
 // account (profile, sign-in methods, password, notifications, where you're signed in), the
-// workspace (name, what members can do, turning a personal one into an organisation), its people
+// workspace (name and what members can do), its people
 // (invites, removing, handing over ownership, who sees a restricted project), and the agents'
 // settings (contracts, rules, skills, GitHub). Sections load what they show when they open
 // (useApi); the seeded demo keeps its own behaviour.
@@ -138,13 +138,6 @@ export async function unattendedPaused(on: boolean) {
     failed("Pausing changes without approval", e);
   }
   render();
-}
-
-/** A personal workspace becomes an organisation (you get a new, empty personal one); reloaded. */
-export async function convertedToOrganization(name: string | null) {
-  const w = await send(api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...wsPath(), body: { name } }));
-  await loadWorkspace(w.slug);
-  return w;
 }
 
 /* ---------- people ---------- */

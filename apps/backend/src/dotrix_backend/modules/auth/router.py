@@ -19,6 +19,8 @@ from dotrix_backend.api.deps import (
 from dotrix_backend.core import security
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.core.ratelimit import client_ip
+from dotrix_backend.modules.workspaces.schemas import FirstWorkspaceChoice, WorkspaceWithRole
+from dotrix_backend.modules.workspaces.service import WorkspaceService
 
 from .github import GitHubDep
 from .limits import LOGIN, MAGIC_LINK, PASSWORD_RESET, SIGNUP, VERIFY_RESEND, ThrottleDep
@@ -195,6 +197,14 @@ async def confirm_password_reset(data: PasswordResetConfirm, auth: Auth) -> None
 async def me(user: CurrentUser) -> UserRead:
     """The signed-in user."""
     return UserRead.model_validate(user)
+
+
+@me_router.post("/me/onboarding-workspace", responses=errors(401, 404, 409, 422))
+async def choose_onboarding_workspace(
+    data: FirstWorkspaceChoice, user: CurrentUser, session: SessionDep,
+) -> WorkspaceWithRole:
+    """Save the first optional workspace choice. Personal is the default; no conversion or projects."""
+    return await WorkspaceService(session).choose_first(user, data)
 
 
 def get_session_service(session: SessionDep, settings: SettingsDep) -> SessionService:

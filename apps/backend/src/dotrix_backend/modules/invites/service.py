@@ -45,7 +45,7 @@ def _check_can_invite(workspace: object) -> None:
     """People join organisations; a personal workspace is just for its owner."""
     if getattr(workspace, "kind", None) is not WorkspaceKind.ORGANIZATION:
         raise InvitesNeedOrganization(
-            "A personal workspace is just for you. To work with others, create an organisation or turn this into one."
+            "A personal workspace is just for you. Create a separate organisation to work with others, then move selected projects explicitly."
         )
 
 
