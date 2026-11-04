@@ -54,7 +54,30 @@ def test_session_cookies_are_secure_when_deployed(env: str, secure: bool) -> Non
 def test_deployed_coding_runs_push_to_a_fork(env: str) -> None:
     with pytest.raises(ValueError, match="DOTRIX_CODING_FORK_OWNER"):
         settings(env=env, **DEPLOYED, coding_sandbox="docker")
-    assert settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork").coding_fork_owner
+    assert settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork",
+                    coding_docker_runtime="runsc").coding_fork_owner
     assert settings(env=env, **DEPLOYED).coding_fork_owner is None  # coding off: no fork needed
     with pytest.raises(ValueError):
         settings(coding_fork_owner="not/an-org")
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+@pytest.mark.parametrize("runtime", [None, "", "runc", "io.containerd.runc.v2", "custom"])
+def test_deployed_docker_coding_requires_gvisor(env: str, runtime: str | None) -> None:
+    with pytest.raises(ValueError, match="DOTRIX_CODING_DOCKER_RUNTIME=runsc"):
+        settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork",
+                 coding_docker_runtime=runtime)
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_deployed_coding_cannot_disable_the_worker_capacity_limit(env: str) -> None:
+    with pytest.raises(ValueError, match="DOTRIX_CODING_MAX_RUNS must be positive"):
+        settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork",
+                 coding_docker_runtime="runsc", coding_max_runs=0)
+    assert settings(env=env, **DEPLOYED, coding_max_runs=0).coding_sandbox == "off"
+
+
+def test_development_keeps_plain_docker_and_unlimited_runs_available() -> None:
+    local = settings(coding_sandbox="docker", coding_max_runs=0)
+    assert local.coding_docker_runtime is None
+    assert local.coding_max_runs == 0
