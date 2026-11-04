@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Optional first-workspace choice after signup, defaulting to Personal, with durable organisation setup and a labelled onboarding stepper.
+
 - Project readiness across setup, Overview and empty task views, with private model evidence and next actions that explain missing prerequisites and permissions.
 
 - Preview and import selected GitHub Issues into project tasks with explicit state/label/assignee mappings, shared visibility confirmation and source links. Retries skip imported work and preserve human edits; later GitHub changes are not automatically synchronized.
@@ -107,6 +109,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   computer; an open file from a local turn stops refreshing once the turn is done.
 
 ### Removed
+
+- Personal-to-organisation workspace conversion; create separate organisations and move selected projects explicitly.
 
 - The fx chat runtime comparison (`experiments/fx-chat`) is gone: fx has been a normal choice for a conversation since
   2026-10-30, not an experiment. Developers only; nothing changes for people using dotrix.

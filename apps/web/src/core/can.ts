@@ -40,5 +40,5 @@ export function defaultApproval(): ApprovalMode {
 }
 
 /** Invites: people who manage members. (In a personal workspace that's its owner, whose invite
- * dialog explains it turns into an organisation first.) */
+ * dialog explains that a separate organisation workspace is needed.) */
 export const canInvite = () => allowed("members:manage");

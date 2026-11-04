@@ -118,7 +118,20 @@ Done when: a new or returning person can tell what is ready, what is missing and
 
 Implementation: a shared saved-state readiness API and panel serve onboarding, Overview and empty task views. Readiness distinguishes real repository bindings from URLs, baseline revision freshness, meaningful knowledge from untouched templates, personal key availability from current-key successful-run evidence, and implementation preparation from live execution admission. Viewing guidance never invokes a provider or changes project state; actions open existing setup, manual work or editable Nova drafts. Live journey verification remains separate.
 
+### J08 — Choose the first workspace after signup
+
+- [x] Start onboarding with an optional Personal or Organisation choice; Personal is selected by default and Skip keeps Personal.
+- [x] Keep one login and a private personal workspace; create a separate organisation owned by its founder when explicitly selected.
+- [x] Persist the choice, serialize concurrent submissions and recover uncertain responses without duplicate organisations or continuing in the wrong workspace.
+- [x] Use a labelled stepper for Workspace, Project, optional GitHub, Model and Ready, with saved-state Back and refresh behavior.
+- [x] Preserve invitation and auth return paths, personal model keys and explicit project moves in both directions.
+- [x] Remove personal-to-organisation conversion from the API and user interface; retain normal creation of additional organisations.
+
+Done when: a new person chooses or skips workspace setup, completes a project in the intended workspace and can return without recreating the organisation. Workspace selection makes no model calls and never moves existing projects implicitly. Existing accounts retain their owned personal workspace without repeating registration.
+
 ## Verification and release checklist
+
+- [ ] Signup → optional first workspace choice or Personal skip → correct workspace/project; retries and Back/refresh preserve confirmed choices.
 
 - [ ] Solo idea → draft project → useful proposal → saved scope/tasks → later repository connection.
 - [ ] Solo personal GitHub → supported repository creation/connection path → first task → reviewed PR.

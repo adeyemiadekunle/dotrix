@@ -105,6 +105,7 @@ class UserRead(BaseModel):
     title: str | None = Field(description="What they do, e.g. Product designer")
     avatar_updated_at: datetime | None = Field(description="When their photo last changed; null without one")
     created_at: datetime
+    onboarding_workspace_id: uuid.UUID | None = None
 
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]

@@ -7,8 +7,9 @@ import { PROJECT_STARTS, projectStart, projectDiscussionHref, projectImplementat
 import { RepositoryCreate } from "./RepositoryCreate";
 import { ProjectReadiness } from "../views/ProjectReadiness";
 
-type Step = "project" | "github" | "model" | "ready";
+type Step = "workspace" | "project" | "github" | "model" | "ready";
 const steps: Step[] = ["project", "github", "model", "ready"];
+const stepNames: Record<Step, string> = { workspace: "Workspace", project: "Project", github: "GitHub", model: "Model", ready: "Ready" };
 
 /** Only server-confirmed workspace/project IDs are retained across redirects. Keys stay in memory. */
 export function Onboarding() {
@@ -19,8 +20,11 @@ export function Onboarding() {
   const [selectedStart, setStart] = useState<ProjectStart | null>(readProjectStart(query.get("intent")));
   const [workspaceId, setWorkspace] = useState(query.get("workspace") ?? "");
   const [projectId, setProject] = useState(query.get("project") ?? "");
-  const [step, setStep] = useState<Step>(steps.includes(query.get("step") as Step) ? (query.get("step") as Step) : "project");
+  const [step, setStep] = useState<Step>(
+    steps.includes(query.get("step") as Step) || (!addingProject && query.get("step") === "workspace") ? (query.get("step") as Step) : "project",
+  );
   const [teamName, setTeamName] = useState("");
+  const [workspaceKind, setWorkspaceKind] = useState<"personal" | "organization">("personal");
   const [creatingTeam, setCreatingTeam] = useState(query.get("team") === "1");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -33,12 +37,20 @@ export function Onboarding() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const signedIn = hasSession();
+  const profile = useQuery({ queryKey: ["onboarding-profile"], enabled: signedIn, queryFn: () => unwrap(api.GET("/v1/me")) });
   const workspaces = useQuery({ queryKey: ["workspaces"], enabled: signedIn, queryFn: () => unwrap(api.GET("/v1/workspaces")) });
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   useEffect(() => {
-    if (!workspaces.data) return;
-    if (!workspaceId) setWorkspace((workspaces.data.find((item) => item.kind === "personal") ?? workspaces.data[0])?.id ?? "");
-  }, [workspaces.data, workspaceId]);
+    if (!workspaces.data || !profile.data) return;
+    if (!workspaceId)
+      setWorkspace(
+        (
+          workspaces.data.find((item) => item.id === profile.data.onboarding_workspace_id) ??
+          workspaces.data.find((item) => item.kind === "personal") ??
+          workspaces.data[0]
+        )?.id ?? "",
+      );
+  }, [workspaces.data, workspaceId, profile.data]);
   const path = { workspace_id: workspaceId };
   const projects = useQuery({
     queryKey: ["projects", workspaceId],
@@ -47,7 +59,9 @@ export function Onboarding() {
   });
   const project = projects.data?.find((item) => item.id === projectId);
   const intention = project ? projectStart(project.source) : selectedStart;
-  const flowSteps: Step[] = intention === "idea" && step !== "github" && !project?.repo_url ? ["project", "model", "ready"] : steps;
+  const projectSteps: Step[] = intention === "idea" && step !== "github" && !project?.repo_url ? ["project", "model", "ready"] : steps;
+  const flowSteps: Step[] = addingProject ? projectSteps : ["workspace", ...projectSteps];
+  const needsWorkspaceChoice = !addingProject && !query.has("workspace") && !query.has("project") && profile.data?.onboarding_workspace_id == null;
   const github = useQuery({
     queryKey: ["onboarding-github", workspaceId],
     enabled: !!workspace && step === "github",
@@ -126,6 +140,31 @@ export function Onboarding() {
         throw cause;
       }
     });
+  const chooseWorkspace = (kind: "personal" | "organization") =>
+    perform(async () => {
+      const body = { kind, name: kind === "organization" ? teamName.trim() : null };
+      let chosen;
+      try {
+        chosen = await unwrap(api.POST("/v1/me/onboarding-workspace", { body }));
+      } catch (cause) {
+        // The response may have been lost after commit; recover only the same saved choice.
+        const saved = await profile.refetch();
+        const available = await workspaces.refetch();
+        chosen = available.data?.find((item) => item.id === saved.data?.onboarding_workspace_id);
+        if (!chosen) throw cause;
+        if (chosen.kind !== kind || (kind === "organization" && chosen.name !== body.name)) {
+          setWorkspace(chosen.id);
+          setCreatingTeam(false);
+          move("workspace", "", chosen.id);
+          throw new Error("A workspace choice is already saved. Review it before continuing.");
+        }
+      }
+      await workspaces.refetch();
+      await profile.refetch();
+      setWorkspace(chosen.id);
+      setCreatingTeam(false);
+      move("project", "", chosen.id);
+    });
   const connectRepo = () =>
     perform(async () => {
       const repo = repos.data?.find((item) => `${item.installation_ref}:${item.github_repo_id}` === repoId);
@@ -157,20 +196,31 @@ export function Onboarding() {
         <a href={`/login?next=${encodeURIComponent(location.pathname + location.search)}`}>Sign in</a>
       </div>
     );
-  if (workspaces.isLoading)
+  if (workspaces.isLoading || profile.isLoading)
     return (
       <div className="auth-card" role="status">
         Loading your workspaces…
       </div>
     );
-  if (workspaces.isError)
+  if (workspaces.isError || profile.isError)
     return (
       <div className="auth-card" role="alert">
-        {errorMessage(workspaces.error)}
-        <button onClick={() => void workspaces.refetch()}>Try again</button>
+        {errorMessage(workspaces.error ?? profile.error)}
+        <button
+          onClick={() => {
+            void workspaces.refetch();
+            void profile.refetch();
+          }}
+        >
+          Try again
+        </button>
       </div>
     );
-  if (workspace && workspace.role !== "owner" && workspace.role !== "admin")
+  const ownWorkspace =
+    workspaces.data?.find((item) => item.kind === "personal" && item.role === "owner") ??
+    workspaces.data?.find((item) => item.role === "owner" || item.role === "admin");
+  const ownSetupHref = `/onboarding?${new URLSearchParams(ownWorkspace ? { mode: "project", workspace: ownWorkspace.id } : { mode: "project", team: "1" })}`;
+  if (workspace && workspace.role !== "owner" && workspace.role !== "admin" && !creatingTeam && !needsWorkspaceChoice)
     return (
       <div className="auth-card">
         <h1>Open your team workspace</h1>
@@ -178,7 +228,7 @@ export function Onboarding() {
         <a className="btn btn-primary" href={`/w/${workspace.slug}`}>
           Open workspace
         </a>
-        <a href="/onboarding">Set up a project in your own workspace</a>
+        <a href={ownSetupHref}>Set up a project in your own workspace</a>
       </div>
     );
   const duplicateKey = projects.data?.some((item) => item.key === key);
@@ -186,16 +236,80 @@ export function Onboarding() {
   const modelReady =
     !!access.data?.ready &&
     !!((models.data?.default_model && access.data.models.includes(models.data.default_model)) || (project && access.data.models.includes(project.model)));
-  const current: Step = !project ? "project" : step;
+  const current: Step = needsWorkspaceChoice || (step === "workspace" && !addingProject) ? "workspace" : !project ? "project" : step;
   const discussionStart = project?.repo_url ? "existing" : intention;
   return (
     <div className="auth-card onb" style={{ maxWidth: 560 }}>
-      <div className="steps" aria-label={`Step ${flowSteps.indexOf(current) + 1} of ${flowSteps.length}`}>
-        {flowSteps.map((item) => (
-          <i key={item} className={flowSteps.indexOf(item) <= flowSteps.indexOf(current) ? "on" : ""} />
-        ))}
-      </div>
-      <p className="faint">{flowSteps.includes("github") ? "Project · GitHub · Model · Start working" : "Project · Model · Start working"}</p>
+      <nav aria-label="Onboarding progress">
+        <ol className="row" style={{ listStyle: "none", padding: 0, gap: 12, flexWrap: "wrap" }}>
+          {flowSteps.map((item, index) => (
+            <li key={item} aria-current={item === current ? "step" : undefined} className={index <= flowSteps.indexOf(current) ? "" : "faint"}>
+              <span className="badge">{index + 1}</span> {stepNames[item]}
+              {index < flowSteps.indexOf(current) && <span className="sr-only"> completed</span>}
+            </li>
+          ))}
+        </ol>
+      </nav>
+      <p className="faint">
+        Step {flowSteps.indexOf(current) + 1} of {flowSteps.length}: {stepNames[current]}
+      </p>
+      {current === "workspace" && (
+        <>
+          <h1>{needsWorkspaceChoice ? "Choose your workspace" : "Your workspace is saved"}</h1>
+          {needsWorkspaceChoice ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void chooseWorkspace(workspaceKind);
+              }}
+            >
+              <p className="sub">Start personally or create an organisation for your team. Your login and personal model keys remain yours.</p>
+              <fieldset style={{ border: 0, padding: 0 }} disabled={busy}>
+                <legend className="label">How will you use Dotrix?</legend>
+                <div className="opts">
+                  <label className={`opt ${workspaceKind === "personal" ? "on" : ""}`}>
+                    <input type="radio" name="workspace-kind" checked={workspaceKind === "personal"} onChange={() => setWorkspaceKind("personal")} />
+                    Personal
+                  </label>
+                  <label className={`opt ${workspaceKind === "organization" ? "on" : ""}`}>
+                    <input type="radio" name="workspace-kind" checked={workspaceKind === "organization"} onChange={() => setWorkspaceKind("organization")} />
+                    Organisation
+                  </label>
+                </div>
+                {workspaceKind === "organization" && (
+                  <label className="label">
+                    Organisation name
+                    <input
+                      className="input"
+                      value={teamName}
+                      onChange={(event) => setTeamName(event.target.value)}
+                      maxLength={100}
+                      autoComplete="organization"
+                      required
+                    />
+                  </label>
+                )}
+              </fieldset>
+              <p className="muted">Skip to keep your private personal workspace. You can create an organisation later and move projects explicitly.</p>
+              <button className="btn btn-primary" type="submit" disabled={busy || (workspaceKind === "organization" && !teamName.trim())}>
+                Continue
+              </button>
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void chooseWorkspace("personal")}>
+                Skip for now
+              </button>
+            </form>
+          ) : (
+            <>
+              <p>
+                {workspace?.name} · {workspace?.kind === "organization" ? "Organisation" : "Personal"}. Project moves are separate from workspace setup.
+              </p>
+              <button className="btn btn-primary" disabled={busy} onClick={() => move("project")}>
+                Continue
+              </button>
+            </>
+          )}
+        </>
+      )}
       {current === "project" && (
         <>
           <h1>{addingProject || !!projects.data?.length ? "Create a project" : "Create your first project"}</h1>
@@ -664,7 +778,7 @@ export function Onboarding() {
           )}
         </>
       )}
-      {current !== "project" && (
+      {flowSteps.indexOf(current) > 0 && (
         <button className="btn btn-ghost" disabled={busy} onClick={() => move(flowSteps[Math.max(0, flowSteps.indexOf(current) - 1)]!)}>
           Back
         </button>

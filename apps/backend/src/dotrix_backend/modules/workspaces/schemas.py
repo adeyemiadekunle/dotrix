@@ -3,9 +3,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from .approval_modes import ApprovalMode, cap_of, lowest
 from .models import Role, WorkspaceKind
@@ -19,6 +27,20 @@ class WorkspaceCreate(BaseModel):
     # Personal workspaces are created automatically at sign-up, one per user; a new one is an
     # organisation.
     kind: Literal[WorkspaceKind.ORGANIZATION] = WorkspaceKind.ORGANIZATION
+
+
+class FirstWorkspaceChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["personal", "organization"] = "personal"
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
+
+    @model_validator(mode="after")
+    def organization_name(self):
+        if self.kind == "organization" and not self.name:
+            raise ValueError("Give the organisation a name")
+        if self.kind == "personal" and self.name is not None:
+            raise ValueError("Personal setup does not create or rename an organisation")
+        return self
 
 
 class WorkspaceUpdate(BaseModel):
@@ -136,7 +158,3 @@ class MemberRoleUpdate(BaseModel):
 
 class OwnershipTransfer(BaseModel):
     user_id: uuid.UUID
-
-
-class OrganizationConversion(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=100, description="A new name, e.g. the team's")

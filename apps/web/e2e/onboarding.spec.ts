@@ -10,6 +10,10 @@ test("new accounts save a first project, resume setup and connect a personal mod
   await page.getByLabel("Password", { exact: true }).fill(person.password);
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(page).toHaveURL(/\/onboarding/);
+  await expect(page.getByRole("heading", { name: "Choose your workspace", exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Personal", exact: true })).toBeChecked();
+  await expect(page.getByRole("navigation", { name: "Onboarding progress", exact: true })).toContainText("Workspace");
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your first project" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
   await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
@@ -60,6 +64,7 @@ test("GitHub installation returns to the saved onboarding project", async ({ pag
     route.fulfill({ json: { configured: true, install_url: "https://github.com/apps/test/installations/new", installations: [] } }),
   );
   await page.goto("/onboarding");
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
   await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("GitHub project");
   await page.getByLabel("Project key", { exact: true }).fill("GITHUB");
@@ -80,9 +85,9 @@ test("GitHub installation returns to the saved onboarding project", async ({ pag
 test("team workspace creation is explicit and its saved project resumes after refresh", async ({ page }) => {
   await signUp(page);
   await page.goto("/onboarding");
-  await page.getByRole("button", { name: "Create a team workspace", exact: true }).click();
-  await page.getByLabel("Team workspace name", { exact: true }).fill("Delivery team");
-  await page.getByRole("button", { name: "Create team workspace", exact: true }).click();
+  await page.getByRole("radio", { name: "Organisation", exact: true }).check();
+  await page.getByLabel("Organisation name", { exact: true }).fill("Delivery team");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("button", { name: "Create a team workspace", exact: true })).toBeVisible();
   await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
   await page.getByLabel("Project name", { exact: true }).fill("Team project");
@@ -214,7 +219,7 @@ test("new invitees join the intended project without creating a personal project
 
 test("a lost team-workspace save response resumes the saved team instead of creating another", async ({ page }) => {
   await signUp(page);
-  await page.goto("/onboarding?team=1");
+  await page.goto("/onboarding?mode=project&team=1");
   let posts = 0;
   await page.route("**/v1/workspaces", async (route) => {
     if (route.request().method() !== "POST") return route.continue();

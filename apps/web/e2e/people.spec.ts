@@ -1,20 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { newUser, signUp } from "./helpers";
+import { createOrganisation, newUser, signUp } from "./helpers";
 
 // Members in a real workspace: an organisation invites people (by email or a link), sees who
 // is pending, decides who sees a restricted project, hands over ownership, and removes people.
 
 const slugOf = (page: Page) => new URL(page.url()).pathname.split("/")[2]!;
 
-async function turnIntoOrganisation(page: Page) {
-  await page.goto(`/w/${slugOf(page)}/settings/workspace`);
-  await page.getByRole("button", { name: "Turn into an organisation" }).click();
-  await page.locator(".modal").getByRole("button", { name: "Turn into an organisation" }).click();
-  await expect(page.getByText("It's an organisation now")).toBeVisible();
-}
-
-test("a personal workspace doesn't invite: it turns into an organisation first", async ({ page }) => {
+test("a personal workspace stays private and a separate organisation invites", async ({ page }) => {
   await signUp(page);
   await page.goto(`/w/${slugOf(page)}/members`);
   await page.getByRole("button", { name: "Invite member" }).click();
@@ -22,7 +15,7 @@ test("a personal workspace doesn't invite: it turns into an organisation first",
   await expect(page.getByRole("button", { name: "Send invites" })).toBeDisabled();
   await page.keyboard.press("Escape");
 
-  await turnIntoOrganisation(page);
+  await createOrganisation(page);
   await page.goto(`/w/${slugOf(page)}/members`);
   await page.getByRole("button", { name: "Invite member" }).click();
   const email = newUser().email;
@@ -43,7 +36,7 @@ test("a personal workspace doesn't invite: it turns into an organisation first",
 
 test("join by link, see a restricted project once added, then become the owner; removing someone", async ({ page, browser }) => {
   await signUp(page, newUser("Ada Owner"));
-  await turnIntoOrganisation(page);
+  await createOrganisation(page);
   const slug = slugOf(page);
   // A project to restrict.
   await page.evaluate(async (s) => {
@@ -121,7 +114,7 @@ test("join by link, see a restricted project once added, then become the owner; 
 
 test("what members can do: an owner grants approving agents' changes", async ({ page }) => {
   await signUp(page);
-  await turnIntoOrganisation(page);
+  await createOrganisation(page);
   await page.goto(`/w/${slugOf(page)}/settings/permissions`);
   await page.getByLabel("Approve agents' changes").check();
   await page.reload();
