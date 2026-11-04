@@ -2980,3 +2980,11 @@ section.side-panel-body[hidden] {
   margin: 4px 0;
   background: var(--divider);
 }
+
+/* Project Knowledge follows the left edge of the project toolbar. */
+.pbody > .knowledge-documents {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 16px 24px 24px;
+}
