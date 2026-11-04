@@ -151,13 +151,16 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
                 CodingRun.thread_id == ctx.thread_id, CodingRun.issue_key == ask.issue_key,
                 CodingSession.state != CodingSessionState.CLOSED, CodingSession.archived_at.is_(None),
             ).order_by(CodingRun.created_at.desc()).limit(1))
+            if previous and previous.status.value in {"awaiting_approval", "queued", "running", "changes_ready", "recovery_required"}:
+                return {"coding_run_id": str(previous.id), "issue_key": previous.issue_key,
+                        "status": previous.status.value, "said": "Kai already has this handoff; approve it in Inbox if it is waiting"}
             if previous:
                 run = await service.follow_up(ProjectAccess(project, member), previous.session_id,
                     CodingFollowUp(message=ask.note or "Continue the instructed work on this issue", approval_mode=approval),
                     origin_run_id=ctx.run_id)
             else:
                 run = await service.start(
-                    ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note, approval_mode=approval),
+                    ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note, approval_mode=ApprovalMode.MANUAL),
                     thread_id=ctx.thread_id, plan_id=plan_id, origin_run_id=ctx.run_id,
                 )
         except DomainError as exc:  # not available here, busy, no such issue, ...
@@ -171,7 +174,7 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
         await session.commit()
     waiting = run.status.value == "awaiting_approval"
     return {"coding_run_id": str(run.id), "issue_key": run.issue_key, "status": run.status.value,
-            "said": "Waiting for a person's approval before Kai starts" if waiting
+            "said": "Approve and start Kai from the approval notification in Inbox" if waiting
             else "Kai has started (your approval mode lets it start at once); the PR is where it's reviewed"}
 
 

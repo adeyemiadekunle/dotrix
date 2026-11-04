@@ -24,6 +24,7 @@ export const ROUTE_NAMES: Record<string, string> = {
   home: "Home",
   inbox: "Inbox",
   mytasks: "My Tasks",
+  tasks: "Tasks",
   favorites: "Favorites",
   notifications: "Notifications",
   search: "Search",

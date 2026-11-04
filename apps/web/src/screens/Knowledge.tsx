@@ -144,7 +144,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
   return (
     <>
       <div className="toolbar">{seg}</div>
-      <div className="page wide" style={{ paddingTop: 16 }}>
+      <div className="page" style={{ paddingTop: 16, width: "100%", maxWidth: "none", margin: 0 }}>
         {!files.length ? (
           <Empty
             icon="book-open"

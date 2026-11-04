@@ -710,6 +710,10 @@ class AgentRunner:
                 policy=policy,
                 unattended=unattended,
                 coding=codes(work_mode),  # only Build engages Kai
+                mode_context=ModeContext(
+                    self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
+                    approval=approval, jobs=self.jobs, github=self.github,
+                ) if work_mode == "build" and not child and not read_only_run else None,
             )
             read_tools, pm_write_tools, _ = build_board_tools(board_context)
             mode_tools = lead_tools(work_mode, ModeContext(
@@ -1010,7 +1014,7 @@ class AgentRunner:
                 checkpointer=self.checkpointer, web_search=choice.web_search, rules=rules,
                 task_tools=(read_tools if projects else [], []), subagent_task_tools=[], agents=specs,
                 models=lambda name: self.model_factory(stand_in, name, keys=keys).model,  # type: ignore[arg-type]
-                board_instructions=WORKSPACE_GUIDE, context=context,
+                board_instructions=(WORKSPACE_GUIDE if projects else "General chat: answer without project context. Project work requires selecting a project."), context=context,
                 knowledge_tools=search_tools if projects else [], lead=lead, platform_delegation=True,
             )
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT,

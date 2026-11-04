@@ -1,5 +1,5 @@
 // dotrix's workspace Chat: conversations grouped by project (and
-// "All projects"), a new chat with project, agent, and model; replies with what the agent did
+// "General"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
 // The coding session itself (its turns, the new-session form, the list) is screens/Coding.tsx, built from the pieces exported here.
 // Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
@@ -92,12 +92,11 @@ const SUGGESTIONS = [
   ["list-tree", "Turn the requirements into stories"],
 ];
 const ACROSS = [
-  ["layers", "Summarise all my projects"],
-  ["triangle-alert", "What's at risk this week?"],
+  ["sparkles", "Help me explore an idea"],
+  ["message-circle", "Help me think through a question"],
 ];
 
 // What fx does, under its composer.
-const FX_NOTE = "Nova runs on fx, in every mode. Its changes follow your approval mode, as usual.";
 
 function open(search: string) {
   go("chat", {}, { search });
@@ -903,6 +902,8 @@ function Composer({
   setApproval,
   runtime,
   setRuntime,
+  onStop,
+  stopDisabled = false,
   modeOptions = WORK_MODES,
   disabled = false,
 }: {
@@ -924,6 +925,8 @@ function Composer({
   setApproval?: (m: ApprovalMode) => void;
   runtime?: ChatRuntime;
   setRuntime?: (runtime: ChatRuntime) => void;
+  onStop?: () => void;
+  stopDisabled?: boolean;
   modeOptions?: typeof WORK_MODES;
   disabled?: boolean;
 }) {
@@ -992,59 +995,65 @@ function Composer({
           aria-label="Message"
           aria-expanded={at.open}
         />
+        {onStop && (
+          <button type="button" className="kt-stop" onClick={onStop} disabled={stopDisabled} aria-label="Stop run" data-tip="Stop this turn">
+            <Ic n="square" s={11} />
+            Stop
+          </button>
+        )}
         <button className="kt-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled || submitting} aria-label="Send" data-tip="Send">
           <Ic n="arrow-up" s={15} />
         </button>
       </div>
       <div className="kt-foot cmp-foot">
-        {agent !== "auto" && a && setAgent && (
-          <button className="cmp-chip" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
-            Involve {a.name} <Ic n="x" s={10} />
-          </button>
-        )}
-        <span className="sp" />
-        {mode && setMode && (
-          <span data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
-            <Pick plain value={mode} onChange={(v) => setMode(v as WorkMode)} options={modeOptions.map(([v, l]): [string, string] => [v, l])} label="Mode" />
-          </span>
-        )}
-        {approval && setApproval && approvals.length > 1 && (
-          <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
-            <Pick
-              plain
-              value={approval}
-              onChange={(v) => setApproval(v as ApprovalMode)}
-              options={approvals.map(([v, l]): [string, string] => [v, l])}
-              label="Approvals"
-            />
-          </span>
-        )}
-        {runtime &&
-          (setRuntime ? (
-            <Pick
-              plain
-              value={runtime}
-              onChange={(v) => setRuntime(v as ChatRuntime)}
-              options={[
-                ["deepagents", "Standard"],
-                ["fx", "fx"],
-              ]}
-              label="Chat runtime"
-            />
-          ) : (
-            runtime === "fx" && <span data-tip="This conversation runs on fx">fx</span>
-          ))}
-        {setModel && models?.length ? (
-          <span className="cmp-model">
-            <Pick plain value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" />
-          </span>
-        ) : (
-          model && (
-            <span className="cmp-model" data-tip="The model is fixed once a conversation starts">
-              {model}
+        <div className="cmp-controls cmp-controls-left">
+          {agent !== "auto" && a && setAgent && (
+            <button className="cmp-chip" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
+              Involve {a.name} <Ic n="x" s={10} />
+            </button>
+          )}
+          {approval && setApproval && approvals.length > 1 && (
+            <span>
+              <Pick
+                plain
+                value={approval}
+                onChange={(v) => setApproval(v as ApprovalMode)}
+                options={approvals.map(([v, l]): [string, string] => [v, l])}
+                label="Approvals"
+              />
             </span>
-          )
-        )}
+          )}
+          {setModel && models?.length ? (
+            <span className="cmp-model">
+              <Pick plain value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" />
+            </span>
+          ) : (
+            model && <span className="cmp-model">{model}</span>
+          )}
+        </div>
+        <span className="sp" />
+        <div className="cmp-controls cmp-controls-right">
+          {mode && setMode && (
+            <span data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
+              <Pick plain value={mode} onChange={(v) => setMode(v as WorkMode)} options={modeOptions.map(([v, l]): [string, string] => [v, l])} label="Mode" />
+            </span>
+          )}
+          {runtime &&
+            (setRuntime ? (
+              <Pick
+                plain
+                value={runtime}
+                onChange={(v) => setRuntime(v as ChatRuntime)}
+                options={[
+                  ["deepagents", "Standard"],
+                  ["fx", "fx"],
+                ]}
+                label="Chat runtime"
+              />
+            ) : (
+              runtime === "fx" && <span data-tip="This conversation runs on fx">fx</span>
+            ))}
+        </div>
       </div>
       {at.menu}
     </div>
@@ -1142,7 +1151,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           ) : (
             <span className="pillbtn">
               <Ic n="layers" s={13} />
-              {about.join(", ") || "All projects"}
+              {about.join(", ") || "General"}
             </span>
           )}
           <span className="chat-faces hide-m" aria-label="Agents in this conversation">
@@ -1191,10 +1200,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
                       <i />
                     </span>
                     {stream.activity ?? `${agentName(agent)} is thinking…`}
-                    <span className="sp" />
-                    <button className="btn btn-sm btn-ghost" onClick={halt}>
-                      Stop
-                    </button>
                   </div>
                   {stream.thinking && !stream.text && <Thinking text={stream.thinking} live />}
                 </div>
@@ -1205,9 +1210,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
         </div>
         <div className="chat-input">
           {inputBusy && (
-            <label className="row muted" style={{ gap: 8, fontSize: 12, marginBottom: 8 }}>
-              Send as
+            <div className="chat-delivery-row">
+              <label htmlFor="chat-delivery-kind">Send as</label>
               <select
+                id="chat-delivery-kind"
                 aria-label="Delivery action"
                 value={awaitingApproval ? "queue" : inputKind}
                 onChange={(event) => setInputKind(event.target.value as "queue" | "steer")}
@@ -1215,10 +1221,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
                 <option value="queue">Queue after this turn</option>
                 {!awaitingApproval && <option value="steer">Steer this turn</option>}
               </select>
-              <span>
-                {inputKind === "steer" && !awaitingApproval ? "Applies at the next safe point; keeps current approvals." : "Waits until this turn completes."}
-              </span>
-            </label>
+            </div>
           )}
           {chatInputs
             .filter(
@@ -1230,25 +1233,40 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             )
             .slice(0, 20)
             .reverse()
-            .map((item) => (
-              <div key={item.id} className="row muted" style={{ gap: 8, fontSize: 12, marginBottom: 6 }}>
-                <span>
-                  {item.kind === "queue" ? "Queued follow-up" : "Steering"}: {item.message}
-                </span>
-                <span>{item.status === "accepted" ? "Steering accepted" : item.status}</span>
-                {item.error && <span>{item.error}</span>}
-                {item.status === "pending" && (
-                  <button className="btn btn-sm btn-ghost" disabled={cancelInput.isPending} onClick={() => cancelInput.mutate(item.id)}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            ))}
+            .map((item) => {
+              const deliveryState =
+                item.status === "accepted"
+                  ? item.kind === "steer"
+                    ? "Accepted for the next safe point"
+                    : "Queued after this turn"
+                  : item.status === "rejected"
+                    ? "Not delivered"
+                    : item.status === "sending"
+                      ? "Sending…"
+                      : "Waiting to send";
+              return (
+                <div key={item.id} className={`chat-input-state ${item.status}`}>
+                  <span className={`chat-input-kind ${item.kind}`}>{item.kind === "queue" ? "Queued" : "Steering"}</span>
+                  <span className="chat-input-message" title={item.message}>
+                    {item.message}
+                  </span>
+                  <span className="chat-input-result" role="status">
+                    {deliveryState}
+                  </span>
+                  {item.error && <span className="chat-input-error">{item.error}</span>}
+                  {item.status === "pending" && (
+                    <button className="btn btn-sm btn-ghost" disabled={cancelInput.isPending} onClick={() => cancelInput.mutate(item.id)}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           <Composer
             placeholder="Ask Nova, or type @ to pick a mode"
             agent={agent}
             model={modelName(last?.conversation_model) || undefined}
-            context={p?.name ?? "All projects"}
+            context={p?.name ?? "General"}
             onSend={(q) => say(q)}
             mode={projectId ? mode : undefined}
             setMode={projectId ? setMode : undefined}
@@ -1256,18 +1274,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             runtime={fxPreview ? "fx" : undefined}
             approval={projectId ? approval : undefined}
             setApproval={projectId ? setApproval : undefined}
+            onStop={active ? halt : undefined}
+            stopDisabled={stop.isPending || stopCross.isPending}
             autoFocus
           />
-          {fxPreview && (
-            <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-              {fxRun?.orchestration ? FX_NOTE : `${FX_NOTE} It can't involve specialists here.`}
-            </div>
-          )}
-          {!projectId && (
-            <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-              <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -1289,8 +1299,7 @@ function NewChat({
 }) {
   const ws = wsId();
   const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
-  const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
-  const [picked, setPicked] = useState<string[]>(ps.slice(0, 3).map((p) => p.id));
+  const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ""));
   const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
@@ -1310,7 +1319,7 @@ function NewChat({
       ? send
           .mutateAsync({ message: text, threadId: null, ...body, workMode: mode, approvalMode: approval, chatRuntime: runtime })
           .then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
-      : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: picked, ...body }).then((run) => `thread=${run.thread_id}&across=1`);
+      : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: [], ...body }).then((run) => `thread=${run.thread_id}&across=1`);
     started.then(open, () => {});
   };
   const sugg = pid ? SUGGESTIONS : ACROSS;
@@ -1325,15 +1334,14 @@ function NewChat({
             {greeting()}, {me()?.name.split(" ")[0]}
           </h2>
           <ChoiceCard
-            label="Choose project"
+            label="Chat context"
             choices={[
               ...ps.map((p): Choice => ({ id: p.id, label: p.name, icon: <PIcon p={p} s={14} />, on: pid === p.id, onPick: () => setPid(p.id) })),
               {
                 id: "",
-                label: "All projects",
+                label: "General",
                 icon: <Ic n="layers" s={16} />,
                 on: !pid,
-                tip: "Ask across the projects you pick (read-only)",
                 onPick: () => {
                   setPid("");
                   setRuntime("deepagents");
@@ -1341,28 +1349,11 @@ function NewChat({
               },
             ]}
           />
-          {!pid && !!ps.length && (
-            <div className="row" role="group" aria-label="Projects" style={{ gap: 6, marginTop: 12, flexWrap: "wrap", justifyContent: "center" }}>
-              <span className="faint" style={{ fontSize: 12 }}>
-                Projects
-              </span>
-              {ps.map((p) => (
-                <label key={p.id} className="badge" style={{ cursor: "pointer", gap: 5 }}>
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(p.id)}
-                    onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])}
-                  />
-                  {p.name}
-                </label>
-              ))}
-            </div>
-          )}
         </div>
         <div className="ns-bottom">
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12, justifyContent: "center" }}>
             {sugg.map(([i, s]) => (
-              <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable || (!pid && !picked.length)}>
+              <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable}>
                 <Ic n={i!} s={13} />
                 {s}
               </button>
@@ -1370,14 +1361,14 @@ function NewChat({
           </div>
           <Composer
             key={q}
-            placeholder={pid ? `Ask anything about ${ps.find((p) => p.id === pid)?.name ?? "this project"}` : "Ask anything across your projects"}
+            placeholder={pid ? `Ask anything about ${ps.find((p) => p.id === pid)?.name ?? "this project"}` : "Ask Nova anything"}
             agent={agent}
             setAgent={setAgent}
             model={model}
             setModel={setModel}
             models={availableModels.map((m): [string, string] => [m.id, modelName(m.id, m.name)])}
             context={pid}
-            contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
+            contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "General"]]}
             setContext={(value) => {
               setPid(value);
               if (!value) setRuntime("deepagents");
@@ -1394,11 +1385,7 @@ function NewChat({
             autoFocus
             initial={q}
           />
-          {runtime === "fx" && (
-            <div className="faint" style={{ fontSize: 11.5, marginTop: 6, textAlign: "center" }}>
-              {unavailable ? "Connect a compatible personal model in settings to use fx." : FX_NOTE}
-            </div>
-          )}
+          {unavailable && <p role="alert">Connect a compatible personal model in settings to use fx.</p>}
         </div>
       </div>
     </div>
@@ -2334,13 +2321,6 @@ export function Session({ cs }: { cs: CodingSession }) {
                 <span className="muted" style={{ fontSize: 12.5 }}>
                   {latest.status === "queued" ? `${kai} starts soon` : `${kai} is working`}
                 </span>
-                <span className="sp" />
-                {latest.can_stop && (
-                  <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
-                    <Ic n="square" s={12} />
-                    Stop
-                  </button>
-                )}
               </div>
             )}
             {latest?.status === "recovery_required" && (
@@ -2403,13 +2383,26 @@ export function Session({ cs }: { cs: CodingSession }) {
                 }
               }}
             />
+            {latest?.can_stop && (latest.status === "running" || latest.status === "queued") && (
+              <button
+                type="button"
+                className="kt-stop"
+                disabled={stop.isPending}
+                onClick={() => stop.mutate(latest.id)}
+                aria-label="Stop coding turn"
+                data-tip="Stop this turn"
+              >
+                <Ic n="square" s={11} />
+                Stop
+              </button>
+            )}
             <button className="kt-send" disabled={busy || !ask.trim() || follow.isPending} onClick={send} aria-label="Send" data-tip="Send">
               <Ic n="arrow-up" s={15} />
             </button>
           </div>
           <div className="kt-foot">
-            <span data-tip="The model this session's turns use">{sessionModel(latest?.model)}</span>
-            <span data-tip="Follow-ups are approved like the first turn">{modeName(latest?.approval_mode)}</span>
+            <span>{sessionModel(latest?.model)}</span>
+            <span>{modeName(latest?.approval_mode)}</span>
             <span className="sp" />
             {cs.location !== "local" && cs.sandbox && (
               <span

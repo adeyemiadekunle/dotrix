@@ -4,12 +4,32 @@ import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from 
 import { go } from "../core/nav";
 import { TODAY, ago, dOff, diffD, parse } from "../core/utils";
 import { isLive, live, taskPatched } from "../data/live";
-import { useLiveArchivedTasks, useLiveMyTasks, useLiveStarredTasks } from "../../lib/workspace-data";
+import { useLiveAllTasks, useLiveArchivedTasks, useLiveMyTasks, useLiveStarredTasks } from "../../lib/workspace-data";
 import { D, S, allTasks, canSee, isOver, mutate, proj, render } from "../data/store";
 import { ListView, MiniRow } from "../components/TaskList";
-import { applyView, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
+import { applyView, groupTasks, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty, StIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
+
+export function WorkspaceTasks() {
+  const k = "tasks";
+  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
+  const tasks = applyView(isLive() ? (liveTasks ?? []) : allTasks(), viewOf(k));
+  return (
+    <div className="page flush">
+      <div className="ph">
+        <div>
+          <h1>Tasks</h1>
+          <p>Across your projects</p>
+        </div>
+      </div>
+      <ViewToolbar k={k} />
+      <div className="list-wrap">
+        <ListView groups={groupTasks(tasks, viewOf(k).group)} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
+      </div>
+    </div>
+  );
+}
 
 export function MyTasks() {
   const k = "mytasks";

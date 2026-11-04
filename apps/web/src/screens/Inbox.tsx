@@ -406,7 +406,7 @@ function CodingDecision({ workspaceId, projectId, runId }: { workspaceId: string
             </button>
             <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
               <Ic n="check" s={13} />
-              {r.status === "changes_ready" ? "Accept and push" : "Approve"}
+              {r.status === "changes_ready" ? "Accept and push" : "Approve and start Kai"}
             </button>
           </>
         )}

@@ -95,17 +95,20 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
         </button>
       ))}
       {!open && (canWriteDocs || canWriteTasks) && (
-        <button
-          className="btn btn-sm btn-secondary"
-          onClick={() => {
-            setOpen(true);
-            setPreview(false);
-            setAcknowledged(false);
-            save.reset();
-          }}
-        >
-          Share selected outcome
-        </button>
+        <div className="chat-share-action">
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={() => {
+              setOpen(true);
+              setPreview(false);
+              setAcknowledged(false);
+              save.reset();
+            }}
+          >
+            Publish outcome to project
+          </button>
+          <span className="faint">Create a project document or task from this reply.</span>
+        </div>
       )}
       {open && (
         <section className="panel" aria-label="Publish selected outcome">

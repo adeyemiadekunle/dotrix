@@ -2489,6 +2489,30 @@ section.side-panel-body[hidden] {
   opacity: 0.25;
   cursor: default;
 }
+.kt-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  flex: none;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 28%, var(--border));
+  border-radius: 999px;
+  background: var(--red-soft);
+  color: var(--red);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.kt-stop:hover:not(:disabled) {
+  border-color: var(--red);
+}
+.kt-stop:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 .conv-main {
   container-type: inline-size;
 }
@@ -2507,6 +2531,19 @@ section.side-panel-body[hidden] {
 @container (max-width: 560px) {
   .kt-foot .faint {
     display: none;
+  }
+  .chat-delivery-help {
+    display: none;
+  }
+  .cmp-foot {
+    white-space: normal;
+    flex-wrap: wrap;
+  }
+  .cmp-foot > .sp {
+    display: none;
+  }
+  .cmp-controls-right {
+    margin-left: auto;
   }
 }
 @media (max-width: 640px) {
@@ -2644,7 +2681,7 @@ section.side-panel-body[hidden] {
 }
 
 /* Message boxes as Claude Code's (Chat's Composer, a new Codes session): + on the left, the box growing with
- * what's typed, send inside on the right; the mode, approvals and model as plain text under it, on the right. */
+ * what's typed, send inside on the right; model and approvals below on the left, work mode and runtime on the right. */
 .cmp-box {
   align-items: center;
   padding: 7px 7px 7px 8px;
@@ -2673,6 +2710,81 @@ section.side-panel-body[hidden] {
   gap: 4px;
   padding: 6px 8px 0;
   min-height: 30px;
+}
+.cmp-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.cmp-controls-left {
+  justify-content: flex-start;
+}
+.cmp-controls-right {
+  justify-content: flex-end;
+}
+.chat-delivery-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 8px 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.chat-delivery-row select {
+  max-width: 210px;
+}
+.chat-delivery-help {
+  color: var(--text-3);
+}
+.chat-input-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.chat-input-kind {
+  color: var(--text);
+  font-weight: 600;
+}
+.chat-input-kind.steer {
+  color: var(--accent);
+}
+.chat-input-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-input-result {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.chat-input-error {
+  grid-column: 1 / -1;
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+.chat-input-state.rejected {
+  border-color: color-mix(in srgb, var(--red) 35%, var(--border));
+}
+.chat-share-action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-share-action .faint {
+  font-size: 11.5px;
 }
 .cmp-chip {
   display: inline-flex;
