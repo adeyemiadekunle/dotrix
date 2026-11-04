@@ -109,3 +109,31 @@ test("a different saved choice opens its summary instead of continuing in the st
   const selected = new URL(page.url()).searchParams.get("workspace");
   await expect(page.getByLabel("Workspace", { exact: true })).toHaveValue(selected!);
 });
+
+test("a background profile refetch reconciles another tab's saved organisation before project setup", async ({ page }) => {
+  await signUp(page);
+  await page.clock.install();
+  await page.goto("/onboarding");
+  await expect(page.getByRole("heading", { name: "Choose your workspace", exact: true })).toBeVisible();
+  const response = await page.request.post("/v1/me/onboarding-workspace", {
+    headers: { "X-Requested-With": "e2e" },
+    data: { kind: "organization", name: "Chosen from another tab" },
+  });
+  expect(response.status()).toBe(200);
+  const organisation = await response.json();
+  await page.clock.fastForward(31_000);
+  const refreshed = page.waitForResponse((response) => response.request().method() === "GET" && response.url().endsWith("/v1/me"));
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    window.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    window.dispatchEvent(new Event("visibilitychange"));
+  });
+  await refreshed;
+  await expect(page.getByRole("heading", { name: "Your workspace is saved", exact: true })).toBeVisible();
+  await expect(page.getByText(/Chosen from another tab · Organisation/)).toBeVisible();
+  await expect(page.getByLabel("Project name", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByLabel("Workspace", { exact: true })).toHaveValue(organisation.id);
+  expect(new URL(page.url()).searchParams.get("workspace")).toBe(organisation.id);
+});

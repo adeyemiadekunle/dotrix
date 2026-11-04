@@ -16,6 +16,8 @@ export function Onboarding() {
   const queryClient = useQueryClient();
   const query = new URLSearchParams(location.search);
   const addingProject = query.get("mode") === "project";
+  const initialWorkspaceFlow = useRef(!addingProject && !query.has("workspace") && !query.has("project")).current;
+  const workspaceChoiceState = useRef<"unseen" | "pending" | "reviewed">("unseen");
   const submission = useRef(false);
   const [selectedStart, setStart] = useState<ProjectStart | null>(readProjectStart(query.get("intent")));
   const [workspaceId, setWorkspace] = useState(query.get("workspace") ?? "");
@@ -40,8 +42,15 @@ export function Onboarding() {
   const profile = useQuery({ queryKey: ["onboarding-profile"], enabled: signedIn, queryFn: () => unwrap(api.GET("/v1/me")) });
   const workspaces = useQuery({ queryKey: ["workspaces"], enabled: signedIn, queryFn: () => unwrap(api.GET("/v1/workspaces")) });
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
+  const knownWorkspaces = workspaces.data;
+  const reloadWorkspaceChoices = workspaces.refetch;
+  const observedSavedChoice = initialWorkspaceFlow && workspaceChoiceState.current === "pending" ? profile.data?.onboarding_workspace_id : null;
+  const savedChoiceIsKnown = !!observedSavedChoice && !!knownWorkspaces?.some((item) => item.id === observedSavedChoice);
+  const summaryWorkspace = observedSavedChoice ? workspaces.data?.find((item) => item.id === observedSavedChoice) : workspace;
   useEffect(() => {
     if (!workspaces.data || !profile.data) return;
+    if (workspaceChoiceState.current === "unseen")
+      workspaceChoiceState.current = initialWorkspaceFlow && !profile.data.onboarding_workspace_id ? "pending" : "reviewed";
     if (!workspaceId)
       setWorkspace(
         (
@@ -50,7 +59,14 @@ export function Onboarding() {
           workspaces.data[0]
         )?.id ?? "",
       );
-  }, [workspaces.data, workspaceId, profile.data]);
+  }, [workspaces.data, workspaceId, profile.data, initialWorkspaceFlow]);
+  useEffect(() => {
+    if (!observedSavedChoice || busy || workspaceChoiceState.current !== "pending") return;
+    setWorkspace(observedSavedChoice);
+    setCreatingTeam(false);
+    setStep("workspace");
+    if (!savedChoiceIsKnown) void reloadWorkspaceChoices();
+  }, [observedSavedChoice, busy, savedChoiceIsKnown, reloadWorkspaceChoices]);
   const path = { workspace_id: workspaceId };
   const projects = useQuery({
     queryKey: ["projects", workspaceId],
@@ -142,6 +158,7 @@ export function Onboarding() {
     });
   const chooseWorkspace = (kind: "personal" | "organization") =>
     perform(async () => {
+      setStep("workspace");
       const body = { kind, name: kind === "organization" ? teamName.trim() : null };
       let chosen;
       try {
@@ -159,10 +176,11 @@ export function Onboarding() {
           throw new Error("A workspace choice is already saved. Review it before continuing.");
         }
       }
-      await workspaces.refetch();
-      await profile.refetch();
+      workspaceChoiceState.current = "reviewed";
       setWorkspace(chosen.id);
       setCreatingTeam(false);
+      await workspaces.refetch();
+      await profile.refetch();
       move("project", "", chosen.id);
     });
   const connectRepo = () =>
@@ -236,7 +254,7 @@ export function Onboarding() {
   const modelReady =
     !!access.data?.ready &&
     !!((models.data?.default_model && access.data.models.includes(models.data.default_model)) || (project && access.data.models.includes(project.model)));
-  const current: Step = needsWorkspaceChoice || (step === "workspace" && !addingProject) ? "workspace" : !project ? "project" : step;
+  const current: Step = needsWorkspaceChoice || observedSavedChoice || (step === "workspace" && !addingProject) ? "workspace" : !project ? "project" : step;
   const discussionStart = project?.repo_url ? "existing" : intention;
   return (
     <div className="auth-card onb" style={{ maxWidth: 560 }}>
@@ -298,14 +316,45 @@ export function Onboarding() {
                 Skip for now
               </button>
             </form>
-          ) : (
+          ) : summaryWorkspace ? (
             <>
               <p>
-                {workspace?.name} · {workspace?.kind === "organization" ? "Organisation" : "Personal"}. Project moves are separate from workspace setup.
+                {summaryWorkspace.name} · {summaryWorkspace.kind === "organization" ? "Organisation" : "Personal"}. Project moves are separate from workspace
+                setup.
               </p>
-              <button className="btn btn-primary" disabled={busy} onClick={() => move("project")}>
+              <button
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() => {
+                  workspaceChoiceState.current = "reviewed";
+                  if (observedSavedChoice) {
+                    setWorkspace(summaryWorkspace.id);
+                    setProject("");
+                    move("project", "", summaryWorkspace.id);
+                  } else move("project");
+                }}
+              >
                 Continue
               </button>
+            </>
+          ) : (
+            <>
+              <p role="status">
+                {workspaces.isFetching
+                  ? "Loading the saved workspace…"
+                  : "The saved workspace is not currently available. Refresh its details or use your own workspace."}
+              </p>
+              <button
+                className="btn btn-secondary"
+                disabled={workspaces.isFetching}
+                onClick={() => {
+                  void profile.refetch();
+                  void workspaces.refetch();
+                }}
+              >
+                Refresh saved workspace
+              </button>
+              <a href={ownSetupHref}>Set up a project in your own workspace</a>
             </>
           )}
         </>
