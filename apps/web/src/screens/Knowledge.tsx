@@ -1,7 +1,7 @@
 // dotrix's Knowledge tab: the project's documents (.dotrix/), by folder; read one
 // (Markdown), edit it with a note, see who wrote it (a person or an agent). Agents' edits arrive
 // as changes to approve in Chat and the Inbox.
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useGraphNeighbors } from "@/lib/graph";
 import { openTask } from "../core/actions";
 
@@ -62,7 +62,9 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
     : D()
         .knowledge.filter((f) => f.project === p.id)
         .filter((f) => !open.q || f.path.toLowerCase().includes(open.q.toLowerCase()));
-  const t = tree(files);
+  const folderId = useId();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const t = tree(files.filter((f) => !open.q || f.path.toLowerCase().includes(open.q.toLowerCase())));
   const curEntry = files.find((f) => f.path === (open.path ?? "project.md")) ?? files[0];
   const liveCur = useLiveKnowledgeFile(scope, curEntry?.path);
   const cur = isLive() ? (liveCur ?? curEntry) : curEntry;
@@ -168,18 +170,32 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
               {t.files.map((f) => (
                 <Item key={f.path} f={f} />
               ))}
-              {Object.entries(t.dirs).map(([dir, list]) => (
-                <div key={dir}>
-                  <div className="sitem" style={{ cursor: "default", color: "var(--text-3)" }}>
-                    <Ic n="folder" s={14} />
-                    <span>{dir}</span>
-                    <span className="ct">{list.length}</span>
+              {Object.entries(t.dirs).map(([dir, list]) => {
+                const key = `${p.id}/${dir}`;
+                const expanded = !collapsed[key];
+                const id = `${folderId}-${encodeURIComponent(dir)}`;
+                return (
+                  <div key={dir}>
+                    <button
+                      type="button"
+                      className="sitem"
+                      aria-expanded={expanded}
+                      aria-controls={id}
+                      onClick={() => setCollapsed((current) => ({ ...current, [key]: expanded }))}
+                    >
+                      <Ic n={expanded ? "chevron-down" : "chevron-right"} s={12} />
+                      <Ic n={expanded ? "folder-open" : "folder"} s={14} />
+                      <span className="trunc">{dir}</span>
+                      <span className="ct">{list.length}</span>
+                    </button>
+                    <div id={id} hidden={!expanded}>
+                      {list.map((f) => (
+                        <Item key={f.path} f={f} indent />
+                      ))}
+                    </div>
                   </div>
-                  {list.map((f) => (
-                    <Item key={f.path} f={f} indent />
-                  ))}
-                </div>
-              ))}
+                );
+              })}
             </aside>
             {cur && (
               <section className="panel">

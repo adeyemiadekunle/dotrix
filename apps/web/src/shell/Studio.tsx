@@ -195,10 +195,12 @@ export function Studio() {
     if (live.mode !== "live" || live.slug !== slug || !live.dirReady)
       return (
         <div className="fullstate" style={{ minHeight: "100svh" }} aria-busy="true">
-          <DotsLoader px={44} />
-          <span className="faint" style={{ fontSize: 13 }}>
-            Loading the workspace…
-          </span>
+          <div className="box" role="status">
+            <DotsLoader px={44} />
+            <span className="faint" style={{ fontSize: 13 }}>
+              Loading the workspace…
+            </span>
+          </div>
         </div>
       );
   }
