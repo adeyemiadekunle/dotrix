@@ -407,12 +407,18 @@ export function ToolCalls({
   render,
   onPath,
   known,
+  onTerminal,
+  focusRef,
 }: {
   events: ToolEvent[];
   running?: boolean;
   render?: (text: string) => ReactNode;
   onPath?: (path: string, line?: number) => void;
   known?: string[];
+  /** Opens a command in the Terminal pane (the same commands, as the terminal shows them). */
+  onTerminal?: (ref: string) => void;
+  /** The command the Terminal pane last pointed back to, marked. */
+  focusRef?: string | null;
 }) {
   const out = new Map<string, { text: string; failed: boolean }>();
   for (const e of events) {
@@ -436,10 +442,26 @@ export function ToolCalls({
             {tests && <TraceDescription>{testsSaid(tests)}</TraceDescription>}
           </TraceLine>
         );
-        if (!output?.text) return <div key={i}>{line}</div>;
+        const terminal =
+          onTerminal && e.ref && /^Ran\b/.test(e.text) ? (
+            <button className="ibtn ibtn-xs agent-trace-open" onClick={() => onTerminal(e.ref!)} aria-label="Open in Terminal" data-tip="Open in Terminal">
+              <Ic n="terminal-window" s={12} />
+            </button>
+          ) : null;
+        const focused = !!e.ref && e.ref === focusRef;
+        if (!output?.text)
+          return (
+            <div key={i} className={`agent-tool-row${focused ? " agent-trace-focus" : ""}`} data-ref={e.ref ?? undefined}>
+              {line}
+              {terminal}
+            </div>
+          );
         return (
-          <TraceCollapsible key={i} defaultOpen={failed && !running}>
-            <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+          <TraceCollapsible key={i} defaultOpen={failed && !running} data-ref={e.ref ?? undefined}>
+            <div className={`agent-tool-row${focused ? " agent-trace-focus" : ""}`}>
+              <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+              {terminal}
+            </div>
             <TraceCollapsibleContent>
               <OutputReading text={output.text} failed={failed} onPath={onPath} known={known} />
               <Output text={output.text} failed={output.failed} />

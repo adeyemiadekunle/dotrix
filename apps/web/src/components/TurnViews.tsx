@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@dotrix/ui/components/collapsible";
+import { languageOf, useHighlight, type HighlightToken } from "@dotrix/ui/hooks/use-highlight";
 
 import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
 import type { Scope } from "@/lib/issues";
@@ -10,7 +11,7 @@ import type { Scope } from "@/lib/issues";
 import { desktop, useDesktopRunners, worktreeHere } from "../core/desktop";
 import { Ic } from "../core/icons";
 import { OutputReading } from "./AgentTrace";
-import { buildTree, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
+import { buildTree, fileIcon, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
 import { toast } from "../ui/toast";
 
 const LONG_OUTPUT = 24; // lines of a command's output shown before "Show all"
@@ -86,7 +87,23 @@ export function FilesView({
 }
 
 /** Each command the turn ran, with its recorded output (read-only). */
-export function TerminalView({ scope, run, enabled = true }: { scope: Scope | undefined; run: CodingRun; enabled?: boolean }) {
+export function TerminalView({
+  scope,
+  run,
+  enabled = true,
+  focus,
+  focusVersion,
+  onShowStep,
+}: {
+  scope: Scope | undefined;
+  run: CodingRun;
+  enabled?: boolean;
+  /** The command opened from the conversation (its `ref`), marked and scrolled to. */
+  focus?: string | null;
+  focusVersion?: number;
+  /** Shows a command where it sits in the conversation. */
+  onShowStep?: (ref: string) => void;
+}) {
   const events = useCodingEvents(scope, run, enabled);
   const commands = useMemo(() => terminal(events.data ?? run.events ?? []), [events.data, run.events]);
   if (events.isLoading) return <p className="muted">Loading commands…</p>;
@@ -99,7 +116,7 @@ export function TerminalView({ scope, run, enabled = true }: { scope: Scope | un
         </button>
       </p>
     );
-  return <CommandList entries={commands} working={run.status === "running"} />;
+  return <CommandList entries={commands} working={run.status === "running"} focus={focus} focusVersion={focusVersion} onShowStep={onShowStep} />;
 }
 
 /* ---------- Changes: each file's diff ---------- */
@@ -173,7 +190,11 @@ export function ChangeList({
               </button>
             </div>
             {open &&
-              (f.binary ? <p className="muted kp-note">A binary file: not shown.</p> : <Hunks hunks={f.hunks} notes={notes?.get(f.path)} onNote={onNote} />)}
+              (f.binary ? (
+                <p className="muted kp-note">A binary file: not shown.</p>
+              ) : (
+                <Hunks hunks={f.hunks} path={f.path} notes={notes?.get(f.path)} onNote={onNote} />
+              ))}
           </section>
         );
       })}
@@ -181,33 +202,71 @@ export function ChangeList({
   );
 }
 
-function Hunks({ hunks, notes = [], onNote }: { hunks: DiffHunk[]; notes?: DiffNote[]; onNote?: () => void }) {
+/** A line's text, coloured when its tokens are known. */
+function Code({ text, tokens }: { text: string; tokens?: HighlightToken[] }) {
+  if (!tokens?.length || tokens.map((t) => t.content).join("") !== text) return <>{text || " "}</>;
+  return (
+    <>
+      {tokens.map((t, i) => (
+        <span key={i} className="kp-tok" style={t.style}>
+          {t.content}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** A diff's hunks, coloured as Claude Code's diff is: each side's lines highlighted together (the new side for added and
+ *  unchanged lines, the old side for removed ones), so the code reads as code. */
+function Hunks({ hunks, path, notes = [], onNote }: { hunks: DiffHunk[]; path?: string; notes?: DiffNote[]; onNote?: () => void }) {
+  const sides = useMemo(() => {
+    const after: string[] = [];
+    const before: string[] = [];
+    const at = hunks.map((h) =>
+      h.lines.map((l) => {
+        const place = l.kind === "del" ? before.length : after.length;
+        if (l.kind !== "del") after.push(l.text);
+        if (l.kind !== "add") before.push(l.text);
+        return l.kind === "ctx" ? { after: after.length - 1 } : l.kind === "add" ? { after: place } : { before: place };
+      }),
+    );
+    return { after: after.join("\n"), before: before.join("\n"), at };
+  }, [hunks]);
+  const language = path ? languageOf(path) : undefined;
+  const afterTokens = useHighlight(sides.after, language);
+  const beforeTokens = useHighlight(sides.before, language);
   return (
     <div className="kp-diff mono" role="table" aria-label="Diff">
       {hunks.map((h, i) => (
         <div key={i}>
           <div className="kp-hunk">{h.header}</div>
-          {h.lines.map((l, j) => (
-            <Fragment key={j}>
-              <div className={`kp-line ${l.kind}`} role="row">
-                <span className="kp-no">{l.old ?? ""}</span>
-                <span className="kp-no">{l.new ?? ""}</span>
-                <span className="kp-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>
-                <span className="kp-text">{l.text || " "}</span>
-              </div>
-              {l.kind !== "del" &&
-                notes
-                  .filter((n) => n.line === l.new)
-                  .map((n, k) => (
-                    <button key={k} className="kp-finding" onClick={onNote} aria-label={`Juno's finding on line ${n.line}: ${n.title}`}>
-                      <Ic n="shield-check" s={12} />
-                      <b>Juno</b>
-                      {n.severity && <span className="badge">{n.severity}</span>}
-                      <span className="trunc">{n.title}</span>
-                    </button>
-                  ))}
-            </Fragment>
-          ))}
+          {h.lines.map((l, j) => {
+            const place = sides.at[i]![j]!;
+            const tokens = "before" in place ? beforeTokens?.[place.before!] : afterTokens?.[place.after!];
+            return (
+              <Fragment key={j}>
+                <div className={`kp-line ${l.kind}`} role="row">
+                  <span className="kp-no">{l.old ?? ""}</span>
+                  <span className="kp-no">{l.new ?? ""}</span>
+                  <span className="kp-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>
+                  <span className="kp-text">
+                    <Code text={l.text} tokens={tokens} />
+                  </span>
+                </div>
+                {l.kind !== "del" &&
+                  notes
+                    .filter((n) => n.line === l.new)
+                    .map((n, k) => (
+                      <button key={k} className="kp-finding" onClick={onNote} aria-label={`Juno's finding on line ${n.line}: ${n.title}`}>
+                        <Ic n="shield-check" s={12} />
+                        <b>Juno</b>
+                        {n.severity && <span className="badge">{n.severity}</span>}
+                        <span className="trunc">{n.title}</span>
+                      </button>
+                    ))}
+              </Fragment>
+            );
+          })}
         </div>
       ))}
     </div>
@@ -315,7 +374,7 @@ function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number
     const st = node.file.status;
     return (
       <button role="treeitem" className={`kp-node file ${st}`} style={pad} onClick={() => onOpen(node.path)} title={node.path}>
-        <Ic n="file" s={12} />
+        <Ic n={fileIcon(node.path)} s={13} cls="kp-file-icon" />
         <span className="trunc grow">{node.name}</span>
         {st !== "unchanged" && (
           <span className={`kp-st ${st}`} aria-label={st}>
@@ -342,6 +401,10 @@ function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number
   );
 }
 
+const STATUS_SAID: Record<string, string> = { added: "Added", deleted: "Deleted", modified: "Modified" };
+
+/** A file as Claude Code's file view shows it: its path as a breadcrumb under the file's icon, how the turn changed
+ *  it, Copy path, Diff or File; then the code with line numbers, highlighted (the line a reference names marked). */
 function FileView({
   scope,
   run,
@@ -363,19 +426,48 @@ function FileView({
   const [view, setView] = useState<"file" | "diff">(initialLine ? "file" : diff ? "diff" : "file");
   const lineRef = useRef<HTMLDivElement>(null);
   const text = file.data?.after ?? file.data?.before ?? "";
+  const tokens = useHighlight(view === "file" ? text : "", languageOf(path));
   useEffect(() => {
     if (view === "file" && initialLine && file.data) lineRef.current?.scrollIntoView({ block: "nearest" });
   }, [file.data, initialLine, view]);
+  const parts = path.split("/");
+  const status = diff?.status ?? (file.data?.status && file.data.status !== "unchanged" ? file.data.status : null);
+  const copyPath = () =>
+    void navigator.clipboard
+      ?.writeText(path)
+      .then(() => toast("Path copied"))
+      .catch(() => toast("It couldn't be copied"));
   return (
-    <div>
-      <div className="row" style={{ gap: 6, marginBottom: 6 }}>
+    <div className="kp-fileview">
+      <div className="kp-file-bar">
         <button className="ibtn ibtn-sm" onClick={onBack} aria-label="Back to the files">
           <Ic n="arrow-left" s={13} />
         </button>
-        <span className="mono trunc grow" style={{ fontSize: 12 }}>
-          {path}
+        <Ic n={fileIcon(path)} s={14} cls="kp-file-icon" />
+        <span className="kp-crumbs mono" title={path}>
+          {parts.map((part, i) => (
+            <Fragment key={i}>
+              {i > 0 && <span className="kp-crumb-sep">/</span>}
+              <span className={i === parts.length - 1 ? "kp-crumb-file" : "kp-crumb"}>{part}</span>
+            </Fragment>
+          ))}
         </span>
+        {status && (
+          <span className={`kp-st ${status}`} title={STATUS_SAID[status]} aria-label={STATUS_SAID[status]}>
+            {status === "added" ? "A" : status === "deleted" ? "D" : "M"}
+          </span>
+        )}
+        {diff && !diff.binary && (
+          <span className="kp-file-counts">
+            <span className="plus">+{diff.added}</span>
+            <span className="minus">−{diff.removed}</span>
+          </span>
+        )}
+        <span className="sp" />
         {worktree && <WorktreeButtons worktree={worktree} />}
+        <button className="ibtn ibtn-sm" onClick={copyPath} aria-label="Copy the path" data-tip="Copy path">
+          <Ic n="copy" s={13} />
+        </button>
         {diff && (
           <div className="seg seg-sm" role="tablist" aria-label="Show">
             <button role="tab" aria-selected={view === "diff"} className={view === "diff" ? "on" : ""} onClick={() => setView("diff")}>
@@ -391,7 +483,7 @@ function FileView({
         diff.binary ? (
           <p className="muted">A binary file: not shown.</p>
         ) : (
-          <Hunks hunks={diff.hunks} />
+          <Hunks hunks={diff.hunks} path={path} />
         )
       ) : file.isLoading ? (
         <p className="muted">Loading…</p>
@@ -409,8 +501,8 @@ function FileView({
       ) : file.data?.status === "deleted" ? (
         <p className="muted">The turn deleted this file.</p>
       ) : (
-        <div className="kp-diff mono" role="table" aria-label={path}>
-          {text.split("\n").map((l, i) => (
+        <div className="kp-diff kp-code mono" role="table" aria-label={path}>
+          {(text.endsWith("\n") ? text.slice(0, -1) : text).split("\n").map((l, i) => (
             <div
               key={i}
               ref={i + 1 === initialLine ? lineRef : undefined}
@@ -418,7 +510,9 @@ function FileView({
               role="row"
             >
               <span className="kp-no">{i + 1}</span>
-              <span className="kp-text">{l || " "}</span>
+              <span className="kp-text">
+                <Code text={l} tokens={tokens?.[i]} />
+              </span>
             </div>
           ))}
         </div>
@@ -429,12 +523,36 @@ function FileView({
 
 /* ---------- Terminal: each command with its output ---------- */
 
-export function CommandList({ entries, working }: { entries: ReturnType<typeof terminal>; working: boolean }) {
+/** The commands Kai ran in a turn: the same ones its steps in the conversation list, as a terminal shows them. */
+export function CommandList({
+  entries,
+  working,
+  focus,
+  focusVersion,
+  onShowStep,
+}: {
+  entries: ReturnType<typeof terminal>;
+  working: boolean;
+  focus?: string | null;
+  focusVersion?: number;
+  onShowStep?: (ref: string) => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focus) return;
+    box.current?.querySelector(`[data-ref="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [focus, focusVersion, entries.length]);
   if (!entries.length) return <p className="muted">{working ? "No commands run yet." : "It ran no commands."}</p>;
   return (
-    <div className="kp-term mono" aria-label="Commands">
+    <div ref={box} className="kp-term mono" aria-label="Commands">
       {entries.map((e, i) => (
-        <Command key={e.ref ?? i} entry={e} running={working && i === entries.length - 1 && e.output === null} />
+        <Command
+          key={e.ref ?? i}
+          entry={e}
+          running={working && i === entries.length - 1 && e.output === null}
+          focused={!!focus && e.ref === focus}
+          onShowStep={onShowStep && e.ref ? () => onShowStep(e.ref!) : undefined}
+        />
       ))}
     </div>
   );
@@ -442,12 +560,22 @@ export function CommandList({ entries, working }: { entries: ReturnType<typeof t
 
 /** Terminal: one command as it ran, a mark for how it ended, its output, and that output read (Test Results and
  *  Stack Trace) when it's a test run or a crash. */
-function Command({ entry, running }: { entry: ReturnType<typeof terminal>[number]; running: boolean }) {
+function Command({
+  entry,
+  running,
+  focused = false,
+  onShowStep,
+}: {
+  entry: ReturnType<typeof terminal>[number];
+  running: boolean;
+  focused?: boolean;
+  onShowStep?: () => void;
+}) {
   const [all, setAll] = useState(false);
   const lines = (entry.output ?? "").split("\n");
   const shown = all ? lines : lines.slice(-LONG_OUTPUT);
   return (
-    <div className={`kp-cmd ${entry.failed ? "failed" : ""}`}>
+    <div className={`kp-cmd ${entry.failed ? "failed" : ""} ${focused ? "kp-cmd-focus" : ""}`} data-ref={entry.ref ?? undefined}>
       <div className="kp-prompt">
         <span className="kp-dollar">$</span>
         <span className="grow">
@@ -461,6 +589,11 @@ function Command({ entry, running }: { entry: ReturnType<typeof terminal>[number
         ) : entry.output !== null ? (
           <Ic n="check" s={12} cls="kp-ok" />
         ) : null}
+        {onShowStep && (
+          <button className="ibtn ibtn-xs kp-show-step" onClick={onShowStep} aria-label="Show in the conversation" data-tip="Show in the conversation">
+            <Ic n="chat-centered-text" s={12} />
+          </button>
+        )}
       </div>
       {!running && entry.output && <OutputReading text={entry.output} failed={entry.failed} />}
       {entry.output !== null && entry.output !== "" && (

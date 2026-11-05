@@ -279,7 +279,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
   const files = latest?.files_changed ?? [];
   const ready = latest?.status === "changes_ready";
   return (
-    <div className="change" role="group" aria-label={`Kai on ${cs.issue_key}`} style={{ margin: "4px 0 12px 36px" }}>
+    <div className="change" role="group" aria-label={`Kai on ${cs.issue_key}`} style={{ margin: "4px 0 12px" }}>
       <div className="change-h">
         <Ic n="code" s={14} />
         <b style={{ fontWeight: 500 }}>
@@ -423,41 +423,55 @@ export function Message({
     m.role === "agent" ? refsOf(projectId, m.text, m.activity, isLive() ? liveTasks : undefined, isLive() ? liveDocs : undefined) : { tasks: [], docs: [] };
   const p = proj(projectId ?? "");
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
-  return (
-    <div className={`chat-msg ${m.role}`}>
-      {m.role === "agent" ? <Face c={agent?.c ?? "#57544E"} size={26} mood="idle" /> : <Av id={m.by} cls="md" tip={false} />}
-      <div className="body">
-        <div className="who">
-          <b>{m.role === "agent" ? (agent?.name ?? agentName(m.by)) : m.by === D().me ? "You" : w?.name}</b>
-          {agent && <span className="role">{agent.role}</span>}
-          <time>{ago(m.at)}</time>
+  // Laid out as Codes lays out a session (Claude Code's): what a person wrote in a bubble on the right, its edge on
+  // the message box's; an agent's reply under its face and name, flush with the message box's left edge.
+  if (m.role === "user")
+    return (
+      <div className="chat-msg user">
+        <div className="chat-bubble">{m.text}</div>
+        <div className="chat-ask-meta">
           {tag && <span className="badge">{tag}</span>}
-          {usage && (usage.mine || admin) ? (
-            <ContextUsage usage={usage} />
-          ) : m.tokens && admin ? (
-            <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>
-          ) : null}
+          {m.by !== D().me && <span>{w?.name ?? "Someone"} ·</span>}
+          <time>{ago(m.at)}</time>
+          <button className="ibtn ibtn-xs" onClick={() => copyText(m.text)} aria-label="Copy what you wrote" data-tip="Copy">
+            <Ic n="copy" s={13} />
+          </button>
+          <Av id={m.by} cls="sm" tip={false} />
         </div>
+        {children}
+      </div>
+    );
+  return (
+    <div className="chat-msg agent">
+      <div className="who">
+        <Face c={agent?.c ?? "#57544E"} size={22} mood="idle" />
+        <b>{agent?.name ?? agentName(m.by)}</b>
+        {agent && <span className="role">{agent.role}</span>}
+        <time>{ago(m.at)}</time>
+        {tag && <span className="badge">{tag}</span>}
+        {usage && (usage.mine || admin) ? (
+          <ContextUsage usage={usage} />
+        ) : m.tokens && admin ? (
+          <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>
+        ) : null}
+      </div>
+      <div className="body">
         {m.activity && m.activity.length > 0 && <ChainOfThought steps={m.activity} />}
-        {m.role === "user" ? (
-          <div className="said">{m.text}</div>
-        ) : (
-          m.text && (
-            <div className="md">
-              <Markdown
-                cite={
-                  sources?.length
-                    ? (label) => {
-                        const source = sources.find((x) => x.label === label);
-                        return source ? <Citation source={source} /> : undefined;
-                      }
-                    : undefined
-                }
-              >
-                {m.text}
-              </Markdown>
-            </div>
-          )
+        {m.text && (
+          <div className="md">
+            <Markdown
+              cite={
+                sources?.length
+                  ? (label) => {
+                      const source = sources.find((x) => x.label === label);
+                      return source ? <Citation source={source} /> : undefined;
+                    }
+                  : undefined
+              }
+            >
+              {m.text}
+            </Markdown>
+          </div>
         )}
         {m.role === "agent" && sources?.length ? <Sources sources={sources} /> : null}
         {(refs.tasks.length > 0 || refs.docs.length > 0) && (
@@ -587,7 +601,7 @@ function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string })
 /** A version of the conversation's plan; the latest can be built (a Build message naming its version). */
 function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean; busy: boolean; onBuild: () => void }) {
   return (
-    <div className="change" role="group" aria-label={`Plan version ${plan.version}`} style={{ margin: "4px 0 12px 36px" }}>
+    <div className="change" role="group" aria-label={`Plan version ${plan.version}`} style={{ margin: "4px 0 12px" }}>
       <div className="change-h">
         <Ic n="list-checks" s={14} />
         <b style={{ fontWeight: 500 }}>{plan.title}</b>
@@ -1152,15 +1166,13 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               </div>
             ))}
             {active && (
-              <div className="chat-msg">
-                <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={26} mood="working" />
+              <div className="chat-msg agent working">
+                <div className="who">
+                  <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
+                  <b>{agentName(agent)}</b>
+                  <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
+                </div>
                 <div className="body">
-                  {busy && (
-                    <div className="who">
-                      <b>{agentName(agent)}</b>
-                      <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
-                    </div>
-                  )}
                   <Trace className="agent-trace" aria-live="polite">
                     <TraceLine status="running">
                       <TraceIcon>
@@ -1810,9 +1822,17 @@ function KaiTurn({
   revert,
   onPath,
   onChanges,
+  onTerminal,
+  focus,
+  terminalRef,
   onShot,
   shotSrc,
 }: {
+  onTerminal: (turnId: string, ref: string) => void;
+  /** A command the Terminal pane points back to: the steps open on it. */
+  focus: { ref: string; version: number } | null;
+  /** The command the Terminal pane shows marked, marked here too. */
+  terminalRef: string | null;
   turn: CodingRun;
   issueTitle: string;
   busy: boolean;
@@ -1824,12 +1844,24 @@ function KaiTurn({
 }) {
   const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output")); // output: under its command
   const working = turn.status === "running";
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focus) return;
+    setStepsOpen(true);
+    // Once the steps are open, the command the Terminal pane pointed to, in view.
+    const id = window.requestAnimationFrame(() =>
+      root.current?.querySelector(`[data-ref="${CSS.escape(focus.ref)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+    return () => window.cancelAnimationFrame(id);
+  }, [focus]);
+  const marked = focus?.ref ?? terminalRef;
   const asked = turn.note || `Work on ${turn.issue_key}${issueTitle ? `: ${issueTitle}` : ""}`;
   const mine = turn.requested_by_id === D().me;
   const added = turn.files_changed.reduce((n, f) => n + Number(f.added ?? 0), 0);
   const removed = turn.files_changed.reduce((n, f) => n + Number(f.removed ?? 0), 0);
   return (
-    <div className="kt">
+    <div className="kt" ref={root}>
       <div className="kt-ask">
         <div className="kt-bubble">{asked}</div>
         <div className="kt-meta">
@@ -1848,7 +1880,7 @@ function KaiTurn({
           </div>
           {steps.length > 0 && (
             <Trace className="agent-trace kt-trace">
-              <TraceCollapsible>
+              <TraceCollapsible open={stepsOpen} onOpenChange={setStepsOpen}>
                 <TraceCollapsibleTrigger>
                   <TraceLine status={working ? "running" : undefined}>
                     <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
@@ -1861,6 +1893,8 @@ function KaiTurn({
                     running={working}
                     onPath={(path) => onPath(path, turn.id)}
                     known={turn.files_changed.map(fileOf)}
+                    onTerminal={(ref) => onTerminal(turn.id, ref)}
+                    focusRef={marked}
                     render={(text) => <PathLinks text={text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />}
                   />
                 </TraceCollapsibleContent>
@@ -1963,7 +1997,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   const setPanes = (next: CodingView[], extra: Record<string, string> = {}) => {
     const query = new URLSearchParams(search);
     // Opening a file or a turn sets them; closing the last pane lets them go.
-    for (const key of !next.length || Object.keys(extra).length ? ["panel", "file", "line", "turn", "ref"] : ["panel"]) query.delete(key);
+    for (const key of !next.length || Object.keys(extra).length ? ["panel", "file", "line", "turn", "ref", "cmd", "cmdv"] : ["panel"]) query.delete(key);
     if (next.length) query.set("panel", next.join(","));
     for (const [key, value] of Object.entries(extra)) query.set(key, value);
     go("codes", {}, { search: query.toString(), replace: true });
@@ -1992,6 +2026,13 @@ export function Session({ cs }: { cs: CodingSession }) {
     setDetailsPop(false);
     openPane("changes", turnId ? { turn: turnId } : {});
   };
+  // The conversation's commands and the Terminal pane are the same commands: each points to the other.
+  const openTerminal = (turnId: string, ref: string) => {
+    setDetailsPop(false);
+    openPane("terminal", { turn: turnId, cmd: ref, cmdv: String(Date.now()) });
+  };
+  const [stepFocus, setStepFocus] = useState<{ turn: string; ref: string; version: number } | null>(null);
+  const showStep = (turnId: string, ref: string) => setStepFocus({ turn: turnId, ref, version: Date.now() });
   // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panes, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
   const keys = useRef({ panes, togglePane, setPanes });
   keys.current = { panes, togglePane, setPanes };
@@ -2212,6 +2253,9 @@ export function Session({ cs }: { cs: CodingSession }) {
                 revert={revert}
                 onPath={openPath}
                 onChanges={openChanges}
+                onTerminal={openTerminal}
+                focus={stepFocus?.turn === turn.id ? stepFocus : null}
+                terminalRef={search.get("turn") === turn.id && panes.includes("terminal") ? search.get("cmd") : null}
                 onShot={(src, name) => setShot({ src, name })}
                 shotSrc={shotSrc}
               />
@@ -2423,6 +2467,7 @@ export function Session({ cs }: { cs: CodingSession }) {
           onCloseAll={() => setPanes([])}
           onAskFix={setAsk}
           fixLabel={`Ask ${CODING_AGENT.name} to fix`}
+          onShowStep={showStep}
         />
       )}
       {detailsColumn && (

@@ -252,20 +252,23 @@
     padding: 24px var(--gutter, 24px) 12px;
     width: 100%;
   }
+  /* A conversation as Codes shows a session (Claude Code's): a person's message in a bubble on the right, its edge
+     on the message box's; an agent's reply under its face and name, flush with the message box's left edge. */
   .chat-msg {
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    gap: 6px;
     padding: 10px 0;
   }
   .chat-msg .body {
-    flex: 1;
     min-width: 0;
   }
   .chat-msg .who {
     display: flex;
-    align-items: baseline;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
-    font-size: var(--fs-sm);
+    font-size: 14px;
   }
   .chat-msg .who b {
     font-weight: 600;
@@ -274,32 +277,40 @@
     color: var(--text-3);
     font-size: var(--fs-xs);
   }
-  /* What a person wrote sits on the right, their avatar beside it; the agents' replies stay on the left. */
   .chat-msg.user {
-    flex-direction: row-reverse;
-  }
-  .chat-msg.user .body {
-    display: flex;
-    flex-direction: column;
     align-items: flex-end;
+    gap: 4px;
+    padding-left: 15%;
   }
-  .chat-msg.user .who {
-    flex-direction: row-reverse;
-  }
-  .chat-msg.user .bubble {
-    background: var(--surface-2);
-    border-radius: var(--r-lg);
-    padding: 8px 12px;
-    display: inline-block;
-    max-width: 85%;
+  .chat-bubble {
+    max-width: 100%;
+    padding: 10px 16px;
+    border-radius: 18px;
+    background: var(--surface-3);
+    color: var(--text);
+    font-size: 14.5px;
+    line-height: 1.5;
     white-space: pre-wrap;
-    text-align: left;
-    margin-top: 3px;
+    word-break: break-word;
+  }
+  .chat-ask-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .chat-ask-meta .ibtn {
+    opacity: 0.75;
+  }
+  @media (max-width: 720px) {
+    .chat-msg.user {
+      padding-left: 8%;
+    }
   }
   .chat-msg .md {
-    font-size: var(--fs);
+    font-size: 14.5px;
     line-height: 1.6;
-    margin-top: 3px;
   }
   .chat-act {
     display: flex;
@@ -396,11 +407,6 @@
   }
   .chat-msg .who .faint {
     font-size: 11px;
-  }
-  .chat-msg .said {
-    white-space: pre-wrap;
-    margin-top: 3px;
-    line-height: 1.6;
   }
   .chat-refs {
     display: flex;
@@ -2875,7 +2881,7 @@ section.side-panel-body[hidden] {
   margin-top: 4px;
 }
 .agent-trace-subagents {
-  margin: 4px 0 14px 36px;
+  margin: 4px 0 14px;
 }
 .agent-trace-role {
   color: var(--text-3);
@@ -3172,4 +3178,135 @@ section.side-panel-body[hidden] {
   margin: 0;
   color: var(--text-3);
   font-size: 11.5px;
+}
+
+/* Files and diffs as Claude Code shows them: the code highlighted (Shiki's light and dark colours, use-highlight.ts),
+   a file's bar with its icon and path as a breadcrumb, how the turn changed it, and Copy path. */
+.kp-tok {
+  color: var(--shiki-light);
+}
+.dark .kp-tok {
+  color: var(--shiki-dark);
+}
+.kp-diff {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.kp-code {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 6px 0;
+  background: var(--surface);
+}
+.kp-code .kp-no {
+  width: 3.6em;
+  padding-right: 12px;
+}
+.kp-file-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: -2px 0 8px;
+  padding: 4px 0;
+  background: var(--bg);
+}
+.kp-file-icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.kp-crumbs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kp-crumb {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+}
+.kp-crumb-sep {
+  padding: 0 3px;
+  color: var(--text-4);
+}
+.kp-crumb-file {
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+.kp-file-counts {
+  display: inline-flex;
+  gap: 4px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.kp-file-counts .plus {
+  color: var(--green);
+}
+.kp-file-counts .minus {
+  color: var(--red);
+}
+
+/* The conversation's commands and the Terminal pane point to each other: "Open in Terminal" beside a command's step,
+   "Show in the conversation" beside a command in the pane; the one pointed to is marked in both. */
+.agent-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: var(--r-sm);
+}
+.agent-tool-row > [data-slot="trace-line"],
+.agent-tool-row > [data-slot="trace-collapsible-trigger"] {
+  min-width: 0;
+}
+.agent-trace-open,
+.kp-show-step {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--dur);
+}
+.agent-tool-row:hover .agent-trace-open,
+.agent-tool-row:focus-within .agent-trace-open,
+.agent-trace-focus .agent-trace-open,
+.kp-cmd:hover .kp-show-step,
+.kp-cmd:focus-within .kp-show-step,
+.kp-cmd-focus .kp-show-step {
+  opacity: 1;
+}
+@media (hover: none) {
+  .agent-trace-open,
+  .kp-show-step {
+    opacity: 1;
+  }
+}
+.agent-trace-focus {
+  background: var(--accent-soft, var(--surface-3));
+  box-shadow: 0 0 0 3px var(--accent-soft, var(--surface-3));
+}
+.kp-cmd-focus {
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft, var(--surface-3));
+  box-shadow: inset 2px 0 var(--acc);
+}
+/* Files: a changed file's name in its change's colour, as Claude Code's tree marks them. */
+.kp-node.file.modified .grow {
+  color: var(--amber);
+}
+.kp-node.file.added .grow {
+  color: var(--green);
+}
+.kp-node.file.deleted .grow {
+  color: var(--red);
 }
