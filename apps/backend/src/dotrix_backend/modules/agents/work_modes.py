@@ -150,8 +150,27 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
                 CodingRun.workspace_id == ctx.workspace_id, CodingRun.project_id == ctx.project_id,
                 CodingRun.thread_id == ctx.thread_id, CodingRun.issue_key == ask.issue_key,
                 CodingSession.state != CodingSessionState.CLOSED, CodingSession.archived_at.is_(None),
-            ).order_by(CodingRun.created_at.desc()).limit(1))
+            ).order_by(CodingRun.created_at.desc()).limit(1).with_for_update(of=CodingRun))
             if previous and previous.status.value in {"awaiting_approval", "queued", "running", "changes_ready", "recovery_required"}:
+                note = (ask.note or "").strip()
+                request = f'<data source="request">\n{note}\n</data>'
+                if note and note != (previous.note or "").strip() and request not in previous.brief:
+                    if previous.requested_by_id != member.user_id:
+                        return {"error": "Only the person who requested this handoff may add instructions"}
+                    if previous.status.value != "awaiting_approval":
+                        return {"error": "These additional instructions were not delivered: Kai's turn has already been approved. "
+                                         "Stop the turn before changing its instructions, or request a follow-up after it finishes."}
+                    # Keep the admitted context and any earlier constraints; add this request exactly once.
+                    # The row lock serializes this amendment with approval, which freezes the final brief.
+                    previous.note = "\n\n".join(part for part in (previous.note, note) if part)
+                    previous.brief += f"\n\n## Additional handoff instructions\n{request}"
+                    AuditLog(session).record(
+                        workspace_id=ctx.workspace_id, project_id=ctx.project_id,
+                        action="coding.handoff_updated", target=previous.issue_key,
+                        actor_type=AuthorType.AGENT, instructed_by_id=member.user_id,
+                        details={"coding_run_id": str(previous.id), "run_id": str(ctx.run_id)},
+                    )
+                    await session.commit()
                 return {"coding_run_id": str(previous.id), "issue_key": previous.issue_key,
                         "status": previous.status.value, "said": "Kai already has this handoff; approve it in Inbox if it is waiting"}
             if previous:

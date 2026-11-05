@@ -2092,8 +2092,10 @@ async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
     await db_client.patch(ws, json={"approval_mode_cap": "accept_edits"}, headers=ada.headers)
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
                                  json={"type": "task", "title": "Notification handoff"})).json()
+    note = "Edit README.md only; do not modify calc.py."
     agent_script.say(tool_call("update_issue", key=issue["key"], assignee="coding-agent"),
-                     tool_call("start_coding", issue_key=issue["key"]), "Approve Kai in Inbox.")
+                     tool_call("start_coding", issue_key=issue["key"], note=note),
+                     tool_call("start_coding", issue_key=issue["key"], note=note), "Approve Kai in Inbox.")
     response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
         "message": "Implement this issue", "work_mode": "build", "approval_mode": "accept_edits",
     })
@@ -2102,9 +2104,23 @@ async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
     [run] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval" and run["approval_mode"] == "manual"
     assert run["thread_id"] == source["thread_id"]
+    assert run["note"] == note and run["brief"].count(note) == 1
     notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
     assert sum(n.get("coding_run_id") == run["id"] for n in notes) == 1
     approved = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", headers=ada.headers,
                                     json={"decision": "approve"})
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "queued"
+
+    stored = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert stored["note"] == note and stored["brief"].count(note) == 1
+    model = agent_script.say(tool_call("start_coding", issue_key=issue["key"], note="Also change calc.py."),
+                             "The new instructions were not delivered.")
+    refused = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Change the handoff", "thread_id": source["thread_id"], "work_mode": "build",
+    })
+    assert refused.status_code == 202, refused.text
+    results = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
+    assert results and "not delivered" in results[-1]
+    unchanged = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert unchanged["note"] == note and unchanged["brief"] == stored["brief"]
