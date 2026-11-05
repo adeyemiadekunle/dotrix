@@ -98,6 +98,25 @@ export const modelName = (model: string | null | undefined, name?: string): stri
   return name || id;
 };
 
+const PROVIDERS: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google_genai: "Google",
+  google: "Google",
+  xai: "xAI",
+  deepseek: "DeepSeek",
+  mistralai: "Mistral",
+  mistral: "Mistral",
+  groq: "Groq",
+  openrouter: "OpenRouter",
+};
+
+/** A model's provider as people read it, from its id's prefix ("openai:gpt-5.5" → "OpenAI"); "" without one. */
+export const providerName = (model: string): string => {
+  const prefix = model.includes(":") ? model.split(":")[0]! : "";
+  return PROVIDERS[prefix] ?? prefix;
+};
+
 // Kept in sync with ARCHITECTURE_DRAFT_PROMPT in the backend's agents service.
 const ARCHITECTURE_PROMPT_START = "Project setup: draft the architecture overview.";
 

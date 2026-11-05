@@ -5,11 +5,12 @@
 // Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
 // URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Codes.
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import {
   isActive,
   modelName,
+  providerName,
   runTitle,
   useContinueRun,
   useRunSteps,
@@ -77,7 +78,9 @@ import { SessionDetails, modeName, sessionModel } from "../components/SessionDet
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
 import { ChoiceCard, type Choice } from "../components/ChoiceCard";
+import { ChainOfThought, Reasoning, Subagents, ToolCalls } from "../components/AgentTrace";
 import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@dotrix/ui/components/trace";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const agentName = (h: string) => D().agents.find((a) => a.handle === h)?.name ?? h;
@@ -385,7 +388,6 @@ function refsOf(
 export function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | null; tag?: string; children?: React.ReactNode }) {
   const w = who(m.by);
   const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
-  const [openSteps, setOpenSteps] = useState(false);
   const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
   const liveDocs = useLiveKnowledgeFiles(isLive() && live.ws && projectId ? { workspaceId: live.ws.id, projectId } : undefined, isLive() && m.role === "agent");
   const refs =
@@ -403,24 +405,7 @@ export function Message({ m, projectId, tag, children }: { m: Msg; projectId: st
           {tag && <span className="badge">{tag}</span>}
           {m.tokens && admin ? <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span> : null}
         </div>
-        {m.activity && m.activity.length > 0 && (
-          <div className="chat-steps">
-            <button className="chat-steps-h" onClick={() => setOpenSteps(!openSteps)} aria-expanded={openSteps}>
-              <Ic n={openSteps ? "chevron-down" : "chevron-right"} s={12} />
-              Worked through {m.activity.length} step{m.activity.length > 1 ? "s" : ""}
-            </button>
-            {openSteps && (
-              <ul>
-                {m.activity.map((a) => (
-                  <li key={a}>
-                    <Ic n="check" s={11} />
-                    {a}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+        {m.activity && m.activity.length > 0 && <ChainOfThought steps={m.activity} />}
         {m.role === "user" ? (
           <div className="said">{m.text}</div>
         ) : (
@@ -466,7 +451,6 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
     by: handleOf(run.agent),
     at: ms(run.finished_at ?? run.updated_at),
     text: failed ? (wasStopped(run) ? "Stopped." : (run.error ?? "It didn't finish.")) : text,
-    activity: stream?.activity ? [stream.activity] : undefined,
     tokens: (run.input_tokens ?? 0) + (run.output_tokens ?? 0) || undefined,
   };
   const shows = !stream || stream.text;
@@ -511,38 +495,9 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
   );
 }
 
-/** What the agents did for a reply (kept after the run), folded until asked for. */
+/** What the agents did for a reply (kept after the run): a Subagent line each, folded until asked for. */
 function SpecialistTasks({ tasks, scope }: { tasks: SpecialistTask[]; scope: Scope | undefined }) {
-  if (!tasks.length) return null;
-  return (
-    <section className="specialist-tasks" aria-label="Specialist activity">
-      {tasks.map((task) => (
-        <details className="specialist-task" key={task.id}>
-          <summary>
-            <b>{agentName(task.agent ?? "auto")}</b>
-            <span className="muted">{task.task_key}</span>
-            <span className="badge">{task.status.replaceAll("_", " ")}</span>
-          </summary>
-          <p>{task.task_result?.summary || task.error || task.message}</p>
-          {task.task_result?.risks?.map((risk, index) => (
-            <p className="muted" key={index}>
-              {risk}
-            </p>
-          ))}
-          {task.task_result?.evidence?.length ? (
-            <ul>
-              {task.task_result.evidence.map((ref, index) => (
-                <li className="mono" key={index}>
-                  {ref}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {task.status === "awaiting_approval" && <TaskApproval scope={scope} id={task.id} />}
-        </details>
-      ))}
-    </section>
-  );
+  return <Subagents tasks={tasks} approval={(task) => <TaskApproval scope={scope} id={task.id} />} />;
 }
 
 function TaskApproval({ scope, id }: { scope: Scope | undefined; id: string }) {
@@ -550,46 +505,19 @@ function TaskApproval({ scope, id }: { scope: Scope | undefined; id: string }) {
   return run ? <RunApprovals run={run} scope={scope} /> : null;
 }
 
-/** What Nova thought, as its model summarised it: live, the latest of it, as it comes; kept, all of it. */
-function Thinking({ text, live = false }: { text: string; live?: boolean }) {
-  const [open, setOpen] = useState(live);
-  const shown = live && text.length > 600 ? `…${text.slice(-600)}` : text;
-  return (
-    <div className="chat-thinking">
-      <button className="chat-steps-h" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
-        {live ? "Thinking" : "Thought"}
-      </button>
-      {open && (
-        <div className="chat-thinking-text" aria-live={live ? "polite" : undefined}>
-          {shown}
-        </div>
-      )}
-    </div>
-  );
-}
-
+/** A reply's steps and what its model thought, kept after the run: loaded when first opened. */
 function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string }) {
   const [open, setOpen] = useState(false);
   const steps = useRunSteps(scope, runId, open);
   return (
-    <div style={{ marginTop: 6 }}>
-      <button className="btn btn-sm btn-ghost" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
-        Steps
-      </button>
-      {open && (
-        <>
-          {steps.data?.thinking && <Thinking text={steps.data.thinking} />}
-          <ol className="muted" style={{ fontSize: 12.5, margin: "4px 0 0 20px" }} aria-label="Steps">
-            {steps.data?.steps.length ? (
-              steps.data.steps.map((label, i) => <li key={i}>{label}</li>)
-            ) : (
-              <li>{steps.isLoading ? "Loading…" : "No steps kept"}</li>
-            )}
-          </ol>
-        </>
-      )}
+    <div className="agent-trace-steps">
+      <ChainOfThought
+        title="Steps"
+        steps={steps.data?.steps ?? []}
+        thinking={steps.data?.thinking || undefined}
+        loading={steps.isLoading}
+        onOpenChange={setOpen}
+      />
     </div>
   );
 }
@@ -669,6 +597,7 @@ function Pick({
   label,
   lead,
   plain = false,
+  groupOf,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -677,6 +606,8 @@ function Pick({
   lead?: React.ReactNode;
   /** Plain text under a message box (as Claude Code's model and mode), not a chip. */
   plain?: boolean;
+  /** Options under headings (the Model Selector's providers): each option's group, "" for none. */
+  groupOf?: (value: string) => string;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -709,24 +640,47 @@ function Pick({
         <>
           <span className="pick-veil" aria-hidden onClick={() => setOpen(false)} />
           <span className="cmenu" role="listbox" aria-label={label}>
-            {options.map(([v, l]) => (
-              <button
-                key={v}
-                type="button"
-                role="option"
-                aria-selected={v === value}
-                className={`mi ${v === value ? "on" : ""}`}
-                onClick={() => (onChange(v), setOpen(false))}
-              >
-                <span className="trunc">{l}</span>
-                {v === value && <Ic n="check" s={13} />}
-              </button>
-            ))}
+            {groupsOf(options, groupOf).map(([group, opts]) => {
+              const items = opts.map(([v, l]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="option"
+                  aria-selected={v === value}
+                  className={`mi ${v === value ? "on" : ""}`}
+                  onClick={() => (onChange(v), setOpen(false))}
+                >
+                  <span className="trunc">{l}</span>
+                  {v === value && <Ic n="check" s={13} />}
+                </button>
+              ));
+              return group ? (
+                <span key={group} role="group" aria-label={group} className="cmenu-group">
+                  <span className="cmenu-h" aria-hidden>
+                    {group}
+                  </span>
+                  {items}
+                </span>
+              ) : (
+                <Fragment key="">{items}</Fragment>
+              );
+            })}
           </span>
         </>
       )}
     </span>
   );
+}
+
+/** Options in their groups, in the order each group first appears; one unnamed group without `groupOf`. */
+function groupsOf(options: [string, string][], groupOf?: (value: string) => string): [string, [string, string][]][] {
+  if (!groupOf) return [["", options]];
+  const out = new Map<string, [string, string][]>();
+  for (const o of options) {
+    const g = groupOf(o[0]);
+    out.set(g, [...(out.get(g) ?? []), o]);
+  }
+  return out.size > 1 ? [...out] : [["", options]];
 }
 
 /** Where a new session codes, as Claude Code's environment menu: this computer (its folder for the
@@ -1010,7 +964,7 @@ function Composer({
           )}
           {setModel && models?.length ? (
             <span className="cmp-model">
-              <Pick plain value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" />
+              <Pick plain value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" groupOf={providerName} />
             </span>
           ) : (
             model && <span className="cmp-model">{model}</span>
@@ -1175,15 +1129,15 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
                       <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
                     </div>
                   )}
-                  <div className="row muted" style={{ gap: 8, fontSize: 12.5, marginTop: 6 }}>
-                    <span className="chat-typing">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    {stream.activity ?? `${agentName(agent)} is thinking…`}
-                  </div>
-                  {stream.thinking && !stream.text && <Thinking text={stream.thinking} live />}
+                  <Trace className="agent-trace" aria-live="polite">
+                    <TraceLine status="running">
+                      <TraceIcon>
+                        <Ic n="spinner-gap" cls="animate-spin" />
+                      </TraceIcon>
+                      <TraceTitle>{stream.activity ?? `${agentName(agent)} is thinking…`}</TraceTitle>
+                    </TraceLine>
+                  </Trace>
+                  {stream.thinking && !stream.text && <Reasoning text={stream.thinking} live />}
                 </div>
               </div>
             )}
@@ -1641,7 +1595,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
             )}
             {model && (
               <span className="cmp-model">
-                <Pick plain value={model} label="Model" onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} />
+                <Pick plain value={model} label="Model" onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} groupOf={providerName} />
               </span>
             )}
           </div>
@@ -1844,8 +1798,8 @@ function KaiTurn({
   onShot: (src: string, name: string) => void;
   shotSrc: (runId: string, index: number) => string;
 }) {
-  const [stepsOpen, setStepsOpen] = useState(false);
-  const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output")); // output: the Terminal pane
+  const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output")); // output: under its command
+  const working = turn.status === "running";
   const asked = turn.note || `Work on ${turn.issue_key}${issueTitle ? `: ${issueTitle}` : ""}`;
   const mine = turn.requested_by_id === D().me;
   const added = turn.files_changed.reduce((n, f) => n + Number(f.added ?? 0), 0);
@@ -1867,25 +1821,25 @@ function KaiTurn({
           <div className="kt-who">
             <Av id={CODING_AGENT.id} cls="sm" tip={false} />
             <b>{CODING_AGENT.name}</b>
-            {steps.length > 0 && (
-              <button className="kt-steps" onClick={() => setStepsOpen(!stepsOpen)} aria-expanded={stepsOpen}>
-                {stepsSummary(turn.events)}
-                <Ic n={stepsOpen ? "chevron-down" : "chevron-right"} s={12} />
-              </button>
-            )}
           </div>
-          {stepsOpen && (
-            <div className="kt-steplist">
-              {steps.slice(-60).map((e, j) => (
-                <span key={j} className={e.kind === "error" ? "bad" : undefined}>
-                  <Ic
-                    n={e.kind === "error" ? "triangle-alert" : e.text.startsWith("Ran") ? "square-terminal" : e.text.startsWith("Edited") ? "pencil" : "check"}
-                    s={12}
+          {steps.length > 0 && (
+            <Trace className="agent-trace kt-trace">
+              <TraceCollapsible>
+                <TraceCollapsibleTrigger>
+                  <TraceLine status={working ? "running" : undefined}>
+                    <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
+                    <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events)}</TraceTitle>
+                  </TraceLine>
+                </TraceCollapsibleTrigger>
+                <TraceCollapsibleContent>
+                  <ToolCalls
+                    events={turn.events.slice(-200)}
+                    running={working}
+                    render={(text) => <PathLinks text={text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />}
                   />
-                  <PathLinks text={e.text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />
-                </span>
-              ))}
-            </div>
+                </TraceCollapsibleContent>
+              </TraceCollapsible>
+            </Trace>
           )}
           {turn.summary && (
             <div className="md">

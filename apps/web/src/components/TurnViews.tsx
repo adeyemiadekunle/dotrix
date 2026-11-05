@@ -2,6 +2,8 @@
 // files as the turn leaves it, and the commands it ran. Desktop turns show the live worktree on this computer.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@dotrix/ui/components/collapsible";
+
 import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
 import type { Scope } from "@/lib/issues";
 
@@ -304,29 +306,38 @@ export function FileTree({ nodes, onOpen, expanded = false }: { nodes: TreeNode[
   );
 }
 
+/** A folder opens and closes as a Collapsible (shadcn's AI Elements File Tree); changed folders start open. */
 function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number; onOpen: (path: string) => void; expanded: boolean }) {
   const [open, setOpen] = useState(expanded || node.changed > 0);
   const pad = { paddingLeft: 6 + depth * 14 };
   if (node.file) {
     const st = node.file.status;
     return (
-      <button role="treeitem" className={`kp-node file ${st}`} style={pad} onClick={() => onOpen(node.path)}>
+      <button role="treeitem" className={`kp-node file ${st}`} style={pad} onClick={() => onOpen(node.path)} title={node.path}>
         <Ic n="file" s={12} />
         <span className="trunc grow">{node.name}</span>
-        {st !== "unchanged" && <span className={`kp-st ${st}`}>{st === "added" ? "A" : st === "deleted" ? "D" : "M"}</span>}
+        {st !== "unchanged" && (
+          <span className={`kp-st ${st}`} aria-label={st}>
+            {st === "added" ? "A" : st === "deleted" ? "D" : "M"}
+          </span>
+        )}
       </button>
     );
   }
   return (
-    <div role="group">
-      <button role="treeitem" aria-expanded={open} className="kp-node" style={pad} onClick={() => setOpen(!open)}>
-        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
+    <Collapsible open={open} onOpenChange={setOpen} role="group">
+      <CollapsibleTrigger role="treeitem" className="kp-node kp-folder" style={pad} title={node.path}>
+        <Ic n="chevron-right" s={12} cls="kp-chev" />
         <Ic n={open ? "folder-open" : "folder"} s={12} />
         <span className="trunc grow">{node.name}</span>
         {node.changed > 0 && <span className="faint">{node.changed}</span>}
-      </button>
-      {open && node.children.map((c) => <Node key={c.path} node={c} depth={depth + 1} onOpen={onOpen} expanded={expanded} />)}
-    </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {node.children.map((c) => (
+          <Node key={c.path} node={c} depth={depth + 1} onOpen={onOpen} expanded={expanded} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
