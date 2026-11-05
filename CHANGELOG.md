@@ -101,6 +101,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A message sent the moment Nova's reply appears is sent, instead of being refused as a follow-up to a turn that had just finished.
+
 - Baseline confirmations include the shared human-context revision. An intervening correction rejects stale confirmations, and confirming without new notes preserves the context instead of erasing it from Nova’s summary.
 
 - Repository discovery writes only wiki pages; selected-page refreshes retain their allowed paths across approvals and recovery, preserving human requirements, decisions and unselected pages.

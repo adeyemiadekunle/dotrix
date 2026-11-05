@@ -1093,8 +1093,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
       const signature = JSON.stringify([id, projectId, message, kind, m, approval]);
       const client_id = retry?.signature === signature ? retry.client_id : crypto.randomUUID();
       retryInput.current = { signature, client_id };
-      return submitInput.mutateAsync({ message, kind, client_id, work_mode: m, approval_mode: approval }).then(() => {
+      return submitInput.mutateAsync({ message, kind, client_id, work_mode: m, approval_mode: approval }).then((queued) => {
         retryInput.current = null;
+        // The turn had just finished: this is a new message, not a follow-up.
+        if (!queued) return send.mutateAsync({ message, threadId: id, agent, workMode: m, approvalMode: approval }).then(() => {});
       });
     }
     return projectId

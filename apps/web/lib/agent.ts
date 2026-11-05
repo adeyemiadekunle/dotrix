@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { api, ensureSession, errorMessage, unwrap } from "./api";
+import { ApiError, api, ensureSession, errorMessage, unwrap } from "./api";
 import type { Scope } from "./issues";
 
 export type Run = Schemas["AgentRunRead"];
@@ -512,6 +512,11 @@ export function useChatInputs(scope: Scope | undefined, threadId: string) {
   return query;
 }
 
+/** The server's answer when the turn a follow-up was meant for has already finished (agents/chat_inputs.py). */
+const IDLE = "The conversation is idle";
+
+/** Queue a follow-up or steer the active turn. Resolves to null when that turn had already finished (the page
+ * hadn't seen it end yet): send the message as a new one instead. */
 export function useSubmitChatInput(scope: Scope | undefined, threadId: string) {
   return useAgentMutation(scope, (s, body: Schemas["ChatInputCreate"]) =>
     unwrap(
@@ -519,7 +524,10 @@ export function useSubmitChatInput(scope: Scope | undefined, threadId: string) {
         params: { path: { ...path(s), thread_id: threadId } },
         body,
       }),
-    ),
+    ).catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 409 && e.problem?.detail?.startsWith(IDLE)) return null;
+      throw e;
+    }),
   );
 }
 
