@@ -66,6 +66,10 @@ REQUEST_TIMEOUT = 60.0
 RETRIES = 5  # a rate limit or a passing failure (429, 502, 503, 504) on one request
 POLL_MIN, POLL_MAX = 0.25, 1.0  # seconds between output reads: quick while a command talks
 PAGE_BYTES = 512_000
+# Bytes of one stdout line held while waiting for its newline (as the Docker sandbox's reader limits a line): past
+# it, what came is passed on cut short and the rest dropped up to the next newline, so a process printing without
+# newlines can't fill the worker's memory.
+LINE_LIMIT = 4_000_000
 STOP_GRACE = 5.0  # seconds between SIGINT (finish cleanly) and SIGKILL, as in the other sandboxes
 KILL_WAIT = 30.0  # seconds a killed process gets to report its exit before it's given up on
 SIZES = (1, 2, 4, 8, 16)  # CPUs; Docker pairs each with 2 GiB of memory per CPU
@@ -258,6 +262,7 @@ class DockerCloudSession:
         cursor, poll = 0, POLL_MIN
         pending, kept, err = bytearray(), bytearray(), bytearray()
         truncated = timed_out = cancelled = False
+        dropping = False  # the rest of a line over LINE_LIMIT, up to its newline
         deadline = time.monotonic() + timeout
         stop_by: float | None = None  # when a stopped process is killed, if it hasn't ended by then
         killed_at: float | None = None
@@ -282,11 +287,20 @@ class DockerCloudSession:
                     err.extend(data)
                     del err[: max(0, len(err) - STDERR_TAIL)]
                     continue
+                if dropping:
+                    end = data.find(b"\n")
+                    if end < 0:
+                        continue
+                    data, dropping = data[end + 1 :], False
                 pending.extend(data)
                 while (end := pending.find(b"\n")) >= 0:
                     line = bytes(pending[: end + 1])
                     del pending[: end + 1]
                     await emit(line)
+                if len(pending) > LINE_LIMIT:
+                    await emit(bytes(pending[:LINE_LIMIT]))
+                    pending.clear()
+                    dropping = truncated = True
             cursor = int(page.get("nextResumeFrom") or cursor)
             exited = page.get("exited")
             if exited is not None:

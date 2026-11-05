@@ -254,6 +254,34 @@ async def git(cwd: Path, *args: str, check: bool = True) -> str:
     return out.decode(errors="replace")
 
 
+# Folders a person doesn't edit by hand: walking them would only slow the check down.
+_UNTOUCHED = {".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "target", ".next", "dist"}
+
+
+def _raise(error: OSError) -> None:
+    raise error
+
+
+def touched_since(tree: Path, cutoff: float) -> bool:
+    """Whether anything in a worktree changed after `cutoff`: the folder itself, or any file or folder in it. A folder's
+    own time changes only when an entry is added or removed, so an edit to a file already there shows only on the file.
+    Unreadable counts as touched, so it's kept."""
+    try:
+        if tree.stat().st_mtime > cutoff:
+            return True
+        for root, folders, files in os.walk(tree, onerror=_raise):
+            folders[:] = [f for f in folders if f not in _UNTOUCHED]
+            for name in (*folders, *files):
+                try:
+                    if (Path(root) / name).lstat().st_mtime > cutoff:
+                        return True
+                except FileNotFoundError:
+                    continue
+    except OSError:
+        return True
+    return False
+
+
 @dataclass
 class LocalRunner:
     api: Api
@@ -353,10 +381,7 @@ class LocalRunner:
         for tree in sorted(folder.iterdir()):
             if not tree.is_dir() or tree == self._coding_in:
                 continue
-            try:
-                if tree.stat().st_mtime > cutoff:
-                    continue
-            except OSError:
+            if await asyncio.to_thread(touched_since, tree, cutoff):
                 continue
             try:
                 await git(self.repo, "worktree", "remove", "--force", str(tree))

@@ -279,6 +279,30 @@ async def test_a_sandbox_holds_the_repo_reaches_only_the_model_api_and_streams_c
         await session.exec(["true"], timeout=5)
 
 
+async def test_a_line_without_its_newline_is_held_only_up_to_the_limit(
+    fake: FakeDockerCloud, repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A process printing without newlines can't grow the worker's buffer: past the limit the line is passed on cut
+    short and the rest dropped up to its newline; the lines after it come through whole."""
+    monkeypatch.setattr(docker_cloud, "LINE_LIMIT", 10)
+
+    def program(proc: Proc) -> None:
+        proc.out = [("stdout", b"first\n"), *[("stdout", b"x" * 8)] * 50, ("stdout", b"xx\nnext\n")]
+
+    fake.program = program
+    session = await _sandbox(fake).open(uuid.uuid4(), repo, ClaudeCode(), KEY)
+    lines: list[str] = []
+
+    async def on_line(line: str) -> None:
+        lines.append(line)
+
+    streamed = await session.exec(["claude", "-p"], on_line=on_line, timeout=60)
+    assert lines == ["first\n", "x" * 10, "next\n"] and streamed.truncated
+    kept = await session.exec(["git", "diff"], timeout=60)
+    assert kept.stdout == "first\n" + "x" * 10 + "next\n" and kept.truncated
+    await session.close()
+
+
 async def test_a_host_docker_serves_itself_gets_its_token_and_without_a_secret_only_the_model_api(
     fake: FakeDockerCloud, repo: Path,
 ) -> None:

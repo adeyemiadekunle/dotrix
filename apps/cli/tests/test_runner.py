@@ -316,9 +316,18 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     for tree in (old, recent, busy):
         subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(tree), "HEAD"], check=True)
     stray.mkdir()  # git lost track of it
+    edited = trees / "p" / "kun-5-edited"
+    subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(edited), "HEAD"], check=True)
     week_ago = time.time() - 7 * 86400
-    for tree in (old, busy, stray):
-        os.utime(tree, (week_ago, week_ago))
+
+    def age(tree: Path) -> None:
+        for path in [*tree.rglob("*"), tree]:
+            os.utime(path, (week_ago, week_ago), follow_symlinks=False)
+
+    for tree in (old, busy, stray, edited):
+        age(tree)
+    # Someone edited a file already in an old worktree: its folder's time doesn't change, the file's does.
+    (edited / "a.txt").write_text("edited by hand\n")
     (trees / "other-project").mkdir()
     os.utime(trees / "other-project", (week_ago, week_ago))
 
@@ -327,5 +336,6 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     removed = await runner.clean_worktrees()
     assert sorted(removed) == sorted([old, stray])
     assert recent.is_dir() and busy.is_dir() and (trees / "other-project").is_dir()
+    assert (edited / "a.txt").read_text() == "edited by hand\n"
     listed = subprocess.run(["git", "-C", str(checkout), "worktree", "list"], capture_output=True, text=True).stdout
     assert str(old) not in listed and str(recent) in listed

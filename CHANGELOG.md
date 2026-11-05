@@ -107,6 +107,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Your computer's runner no longer removes an old worktree you've edited: a file changed in it in the last few days now counts, not only the folder itself.
+- A command in a Docker Cloud sandbox that prints without newlines can no longer fill the worker's memory: a line is cut at 4 MB and the rest dropped up to its newline, as in the Docker sandbox.
 - A message sent the moment Nova's reply appears is sent, instead of being refused as a follow-up to a turn that had just finished.
 
 - Baseline confirmations include the shared human-context revision. An intervening correction rejects stale confirmations, and confirming without new notes preserves the context instead of erasing it from Nova’s summary.
