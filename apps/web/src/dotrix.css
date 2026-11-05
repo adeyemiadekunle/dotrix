@@ -1574,14 +1574,6 @@ body.resizing-row * {
   }
 }
 
-/* A project's group in Chat's and Code's lists: room between projects. */
-.chat-group {
-  margin-top: 6px;
-  padding: 10px 0 6px;
-}
-.chat-group + .chat-group {
-  border-top: 1px solid var(--border);
-}
 /* A coding session's details, over the chat from the header's ⋮ (it doesn't push the turns down). */
 .pop.cs-info {
   width: 420px;
@@ -1589,8 +1581,9 @@ body.resizing-row * {
   max-height: min(480px, 70vh);
   padding: 12px 14px;
 }
-/* Room between the sessions (and conversations) of one project. */
-.chat-group .sitem + .sitem {
+/* Room between the sessions (and conversations) in Chat's and Codes' lists. */
+.chat-list .sitem + .sitem,
+.chat-list .cs-row + .cs-row {
   margin-top: 4px;
 }
 
@@ -2681,7 +2674,8 @@ section.side-panel-body[hidden] {
 }
 
 /* Message boxes as Claude Code's (Chat's Composer, a new Codes session): + on the left, the box growing with
- * what's typed, send inside on the right; model and approvals below on the left, work mode and runtime on the right. */
+ * what's typed, send inside on the right; model and approvals below on the left, runtime on the right; the work mode
+ * in the + menu, with a chip beside + once it isn't Discuss. */
 .cmp-box {
   align-items: center;
   padding: 7px 7px 7px 8px;
@@ -2705,6 +2699,11 @@ section.side-panel-body[hidden] {
 .cmp-plus[aria-expanded="true"] {
   background: var(--surface-2);
   color: var(--text);
+}
+.cmp-mode {
+  flex: none;
+  max-width: none;
+  margin-right: 2px;
 }
 .cmp-foot {
   gap: 4px;
@@ -2890,6 +2889,7 @@ section.side-panel-body[hidden] {
 }
 .cc-item {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -2944,14 +2944,10 @@ section.side-panel-body[hidden] {
   background: var(--surface-2);
 }
 .cc-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  position: fixed; /* placed by ChoiceCard: below the button, or above it when the window has more room there */
   z-index: 80;
   display: flex;
   flex-direction: column;
-  max-height: min(360px, 50vh);
   overflow-y: auto;
   padding: 5px;
   border: 1px solid var(--border);

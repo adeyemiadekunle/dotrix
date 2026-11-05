@@ -1,7 +1,7 @@
 // A new chat's or a new coding session's middle, as Claude Code's environment card: the first few choices
 // (a project, or where Kai codes) with a tick on the one picked, and "Choose …" opening the full list, with a
 // search once it's long and any extra actions (Add a folder) at its foot.
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { Ic } from "../core/icons";
 
@@ -22,6 +22,10 @@ const SHOWN = 3;
 export function ChoiceCard({ label, choices, extra }: { label: string; choices: Choice[]; extra?: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const more = useRef<HTMLButtonElement>(null);
+  // The full list is fixed to the window, under the card's foot or above it when there's more room there, and scrolls
+  // within what's left, so the scrolling page around it never cuts it off.
+  const [place, setPlace] = useState<CSSProperties>({});
   // The card keeps the picked one in view: the first few, with the picked one in place of the last if it's further down.
   const shown = useMemo(() => {
     const first = choices.slice(0, SHOWN);
@@ -32,6 +36,22 @@ export function ChoiceCard({ label, choices, extra }: { label: string; choices: 
   const close = () => {
     setOpen(false);
     setQuery("");
+  };
+  const toggle = () => {
+    if (open) return close();
+    const foot = more.current?.parentElement?.getBoundingClientRect();
+    if (foot) {
+      const below = window.innerHeight - foot.bottom - 12;
+      const above = foot.top - 12;
+      const up = below < 240 && above > below;
+      setPlace({
+        left: foot.left,
+        width: foot.width,
+        maxHeight: Math.min(360, up ? above : below),
+        ...(up ? { bottom: window.innerHeight - foot.top + 4 } : { top: foot.bottom + 4 }),
+      });
+    }
+    setOpen(true);
   };
   const row = (c: Choice, inMenu: boolean) => (
     <button
@@ -60,14 +80,14 @@ export function ChoiceCard({ label, choices, extra }: { label: string; choices: 
         {shown.map((c) => row(c, false))}
       </div>
       <div className="cc-foot">
-        <button type="button" className="cc-more" onClick={() => (open ? close() : setOpen(true))} aria-haspopup="listbox" aria-expanded={open}>
+        <button ref={more} type="button" className="cc-more" onClick={toggle} aria-haspopup="listbox" aria-expanded={open}>
           {label}
           <Ic n="chevron-down" s={12} />
         </button>
         {open && (
           <>
             <span className="pick-veil" aria-hidden onClick={close} />
-            <div className="cc-menu" role="listbox" aria-label={label} onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), close())}>
+            <div className="cc-menu" style={place} role="listbox" aria-label={label} onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), close())}>
               {choices.length > 6 && (
                 <input
                   className="cc-search"
