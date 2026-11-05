@@ -2705,6 +2705,17 @@ section.side-panel-body[hidden] {
   max-width: none;
   margin-right: 2px;
 }
+.cmp-mode-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 .cmp-foot {
   gap: 4px;
   padding: 6px 8px 0;

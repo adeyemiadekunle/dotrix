@@ -954,8 +954,10 @@ function Composer({
         )}
         {mode && setMode && mode !== "discuss" && (
           <span className="cmp-chip cmp-mode" data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
-            <Ic n={MODE_ICONS[mode]} s={12} />
-            {WORK_MODES.find(([v]) => v === mode)?.[1]}
+            <button type="button" className="cmp-mode-pick" onClick={at.start} aria-label={`Mode: ${WORK_MODES.find(([v]) => v === mode)?.[1]}`}>
+              <Ic n={MODE_ICONS[mode]} s={12} />
+              {WORK_MODES.find(([v]) => v === mode)?.[1]}
+            </button>
             <button className="ibtn ibtn-xs" onClick={() => setMode("discuss")} aria-label="Back to Discuss">
               <Ic n="x" s={11} />
             </button>
