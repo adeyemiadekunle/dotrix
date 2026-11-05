@@ -20,7 +20,7 @@ from typing import Any
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid_utils.compat import uuid7
 
@@ -146,10 +146,11 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
         try:
             approval = ctx.approval if ctx.jobs is not None else None
             service = CodingService(session, ctx.settings, ctx.jobs or _NO_JOBS, github=ctx.github)
-            previous = await session.scalar(select(CodingRun).join(CodingSession, CodingSession.id == CodingRun.session_id).where(
+            previous = await session.scalar(select(CodingRun).outerjoin(CodingSession, CodingSession.id == CodingRun.session_id).where(
                 CodingRun.workspace_id == ctx.workspace_id, CodingRun.project_id == ctx.project_id,
                 CodingRun.thread_id == ctx.thread_id, CodingRun.issue_key == ask.issue_key,
-                CodingSession.state != CodingSessionState.CLOSED, CodingSession.archived_at.is_(None),
+                or_(CodingSession.id.is_(None), CodingSession.state != CodingSessionState.CLOSED),
+                CodingSession.archived_at.is_(None),
             ).order_by(CodingRun.created_at.desc()).limit(1).with_for_update(of=CodingRun))
             if previous and previous.status.value in {"awaiting_approval", "queued", "running", "changes_ready", "recovery_required"}:
                 note = (ask.note or "").strip()

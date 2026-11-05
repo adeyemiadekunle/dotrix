@@ -2094,8 +2094,8 @@ async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
                                  json={"type": "task", "title": "Notification handoff"})).json()
     note = "Edit README.md only; do not modify calc.py."
     agent_script.say(tool_call("update_issue", key=issue["key"], assignee="coding-agent"),
-                     tool_call("start_coding", issue_key=issue["key"], note=note),
-                     tool_call("start_coding", issue_key=issue["key"], note=note), "Approve Kai in Inbox.")
+                     tool_call("start_coding", call_id="handoff-note", issue_key=issue["key"], note=note),
+                     tool_call("start_coding", call_id="handoff-note-retry", issue_key=issue["key"], note=note), "Approve Kai in Inbox.")
     response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
         "message": "Implement this issue", "work_mode": "build", "approval_mode": "accept_edits",
     })
@@ -2114,7 +2114,7 @@ async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
 
     stored = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert stored["note"] == note and stored["brief"].count(note) == 1
-    model = agent_script.say(tool_call("start_coding", issue_key=issue["key"], note="Also change calc.py."),
+    model = agent_script.say(tool_call("start_coding", call_id="handoff-rejected", issue_key=issue["key"], note="Also change calc.py."),
                              "The new instructions were not delivered.")
     refused = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
         "message": "Change the handoff", "thread_id": source["thread_id"], "work_mode": "build",
