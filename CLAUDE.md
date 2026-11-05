@@ -257,7 +257,7 @@ apps/web/
 ├── pages/(app)/, components/, lib/   the older API-backed app, no longer routed; kept for reference until Chat and coding are wired (then deleted), except what `src/` still imports: `lib/api.ts` (`api`, `apiFetch`, `authPost`, `unwrap`, errors), `lib/navigation.tsx`, `components/markdown.tsx` and `components/states.tsx`
 └── e2e/                         Playwright: studio, settings, people (and auth) run; the rest are parked (`test.fixme(true, NOT_WIRED)`) until rewritten
 packages/ui/src/                 consumed as source (no build step), by path: `@dotrix/ui/components/*`, `/lib/*`, `/hooks/*`, `/globals.css`
-├── components/                  shadcn/ui components (used by the sign-in pages), plus a chat kit (chat-scroller, chat-message, prompt-input, code-block) and `trace` (shadcn AI Elements' line-per-step primitive, on `collapsible`; the web's `components/AgentTrace.tsx` builds Reasoning, Chain of Thought, Subagent and Tool on it)
+├── components/                  shadcn/ui components (used by the sign-in pages), plus a chat kit (chat-scroller, chat-message, prompt-input, code-block) and `trace` (shadcn AI Elements' line-per-step primitive, on `collapsible`; the web's `components/AgentTrace.tsx` builds Reasoning, Chain of Thought, Subagent, Tool, Terminal, Test Results, Stack Trace, Plan, Queue, Sources, Inline Citation, Confirmation, Checkpoint and Context on it with `item`, `marker` and `hover-card`; `core/agentOutput.ts` reads test runs and stack traces from recorded output)
 └── styles/                      globals.css (Tailwind entry and tokens, imports design.css), design.css (the design: tokens and component classes)
 ```
 

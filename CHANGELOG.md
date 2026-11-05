@@ -74,6 +74,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Changed
 
 - Chat and Codes show an agent's work the way shadcn/ui's AI Elements do: Nova's thinking as a Reasoning line that's open while it thinks, a reply's steps as a Chain of Thought, each specialist as a Subagent line with its brief, findings, risks and evidence, and Kai's tool calls as lines whose commands open onto their output (a failed one in red, the current one shimmering). Model menus group models by provider, and Files opens folders as a file tree.
+- A reply's sources show as inline citations ("[S1]" names the site; hover for the page) and a "Used N sources" list; each reply shows its tokens, broken down on hover. Plans show their tasks, criteria and questions as steps; messages queued or steering a turn show as a queue with Cancel; a change waiting for approval asks as one row with Reject and Approve. In Codes, a command's output is read for its test results (counts and the failing tests) and stack traces (your own frames linked to Files, library frames folded), in the turn and in Terminal, and each pushed turn ends with a checkpoint naming its commit, with Revert there.
 
 - Chat and Codes list conversations and sessions in one list, each naming its project; the work mode is picked from the composer's + menu; a new coding session picks its approvals; the project list in a new chat stays in the window and scrolls.
 

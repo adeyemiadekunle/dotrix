@@ -8,6 +8,7 @@ import type { Scope } from "@/lib/issues";
 
 import { Ic } from "../core/icons";
 import { D, who } from "../data/store";
+import { Confirmation, PlanSteps } from "./AgentTrace";
 import { Diff } from "./Changes";
 
 const KIND: Record<string, [string, string]> = {
@@ -79,7 +80,19 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
           Why: {a.reason}
         </div>
       )}
-      {pending && (
+      {pending && !choice && !rejecting ? (
+        <div className="change-f change-confirm">
+          <Confirmation icon="hand-palm" title={`${label}?`} description="Waiting for your decision">
+            <button className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)} disabled={busy}>
+              Reject
+            </button>
+            <button className="btn btn-sm btn-primary" onClick={() => onChoose({ decision: "approve", reason: "" })} disabled={busy}>
+              <Ic n="check" s={13} />
+              Approve
+            </button>
+          </Confirmation>
+        </div>
+      ) : pending ? (
         <div className="change-f">
           {choice ? (
             <>
@@ -91,7 +104,7 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
                 Undo
               </button>
             </>
-          ) : rejecting ? (
+          ) : (
             <>
               <input
                 className="input"
@@ -110,23 +123,9 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
                 Reject
               </button>
             </>
-          ) : (
-            <>
-              <span className="faint" style={{ fontSize: 12 }}>
-                Waiting for your decision
-              </span>
-              <span className="sp" />
-              <button className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)} disabled={busy}>
-                Reject
-              </button>
-              <button className="btn btn-sm btn-primary" onClick={() => onChoose({ decision: "approve", reason: "" })} disabled={busy}>
-                <Ic n="check" s={13} />
-                Approve
-              </button>
-            </>
           )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -149,11 +148,7 @@ function Checkpoint({ a, onAnswer, busy }: { a: Approval; onAnswer: (c: Choice) 
       </div>
       {steps.length > 0 && (
         <div className="change-b">
-          <ol style={{ margin: 0, paddingLeft: 18 }}>
-            {steps.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ol>
+          <PlanSteps title={`${steps.length} step${steps.length === 1 ? "" : "s"}`} steps={steps.map((title) => ({ title }))} icon="map-trifold" />
         </div>
       )}
       {pending && (

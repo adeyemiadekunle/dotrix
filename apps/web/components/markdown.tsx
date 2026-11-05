@@ -12,13 +12,32 @@ function fenced(children: ReactNode): { code: string; language?: string } {
   return { code: String(child.props.children ?? "").replace(/\n$/, ""), language };
 }
 
+/** "[S1]" outside code becomes a link to "#cite-S1", which `cite` may render (an inline citation). */
+function linkCitations(text: string): string {
+  return text
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part, i) => (i % 2 ? part : part.replace(/\[(S\d+)\](?![([:])/g, "[$1](#cite-$1)")))
+    .join("");
+}
+
 /**
  * Markdown from issues, comments, and agents. Raw HTML is not rendered (react-markdown's
  * default), so text written by agents or pasted from docs can't inject markup. Fenced code
  * gets a CodeBlock (language, copy, highlighting). `onCode` may turn inline code into a button
- * (a file path that opens the file): it returns what a click does, or nothing to leave it as text.
+ * (a file path that opens the file): it returns what a click does, or nothing to leave it as text. `cite` turns a
+ * source label in the text ("[S1]") into an inline citation; a label it doesn't know stays as written.
  */
-export function Markdown({ children, className, onCode }: { children: string; className?: string; onCode?: (code: string) => (() => void) | undefined }) {
+export function Markdown({
+  children,
+  className,
+  onCode,
+  cite,
+}: {
+  children: string;
+  className?: string;
+  onCode?: (code: string) => (() => void) | undefined;
+  cite?: (label: string) => ReactNode | undefined;
+}) {
   return (
     <div
       className={cn(
@@ -35,7 +54,11 @@ export function Markdown({ children, className, onCode }: { children: string; cl
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
+          a: ({ node: _node, ...props }) => {
+            const label = props.href?.startsWith("#cite-") ? props.href.slice(6) : null;
+            if (label) return cite?.(label) ?? <>[{label}]</>;
+            return <a {...props} target="_blank" rel="noreferrer noopener" />;
+          },
           pre: ({ node: _node, children }) => <CodeBlock {...fenced(children)} />,
           code: ({ node: _node, className: codeClass, children: code, ...props }) => {
             const text = String(code ?? "");
@@ -52,7 +75,7 @@ export function Markdown({ children, className, onCode }: { children: string; cl
           },
         }}
       >
-        {children}
+        {cite ? linkCitations(children) : children}
       </ReactMarkdown>
     </div>
   );

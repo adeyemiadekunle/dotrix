@@ -2620,43 +2620,31 @@ section.side-panel-body[hidden] {
 .chat-delivery-help {
   color: var(--text-3);
 }
+/* The Queue's rows (components/AgentTrace.tsx Queue): a message waiting to be sent while Nova works. */
 .chat-input-state {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 8px 6px;
-  padding: 6px 9px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-2);
-  color: var(--text-2);
-  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
 }
-.chat-input-kind {
-  color: var(--text);
-  font-weight: 600;
-}
-.chat-input-kind.steer {
-  color: var(--accent);
+.chat-input-state [data-slot="trace-line"] {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 .chat-input-message {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .chat-input-result {
-  color: var(--text-3);
   white-space: nowrap;
 }
 .chat-input-error {
-  grid-column: 1 / -1;
+  flex-basis: 100%;
+  padding-left: 24px;
   color: var(--red);
+  font-size: 12px;
   overflow-wrap: anywhere;
-}
-.chat-input-state.rejected {
-  border-color: color-mix(in srgb, var(--red) 35%, var(--border));
 }
 .chat-share-action {
   display: flex;
@@ -2983,4 +2971,205 @@ section.side-panel-body[hidden] {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-3);
+}
+
+/* Test Results, Stack Trace and the reading of a command's output (AgentTrace.tsx), in a tool line and Terminal. */
+.agent-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-family: var(--font-sans);
+}
+.agent-reading .agent-trace {
+  margin-top: 0;
+}
+.agent-stack-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.agent-stack-error {
+  margin: 0;
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+.agent-stack-box ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.agent-stack-box ol.agent-stack-vendor {
+  color: var(--text-3);
+}
+.kp-prompt .kp-ok {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--green);
+}
+.kp-cmd .agent-reading {
+  margin: 6px 0 2px;
+}
+
+/* Sources and Inline Citation: "[S1]" in a reply as a chip naming the site, its page on hover. */
+.agent-cite {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  margin: 0 1px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-2) !important;
+  font-size: 11px;
+  line-height: 18px;
+  text-decoration: none !important;
+  vertical-align: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-cite:hover {
+  background: var(--accent-soft);
+  color: var(--acc) !important;
+}
+.agent-cite-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-cite-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.agent-cite-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.agent-source-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* Plan: a plan's tasks, criteria and questions in a Plan card, and a checkpoint's steps. */
+.agent-plan-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  font-size: 13px;
+}
+.agent-plan-n {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.agent-plan .agent-trace-wrap,
+.agent-plan [data-slot="trace-title"].agent-trace-wrap {
+  color: var(--text);
+}
+
+/* Queue: messages waiting above the message box. */
+.agent-queue {
+  margin: 0 8px 8px;
+}
+.agent-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Confirmation: a change waiting for a person, as one row. */
+.change-f.change-confirm {
+  padding: 4px;
+}
+.agent-confirm {
+  font-size: 12.5px;
+}
+.agent-confirm [data-slot="item-title"] {
+  font-size: 13px;
+}
+.agent-confirm [data-slot="item-description"] {
+  font-size: 12px;
+}
+
+/* Checkpoint: the commit a turn left, between turns in Codes. */
+.agent-checkpoint {
+  font-size: 12px;
+}
+.agent-checkpoint .kt-lines {
+  margin-left: 4px;
+}
+
+/* Context: a reply's tokens, broken down on hover. */
+.agent-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: default;
+}
+.agent-usage:hover,
+.agent-usage:focus-visible {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.agent-usage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.agent-usage-h {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-usage-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.agent-usage-bar span {
+  display: block;
+  height: 100%;
+  background: var(--acc);
+}
+.agent-usage-kv {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  margin: 0;
+}
+.agent-usage-kv dt {
+  color: var(--text-3);
+}
+.agent-usage-kv dd {
+  margin: 0;
+  text-align: right;
+}
+.agent-usage-note {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11.5px;
 }

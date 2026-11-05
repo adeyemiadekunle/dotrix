@@ -78,7 +78,20 @@ import { SessionDetails, modeName, sessionModel } from "../components/SessionDet
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
 import { ChoiceCard, type Choice } from "../components/ChoiceCard";
-import { ChainOfThought, Reasoning, Subagents, ToolCalls } from "../components/AgentTrace";
+import {
+  ChainOfThought,
+  Checkpoint,
+  Citation,
+  ContextUsage,
+  PlanSteps,
+  Queue,
+  Reasoning,
+  Sources,
+  Subagents,
+  ToolCalls,
+  TraceList,
+  type Usage,
+} from "../components/AgentTrace";
 import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@dotrix/ui/components/trace";
 
@@ -385,7 +398,23 @@ function refsOf(
   return { tasks, docs };
 }
 
-export function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | null; tag?: string; children?: React.ReactNode }) {
+export function Message({
+  m,
+  projectId,
+  tag,
+  sources,
+  usage,
+  children,
+}: {
+  m: Msg;
+  projectId: string | null;
+  tag?: string;
+  /** The pages a reply read (S1, S2, …): its "[S1]" become inline citations, and they're listed under it. */
+  sources?: Run["sources"];
+  /** A reply's tokens, shown to whoever asked for it (and owners and admins). */
+  usage?: Usage & { mine: boolean };
+  children?: React.ReactNode;
+}) {
   const w = who(m.by);
   const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
   const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
@@ -403,7 +432,11 @@ export function Message({ m, projectId, tag, children }: { m: Msg; projectId: st
           {agent && <span className="role">{agent.role}</span>}
           <time>{ago(m.at)}</time>
           {tag && <span className="badge">{tag}</span>}
-          {m.tokens && admin ? <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span> : null}
+          {usage && (usage.mine || admin) ? (
+            <ContextUsage usage={usage} />
+          ) : m.tokens && admin ? (
+            <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>
+          ) : null}
         </div>
         {m.activity && m.activity.length > 0 && <ChainOfThought steps={m.activity} />}
         {m.role === "user" ? (
@@ -411,10 +444,22 @@ export function Message({ m, projectId, tag, children }: { m: Msg; projectId: st
         ) : (
           m.text && (
             <div className="md">
-              <Markdown>{m.text}</Markdown>
+              <Markdown
+                cite={
+                  sources?.length
+                    ? (label) => {
+                        const source = sources.find((x) => x.label === label);
+                        return source ? <Citation source={source} /> : undefined;
+                      }
+                    : undefined
+                }
+              >
+                {m.text}
+              </Markdown>
             </div>
           )
         )}
+        {m.role === "agent" && sources?.length ? <Sources sources={sources} /> : null}
         {(refs.tasks.length > 0 || refs.docs.length > 0) && (
           <div className="chat-refs">
             {refs.tasks.map((k) => (
@@ -464,7 +509,24 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
         />
       )}
       {shows && (reply.text || run.approvals?.length || limited) ? (
-        <Message m={reply} projectId={projectId}>
+        <Message
+          m={reply}
+          projectId={projectId}
+          sources={stream ? undefined : run.sources}
+          usage={
+            stream
+              ? undefined
+              : {
+                  input: run.input_tokens,
+                  cached: run.cached_input_tokens,
+                  output: run.output_tokens,
+                  calls: run.model_calls,
+                  complete: run.usage_complete,
+                  model: run.model ? modelName(run.model) : null,
+                  mine: run.requested_by_id === D().me,
+                }
+          }
+        >
           {scope && !stream && run.status === "completed" && run.requested_by_id === D().me && !!run.reply && (
             <PublishChatOutcome scope={scope} runId={run.id} reply={run.reply} />
           )}
@@ -531,48 +593,18 @@ function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean
         <b style={{ fontWeight: 500 }}>{plan.title}</b>
         <span className="badge">Plan v{plan.version}</span>
       </div>
-      <div style={{ padding: "8px 12px", fontSize: 13 }}>
-        <p style={{ margin: "0 0 8px" }}>{plan.summary}</p>
-        {plan.acceptance_criteria.length > 0 && (
-          <>
-            <div className="faint" style={{ fontSize: 11.5 }}>
-              Acceptance criteria
-            </div>
-            <ul style={{ margin: "2px 0 8px", paddingLeft: 18 }}>
-              {plan.acceptance_criteria.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
-          </>
-        )}
-        <div className="faint" style={{ fontSize: 11.5 }}>
-          Tasks
-        </div>
-        <ol style={{ margin: "2px 0 8px", paddingLeft: 18 }}>
-          {plan.tasks.map((t, i) => (
-            <li key={i}>
-              {t.title}
-              {t.depends_on.length > 0 && <span className="faint"> · after {t.depends_on.join(", ")}</span>}
-              {t.detail && (
-                <div className="muted" style={{ fontSize: 12 }}>
-                  {t.detail}
-                </div>
-              )}
-            </li>
-          ))}
-        </ol>
-        {plan.open_questions.length > 0 && (
-          <>
-            <div className="faint" style={{ fontSize: 11.5 }}>
-              Open questions
-            </div>
-            <ul style={{ margin: "2px 0 0", paddingLeft: 18 }}>
-              {plan.open_questions.map((q) => (
-                <li key={q}>{q}</li>
-              ))}
-            </ul>
-          </>
-        )}
+      <div className="agent-plan-body">
+        <p style={{ margin: 0 }}>{plan.summary}</p>
+        <PlanSteps
+          title={`${plan.tasks.length} task${plan.tasks.length === 1 ? "" : "s"}`}
+          steps={plan.tasks.map((t) => ({
+            title: t.title,
+            detail: t.detail || undefined,
+            note: t.depends_on.length ? `after ${t.depends_on.join(", ")}` : undefined,
+          }))}
+        />
+        <TraceList title="Acceptance criteria" items={plan.acceptance_criteria} icon="check-square" />
+        <TraceList title="Open questions" items={plan.open_questions} icon="question" />
       </div>
       {latest && (
         <div className="change-f">
@@ -1159,45 +1191,37 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               </select>
             </div>
           )}
-          {chatInputs
-            .filter(
-              (item) =>
-                item.status === "pending" ||
-                item.status === "sending" ||
-                item.status === "rejected" ||
-                (item.status === "accepted" && item.run_id === working?.id),
-            )
-            .slice(0, 20)
-            .reverse()
-            .map((item) => {
-              const deliveryState =
-                item.status === "accepted"
-                  ? item.kind === "steer"
-                    ? "Accepted for the next safe point"
-                    : "Queued after this turn"
-                  : item.status === "rejected"
-                    ? "Not delivered"
-                    : item.status === "sending"
-                      ? "Sending…"
-                      : "Waiting to send";
-              return (
-                <div key={item.id} className={`chat-input-state ${item.status}`}>
-                  <span className={`chat-input-kind ${item.kind}`}>{item.kind === "queue" ? "Queued" : "Steering"}</span>
-                  <span className="chat-input-message" title={item.message}>
-                    {item.message}
-                  </span>
-                  <span className="chat-input-result" role="status">
-                    {deliveryState}
-                  </span>
-                  {item.error && <span className="chat-input-error">{item.error}</span>}
-                  {item.status === "pending" && (
-                    <button className="btn btn-sm btn-ghost" disabled={cancelInput.isPending} onClick={() => cancelInput.mutate(item.id)}>
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+          <Queue
+            entries={chatInputs
+              .filter(
+                (item) =>
+                  item.status === "pending" ||
+                  item.status === "sending" ||
+                  item.status === "rejected" ||
+                  (item.status === "accepted" && item.run_id === working?.id),
+              )
+              .slice(0, 20)
+              .reverse()
+              .map((item) => ({
+                id: item.id,
+                kind: item.kind,
+                message: item.message,
+                status: item.status,
+                error: item.error,
+                said:
+                  item.status === "accepted"
+                    ? item.kind === "steer"
+                      ? "Accepted for the next safe point"
+                      : "Queued after this turn"
+                    : item.status === "rejected"
+                      ? "Not delivered"
+                      : item.status === "sending"
+                        ? "Sending…"
+                        : "Waiting to send",
+                onCancel: item.status === "pending" ? () => cancelInput.mutate(item.id) : undefined,
+                cancelling: cancelInput.isPending,
+              }))}
+          />
           <Composer
             placeholder="Ask Nova, or type @ to pick a mode"
             agent={agent}
@@ -1835,6 +1859,8 @@ function KaiTurn({
                   <ToolCalls
                     events={turn.events.slice(-200)}
                     running={working}
+                    onPath={(path) => onPath(path, turn.id)}
+                    known={turn.files_changed.map(fileOf)}
                     render={(text) => <PathLinks text={text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />}
                   />
                 </TraceCollapsibleContent>
@@ -1873,6 +1899,11 @@ function KaiTurn({
               </button>
             )}
             {turn.finished_at && <span className="faint">{ago(ms(turn.finished_at))}</span>}
+            {mine && (
+              <ContextUsage
+                usage={{ input: turn.input_tokens, output: turn.output_tokens, cost: turn.cost_usd, model: turn.model ? modelName(turn.model) : null }}
+              />
+            )}
             {turn.files_changed.length > 0 && (
               <button className="kt-lines" onClick={() => onChanges(turn.id)} data-tip="Open these changes">
                 <Ic n="git-compare" s={12} />
@@ -1881,14 +1912,25 @@ function KaiTurn({
                 <span className="minus">−{removed}</span>
               </button>
             )}
-            {turn.can_revert && !busy && (
-              <button className="kt-lines" disabled={revert.isPending} onClick={() => revert.mutate(turn.id)}>
-                <Ic n="undo-2" s={12} />
-                Revert this turn
-              </button>
-            )}
           </div>
         </div>
+      )}
+      {turn.commit_sha && (
+        <Checkpoint
+          label={
+            <span>
+              {turn.revert_of ? "Reverted" : `Turn ${turn.turn}`} · <span className="mono">{turn.commit_sha.slice(0, 7)}</span>
+              {turn.branch ? <span className="faint"> on {turn.branch}</span> : null}
+            </span>
+          }
+        >
+          {turn.can_revert && !busy && (
+            <button className="kt-lines" disabled={revert.isPending} onClick={() => revert.mutate(turn.id)}>
+              <Ic n="undo-2" s={12} />
+              Revert this turn
+            </button>
+          )}
+        </Checkpoint>
       )}
     </div>
   );

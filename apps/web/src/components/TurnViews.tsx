@@ -9,6 +9,7 @@ import type { Scope } from "@/lib/issues";
 
 import { desktop, useDesktopRunners, worktreeHere } from "../core/desktop";
 import { Ic } from "../core/icons";
+import { OutputReading } from "./AgentTrace";
 import { buildTree, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
 import { toast } from "../ui/toast";
 
@@ -439,6 +440,8 @@ export function CommandList({ entries, working }: { entries: ReturnType<typeof t
   );
 }
 
+/** Terminal: one command as it ran, a mark for how it ended, its output, and that output read (Test Results and
+ *  Stack Trace) when it's a test run or a crash. */
 function Command({ entry, running }: { entry: ReturnType<typeof terminal>[number]; running: boolean }) {
   const [all, setAll] = useState(false);
   const lines = (entry.output ?? "").split("\n");
@@ -451,8 +454,15 @@ function Command({ entry, running }: { entry: ReturnType<typeof terminal>[number
           {entry.command}
           {running && <span className="faint"> …</span>}
         </span>
-        {entry.failed && <Ic n="triangle-alert" s={12} cls="kp-fail" />}
+        {running ? (
+          <Ic n="spinner-gap" s={12} cls="animate-spin" />
+        ) : entry.failed ? (
+          <Ic n="triangle-alert" s={12} cls="kp-fail" />
+        ) : entry.output !== null ? (
+          <Ic n="check" s={12} cls="kp-ok" />
+        ) : null}
       </div>
+      {!running && entry.output && <OutputReading text={entry.output} failed={entry.failed} />}
       {entry.output !== null && entry.output !== "" && (
         <>
           {!all && lines.length > LONG_OUTPUT && (
