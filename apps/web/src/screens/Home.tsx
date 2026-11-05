@@ -39,7 +39,8 @@ export function goTasks(f: "open" | "done" | "overdue") {
 function AgentItem({ n }: { n: Notif }) {
   const w = who(n.by);
   const p = n.project ? proj(n.project) : n.task ? proj(D().tasks.find((t) => t.id === n.task)?.project) : null;
-  const open = () => (isLive() && n.thread ? go("chat", {}, { search: `thread=${n.thread}` }) : go("inbox", {}, { search: `n=${n.id}` }));
+  const open = () =>
+    isLive() && n.thread && !n.codingRun ? go("chat", {}, { search: `thread=${n.thread}&project=${p?.key ?? ""}` }) : go("inbox", {}, { search: `n=${n.id}` });
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: 10, padding: "8px 0", cursor: "pointer" }} onClick={open} role="button" tabIndex={0}>
       <Av id={n.by} cls="md" tip={false} />

@@ -1281,17 +1281,24 @@ async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
     assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval"
     await db_client.post(f"{base}/coding/runs/{theirs['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
 
-    # Build in Accept edits: Kai starts at once from the conversation too.
+    # A chat assignment creates one notification-backed handoff, even in Accept edits.
     third = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Third"})).json()
-    model = agent_script.say(tool_call("start_coding", issue_key=third["key"]), "Kai has started.", "Looks right.")
+    model = agent_script.say(tool_call("update_issue", key=third["key"], assignee="coding-agent"),
+                             tool_call("start_coding", issue_key=third["key"]), "Kai waits for your approval in Inbox.")
     await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
         "message": "Build it", "work_mode": "build", "approval_mode": "accept_edits",
     })
     # (here the coding run, and its Reviewer, run inside the tool call: search every call for its result)
     said = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
-    assert said and "Kai has started" in said[-1]
+    assert said and "already has this handoff" in said[-1]
     [built] = (await db_client.get(f"{base}/coding/runs?issue={third['key']}", headers=ada.headers)).json()
-    assert built["approval_mode"] == "accept_edits" and built["status"] in ("pr_opened", "no_changes", "running")
+    assert built["approval_mode"] == "manual" and built["status"] == "awaiting_approval"
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    assert sum(n.get("coding_run_id") == built["id"] for n in notes) == 1
+    agent_script.say("Looks right.")
+    await _approve(db_client, base, built, ada.headers)
+    after = (await db_client.get(f"{base}/coding/runs/{built['id']}", headers=ada.headers)).json()
+    assert after["status"] in ("pr_opened", "no_changes", "running")
 
 
 async def test_changes_to_files_ci_runs_wait_for_a_person_in_every_mode(
@@ -2069,3 +2076,51 @@ async def test_a_waiting_run_keeps_its_validated_base_when_a_later_session_refre
     done = await _approve(db_client, base, waiting, ada.headers)
     assert done["status"] == "pr_opened" and done["base_branch"] == "main", done
     assert github.pulls[0]["base"] == "main"
+
+
+async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
+    db_client: AsyncClient, coding, agent_script, monkeypatch,
+) -> None:
+    from dotrix_backend.modules.coding.service import CodingService
+
+    async def hold_dispatch(*args):
+        pass  # Test admission and approval, without running the external coding sandbox.
+
+    monkeypatch.setattr(CodingService, "_send", hold_dispatch)
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "accept_edits"}, headers=ada.headers)
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Notification handoff"})).json()
+    note = "Edit README.md only; do not modify calc.py."
+    agent_script.say(tool_call("update_issue", key=issue["key"], assignee="coding-agent"),
+                     tool_call("start_coding", call_id="handoff-note", issue_key=issue["key"], note=note),
+                     tool_call("start_coding", call_id="handoff-note-retry", issue_key=issue["key"], note=note), "Approve Kai in Inbox.")
+    response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Implement this issue", "work_mode": "build", "approval_mode": "accept_edits",
+    })
+    assert response.status_code == 202, response.text
+    source = response.json()
+    [run] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval" and run["approval_mode"] == "manual"
+    assert run["thread_id"] == source["thread_id"]
+    assert run["note"] == note and run["brief"].count(note) == 1
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    assert sum(n.get("coding_run_id") == run["id"] for n in notes) == 1
+    approved = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", headers=ada.headers,
+                                    json={"decision": "approve"})
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "queued"
+
+    stored = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert stored["note"] == note and stored["brief"].count(note) == 1
+    model = agent_script.say(tool_call("start_coding", call_id="handoff-rejected", issue_key=issue["key"], note="Also change calc.py."),
+                             "The new instructions were not delivered.")
+    refused = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Change the handoff", "thread_id": source["thread_id"], "work_mode": "build",
+    })
+    assert refused.status_code == 202, refused.text
+    results = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
+    assert results and "not delivered" in results[-1]
+    unchanged = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert unchanged["note"] == note and unchanged["brief"] == stored["brief"]

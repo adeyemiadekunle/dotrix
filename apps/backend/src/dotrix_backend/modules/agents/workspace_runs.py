@@ -89,15 +89,13 @@ def _excerpt(text: str, limit: int = EXCERPT_CHARS) -> str:
 
 async def build_workspace_pack(session: AsyncSession, projects: list[Project], visible: list[Project]) -> str:
     """Each project in the conversation: what it is, its current state, and its board in
-    numbers. With none, the workspace's projects by name, so agents can say where to ask."""
+    numbers. General chat receives no project context."""
     if not projects:
-        lines = [
-            "# Context: the workspace",
-            "This conversation isn't about any one project. The projects you could be asked about (the person "
-            "can open a conversation about any of them):",
-            *(f"- {p.key}: {p.name}" + (f": {p.description}" if p.description else "") for p in visible),
-        ]
-        return "\n".join(lines)
+        return (
+            "# Context: General chat\n"
+            "No project is selected. No project names, documents, issues, repositories or other project context "
+            "are included. Answer general questions; project work requires the person to select a project."
+        )
     parts = [f"# Context: {len(projects)} projects", "Built by the platform for this run. Read a file before relying on it."]
     for project in projects:
         files = {f.path: f for f in await KnowledgeRepository(session).list_files(project.id) if not f.deleted}

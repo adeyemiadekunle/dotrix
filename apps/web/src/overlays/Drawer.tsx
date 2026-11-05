@@ -18,7 +18,7 @@ import {
   live,
   taskPatched,
 } from "../data/live";
-import { TY, TYPES } from "../core/constants";
+import { TY } from "../core/constants";
 import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
@@ -794,19 +794,15 @@ export function Drawer() {
                 {prop(
                   TY[t.type].icon,
                   "Type",
-                  <select
-                    className="select"
-                    style={{ width: "auto", height: 26, fontSize: 12.5, borderColor: "transparent", backgroundColor: "transparent" }}
-                    value={t.type}
-                    aria-label="Type"
-                    onChange={(e) => updateTask(t.id, { type: e.target.value as Task["type"] })}
+                  <button
+                    className="pillbtn"
+                    aria-label={`Type: ${TY[t.type].name}`}
+                    aria-haspopup="menu"
+                    onClick={(e) => openPop(e.currentTarget, "issue-type", { id: t.id })}
                   >
-                    {TYPES.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.name}
-                      </option>
-                    ))}
-                  </select>,
+                    <Ic n={TY[t.type].icon} s={13} />
+                    {TY[t.type].name}
+                  </button>,
                 )}
                 {prop(
                   "tag",

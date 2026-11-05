@@ -4,7 +4,7 @@
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
 import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
-import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
+import { LABELS, PRIOS, PSTAT, STATUSES, TYPES, type ProjectStatusId } from "../core/constants";
 import { useCloseSession, useDeleteSandbox, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
 import { useLiveProjectTasks } from "@/lib/workspace-data";
 import { confirmDlg, promptDlg } from "../core/more";
@@ -279,6 +279,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             items={STATUSES.map((s, i) => ({ id: s.id, name: s.name, html: <StIcon st={s.id} />, on: t?.status === s.id, kbd: i + 1 }))}
             onPick={pick("status")}
           />
+        ),
+      };
+    case "issue-type":
+      return {
+        inner: (
+          <PopList p={p} items={TYPES.map((x) => ({ id: x.id, name: x.name, html: <Ic n={x.icon} s={14} />, on: t?.type === x.id }))} onPick={pick("type")} />
         ),
       };
     case "priority":

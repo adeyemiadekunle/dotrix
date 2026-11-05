@@ -90,7 +90,7 @@ def _changes(sessions: SessionFactory, scope: RuntimeRunScope, spec: AgentSpec, 
 
     def board(approved_by_id: uuid.UUID | None) -> BoardContext:
         return BoardContext(sessions, scope.workspace_id, scope.project_id, scope.requested_by_id, approved_by_id,
-                            policy=policy, unattended=unattended, coding=codes(work_mode))
+                            policy=policy, unattended=unattended, coding=codes(work_mode), mode_context=mode_context)
 
     changes: list[_Change] = []
     if spec.can("knowledge.write"):

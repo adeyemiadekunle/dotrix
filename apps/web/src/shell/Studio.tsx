@@ -27,7 +27,7 @@ import { Project } from "../screens/Project";
 import { Projects } from "../screens/Projects";
 import { ActivityPage } from "../screens/Activity";
 import { Search } from "../screens/Search";
-import { MyTasks } from "../screens/TaskPages";
+import { MyTasks, WorkspaceTasks } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
 
@@ -39,7 +39,7 @@ onLoaded.push(limitToasts);
 const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   home: Home,
   mytasks: MyTasks,
-  tasks: ToHome,
+  tasks: WorkspaceTasks,
   calendar: ToHome,
   timeline: ToHome,
   favorites: () => <ToMyTasks view="starred" />,
@@ -195,10 +195,12 @@ export function Studio() {
     if (live.mode !== "live" || live.slug !== slug || !live.dirReady)
       return (
         <div className="fullstate" style={{ minHeight: "100svh" }} aria-busy="true">
-          <DotsLoader px={44} />
-          <span className="faint" style={{ fontSize: 13 }}>
-            Loading the workspace…
-          </span>
+          <div className="box" role="status">
+            <DotsLoader px={44} />
+            <span className="faint" style={{ fontSize: 13 }}>
+              Loading the workspace…
+            </span>
+          </div>
         </div>
       );
   }
