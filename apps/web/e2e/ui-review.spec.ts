@@ -4,6 +4,7 @@ test("new chat is visible and preserves the full approval mode", async ({ page }
   await page.goto("/w/dotrix/chat");
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page).toHaveURL(/\/chat\?new=1$/);
+  await page.getByText("Website Redesign", { exact: true }).first().click();
   const approval = page.getByRole("button", { name: "Approvals: Manual" });
   await expect(approval).toBeVisible();
   expect(await approval.locator("span").evaluate((el) => el.clientWidth >= el.scrollWidth)).toBe(true);

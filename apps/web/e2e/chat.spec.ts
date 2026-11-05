@@ -63,7 +63,7 @@ test("fx works in every mode", async ({ page }) => {
   await page.getByRole("option", { name: "fx", exact: true }).click();
   await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible(); // the mode you picked stays
   await expect(page.getByRole("button", { name: "Model: OpenAI test" })).toBeVisible();
-  await expect(page.getByText(/Nova runs on fx, in every mode/)).toBeVisible();
+  await expect(page.getByText(/Nova runs on fx, in every mode/)).toHaveCount(0);
   await expect(page.getByText(/can't involve specialists here/)).toHaveCount(0);
   await pickChatOption(page, "Mode", "Build");
   await page.route("**/v1/workspaces/*/projects/*/agent/runs", (route) => route.fulfill({ status: 422, json: { detail: "Test only" } }));
@@ -199,23 +199,18 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await expect(mode).toHaveAccessibleName("Mode: Build");
 });
 
-test("ask across projects: the conversation reads only and is listed apart, with its projects", async ({ page }) => {
+test("general chat excludes project context", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await addProject(page, "Alpha", "ALP");
   await openChat(page);
-
-  const conversations = page.getByRole("navigation", { name: "Conversations" });
-  await conversations.getByRole("button", { name: "New chat in Conversations" }).click();
-  await expect(page).toHaveURL(/across=1/);
-  const projects = page.getByRole("group", { name: "Projects" });
-  await expect(projects.getByRole("checkbox")).toHaveCount(2);
-  await page.getByLabel("Message").fill("How are both projects doing?");
+  await page.getByRole("navigation", { name: "Conversations" }).getByRole("button", { name: "New chat in Conversations" }).click();
+  await expect(page.getByText("General", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("All projects", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Message").fill("Hello Nova");
   await page.getByLabel("Message").press("Enter");
   await expect(page).toHaveURL(/thread=.*across=1/);
-  await expect(page.getByText("Test model reply: How are both projects doing?")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/In all projects the agents only read/)).toBeVisible();
-  await expect(conversations.getByRole("button", { name: /How are both projects doing/ })).toContainText(/ALP|KUM/);
+  await expect(page.getByText("Test model reply: Hello Nova")).toBeVisible({ timeout: 30_000 });
 });
 
 test("Chat and Codes are separate pages, Codes right below Chat in the sidebar", async ({ page }) => {
@@ -288,9 +283,9 @@ test("active project chat can queue, cancel, and steer without losing a failed d
     await box.fill("Compare the alternatives afterward");
     await box.press("Enter");
     await expect(box).toHaveValue("");
-    await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeVisible();
+    await expect(page.getByText("Compare the alternatives afterward")).toBeVisible();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(page.getByText("Queued follow-up: Compare the alternatives afterward")).toBeHidden();
+    await expect(page.getByText("Compare the alternatives afterward")).toBeHidden();
     await page.getByLabel("Delivery action").selectOption("steer");
     reject = true;
     await box.fill("Only consider self-hosted options");
@@ -300,7 +295,7 @@ test("active project chat can queue, cancel, and steer without losing a failed d
     reject = false;
     await expect(box).toBeEnabled();
     await box.press("Enter");
-    await expect(page.getByText("Steering: Only consider self-hosted options")).toBeVisible();
+    await expect(page.getByText("Only consider self-hosted options")).toBeVisible();
     expect(entries[0]?.kind).toBe("steer");
   } finally {
     // Polling may leave a route.fetch response active when the assertions finish.
@@ -314,7 +309,7 @@ test("selected chat outcomes preview project visibility, retry safely and retain
   await openChat(page, "?project=PUB");
   await page.getByLabel("Message").fill("Private discussion about database choices");
   await page.getByLabel("Message").press("Enter");
-  await page.getByRole("button", { name: "Share selected outcome", exact: true }).click();
+  await page.getByRole("button", { name: "Publish outcome to project", exact: true }).click();
   const panel = page.getByRole("region", { name: "Publish selected outcome", exact: true });
   await panel.getByLabel("Outcome title", { exact: true }).fill("Database decision");
   await panel.getByLabel("Selected content", { exact: true }).fill("Use PostgreSQL. Rationale: transactions. Open question: hosting.");
@@ -345,7 +340,7 @@ test("selected chat outcomes preview project visibility, retry safely and retain
   await expect(page.getByRole("button", { name: "Open shared requirements", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("button", { name: "Open shared requirements", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Share selected outcome", exact: true }).click();
+  await page.getByRole("button", { name: "Publish outcome to project", exact: true }).click();
   await panel.getByLabel("Destination", { exact: true }).selectOption("task");
   await panel.getByLabel("Outcome title", { exact: true }).fill("Implement database");
   await panel.getByLabel("Selected content", { exact: true }).fill("Add the schema. Acceptance: migrations run. Hosting remains open.");
@@ -378,7 +373,7 @@ test("decision publication pins the reviewed predecessor and shares versioned su
   await openChat(page, "?project=DEC");
   await page.getByLabel("Message").fill("Discuss a replacement decision");
   await page.getByLabel("Message").press("Enter");
-  await page.getByRole("button", { name: "Share selected outcome", exact: true }).click();
+  await page.getByRole("button", { name: "Publish outcome to project", exact: true }).click();
   const panel = page.getByRole("region", { name: "Publish selected outcome", exact: true });
   await panel.getByLabel("Destination", { exact: true }).selectOption("decisions");
   await panel.getByLabel("Outcome title", { exact: true }).fill("Replacement choice");
