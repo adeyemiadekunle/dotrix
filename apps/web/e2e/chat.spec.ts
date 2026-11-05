@@ -302,7 +302,7 @@ test("active project chat can queue, cancel, and steer without losing a failed d
     reject = false;
     await expect(box).toBeEnabled();
     await box.press("Enter");
-    await expect(page.getByText("Only consider self-hosted options")).toBeVisible();
+    await expect(page.locator(".chat-input-message", { hasText: "Only consider self-hosted options" })).toBeVisible();
     expect(entries[0]?.kind).toBe("steer");
   } finally {
     // Polling may leave a route.fetch response active when the assertions finish.
