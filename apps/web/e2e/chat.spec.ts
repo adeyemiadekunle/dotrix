@@ -192,6 +192,8 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText("Test model reply: How would refunds work?")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Discuss");
+  // The reply can show before the run is marked done; until then a message is queued as a follow-up.
+  await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(0);
 
   await pickMode(page, "Plan");
   await page.getByLabel("Message").fill("Save plan: Refunds; Add refund(); Test it");
