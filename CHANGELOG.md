@@ -73,6 +73,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Chat and Codes list conversations and sessions in one list, each naming its project; the work mode is picked from the composer's + menu; a new coding session picks its approvals; the project list in a new chat stays in the window and scrolls.
+
 - New project uses the same resumable setup as signup, with confirmed saves, optional description/access and recovery after a lost team or project save response. Invitees join their workspace/project first; email links preserve local return destinations.
 
 - Document the accepted solo/team project journeys and ordered delivery checklist: idea exploration, new codebases, existing GitHub projects, shared outcomes, backlog import and readiness.
@@ -98,6 +100,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   conversation's title or first message, and audit events come without their details.
 
 ### Fixed
+
+- A message sent the moment Nova's reply appears is sent, instead of being refused as a follow-up to a turn that had just finished.
 
 - Baseline confirmations include the shared human-context revision. An intervening correction rejects stale confirmations, and confirming without new notes preserves the context instead of erasing it from Nova’s summary.
 

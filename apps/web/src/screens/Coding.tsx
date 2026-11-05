@@ -1,5 +1,5 @@
 // dotrix's Codes: Kai's sessions, apart from Chat's conversations. The list holds every coding session
-// you can see, grouped by project (pinned first, then the latest); one started from a conversation is marked,
+// you can see in one list (pinned first, then the latest); one started from a conversation is marked,
 // links back to it, and still shows as a card there. Stopping, archiving, or deleting a session here leaves the
 // conversation alone, and the other way round.
 // URL: ?session=ID (a session, with &panel=, &turn=, &file=, &line=), ?new=1 (a new session, &issue=KEY), else the list.
@@ -9,7 +9,7 @@ import { useCodingSessions } from "@/lib/coding";
 import { Ic } from "../core/icons";
 import { useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
-import { D, S, canSee, pColor, render, visibleProjects } from "../data/store";
+import { D, S, render } from "../data/store";
 import { Splitter, useStoredFlag, useStoredSize } from "../ui/splitter";
 import { Message, NewSession, Pending, Session, SessionRow, openCoding } from "./Chat";
 
@@ -35,7 +35,6 @@ export function Coding() {
   const found = all.filter((c) => !q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q));
   const archivedCount = found.filter((c) => c.archived).length;
   const sessions = found.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
-  const ps = visibleProjects().filter(canSee);
   const hasSel = Boolean(sessionId || search.get("new") || issue);
   const [listW, setListW] = useStoredSize("dotrix.coding.listWidth", 240, 220, 480);
   const [listMinSet, setListMin] = useStoredFlag("dotrix.coding.listMin");
@@ -45,11 +44,11 @@ export function Coding() {
   const crowded = Boolean(sessionId && search.get("panel")) && window.matchMedia("(max-width: 1799px)").matches;
   useEffect(() => setKeepList(false), [crowded]);
   const listMin = (listMinSet || (crowded && !keepList)) && !window.matchMedia("(max-width: 900px)").matches;
-  const itemsOf = (projectId: string) =>
-    sessions
-      .filter((c) => c.project_id === projectId)
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || ms(b.updated_at) - ms(a.updated_at))
-      .map((c) => <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />);
+  // One list, pinned first, then the latest; each row names its issue, so its project.
+  const items = sessions
+    .slice()
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || ms(b.updated_at) - ms(a.updated_at))
+    .map((c) => <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />);
   return (
     <div className="page flush">
       <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
@@ -106,25 +105,13 @@ export function Coding() {
                 </div>
               </div>
               <nav className="chat-list" aria-label="Sessions">
-                {ps.map((p) => {
-                  const list = itemsOf(p.id);
-                  if (!list.length && q) return null;
-                  return (
-                    <div className="chat-group" key={p.id}>
-                      <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
-                        <span className="pdot" style={css({ "--c": pColor(p), width: 7, height: 7 })} />
-                        <span className="grow trunc">{p.name}</span>
-                      </div>
-                      {list.length ? (
-                        list
-                      ) : (
-                        <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
-                          No sessions yet
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {items.length ? (
+                  items
+                ) : (
+                  <div className="faint" style={{ fontSize: 12, padding: "6px 8px" }}>
+                    {q ? "No session matches." : "No sessions yet"}
+                  </div>
+                )}
                 {(archivedCount > 0 || S.ui.showArchivedSessions) && (
                   <button className="linkbtn cs-archived" onClick={() => ((S.ui.showArchivedSessions = !S.ui.showArchivedSessions), render())}>
                     {S.ui.showArchivedSessions ? "Hide archived sessions" : `Show archived sessions (${archivedCount})`}

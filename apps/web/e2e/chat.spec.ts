@@ -31,7 +31,7 @@ async function openChat(page: Page, search = "") {
   await expect(page.locator("#main-content h1").first()).toContainText(/Good|Chat/);
 }
 
-async function pickChatOption(page: Page, label: "Approvals" | "Mode", name: string | RegExp) {
+async function pickChatOption(page: Page, label: "Approvals", name: string | RegExp) {
   const picker = page.getByRole("button", { name: new RegExp(`^${label}:`) });
   await picker.click();
   // Each picker under the message box keeps its own list.
@@ -42,6 +42,16 @@ async function pickChatOption(page: Page, label: "Approvals" | "Mode", name: str
   await expect(picker).toHaveAccessibleName(`${label}: ${selected}`);
   await expect(menu).toBeHidden();
   return selected;
+}
+
+// The work mode is picked from the + menu; a chip beside + names it once it isn't Discuss.
+async function pickMode(page: Page, name: "Discuss" | "Plan" | "Build" | "Review") {
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
+  const menu = page.locator(".pop[role='listbox']");
+  await menu.getByRole("option", { name, exact: true }).click();
+  await expect(menu).toBeHidden();
+  if (name === "Discuss") await expect(page.getByRole("button", { name: /^Mode:/ })).toHaveCount(0);
+  else await expect(page.getByRole("button", { name: `Mode: ${name}` })).toBeVisible();
 }
 
 test("fx works in every mode", async ({ page }) => {
@@ -58,14 +68,14 @@ test("fx works in every mode", async ({ page }) => {
   );
   await openChat(page, "?project=KUM");
   await expect(page.getByRole("button", { name: "Chat runtime: Standard" })).toBeVisible();
-  await pickChatOption(page, "Mode", "Plan");
+  await pickMode(page, "Plan");
   await page.getByRole("button", { name: "Chat runtime: Standard" }).click();
   await page.getByRole("option", { name: "fx", exact: true }).click();
   await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible(); // the mode you picked stays
   await expect(page.getByRole("button", { name: "Model: OpenAI test" })).toBeVisible();
   await expect(page.getByText(/Nova runs on fx, in every mode/)).toHaveCount(0);
   await expect(page.getByText(/can't involve specialists here/)).toHaveCount(0);
-  await pickChatOption(page, "Mode", "Build");
+  await pickMode(page, "Build");
   await page.route("**/v1/workspaces/*/projects/*/agent/runs", (route) => route.fulfill({ status: 422, json: { detail: "Test only" } }));
   const submitted = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/agent/runs"));
   await page.getByLabel("Message").fill("What is in the project?");
@@ -91,7 +101,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await expect(conversations.getByText("What's open", { exact: true })).toBeVisible();
 
   // A new conversation for the change: it waits, and nothing happens until it's approved.
-  await conversations.getByRole("button", { name: "New chat in Kumove" }).click();
+  await openChat(page, "?project=KUM");
   await expect(page).not.toHaveURL(/thread=/);
   await pickChatOption(page, "Approvals", "Manual"); // a personal workspace starts on Accept edits
   await page.getByLabel("Message").fill("Create issue: Add dark mode");
@@ -177,13 +187,14 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await openChat(page, "?project=KUM");
 
   const mode = page.getByRole("button", { name: /^Mode:/ });
-  await expect(mode).toHaveAccessibleName("Mode: Discuss"); // a new conversation starts by talking it through
+  await expect(mode).toHaveCount(0); // a new conversation starts by talking it through (no mode chip)
   await page.getByLabel("Message").fill("How would refunds work?");
   await page.getByLabel("Message").press("Enter");
   await expect(page.getByText("Test model reply: How would refunds work?")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".chat-msg.user .badge").last()).toHaveText("Discuss");
+  // Sent at once: the reply can show before the page sees the run end; the message still goes as a new one.
 
-  await pickChatOption(page, "Mode", "Plan");
+  await pickMode(page, "Plan");
   await page.getByLabel("Message").fill("Save plan: Refunds; Add refund(); Test it");
   await page.getByLabel("Message").press("Enter");
   const card = page.getByRole("group", { name: "Plan version 1" });
@@ -204,8 +215,8 @@ test("general chat excludes project context", async ({ page }) => {
   await addProject(page, "Kumove", "KUM");
   await addProject(page, "Alpha", "ALP");
   await openChat(page);
-  await page.getByRole("navigation", { name: "Conversations" }).getByRole("button", { name: "New chat in Conversations" }).click();
-  await expect(page.getByText("General", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("option", { name: "General", exact: true }).first().click();
   await expect(page.getByText("All projects", { exact: true })).toHaveCount(0);
   await page.getByLabel("Message").fill("Hello Nova");
   await page.getByLabel("Message").press("Enter");

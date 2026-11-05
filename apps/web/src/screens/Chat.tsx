@@ -26,6 +26,7 @@ import {
   useWorkspaceThreads,
   wasStopped,
   WORK_MODES,
+  MODE_ICONS,
   APPROVAL_MODES,
   type AgentId,
   type ApprovalMode,
@@ -61,7 +62,7 @@ import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
-import { D, S, canSee, me, pColor, proj, projByKey, render, task, visibleProjects, who } from "../data/store";
+import { D, S, canSee, me, proj, projByKey, render, task, visibleProjects, who } from "../data/store";
 import { Markdown } from "@/components/markdown";
 import { PublishChatOutcome } from "../components/PublishChatOutcome";
 import { RunApprovals } from "../components/RunApprovals";
@@ -177,39 +178,12 @@ function ThreadRow({ row, on }: { row: Row; on: boolean }) {
           {row.title}
         </span>
         <span className="faint" style={{ fontSize: 11.5 }}>
-          {row.projectKeys.length > 0 && `${row.projectKeys.join(", ")} · `}
+          {row.projectId ? `${proj(row.projectId)?.name ?? row.projectKey} · ` : row.projectKeys.length > 0 && `${row.projectKeys.join(", ")} · `}
           {ago(row.at)}
         </span>
       </span>
       {row.waiting && <span className="sdot" style={{ background: "var(--amber)", marginTop: 6 }} aria-label="Waiting for a decision" />}
     </button>
-  );
-}
-
-function Group({
-  title,
-  icon,
-  color,
-  children,
-  onNew,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  color?: string;
-  children: React.ReactNode;
-  onNew: () => void;
-}) {
-  return (
-    <div className="chat-group">
-      <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
-        {icon ?? <span className="pdot" style={css({ "--c": color ?? "var(--text-3)", width: 7, height: 7 })} />}
-        <span className="grow trunc">{title}</span>
-        <button className="ibtn ibtn-xs" onClick={onNew} data-tip="New chat here" aria-label={`New chat in ${title}`}>
-          <Ic n="plus" s={13} />
-        </button>
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -978,6 +952,17 @@ function Composer({
             <Ic n="plus" s={18} />
           </button>
         )}
+        {mode && setMode && mode !== "discuss" && (
+          <span className="cmp-chip cmp-mode" data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
+            <button type="button" className="cmp-mode-pick" onClick={at.start} aria-label={`Mode: ${WORK_MODES.find(([v]) => v === mode)?.[1]}`}>
+              <Ic n={MODE_ICONS[mode]} s={12} />
+              {WORK_MODES.find(([v]) => v === mode)?.[1]}
+            </button>
+            <button className="ibtn ibtn-xs" onClick={() => setMode("discuss")} aria-label="Back to Discuss">
+              <Ic n="x" s={11} />
+            </button>
+          </span>
+        )}
         <textarea
           ref={ref}
           rows={1}
@@ -1033,11 +1018,6 @@ function Composer({
         </div>
         <span className="sp" />
         <div className="cmp-controls cmp-controls-right">
-          {mode && setMode && (
-            <span data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
-              <Pick plain value={mode} onChange={(v) => setMode(v as WorkMode)} options={modeOptions.map(([v, l]): [string, string] => [v, l])} label="Mode" />
-            </span>
-          )}
           {runtime &&
             (setRuntime ? (
               <Pick
@@ -1113,8 +1093,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
       const signature = JSON.stringify([id, projectId, message, kind, m, approval]);
       const client_id = retry?.signature === signature ? retry.client_id : crypto.randomUUID();
       retryInput.current = { signature, client_id };
-      return submitInput.mutateAsync({ message, kind, client_id, work_mode: m, approval_mode: approval }).then(() => {
+      return submitInput.mutateAsync({ message, kind, client_id, work_mode: m, approval_mode: approval }).then((queued) => {
         retryInput.current = null;
+        // The turn had just finished: this is a new message, not a follow-up.
+        if (!queued) return send.mutateAsync({ message, threadId: id, agent, workMode: m, approvalMode: approval }).then(() => {});
       });
     }
     return projectId
@@ -1457,7 +1439,10 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
       .catch((e: unknown) => toast(e instanceof Error ? e.message : "This computer's runner didn't start", { kind: "err" }))
       .finally(() => setAdding(false));
   };
-  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, null, model);
+  // How much goes through without waiting, as in Chat: your default to start, among the modes you may use.
+  const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
+  const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
+  const start = useStartCoding(scope, t?.key ?? "", approval, location, null, model);
   // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
   const menuOpen = menu !== null || menuBtn;
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
@@ -1626,7 +1611,19 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 </button>
               </span>
             )}
+            {!t && <span className="faint">Pick an issue, then where and on which model</span>}
             <span className="sp" />
+            {approvals.length > 1 && (
+              <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
+                <Pick
+                  plain
+                  value={approval}
+                  onChange={(v) => setApproval(v as ApprovalMode)}
+                  options={approvals.map(([v, l]): [string, string] => [v, l])}
+                  label="Approvals"
+                />
+              </span>
+            )}
             {avail && (avail.local_available || location === "local" || here) && (
               <WhereItCodes
                 location={location}
@@ -2533,7 +2530,6 @@ function Conversations({ search }: { search: URLSearchParams }) {
   const across = search.get("across") === "1";
   const threadId = search.get("thread");
   const q = S.ui.chatQ.toLowerCase();
-  const ps = visibleProjects().filter(canSee);
   const { rows, loaded, failed, retry } = useRows(ws);
   const allSessions = useCodingSessions(ws).data ?? [];
   const row = rows.find((r) => r.id === threadId);
@@ -2554,8 +2550,6 @@ function Conversations({ search }: { search: URLSearchParams }) {
   // The list folds to a rail (like the sidebar) to give the conversation the room; not on phones.
   const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
   const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
-  // A project's conversations, the latest first. Kai's sessions are listed in Codes.
-  const itemsOf = (projectId: string) => threads.filter((t) => t.projectId === projectId).map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />);
   return (
     <div className="page flush">
       <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
@@ -2598,28 +2592,13 @@ function Conversations({ search }: { search: URLSearchParams }) {
                 </div>
               </div>
               <nav className="chat-list" aria-label="Conversations">
-                {ps.map((p) => {
-                  const list = itemsOf(p.id);
-                  if (!list.length && q) return null;
-                  return (
-                    <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
-                      {list.length ? (
-                        list
-                      ) : (
-                        <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
-                          No conversations yet
-                        </div>
-                      )}
-                    </Group>
-                  );
-                })}
-                <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
-                  {threads
-                    .filter((t) => !t.projectId)
-                    .map((t) => (
-                      <ThreadRow key={t.id} row={t} on={threadId === t.id} />
-                    ))}
-                </Group>
+                {threads.length ? (
+                  threads.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />)
+                ) : (
+                  <div className="faint" style={{ fontSize: 12, padding: "6px 8px" }}>
+                    {q ? "No conversation matches." : loaded ? "No conversations yet" : "Loading…"}
+                  </div>
+                )}
               </nav>
             </>
           )}
