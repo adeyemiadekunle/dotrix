@@ -688,6 +688,24 @@ export function Confirmation({ icon, title, description, children }: { icon: str
   );
 }
 
+/** A reply that failed, said as a failure: "Nova didn't finish", then what went wrong in the provider's or the
+ *  platform's words, shown as text (never as the agent's reply, and never as Markdown). */
+export function RunFailure({ who, message }: { who: string; message?: string | null }) {
+  return (
+    <div className="agent-run-failure" role="alert">
+      <Trace className="agent-trace">
+        <TraceLine status="error">
+          <TraceIcon>
+            <Ic n="warning-circle" />
+          </TraceIcon>
+          <TraceTitle>{who} didn't finish</TraceTitle>
+        </TraceLine>
+      </Trace>
+      {message ? <p className="agent-run-failure-why">{message}</p> : null}
+    </div>
+  );
+}
+
 /** Checkpoint: a line after a turn that left a commit, naming it, with what can be done from there. */
 export function Checkpoint({ label, children }: { label: ReactNode; children?: ReactNode }) {
   return (

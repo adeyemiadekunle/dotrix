@@ -107,6 +107,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A reply that fails (a provider out of credits, a refused request) says so in Chat: "Nova didn't finish" with the provider's message as plain text, instead of showing that message as if the agent had written it.
 - Your computer's runner no longer removes an old worktree you've edited: a file changed in it in the last few days now counts, not only the folder itself.
 - A command in a Docker Cloud sandbox that prints without newlines can no longer fill the worker's memory: a line is cut at 4 MB and the rest dropped up to its newline, as in the Docker sandbox.
 - A message sent the moment Nova's reply appears is sent, instead of being refused as a follow-up to a turn that had just finished.

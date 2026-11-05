@@ -3261,3 +3261,24 @@ section.side-panel-body[hidden] {
 .kp-node.file.deleted .grow {
   color: var(--red);
 }
+
+/* A reply that failed (AgentTrace.tsx RunFailure): the failure, then what went wrong as plain text. */
+.agent-run-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-run-failure .agent-trace {
+  margin-top: 0;
+}
+.agent-run-failure-why {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--red-soft);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

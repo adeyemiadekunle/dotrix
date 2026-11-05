@@ -86,6 +86,7 @@ import {
   PlanSteps,
   Queue,
   Reasoning,
+  RunFailure,
   Sources,
   Subagents,
   ToolCalls,
@@ -509,10 +510,12 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
     role: "agent",
     by: handleOf(run.agent),
     at: ms(run.finished_at ?? run.updated_at),
-    text: failed ? (wasStopped(run) ? "Stopped." : (run.error ?? "It didn't finish.")) : text,
+    // A failure is said as one, not as the agent's words (the provider's message can be anything: a quota, a refusal).
+    text: failed ? (wasStopped(run) ? "Stopped." : "") : text,
     tokens: (run.input_tokens ?? 0) + (run.output_tokens ?? 0) || undefined,
   };
   const shows = !stream || stream.text;
+  const broke = failed && !wasStopped(run);
   return (
     <>
       {run.source !== "coding_outcome" && (
@@ -522,7 +525,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
           tag={WORK_MODES.find(([v]) => v === run.work_mode)?.[1]}
         />
       )}
-      {shows && (reply.text || run.approvals?.length || limited) ? (
+      {shows && (reply.text || run.approvals?.length || limited || broke) ? (
         <Message
           m={reply}
           projectId={projectId}
@@ -541,6 +544,7 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
                 }
           }
         >
+          {broke && <RunFailure who={agentName(handleOf(run.agent))} message={run.error} />}
           {scope && !stream && run.status === "completed" && run.requested_by_id === D().me && !!run.reply && (
             <PublishChatOutcome scope={scope} runId={run.id} reply={run.reply} />
           )}
