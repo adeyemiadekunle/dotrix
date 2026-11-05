@@ -3192,15 +3192,24 @@ section.side-panel-body[hidden] {
   font-size: 12px;
   line-height: 1.6;
 }
-.kp-code {
+/* A file's content in Files: an editor's view, no diff colours (those are Changes'). */
+.kp-source {
+  overflow-x: auto;
+  padding: 6px 0;
   border: 1px solid var(--border);
   border-radius: var(--r);
-  padding: 6px 0;
   background: var(--surface);
+  font-size: 12px;
+  line-height: 1.6;
 }
-.kp-code .kp-no {
+.kp-src-line {
+  display: flex;
+  min-width: max-content;
+  white-space: pre;
+}
+.kp-src-line .kp-no {
   width: 3.6em;
-  padding-right: 12px;
+  padding-right: 14px;
 }
 .kp-file-bar {
   position: sticky;
@@ -3241,64 +3250,6 @@ section.side-panel-body[hidden] {
   flex-shrink: 0;
   color: var(--text);
   font-weight: 500;
-}
-.kp-file-counts {
-  display: inline-flex;
-  gap: 4px;
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-}
-.kp-file-counts .plus {
-  color: var(--green);
-}
-.kp-file-counts .minus {
-  color: var(--red);
-}
-
-/* The conversation's commands and the Terminal pane point to each other: "Open in Terminal" beside a command's step,
-   "Show in the conversation" beside a command in the pane; the one pointed to is marked in both. */
-.agent-tool-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  max-width: 100%;
-  border-radius: var(--r-sm);
-}
-.agent-tool-row > [data-slot="trace-line"],
-.agent-tool-row > [data-slot="trace-collapsible-trigger"] {
-  min-width: 0;
-}
-.agent-trace-open,
-.kp-show-step {
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity var(--dur);
-}
-.agent-tool-row:hover .agent-trace-open,
-.agent-tool-row:focus-within .agent-trace-open,
-.agent-trace-focus .agent-trace-open,
-.kp-cmd:hover .kp-show-step,
-.kp-cmd:focus-within .kp-show-step,
-.kp-cmd-focus .kp-show-step {
-  opacity: 1;
-}
-@media (hover: none) {
-  .agent-trace-open,
-  .kp-show-step {
-    opacity: 1;
-  }
-}
-.agent-trace-focus {
-  background: var(--accent-soft, var(--surface-3));
-  box-shadow: 0 0 0 3px var(--accent-soft, var(--surface-3));
-}
-.kp-cmd-focus {
-  margin-inline: -8px;
-  padding-inline: 8px;
-  border-radius: var(--r-sm);
-  background: var(--accent-soft, var(--surface-3));
-  box-shadow: inset 2px 0 var(--acc);
 }
 /* Files: a changed file's name in its change's colour, as Claude Code's tree marks them. */
 .kp-node.file.modified .grow {

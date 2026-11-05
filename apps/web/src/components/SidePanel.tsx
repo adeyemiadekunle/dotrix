@@ -17,7 +17,6 @@ import { Ic } from "../core/icons";
 import { parseDiff } from "../core/kaiWork";
 import { go, useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
-import { CODING_AGENT } from "../data/seed-dotrix";
 import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { tabKeys } from "../ui/tabs";
@@ -118,7 +117,6 @@ export function CodingPanes({
   onCloseAll,
   onAskFix,
   fixLabel,
-  onShowStep,
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
@@ -128,8 +126,6 @@ export function CodingPanes({
   onCloseAll: () => void;
   onAskFix?: (message: string) => void;
   fixLabel: string;
-  /** Shows a Terminal command where it sits in the conversation (its turn and `ref`). */
-  onShowStep?: (turnId: string, ref: string) => void;
 }) {
   const [width, setWidth] = useStoredSize("dotrix.coding.panes.width", 560, 320, 1100);
   const [expanded, setExpanded] = useState<CodingView | null>(null);
@@ -171,7 +167,6 @@ export function CodingPanes({
           onAskFix={onAskFix}
           onCloseAll={onCloseAll}
           fixLabel={fixLabel}
-          onShowStep={onShowStep}
           stacked
           expanded={expanded === view}
           onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
@@ -247,9 +242,7 @@ function CodingPanel({
   expanded = false,
   onExpand,
   onCloseAll,
-  onShowStep,
 }: {
-  onShowStep?: (turnId: string, ref: string) => void;
   scope: Scope | undefined;
   cs: CodingSession;
   view: CodingView;
@@ -337,9 +330,7 @@ function CodingPanel({
           ) : (
             <b>{current.label}</b>
           )}
-          {view === "terminal" && (
-            <span className="faint trunc">{turn ? `Turn ${turn.turn}, run by ${CODING_AGENT.name} · ` : ""}Recorded output · read-only</span>
-          )}
+          {view === "terminal" && <span className="faint">Recorded output · read-only</span>}
         </span>
       }
     >
@@ -386,7 +377,6 @@ function CodingPanel({
               <FilesView
                 scope={scope}
                 run={turn}
-                files={files}
                 initialFile={initialFile}
                 initialLine={initialLine}
                 referenceVersion={reference?.version ?? (Number(query.get("ref")) || undefined)}
@@ -394,14 +384,7 @@ function CodingPanel({
               />
             </div>
             <div hidden={view !== "terminal"}>
-              <TerminalView
-                scope={scope}
-                run={turn}
-                enabled={view === "terminal"}
-                focus={query.get("cmd")}
-                focusVersion={Number(query.get("cmdv")) || undefined}
-                onShowStep={onShowStep ? (ref) => onShowStep(turn.id, ref) : undefined}
-              />
+              <TerminalView scope={scope} run={turn} enabled={view === "terminal"} />
             </div>
           </>
         )}

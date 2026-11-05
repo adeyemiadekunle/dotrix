@@ -1822,17 +1822,9 @@ function KaiTurn({
   revert,
   onPath,
   onChanges,
-  onTerminal,
-  focus,
-  terminalRef,
   onShot,
   shotSrc,
 }: {
-  onTerminal: (turnId: string, ref: string) => void;
-  /** A command the Terminal pane points back to: the steps open on it. */
-  focus: { ref: string; version: number } | null;
-  /** The command the Terminal pane shows marked, marked here too. */
-  terminalRef: string | null;
   turn: CodingRun;
   issueTitle: string;
   busy: boolean;
@@ -1844,24 +1836,12 @@ function KaiTurn({
 }) {
   const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output")); // output: under its command
   const working = turn.status === "running";
-  const [stepsOpen, setStepsOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!focus) return;
-    setStepsOpen(true);
-    // Once the steps are open, the command the Terminal pane pointed to, in view.
-    const id = window.requestAnimationFrame(() =>
-      root.current?.querySelector(`[data-ref="${CSS.escape(focus.ref)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
-    );
-    return () => window.cancelAnimationFrame(id);
-  }, [focus]);
-  const marked = focus?.ref ?? terminalRef;
   const asked = turn.note || `Work on ${turn.issue_key}${issueTitle ? `: ${issueTitle}` : ""}`;
   const mine = turn.requested_by_id === D().me;
   const added = turn.files_changed.reduce((n, f) => n + Number(f.added ?? 0), 0);
   const removed = turn.files_changed.reduce((n, f) => n + Number(f.removed ?? 0), 0);
   return (
-    <div className="kt" ref={root}>
+    <div className="kt">
       <div className="kt-ask">
         <div className="kt-bubble">{asked}</div>
         <div className="kt-meta">
@@ -1880,7 +1860,7 @@ function KaiTurn({
           </div>
           {steps.length > 0 && (
             <Trace className="agent-trace kt-trace">
-              <TraceCollapsible open={stepsOpen} onOpenChange={setStepsOpen}>
+              <TraceCollapsible>
                 <TraceCollapsibleTrigger>
                   <TraceLine status={working ? "running" : undefined}>
                     <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
@@ -1893,8 +1873,6 @@ function KaiTurn({
                     running={working}
                     onPath={(path) => onPath(path, turn.id)}
                     known={turn.files_changed.map(fileOf)}
-                    onTerminal={(ref) => onTerminal(turn.id, ref)}
-                    focusRef={marked}
                     render={(text) => <PathLinks text={text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />}
                   />
                 </TraceCollapsibleContent>
@@ -1997,7 +1975,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   const setPanes = (next: CodingView[], extra: Record<string, string> = {}) => {
     const query = new URLSearchParams(search);
     // Opening a file or a turn sets them; closing the last pane lets them go.
-    for (const key of !next.length || Object.keys(extra).length ? ["panel", "file", "line", "turn", "ref", "cmd", "cmdv"] : ["panel"]) query.delete(key);
+    for (const key of !next.length || Object.keys(extra).length ? ["panel", "file", "line", "turn", "ref"] : ["panel"]) query.delete(key);
     if (next.length) query.set("panel", next.join(","));
     for (const [key, value] of Object.entries(extra)) query.set(key, value);
     go("codes", {}, { search: query.toString(), replace: true });
@@ -2026,13 +2004,6 @@ export function Session({ cs }: { cs: CodingSession }) {
     setDetailsPop(false);
     openPane("changes", turnId ? { turn: turnId } : {});
   };
-  // The conversation's commands and the Terminal pane are the same commands: each points to the other.
-  const openTerminal = (turnId: string, ref: string) => {
-    setDetailsPop(false);
-    openPane("terminal", { turn: turnId, cmd: ref, cmdv: String(Date.now()) });
-  };
-  const [stepFocus, setStepFocus] = useState<{ turn: string; ref: string; version: number } | null>(null);
-  const showStep = (turnId: string, ref: string) => setStepFocus({ turn: turnId, ref, version: Date.now() });
   // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panes, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
   const keys = useRef({ panes, togglePane, setPanes });
   keys.current = { panes, togglePane, setPanes };
@@ -2253,9 +2224,6 @@ export function Session({ cs }: { cs: CodingSession }) {
                 revert={revert}
                 onPath={openPath}
                 onChanges={openChanges}
-                onTerminal={openTerminal}
-                focus={stepFocus?.turn === turn.id ? stepFocus : null}
-                terminalRef={search.get("turn") === turn.id && panes.includes("terminal") ? search.get("cmd") : null}
                 onShot={(src, name) => setShot({ src, name })}
                 shotSrc={shotSrc}
               />
@@ -2467,7 +2435,6 @@ export function Session({ cs }: { cs: CodingSession }) {
           onCloseAll={() => setPanes([])}
           onAskFix={setAsk}
           fixLabel={`Ask ${CODING_AGENT.name} to fix`}
-          onShowStep={showStep}
         />
       )}
       {detailsColumn && (

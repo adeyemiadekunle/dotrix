@@ -53,11 +53,11 @@ export function ChangesView({
   );
 }
 
-/** The repository as the turn leaves it (live from the worktree when it codes on this computer). */
+/** The repository as the turn leaves it (live from the worktree when it codes on this computer): its files' contents.
+ *  What the turn changed in them is Changes' to show. */
 export function FilesView({
   scope,
   run,
-  files,
   initialFile,
   initialLine,
   referenceVersion,
@@ -65,7 +65,6 @@ export function FilesView({
 }: {
   scope: Scope | undefined;
   run: CodingRun;
-  files: DiffFile[];
   initialFile?: string;
   initialLine?: number;
   referenceVersion?: number;
@@ -77,7 +76,6 @@ export function FilesView({
       key={`${run.id}:${initialFile ?? ""}:${initialLine ?? ""}:${referenceVersion ?? ""}`}
       scope={scope}
       run={run}
-      diffs={files}
       worktree={worktree}
       initialPath={initialFile}
       initialLine={initialLine}
@@ -87,23 +85,7 @@ export function FilesView({
 }
 
 /** Each command the turn ran, with its recorded output (read-only). */
-export function TerminalView({
-  scope,
-  run,
-  enabled = true,
-  focus,
-  focusVersion,
-  onShowStep,
-}: {
-  scope: Scope | undefined;
-  run: CodingRun;
-  enabled?: boolean;
-  /** The command opened from the conversation (its `ref`), marked and scrolled to. */
-  focus?: string | null;
-  focusVersion?: number;
-  /** Shows a command where it sits in the conversation. */
-  onShowStep?: (ref: string) => void;
-}) {
+export function TerminalView({ scope, run, enabled = true }: { scope: Scope | undefined; run: CodingRun; enabled?: boolean }) {
   const events = useCodingEvents(scope, run, enabled);
   const commands = useMemo(() => terminal(events.data ?? run.events ?? []), [events.data, run.events]);
   if (events.isLoading) return <p className="muted">Loading commands…</p>;
@@ -116,7 +98,7 @@ export function TerminalView({
         </button>
       </p>
     );
-  return <CommandList entries={commands} working={run.status === "running"} focus={focus} focusVersion={focusVersion} onShowStep={onShowStep} />;
+  return <CommandList entries={commands} working={run.status === "running"} />;
 }
 
 /* ---------- Changes: each file's diff ---------- */
@@ -294,7 +276,6 @@ function WorktreeButtons({ worktree }: { worktree: string }) {
 function Files({
   scope,
   run,
-  diffs,
   worktree,
   initialPath,
   initialLine,
@@ -302,7 +283,6 @@ function Files({
 }: {
   scope: Scope | undefined;
   run: CodingRun;
-  diffs: DiffFile[];
   worktree: string | null;
   initialPath?: string;
   initialLine?: number;
@@ -318,7 +298,6 @@ function Files({
         scope={scope}
         run={run}
         path={open}
-        diff={worktree ? undefined : diffs.find((d) => d.path === open)}
         worktree={worktree}
         initialLine={open === initialPath ? initialLine : undefined}
         onBack={() => setOpen(null)}
@@ -403,13 +382,13 @@ function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number
 
 const STATUS_SAID: Record<string, string> = { added: "Added", deleted: "Deleted", modified: "Modified" };
 
-/** A file as Claude Code's file view shows it: its path as a breadcrumb under the file's icon, how the turn changed
- *  it, Copy path, Diff or File; then the code with line numbers, highlighted (the line a reference names marked). */
+/** A file as Claude Code's file view shows it: its path as a breadcrumb under the file's icon, whether the turn changed
+ *  it, Copy path; then its content with line numbers, highlighted (the line a reference names marked). Its diff is in
+ *  Changes. */
 function FileView({
   scope,
   run,
   path,
-  diff,
   worktree,
   initialLine,
   onBack,
@@ -417,21 +396,19 @@ function FileView({
   scope: Scope | undefined;
   run: CodingRun;
   path: string;
-  diff: DiffFile | undefined;
   worktree: string | null;
   initialLine?: number;
   onBack: () => void;
 }) {
   const file = useCodingFile(scope, run.id, path, worktree, run.status === "running");
-  const [view, setView] = useState<"file" | "diff">(initialLine ? "file" : diff ? "diff" : "file");
   const lineRef = useRef<HTMLDivElement>(null);
   const text = file.data?.after ?? file.data?.before ?? "";
-  const tokens = useHighlight(view === "file" ? text : "", languageOf(path));
+  const tokens = useHighlight(text, languageOf(path));
   useEffect(() => {
-    if (view === "file" && initialLine && file.data) lineRef.current?.scrollIntoView({ block: "nearest" });
-  }, [file.data, initialLine, view]);
+    if (initialLine && file.data) lineRef.current?.scrollIntoView({ block: "nearest" });
+  }, [file.data, initialLine]);
   const parts = path.split("/");
-  const status = diff?.status ?? (file.data?.status && file.data.status !== "unchanged" ? file.data.status : null);
+  const status = file.data?.status && file.data.status !== "unchanged" ? file.data.status : null;
   const copyPath = () =>
     void navigator.clipboard
       ?.writeText(path)
@@ -457,35 +434,13 @@ function FileView({
             {status === "added" ? "A" : status === "deleted" ? "D" : "M"}
           </span>
         )}
-        {diff && !diff.binary && (
-          <span className="kp-file-counts">
-            <span className="plus">+{diff.added}</span>
-            <span className="minus">−{diff.removed}</span>
-          </span>
-        )}
         <span className="sp" />
         {worktree && <WorktreeButtons worktree={worktree} />}
         <button className="ibtn ibtn-sm" onClick={copyPath} aria-label="Copy the path" data-tip="Copy path">
           <Ic n="copy" s={13} />
         </button>
-        {diff && (
-          <div className="seg seg-sm" role="tablist" aria-label="Show">
-            <button role="tab" aria-selected={view === "diff"} className={view === "diff" ? "on" : ""} onClick={() => setView("diff")}>
-              Diff
-            </button>
-            <button role="tab" aria-selected={view === "file"} className={view === "file" ? "on" : ""} onClick={() => setView("file")}>
-              File
-            </button>
-          </div>
-        )}
       </div>
-      {view === "diff" && diff ? (
-        diff.binary ? (
-          <p className="muted">A binary file: not shown.</p>
-        ) : (
-          <Hunks hunks={diff.hunks} path={path} />
-        )
-      ) : file.isLoading ? (
+      {file.isLoading ? (
         <p className="muted">Loading…</p>
       ) : file.error ? (
         <p className="muted">
@@ -501,12 +456,12 @@ function FileView({
       ) : file.data?.status === "deleted" ? (
         <p className="muted">The turn deleted this file.</p>
       ) : (
-        <div className="kp-diff kp-code mono" role="table" aria-label={path}>
+        <div className="kp-source mono" role="table" aria-label={path}>
           {(text.endsWith("\n") ? text.slice(0, -1) : text).split("\n").map((l, i) => (
             <div
               key={i}
               ref={i + 1 === initialLine ? lineRef : undefined}
-              className={`kp-line ctx ${i + 1 === initialLine ? "kp-line-reference" : ""}`}
+              className={`kp-src-line ${i + 1 === initialLine ? "kp-line-reference" : ""}`}
               role="row"
             >
               <span className="kp-no">{i + 1}</span>
@@ -523,36 +478,12 @@ function FileView({
 
 /* ---------- Terminal: each command with its output ---------- */
 
-/** The commands Kai ran in a turn: the same ones its steps in the conversation list, as a terminal shows them. */
-export function CommandList({
-  entries,
-  working,
-  focus,
-  focusVersion,
-  onShowStep,
-}: {
-  entries: ReturnType<typeof terminal>;
-  working: boolean;
-  focus?: string | null;
-  focusVersion?: number;
-  onShowStep?: (ref: string) => void;
-}) {
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!focus) return;
-    box.current?.querySelector(`[data-ref="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [focus, focusVersion, entries.length]);
+export function CommandList({ entries, working }: { entries: ReturnType<typeof terminal>; working: boolean }) {
   if (!entries.length) return <p className="muted">{working ? "No commands run yet." : "It ran no commands."}</p>;
   return (
-    <div ref={box} className="kp-term mono" aria-label="Commands">
+    <div className="kp-term mono" aria-label="Commands">
       {entries.map((e, i) => (
-        <Command
-          key={e.ref ?? i}
-          entry={e}
-          running={working && i === entries.length - 1 && e.output === null}
-          focused={!!focus && e.ref === focus}
-          onShowStep={onShowStep && e.ref ? () => onShowStep(e.ref!) : undefined}
-        />
+        <Command key={e.ref ?? i} entry={e} running={working && i === entries.length - 1 && e.output === null} />
       ))}
     </div>
   );
@@ -560,22 +491,12 @@ export function CommandList({
 
 /** Terminal: one command as it ran, a mark for how it ended, its output, and that output read (Test Results and
  *  Stack Trace) when it's a test run or a crash. */
-function Command({
-  entry,
-  running,
-  focused = false,
-  onShowStep,
-}: {
-  entry: ReturnType<typeof terminal>[number];
-  running: boolean;
-  focused?: boolean;
-  onShowStep?: () => void;
-}) {
+function Command({ entry, running }: { entry: ReturnType<typeof terminal>[number]; running: boolean }) {
   const [all, setAll] = useState(false);
   const lines = (entry.output ?? "").split("\n");
   const shown = all ? lines : lines.slice(-LONG_OUTPUT);
   return (
-    <div className={`kp-cmd ${entry.failed ? "failed" : ""} ${focused ? "kp-cmd-focus" : ""}`} data-ref={entry.ref ?? undefined}>
+    <div className={`kp-cmd ${entry.failed ? "failed" : ""}`}>
       <div className="kp-prompt">
         <span className="kp-dollar">$</span>
         <span className="grow">
@@ -589,11 +510,6 @@ function Command({
         ) : entry.output !== null ? (
           <Ic n="check" s={12} cls="kp-ok" />
         ) : null}
-        {onShowStep && (
-          <button className="ibtn ibtn-xs kp-show-step" onClick={onShowStep} aria-label="Show in the conversation" data-tip="Show in the conversation">
-            <Ic n="chat-centered-text" s={12} />
-          </button>
-        )}
       </div>
       {!running && entry.output && <OutputReading text={entry.output} failed={entry.failed} />}
       {entry.output !== null && entry.output !== "" && (

@@ -21,7 +21,7 @@ const session = {
   archived: false,
 };
 
-const turn = (number: number, events: unknown[] = []) => ({
+const turn = (number: number) => ({
   id: `turn${number}`,
   session_id: session.session_id,
   project_id: "p1",
@@ -34,7 +34,7 @@ const turn = (number: number, events: unknown[] = []) => ({
   branch: "test-branch",
   files_changed: [{ path, added: 1, removed: 1 }],
   screenshots: number === 2 ? [{ index: 0, name: "pricing.png", content_type: "image/png", size: 68 }] : [],
-  events,
+  events: [],
   summary: "Updated the navigation.",
   review_run_id: `review${number}`,
   created_at: date,
@@ -89,7 +89,6 @@ async function mockWorkspace(
   search = "codes?session=session1",
   openPanel = true,
   reviewAvailable = () => true,
-  events: unknown[] = [],
 ) {
   await context.addCookies([{ name: "dx_session", value: "1", url: baseURL }]);
   await page.route("**/v1/**", async (route) => {
@@ -103,7 +102,7 @@ async function mockWorkspace(
     else if (pathname.endsWith("/projects"))
       data = [{ id: "p1", key: "TEST", name: "Test project", status: "active", access: "open", created_at: date, updated_at: date }];
     else if (pathname.endsWith("/model-access")) data = { ready: true };
-    else if (pathname.endsWith("/coding/sessions/session1")) data = [turn(1), turn(2, events)];
+    else if (pathname.endsWith("/coding/sessions/session1")) data = [turn(1), turn(2)];
     else if (pathname.endsWith("/coding/sessions")) data = [session];
     else if (pathname.endsWith("/diff"))
       data = {
@@ -281,28 +280,4 @@ test("live session menus still pin using the current workspace and project scope
   const request = await submitted;
   expect(new URL(request.url()).pathname).toBe("/v1/workspaces/w1/projects/p1/coding/sessions/session1");
   expect(request.postDataJSON()).toEqual({ pinned: true });
-});
-
-test("a command in the conversation and in Terminal point to each other", async ({ page, context, baseURL }) => {
-  const events = [
-    { kind: "tool", text: `Read ${path}`, at: date },
-    { kind: "tool", text: "Ran pnpm test", ref: "cmd1", at: date },
-    { kind: "output", text: "24 tests passed", ref: "cmd1", at: date },
-  ];
-  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, () => true, events);
-  await page.getByRole("button", { name: /^Read 1 file, ran 1 command/ }).click();
-  const step = page.locator(".agent-tool-row", { hasText: "Ran pnpm test" });
-  await step.hover();
-  await step.getByRole("button", { name: "Open in Terminal" }).click();
-  const terminal = pane(page, "Terminal");
-  await expect(terminal.getByText(/Turn 2, run by Kai/)).toBeVisible();
-  await expect(terminal.locator(".kp-cmd-focus")).toContainText("pnpm test");
-  await expect(step).toHaveClass(/agent-trace-focus/);
-  // Back from Terminal: the steps open again on the command.
-  await page.getByRole("button", { name: /^Read 1 file, ran 1 command/ }).click();
-  await expect(step).toBeHidden();
-  await terminal.locator(".kp-cmd", { hasText: "pnpm test" }).hover();
-  await terminal.getByRole("button", { name: "Show in the conversation" }).click();
-  await expect(step).toBeVisible();
-  await expect(step).toHaveClass(/agent-trace-focus/);
 });
