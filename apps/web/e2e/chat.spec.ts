@@ -246,11 +246,18 @@ test("active project chat can queue, cancel, and steer without losing a failed d
   const location = page.url();
   let entries: Record<string, unknown>[] = [];
   let reject = false;
-  await page.route("**/agent/runs?**", async (route) => {
-    const response = await route.fetch();
-    const runs = (await response.json()) as { id: string; status: string }[];
-    await route.fulfill({ json: runs.map((run) => ({ ...run, status: "running", reply: null })) });
-  });
+  const runsResponse = await page.request.get(
+    new URL(
+      await page.evaluate(async () => {
+        const [ws] = await (await fetch("/v1/workspaces")).json();
+        const projects = await (await fetch(`/v1/workspaces/${ws.id}/projects`)).json();
+        return `/v1/workspaces/${ws.id}/projects/${projects.find((p: { key: string }) => p.key === "KUM").id}/agent/runs`;
+      }),
+      page.url(),
+    ).toString(),
+  );
+  const runs = (await runsResponse.json()) as { id: string; status: string }[];
+  await page.route("**/agent/runs?**", (route) => route.fulfill({ json: runs.map((run) => ({ ...run, status: "running", reply: null })) }));
   await page.route("**/agent/runs/*/stream", (route) =>
     route.fulfill({ contentType: "text/event-stream", body: 'event: activity\ndata: {"text":"Reading evidence"}\n\n' }),
   );
