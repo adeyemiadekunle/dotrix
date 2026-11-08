@@ -8,6 +8,8 @@ Read [CLAUDE.md](CLAUDE.md) before any change: it has the repo map, commands, ru
 - Follow the accepted [product direction todo](docs/product-direction-todo.md) in delivery order, after the P0 production requirements in CLAUDE.md. J01 shares first/subsequent New project setup and preserves invitation/auth return paths. J02 adds the three starting intentions; J03 implements the new-repository-to-reviewed-PR journey, including fresh base-branch admission and both chat runtimes. J04 adds a human-reviewed existing-repository baseline. J05 implements explicit publication, shared document/task relationships, versioned decision supersession and shared coding evidence. J06 implements reviewed, bounded GitHub Issues imports; J07 adds saved project readiness and next-action guidance. J08 adds the optional first workspace choice and labelled onboarding stepper. Deployment verification remains separate. Invited members join their intended project instead of creating an unrelated one.
 - An idea can start as a lightweight draft project. GitHub is optional until needed for code; personal model setup is optional until the person uses agents. Preserve private conversations, explicit publication of shared outcomes, personal BYOK, Nova–Kai links and human merge decisions.
 
+For the first release, follow [the solo-first product direction](docs/solo-first-product-direction.md): prioritize a reliable individual developer journey, simplify onboarding, and defer team-facing release scope while preserving workspace isolation and existing data.
+
 ## Chat and Coding direction
 
 - Dotrix owns the built-in identities: Nova coordinates the thinking specialists, and Kai is the coding agent. Chat and coding sessions are separate, linked areas.

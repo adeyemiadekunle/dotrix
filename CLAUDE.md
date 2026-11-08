@@ -10,6 +10,10 @@ Dotrix serves solo developers and organisation teams from a single account with 
 
 An early idea is a lightweight draft project, without mandatory GitHub, dates or a finished specification. Keep project management available without model keys. Shared knowledge and tasks come from explicit, permission-checked publication of selected chat outcomes, preserving private conversations. Reuse the fixed team, current runtimes, BYOK and Nova–Kai handoff; people keep the merge decision. A large separate Ideas system and enterprise expansion follow the core journeys. See the checklist for existing capabilities, incomplete repository-creation paths, deferred scope and release evidence; do not treat accepted todos or branch implementation as deployed behaviour.
 
+## Solo-first release direction
+
+The [solo-first product direction](docs/solo-first-product-direction.md) defines the proposed first-release experience, onboarding, scope decisions, delivery phases and release criteria. Prioritize a reliable solo developer journey from an idea or repository to a reviewed change. Keep existing workspace isolation, permissions and data; team collaboration is a later release phase. Implementation and deployment status must be verified, not inferred from this plan. The safety and authorization rules in this file continue to apply.
+
 ## Built-in team and Nova orchestration
 
 The team is fixed: Nova advises and coordinates Lyra, Orion, Vega, Juno, and Echo; Kai executes coding turns. Interactive conversations keep Nova as the speaker, with mentions treated as requests to involve a specialist. The four work modes and approval controls remain in force. Built-in identity and core instructions live in the engine; workspace and project additional guidance and personal preferences are layered, versioned, and audited. Custom identities are retired, with historical attribution retained.
