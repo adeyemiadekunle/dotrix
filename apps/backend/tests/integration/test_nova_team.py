@@ -346,6 +346,133 @@ async def test_coding_outcomes_and_juno_return_once_to_original_chat(nova_world,
         assert children == []
 
 
+async def _coding_turn(db_session, db_client, world, origin, *, status, after=None, sha="a" * 40):
+    """A finished turn of Kai's linked to `origin`'s conversation; `after` makes it that turn's follow-up."""
+    person, _, _, _, base = world
+    if after is None:
+        issue = (await db_client.post(f"{base}/issues", headers=person.headers,
+            json={"type": "task", "title": "Build a change"})).json()
+        issue_id, issue_key, session_id, turn = uuid.UUID(issue["id"]), issue["key"], uuid7(), 1
+    else:
+        issue_id, issue_key, session_id, turn = after.issue_id, after.issue_key, after.session_id, after.turn + 1
+    coding = CodingRun(id=uuid7(), workspace_id=origin.workspace_id, project_id=origin.project_id,
+        issue_id=issue_id, issue_key=issue_key, session_id=session_id, turn=turn, agent=CodingAgent.CODEX, status=status,
+        origin_run_id=origin.id, thread_id=origin.thread_id, brief="Implement the requested change",
+        repo_full_name="example/project", base_branch="main", commit_sha=sha,
+        files_changed=[{"path": "src/main.py", "added": 1, "removed": 0}], diff="+print('changed')",
+        summary="Implemented; checks were reported, not independently verified",
+        requested_by_id=origin.requested_by_id, created_at=datetime.now(UTC), finished_at=datetime.now(UTC))
+    db_session.add(coding)
+    await db_session.commit()
+    return coding
+
+
+def _outcomes(db_session, coding):
+    return db_session.scalars(select(AgentRun).where(
+        AgentRun.source == "coding_outcome",
+        AgentRun.review_context["coding_run_id"].as_string() == str(coding.id)))
+
+
+JUNO_REPLIES = (tool_call("submit_result", items=[{"severity": "high", "title": "Missing validation",
+                                                  "detail": "Input is unchecked", "refs": ["src/main.py:1"]}]),
+                tool_call("submit_specialist_result", summary="One finding", evidence=["src/main.py:1"]),
+                "Review complete.")
+
+
+@pytest.mark.parametrize("status", [CodingRunStatus.CHANGES_READY, CodingRunStatus.RECOVERY_REQUIRED])
+async def test_a_turn_waiting_on_the_person_is_reported_in_the_original_chat(
+        nova_world, db_client, db_session, agent_script, status):
+    """Phase 2: Kai's checked changes waiting to be accepted, or a turn needing recovery, is a
+    decision for the person. Nova says so in the conversation that asked, without a review of
+    unpublished work, and the turn's later outcome is still reported on its own."""
+    from dotrix_backend.modules.agents.coding_outcomes import sync_coding_outcomes
+
+    origin = await parent_run(db_session, nova_world)
+    origin.status = RunStatus.COMPLETED
+    await db_session.commit()
+    coding = await _coding_turn(db_session, db_client, nova_world, origin, status=status)
+    runner = db_client._transport.app.state.runner
+    if status is CodingRunStatus.RECOVERY_REQUIRED:
+        # Not until the recovery sweep has tried it: a turn it settles needs no one.
+        await sync_coding_outcomes(runner)
+        assert list(await _outcomes(db_session, coding)) == []
+        coding.recovery_checked_at = datetime.now(UTC)
+        await db_session.commit()
+    model = agent_script.say("Kai's changes are waiting for your decision.")
+    await sync_coding_outcomes(runner)
+    waiting = list(await _outcomes(db_session, coding))
+    assert len(waiting) == 1, f"a {status.value} turn sent nothing back to its conversation"
+    assert waiting[0].thread_id == origin.thread_id and waiting[0].status is RunStatus.COMPLETED
+    assert waiting[0].review_context["status"] == status.value
+    assert waiting[0].review_context["decision_needed"]
+    assert "waiting on their decision" in str(model.received[0][-1].content)
+    assert list(await db_session.scalars(select(AgentRun).where(AgentRun.parent_run_id == waiting[0].id))) == []
+    await sync_coding_outcomes(runner)
+    assert len(list(await _outcomes(db_session, coding))) == 1
+
+    coding.status, coding.pr_number, coding.pr_url = CodingRunStatus.PR_OPENED, 7, "https://github.com/example/project/pull/7"
+    await db_session.commit()
+    agent_script.say(*JUNO_REPLIES, "The PR is open and Juno reviewed it.")
+    await sync_coding_outcomes(runner)
+    final = [run for run in await _outcomes(db_session, coding) if run.review_context["status"] == "pr_opened"]
+    assert len(final) == 1
+    assert [child.agent for child in await db_session.scalars(
+        select(AgentRun).where(AgentRun.parent_run_id == final[0].id))] == ["reviewer"]
+
+
+async def test_juno_review_from_a_conversation_is_posted_on_the_pr(
+        nova_world, db_client, db_session, agent_script, monkeypatch):
+    """Phase 2: Juno's review of a conversation's turn goes to GitHub like a standalone review,
+    and Codes' review link opens the conversation where it was reported."""
+    from dotrix_backend.modules.agents.coding_outcomes import sync_coding_outcomes
+
+    origin = await parent_run(db_session, nova_world)
+    origin.status = RunStatus.COMPLETED
+    await db_session.commit()
+    coding = await _coding_turn(db_session, db_client, nova_world, origin, status=CodingRunStatus.PR_OPENED)
+    coding.pr_number, coding.pr_url = 7, "https://github.com/example/project/pull/7"
+    await db_session.commit()
+    runner = db_client._transport.app.state.runner
+    queued: list[tuple[str, dict]] = []
+    enqueue = runner.jobs.enqueue
+
+    async def record(name, **kwargs):
+        queued.append((name, kwargs))
+        await enqueue(name, **kwargs)
+
+    monkeypatch.setattr(runner.jobs, "enqueue", record)
+    agent_script.say(*JUNO_REPLIES, "Here is the coding outcome and Juno's review.")
+    await sync_coding_outcomes(runner)
+    await db_session.refresh(coding)
+    review = await db_session.get(AgentRun, coding.review_run_id)
+    assert review is not None and review.agent == "reviewer" and review.status is RunStatus.COMPLETED
+    assert ("post_coding_review", {"run_id": str(review.id)}) in queued, \
+        "Juno's conversation review was never queued for posting on the PR"
+    assert coding.review_thread_id == origin.thread_id
+
+
+async def test_a_follow_up_turn_reports_its_own_outcome_in_the_same_chat(nova_world, db_client, db_session, agent_script):
+    """Phase 2: each turn of a session started from a conversation comes back to it, once."""
+    from dotrix_backend.modules.agents.coding_outcomes import sync_coding_outcomes
+
+    origin = await parent_run(db_session, nova_world)
+    origin.status = RunStatus.COMPLETED
+    await db_session.commit()
+    first = await _coding_turn(db_session, db_client, nova_world, origin, status=CodingRunStatus.FAILED)
+    runner = db_client._transport.app.state.runner
+    agent_script.say("The first turn failed.")
+    await sync_coding_outcomes(runner)
+    follow_up = await _coding_turn(db_session, db_client, nova_world, origin, status=CodingRunStatus.NO_CHANGES,
+                                   after=first, sha="b" * 40)
+    agent_script.say("The follow-up found nothing to change.")
+    await sync_coding_outcomes(runner)
+    await sync_coding_outcomes(runner)
+    reported = list(await _outcomes(db_session, follow_up))
+    assert len(reported) == 1 and reported[0].thread_id == origin.thread_id
+    assert reported[0].status is RunStatus.COMPLETED and reported[0].review_context["status"] == "no_changes"
+    assert len(list(await _outcomes(db_session, first))) == 1
+
+
 async def test_automatic_routing_uses_host_task_policy_and_pins_choices(nova_world, db_client, db_session):
     from dotrix_backend.modules.projects.models import Project
 
