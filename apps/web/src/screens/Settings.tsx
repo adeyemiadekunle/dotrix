@@ -6,7 +6,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
 import { allowed, canInvite, type Perm } from "../core/can";
-import { organisations, personal } from "../core/features";
+import { organisations, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -2660,7 +2660,7 @@ function Body({ sec }: { sec: string }) {
               v={Pr.home}
               opts={[
                 ["home", "Home"],
-                ["mytasks", "My Tasks"],
+                ["mytasks", tasksLabel()],
                 ["inbox", "Inbox"],
                 ["chat", "Chat"],
               ]}

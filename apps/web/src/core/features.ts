@@ -31,3 +31,10 @@ export function organisations(): boolean {
 
 /** A personal workspace is just its owner's: no members, teams, roles, or invites to show. */
 export const personal = () => D().ws.kind === "personal";
+
+/** Your tasks: in a personal workspace every task is yours (unassigned ones, and those you gave
+ * an agent, included); elsewhere the ones assigned to you. */
+export const isMine = (t: { assignee?: string | null }) => personal() || t.assignee === D().me;
+
+/** What the tasks page is called: Tasks when they're all yours, My Tasks in an organisation. */
+export const tasksLabel = () => (personal() ? "Tasks" : "My Tasks");

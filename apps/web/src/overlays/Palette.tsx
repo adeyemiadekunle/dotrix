@@ -7,7 +7,7 @@ import { openTask, setPref, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, Logo, WsLogo } from "../core/icons";
 import { allowed, canInvite } from "../core/can";
-import { personal } from "../core/features";
+import { personal, tasksLabel } from "../core/features";
 import { invite, newProject, newTask, openModal, shortcuts, signOut, switchWs } from "../core/more";
 import { go } from "../core/nav";
 import { effectiveDark } from "../core/theme";
@@ -57,7 +57,7 @@ function commands(): (Item & { id: string })[] {
       { id: "c-search", name: "Search workspace", icon: "search", kbd: "/", run: () => openPalette("search") },
       { id: "c-home", name: "Go to Home", icon: "house", kbd: "G H", run: () => go("home") },
       { id: "c-inbox", name: "Go to Inbox", icon: "inbox", kbd: "G I", run: () => go("inbox") },
-      { id: "c-my", name: "Go to My Tasks", icon: "circle-check", kbd: "G T", run: () => go("mytasks") },
+      { id: "c-my", name: `Go to ${tasksLabel()}`, icon: "circle-check", kbd: "G T", run: () => go("mytasks") },
       { id: "c-chatgo", name: "Go to Chat", icon: "message-square", kbd: "G A", run: () => go("chat") },
       { id: "c-codinggo", name: "Go to Codes", icon: "code", kbd: "G C", run: () => go("codes") },
       { id: "c-coding", name: "Start a session with Kai", icon: "code", run: () => go("codes", {}, { search: "new=1" }) },

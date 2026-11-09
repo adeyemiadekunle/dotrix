@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Changed
+
+- In a personal workspace every task is yours: My Tasks becomes Tasks and lists unassigned tasks too, and Home shows your open tasks due this week instead of who they're assigned to, with no Team column.
+
 ### Security
 
 - Staging and production Docker coding require gVisor and a finite worker run limit. Both coding and egress containers verify their configured runtime before repository upload, with no fallback; swap is disabled and egress CPU is capped.
