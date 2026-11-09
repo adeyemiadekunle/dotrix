@@ -117,6 +117,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- On tablets the agents panel and corner notices stay cards at the bottom right instead of stretching across the window; phones keep the full-width banners.
 - The web app opens a workspace even when the API is older than it and has no `/v1/features` yet; it then offers no organisations.
 
 - A reply that fails (a provider out of credits, a refused request) says so in Chat: "Nova didn't finish" with the provider's message as plain text, instead of showing that message as if the agent had written it.
