@@ -134,6 +134,8 @@ export function Home() {
   const waiting = (isLive() ? (liveNotifs ?? []) : D().notifs).filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
   // From the old workspace Overview: tasks by status and how the work is spread.
   const counts = STATUSES.map((st) => ({ st, n: all.filter((t) => t.status === st.id).length }));
+  // A personal workspace is one person's: no teammates to invite or to balance work across.
+  const personal = D().ws.kind === "personal";
   const load = D()
     .members.filter((m) => m.status === "active")
     .map((m) => ({ m, ts: all.filter((t) => t.assignee === m.id && t.status !== "done") }))
@@ -161,7 +163,7 @@ export function Home() {
           </p>
         </div>
         <div className="acts">
-          {canInvite() && (
+          {canInvite() && !personal && (
             <button className="btn btn-secondary hide-m" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
@@ -446,37 +448,39 @@ export function Home() {
             </div>
           </section>
 
-          <section className="panel">
-            <div className="panel-h">
-              <h2>Workload</h2>
-              <div className="acts">
-                <span className="faint" style={{ fontSize: 11.5 }}>
-                  Open tasks per person
-                </span>
-              </div>
-            </div>
-            <div className="panel-b">
-              {load.map((l) => (
-                <div key={l.m.id} className="row" style={{ height: 30, fontSize: 13, cursor: "pointer" }} onClick={() => go("member", { id: l.m.id })}>
-                  <Av id={l.m.id} cls="sm" tip={false} />
-                  <span style={{ width: 96 }} className="trunc">
-                    {l.m.name.split(" ")[0]}
-                  </span>
-                  <span className="grow" style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--surface-3)" }}>
-                    <span style={{ display: "flex", width: `${(l.ts.length / maxL) * 100}%` }}>
-                      {STATUSES.filter((st) => st.id !== "done").map((st) => {
-                        const n = l.ts.filter((t) => t.status === st.id).length;
-                        return n ? <i key={st.id} style={{ display: "block", flex: n, background: `var(--st-${st.id})` }} /> : null;
-                      })}
-                    </span>
-                  </span>
-                  <span className="num muted" style={{ width: 22, textAlign: "right" }}>
-                    {l.ts.length}
+          {!personal && (
+            <section className="panel">
+              <div className="panel-h">
+                <h2>Workload</h2>
+                <div className="acts">
+                  <span className="faint" style={{ fontSize: 11.5 }}>
+                    Open tasks per person
                   </span>
                 </div>
-              ))}
-            </div>
-          </section>
+              </div>
+              <div className="panel-b">
+                {load.map((l) => (
+                  <div key={l.m.id} className="row" style={{ height: 30, fontSize: 13, cursor: "pointer" }} onClick={() => go("member", { id: l.m.id })}>
+                    <Av id={l.m.id} cls="sm" tip={false} />
+                    <span style={{ width: 96 }} className="trunc">
+                      {l.m.name.split(" ")[0]}
+                    </span>
+                    <span className="grow" style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--surface-3)" }}>
+                      <span style={{ display: "flex", width: `${(l.ts.length / maxL) * 100}%` }}>
+                        {STATUSES.filter((st) => st.id !== "done").map((st) => {
+                          const n = l.ts.filter((t) => t.status === st.id).length;
+                          return n ? <i key={st.id} style={{ display: "block", flex: n, background: `var(--st-${st.id})` }} /> : null;
+                        })}
+                      </span>
+                    </span>
+                    <span className="num muted" style={{ width: 22, textAlign: "right" }}>
+                      {l.ts.length}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>

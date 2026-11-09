@@ -1,5 +1,5 @@
 // Bridge between the web UI and native features (the web's core/desktop.ts): runners, worktrees, the
-// app's version and What's new, and updates. Expose only narrow, explicit APIs. The main process
+// app's version and What's new, updates, and system notifications. Expose only narrow, explicit APIs. The main process
 // checks each call comes from the app's own page (main.ts, `handle`), and the worktree calls reach
 // only folders inside ~/.dotrix/worktrees (runner.ts, `ownWorktree`).
 import { contextBridge, ipcRenderer } from "electron";
@@ -30,6 +30,15 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
       const wrapped = (_event: unknown, state: unknown) => listener(state);
       ipcRenderer.on("dotrix:updates", wrapped);
       return () => ipcRenderer.removeListener("dotrix:updates", wrapped);
+    },
+  },
+  notify: {
+    supported: () => ipcRenderer.invoke("dotrix:notify:supported"),
+    show: (notice: { id: string; title: string; body: string; actions: string[] }) => ipcRenderer.invoke("dotrix:notify:show", notice),
+    onAction: (listener: (id: string, action: string | null) => void) => {
+      const wrapped = (_event: unknown, id: string, action: string | null) => listener(id, action);
+      ipcRenderer.on("dotrix:notify", wrapped);
+      return () => ipcRenderer.removeListener("dotrix:notify", wrapped);
     },
   },
   worktree: {

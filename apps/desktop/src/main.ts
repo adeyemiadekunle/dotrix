@@ -1,13 +1,14 @@
 // Desktop shell (FR-39): a native window around the web app, plus OS integration
 // (tray, notifications for pending approvals, deep links) added over time. It also codes local turns
 // itself (runner.ts): the bundled dotrix CLI's runner, for the folders a person picks.
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent, shell } from "electron";
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent, Notification, shell } from "electron";
 import path from "node:path";
 
 import { readChangelog } from "./changelog";
 import { webUrl } from "./config";
 import { Runners, sameOrigin } from "./runner";
 import { Updates } from "./updates";
+import { notify } from "./notify";
 import { ownWorktree, worktreeFile, worktreeTree } from "./worktree";
 
 const WEB_URL = webUrl();
@@ -79,6 +80,8 @@ function bridge(): void {
   handle("dotrix:updates:state", () => updates.state);
   handle("dotrix:updates:check", () => updates.check());
   handle("dotrix:updates:install", () => updates.install());
+  handle("dotrix:notify:show", (event, notice: unknown) => notify(event.sender, notice));
+  handle("dotrix:notify:supported", () => Notification.isSupported());
 }
 
 app.whenReady().then(() => {

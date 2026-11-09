@@ -1,37 +1,28 @@
 // The agents panel (after Orbit's): who needs you, who is working and on what, and who is free,
-// each with a face and a "now" line; today's replies and tokens at the foot. On Home, on wide
-// screens, it is a full-height column (open by default, kept per browser); everywhere else it opens
-// shorter, at the bottom right, over the page. A row opens where that agent's work is: its conversation, its coding
-// session, or a new chat with it.
+// each with a face and a "now" line; today's replies and tokens at the foot. It opens over the page
+// from the launcher at the bottom right (a chat button, with the faces of whoever needs you or is
+// working), on every page but Codes, never squeezing the page. A row opens where that agent's work
+// is: its conversation, its coding session, or a new chat with it.
+import { useEffect } from "react";
+
 import { Ic } from "../core/icons";
 import { openDemoRequest } from "../core/demoRequest";
 import { go } from "../core/nav";
 import { presence, today, type Presence } from "../core/presence";
-import { D, S, me, render, save } from "../data/store";
+import { D, S, me, render } from "../data/store";
 import { Face } from "../ui/face";
 import { useAgentActivity, useBuiltinTeam } from "@/lib/team";
 import { isLive, live } from "../data/live";
 
-const WIDE = "(min-width: 1200px)";
-const panelWide = () => typeof window !== "undefined" && window.matchMedia(WIDE).matches;
-
-/** Home (`/w/{workspace}`): the only page where the panel is a column of its own. */
-const onHome = () => /^\/w\/[^/]+\/?$/.test(location.pathname);
-/** The panel as a full-height column (Home on a wide screen), not the short one at the bottom right. */
-export const panelColumn = () => panelWide() && onHome();
-
-/** The top bar's button: the column on Home (remembered), the short panel elsewhere. */
-export function toggleAgents() {
-  if (panelColumn()) {
-    S.prefs.agentsPanel = !S.prefs.agentsPanel;
-    save();
-  } else S.ui.agentsSheet = !S.ui.agentsSheet;
+/** The launcher opens and closes the panel. */
+function toggleAgents() {
+  S.ui.agentsSheet = !S.ui.agentsSheet;
   render();
 }
-/** Codes: the right side holds the session's own panels, so no agents panel there
+/** Codes: the right side holds the session's own panels, so no agents panel or launcher there
  * (the bell and the corner notices still say what needs you). */
 export const inCodeTab = () => /^\/w\/[^/]+\/codes\/?$/.test(location.pathname);
-export const agentsShown = () => !inCodeTab() && (panelColumn() ? S.prefs.agentsPanel : S.ui.agentsSheet);
+export const agentsShown = () => !inCodeTab() && S.ui.agentsSheet;
 
 const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: "Working", blocked: "Blocked", idle: "Idle" };
 
@@ -102,21 +93,65 @@ function Group({ title, list }: { title: string; list: Presence[] }) {
   );
 }
 
-export function AgentsPanel() {
+/** Every agent's presence, named as the workspace's team names them. */
+function useTeam(): Presence[] {
   const workspaceId = isLive() ? live.ws?.id : undefined;
   const activity = useAgentActivity(workspaceId);
   const roster = useBuiltinTeam(workspaceId);
-  const all = presence(activity.data ?? []).map((item) => {
+  return presence(activity.data ?? []).map((item) => {
     const role = roster.data?.find(
       (agent) => agent.handle === (item.id === "auto" ? "project-manager" : item.id === "agent:coding-agent" ? "coding-agent" : item.id),
     );
     return role ? { ...item, name: role.name, role: role.role } : item;
   });
+}
+
+const ORDER: Record<Presence["state"], number> = { needs: 0, blocked: 1, working: 2, idle: 3 };
+
+/** The button at the bottom right: up to three faces (whoever needs you first, then whoever is
+ * working, else the team's first), and how many wait on you. Escape closes the panel. */
+export function AgentsLauncher() {
+  const all = useTeam();
+  const open = agentsShown();
+  const waiting = all.filter((p) => p.state === "needs" || p.state === "blocked").length;
+  const faces = [...all].sort((a, b) => ORDER[a.state] - ORDER[b.state]).slice(0, 3);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: KeyboardEvent) => e.key === "Escape" && toggleAgents();
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [open]);
+  return (
+    <button
+      className={`agents-launcher ${open ? "on" : ""}`}
+      onClick={toggleAgents}
+      aria-expanded={open}
+      aria-controls="agents-panel"
+      aria-label={open ? "Close the agents panel" : waiting ? `Agents: ${waiting} waiting on you` : "Agents"}
+    >
+      {open ? (
+        <Ic n="x" s={18} />
+      ) : (
+        <span className="al-faces" aria-hidden>
+          {faces.map((p) => (
+            <span key={p.id}>
+              <Face c={p.c} size={28} mood={p.mood} />
+            </span>
+          ))}
+        </span>
+      )}
+      {!open && waiting > 0 && <span className="al-count num">{waiting}</span>}
+    </button>
+  );
+}
+
+export function AgentsPanel() {
+  const all = useTeam();
   const by = (st: Presence["state"][]) => all.filter((p) => st.includes(p.state));
   const t = today();
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
   return (
-    <aside className={`agents-panel ${panelColumn() ? "" : "sheet"}`} aria-label="Agents">
+    <aside className="agents-panel sheet" id="agents-panel" aria-label="Agents">
       <div className="ap-h">
         <b>Agents</b>
         <span className="faint">
@@ -124,7 +159,7 @@ export function AgentsPanel() {
         </span>
         <span className="sp" />
         <button className="ibtn ibtn-sm" onClick={toggleAgents} aria-label="Hide the agents panel" data-tip="Hide">
-          <Ic n="panel-right-close" s={15} />
+          <Ic n="chevron-down" s={15} />
         </button>
       </div>
       <div className="ap-body">

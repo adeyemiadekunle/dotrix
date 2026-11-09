@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("the fixed team is listed, and Juno opens in Chat without a side panel", async ({ page }) => {
   await page.goto("/w/dotrix");
+  await page.getByRole("button", { name: /^Agents/ }).click(); // the launcher at the bottom right
   const agents = page.getByRole("complementary", { name: "Agents" });
   await expect(agents.locator(".ap-row")).toHaveCount(7);
   await expect(agents.getByText("Kai", { exact: true })).toHaveCount(1);

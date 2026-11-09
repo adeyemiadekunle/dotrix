@@ -91,7 +91,8 @@ def lead_tools(mode: WorkMode | None, ctx: ModeContext) -> list[Any]:
     if mode is WorkMode.BUILD and ctx.settings is not None:
         return [StructuredTool.from_function(
             coroutine=lambda **kw: _start_coding(ctx, StartCoding(**kw)), name="start_coding", args_schema=StartCoding,
-            description="Ask Kai, the coding agent, to code an issue: a coding run that waits for a person's approval.",
+            description="Ask Kai, the coding agent, to code an issue: a coding run that waits for a person's approval, "
+                        "or starts at once when the conversation runs in Auto.",
         )]
     if mode is WorkMode.REVIEW:
         async def coding_evidence() -> dict[str, Any]:
@@ -179,8 +180,11 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
                     CodingFollowUp(message=ask.note or "Continue the instructed work on this issue", approval_mode=approval),
                     origin_run_id=ctx.run_id)
             else:
+                # Nova wrote this brief, not the person: it waits for them to read and approve it, unless
+                # the conversation runs in Auto (capped by the workspace and the person's own limits).
+                first = ApprovalMode.AUTO if approval is ApprovalMode.AUTO else ApprovalMode.MANUAL
                 run = await service.start(
-                    ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note, approval_mode=ApprovalMode.MANUAL),
+                    ProjectAccess(project, member), ask.issue_key, CodingRunCreate(note=ask.note, approval_mode=first),
                     thread_id=ctx.thread_id, plan_id=plan_id, origin_run_id=ctx.run_id,
                 )
         except DomainError as exc:  # not available here, busy, no such issue, ...

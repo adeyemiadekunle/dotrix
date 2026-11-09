@@ -693,12 +693,64 @@
   overflow-wrap: anywhere;
 }
 
-/* The agents panel (shell/AgentsPanel.tsx): a third column on wide screens, a sheet otherwise. */
-.shell.with-agents {
-  grid-template-columns: var(--side-w) minmax(0, 1fr) 300px;
+/* The agents panel (shell/AgentsPanel.tsx): over the page, above its launcher at the bottom right. */
+:root {
+  --launcher-b: 20px; /* the launcher's distance from the bottom */
 }
-.shell.collapsed.with-agents {
-  grid-template-columns: 52px minmax(0, 1fr) 300px;
+:root:has(.agents-launcher) {
+  --launcher-h: 60px; /* its height and the gap above it, for what stacks over it */
+}
+/* Chat's composer runs along the bottom: the launcher sits above it, beside the conversation. */
+:root:has(.chat-main .cmp-box) {
+  --launcher-b: 112px;
+}
+.agents-launcher {
+  position: fixed;
+  right: 20px;
+  bottom: var(--launcher-b);
+  z-index: 73;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 48px;
+  min-width: 48px;
+  padding: 0 10px;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: var(--shadow-pop);
+  transition: transform 0.15s var(--ease);
+}
+.agents-launcher:hover {
+  transform: translateY(-1px);
+}
+.agents-launcher:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+.al-faces {
+  display: flex;
+}
+.al-faces > span {
+  display: flex;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.al-faces > span + span {
+  margin-left: -9px;
+}
+.al-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--amber);
+  color: #1d1c1a;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
 }
 .agents-panel {
   display: flex;
@@ -881,14 +933,14 @@
   background: var(--amber);
   box-shadow: 0 0 0 2px var(--surface);
 }
-/* The short panel: at the bottom right, over the page, as tall as its agents need (every page but
-   Home on a wide screen). A click outside closes it. */
+/* The panel: at the bottom right, above the launcher, over the page, as tall as its agents need.
+   A click outside, Escape, or the launcher closes it. */
 .agents-panel.sheet {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
   width: min(340px, calc(100vw - 32px));
-  max-height: min(560px, calc(100vh - 96px));
+  max-height: min(560px, calc(100vh - 96px - var(--launcher-h, 0px)));
   z-index: 72;
   border: 0;
   border-radius: var(--r-lg);
@@ -904,26 +956,23 @@
   inset: 0;
   z-index: 71;
 }
-@media (max-width: 1199px) {
-  .shell.with-agents,
-  .shell.collapsed.with-agents {
-    grid-template-columns: var(--side-w) minmax(0, 1fr);
-  }
-  .shell.collapsed.with-agents {
-    grid-template-columns: 52px minmax(0, 1fr);
-  }
-}
 @media (max-width: 900px) {
-  .shell.with-agents,
-  .shell.collapsed.with-agents {
-    grid-template-columns: minmax(0, 1fr);
+  .agents-launcher {
+    right: 12px;
   }
   .agents-panel.sheet {
     right: 12px;
     left: 12px;
     width: auto;
-    bottom: 76px;
     max-height: min(560px, 70vh);
+  }
+}
+@media (max-width: 640px) {
+  :root {
+    --launcher-b: calc(68px + env(safe-area-inset-bottom, 0px)); /* above the bottom navigation */
+  }
+  :root:has(.chat-main .cmp-box) {
+    --launcher-b: calc(160px + env(safe-area-inset-bottom, 0px));
   }
 }
 @keyframes apin {
@@ -933,11 +982,11 @@
   }
 }
 
-/* Corner notices (shell/Notices.tsx); toasts move above them. */
+/* Corner notices (shell/Notices.tsx), above the agents launcher; toasts move above them. */
 .notices {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
   z-index: 99;
   display: flex;
   flex-direction: column;
@@ -953,7 +1002,7 @@
   border: 1px solid var(--border);
 }
 #toasts {
-  bottom: calc(20px + var(--notices-h, 0px));
+  bottom: calc(var(--launcher-b) + var(--launcher-h, 0px) + var(--notices-h, 0px));
 }
 .notice {
   display: flex;
@@ -1011,13 +1060,16 @@
     border: 1px solid var(--border-strong);
   }
   #toasts {
-    bottom: 76px;
+    bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .notice,
   .agents-panel {
     animation: none;
+  }
+  .agents-launcher {
+    transition: none;
   }
 }
 
