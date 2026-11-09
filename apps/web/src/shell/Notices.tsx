@@ -2,11 +2,13 @@
 // agent's change waiting for approval (Approve, or Open it), a plan to steer, a coding tool
 // waiting to start or that couldn't finish. On Home only (elsewhere they'd cover the page), and
 // only while the agents panel is closed (it lists the same things); the newest two, bottom
-// right; closing one keeps it closed for this session. In a real workspace, a coding turn waiting
-// for approval is decided in the notice itself (the same decision Inbox makes).
+// right; closing one keeps it closed for this session. In a real workspace, the simple decisions
+// are made in the notice itself, the same ones Inbox makes: a coding turn waiting to start, one
+// small board change, and Continue for a run stopped at its model's limit. Anything to read first
+// (a document's diff, several changes, Kai's checked changes, a plan) opens it instead.
 import { useEffect, useRef } from "react";
 
-import { decideChange, decideCoding } from "../core/agents";
+import { continueLimited, decideChange, decideCoding } from "../core/agents";
 import { openDemoRequest } from "../core/demoRequest";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
@@ -16,6 +18,7 @@ import { D, S, render, task } from "../data/store";
 import { isLive, live } from "../data/live";
 import type { Notif } from "../data/types";
 import { Face } from "../ui/face";
+import { useDecide, useWorkspaceApprovals } from "../../lib/agent";
 import { useCodingRun, useDecideCoding } from "../../lib/coding";
 import { useLiveNotifications } from "../../lib/workspace-data";
 
@@ -30,6 +33,8 @@ interface Notice {
   act?: { label: string; run: () => void };
   /** A real workspace's coding turn waiting for approval: decided here. */
   coding?: { workspaceId: string; projectId: string; runId: string };
+  /** A real workspace's agent run paused on changes: one small one is decided here. */
+  changes?: { workspaceId: string; projectId: string; runId: string };
   open: () => void;
 }
 
@@ -74,6 +79,23 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
       });
       continue;
     }
+    if (n.type === "limit" && n.run && n.project) {
+      const a = D().agents.find((x) => x.handle === n.by);
+      if (!a) continue;
+      const at = { thread: n.thread, project: n.project, run: n.run, notif: n.id };
+      out.push({
+        key: n.id,
+        at: n.at,
+        c: a.c,
+        name: a.name,
+        title: "stopped at its model's limit",
+        text: n.snippet || n.text,
+        mood: "blocked",
+        act: { label: "Continue", run: () => continueLimited(at, false) },
+        open: () => go("inbox", {}, { search: `n=${n.id}` }),
+      });
+      continue;
+    }
     if ((n.type === "approval" || n.type === "checkpoint") && n.by) {
       const a = D().agents.find((x) => x.handle === n.by);
       // the seeded workspace's notifications repeat its conversations' changes, shown above
@@ -86,6 +108,7 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
         title: n.type === "checkpoint" ? "wants you to steer its plan" : "needs your approval",
         text: n.snippet || n.text,
         mood: "needs",
+        changes: n.type === "approval" && n.run && n.project && live.ws ? { workspaceId: live.ws.id, projectId: n.project, runId: n.run } : undefined,
         open: () => go("inbox", {}, { search: `n=${n.id}` }),
       });
     }
@@ -165,6 +188,8 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
           </button>
           {n.coding ? (
             <CodingNoticeActions {...n.coding} open={n.open} done={() => shut(n.key)} />
+          ) : n.changes ? (
+            <ChangeNoticeActions {...n.changes} open={n.open} done={() => shut(n.key)} />
           ) : n.act ? (
             <button className="btn btn-sm btn-primary" onClick={n.act.run}>
               {n.act.label}
@@ -209,6 +234,47 @@ function CodingNoticeActions({
       </button>
     );
   const decision = (approve: boolean) => decide.mutate({ runId: r.id, decision: approve ? "approve" : "reject" }, { onSuccess: done });
+  return (
+    <>
+      <button className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
+        Reject
+      </button>
+      <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
+        Approve
+      </button>
+    </>
+  );
+}
+
+// Board changes are short enough to decide from the notice; a document's edit has a diff to read.
+const QUICK_TOOLS = new Set(["create_issue", "update_issue", "comment_issue", "link_items"]);
+
+/** Approve or reject an agent's one waiting board change, as Inbox does; anything else opens Inbox. */
+function ChangeNoticeActions({
+  workspaceId,
+  projectId,
+  runId,
+  open,
+  done,
+}: {
+  workspaceId: string;
+  projectId: string;
+  runId: string;
+  open: () => void;
+  done: () => void;
+}) {
+  const approvals = useWorkspaceApprovals(workspaceId);
+  const decide = useDecide({ workspaceId, projectId });
+  const pending = (approvals.data ?? []).filter((a) => a.run_id === runId && a.status === "pending");
+  const [only] = pending;
+  if (pending.length !== 1 || !QUICK_TOOLS.has(only.tool))
+    return (
+      <button className="btn btn-sm btn-secondary" onClick={open}>
+        {pending.length ? "Review" : "Open"}
+      </button>
+    );
+  const decision = (approve: boolean) =>
+    decide.mutate({ runId, decisions: [{ approval_id: only.id, decision: approve ? "approve" : "reject" }] }, { onSuccess: done });
   return (
     <>
       <button className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
