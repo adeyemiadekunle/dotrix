@@ -2,6 +2,7 @@
 // "Ask in Chat" for a summary, and the agents' latest conversations about the project.
 
 import { allowed } from "../core/can";
+import { personal } from "../core/features";
 import { openPop } from "../core/actions";
 import { STATUSES } from "../core/constants";
 import { Ic } from "../core/icons";
@@ -161,16 +162,20 @@ export function ProjectOverview({ p }: { p: Project }) {
                     <PStatus s={p.status} />
                   </button>
                 </dd>
-                <dt>
-                  <Ic n="user" s={14} />
-                  Lead
-                </dt>
-                <dd>
-                  <span className="pillbtn">
-                    <Av id={p.lead} cls="sm" tip={false} />
-                    {mem(p.lead)?.name}
-                  </span>
-                </dd>
+                {!personal() && (
+                  <>
+                    <dt>
+                      <Ic n="user" s={14} />
+                      Lead
+                    </dt>
+                    <dd>
+                      <span className="pillbtn">
+                        <Av id={p.lead} cls="sm" tip={false} />
+                        {mem(p.lead)?.name}
+                      </span>
+                    </dd>
+                  </>
+                )}
                 <dt>
                   <Ic n="calendar" s={14} />
                   Start
@@ -185,16 +190,20 @@ export function ProjectOverview({ p }: { p: Project }) {
                 <dd>
                   <span className="pillbtn num">{fmtDate(p.due, true)}</span>
                 </dd>
-                <dt>
-                  <Ic n="user-plus" s={14} />
-                  Members
-                </dt>
-                <dd>
-                  <button className="pillbtn" onClick={() => share(p.id)}>
-                    <AvStack ids={p.members} max={6} />
-                    <span className="faint">{p.members.length}</span>
-                  </button>
-                </dd>
+                {!personal() && (
+                  <>
+                    <dt>
+                      <Ic n="user-plus" s={14} />
+                      Members
+                    </dt>
+                    <dd>
+                      <button className="pillbtn" onClick={() => share(p.id)}>
+                        <AvStack ids={p.members} max={6} />
+                        <span className="faint">{p.members.length}</span>
+                      </button>
+                    </dd>
+                  </>
+                )}
               </dl>
             </div>
           </section>

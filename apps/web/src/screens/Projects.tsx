@@ -3,6 +3,7 @@
 import { openPop } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { allowed } from "../core/can";
+import { personal } from "../core/features";
 import { Ic } from "../core/icons";
 import { newProject } from "../core/more";
 import { go } from "../core/nav";
@@ -78,7 +79,7 @@ function ProjectCard({ p }: { p: Project }) {
           {ago(minsAgo(p.last))}
         </span>
         <span className="sp" />
-        <AvStack ids={p.members} max={3} />
+        {!personal() && <AvStack ids={p.members} max={3} />}
       </div>
       <button
         className="ibtn ibtn-sm more"
@@ -170,7 +171,7 @@ export function Projects() {
               <span className="num muted hide-m" style={{ width: 70, fontSize: 12 }}>
                 {fmtDate(p.due)}
               </span>
-              <AvStack ids={p.members} max={3} />
+              {!personal() && <AvStack ids={p.members} max={3} />}
               <button className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
                 <Ic n="ellipsis" s={14} />
               </button>
@@ -187,7 +188,7 @@ export function Projects() {
             <tr>
               <th style={{ paddingLeft: 14 }}>Project</th>
               <th style={{ textAlign: "left" }}>Status</th>
-              <th style={{ textAlign: "left" }}>Lead</th>
+              {!personal() && <th style={{ textAlign: "left" }}>Lead</th>}
               <th style={{ textAlign: "left", width: "16%" }}>Progress</th>
               <th>Tasks</th>
               <th style={{ textAlign: "left" }}>Start</th>
@@ -210,12 +211,14 @@ export function Projects() {
                   <td style={{ textAlign: "left" }}>
                     <PStatus s={p.status} />
                   </td>
-                  <td style={{ textAlign: "left" }}>
-                    <span className="row">
-                      <Av id={p.lead} cls="sm" />
-                      {mem(p.lead)?.name}
-                    </span>
-                  </td>
+                  {!personal() && (
+                    <td style={{ textAlign: "left" }}>
+                      <span className="row">
+                        <Av id={p.lead} cls="sm" />
+                        {mem(p.lead)?.name}
+                      </span>
+                    </td>
+                  )}
                   <td>
                     <span className="row">
                       <ProgBar v={pr} />
