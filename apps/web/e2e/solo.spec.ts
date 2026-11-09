@@ -34,4 +34,12 @@ test("in a personal workspace every task is yours: Tasks lists unassigned work a
   await nav.getByRole("button", { name: /^Tasks/ }).click();
   await expect(page.locator("#main-content h1").first()).toHaveText("Tasks");
   await expect(page.getByText("Unassigned groundwork")).toBeVisible();
+
+  // A project has no members to show, add or share with, and no lead to pick.
+  await page.goto(`/w/${slug}/p/SOLO/overview`);
+  await expect(page.locator("#main-content h1").first()).toHaveText("Solo project");
+  for (const name of ["Members", "Add member", "Share"]) await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(page.getByText("Lead", { exact: true })).toHaveCount(0);
+  await page.goto(`/w/${slug}/projects`);
+  await expect(page.getByRole("columnheader", { name: "Lead" })).toHaveCount(0);
 });

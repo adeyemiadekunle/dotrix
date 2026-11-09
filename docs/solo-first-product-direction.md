@@ -85,7 +85,7 @@ Audit and adapt the existing implementation. Exercise all three starting paths, 
 
 ### 4. Prepare a private solo beta
 
-Verify deployment, account recovery, provider and GitHub setup, sandbox isolation, failure handling and support paths in the intended environment. Document the supported configuration and known limitations.
+Verify deployment, account recovery, provider and GitHub setup, sandbox isolation, failure handling and support paths in the intended environment. Document the supported configuration and known limitations. The checklist, supported configuration and known limitations are in [Private solo beta: readiness](solo-beta-readiness.md); a check counts only with evidence from the named environment.
 
 ### 5. Learn and iterate
 

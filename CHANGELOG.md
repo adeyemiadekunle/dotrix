@@ -11,6 +11,9 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Help & resources has "Report a problem", which opens a new issue on dotrix's GitHub repository.
+- In a personal workspace a project shows no members, Add member, Share or Lead (in its header, Overview, the Projects list and its settings): there's only you.
+- Help & resources shows "Reset demo data" and "Simulate offline" only in the sample workspace, not in your own.
 - In a personal workspace every task is yours: My Tasks becomes Tasks and lists unassigned tasks too, and Home shows your open tasks due this week instead of who they're assigned to, with no Team column.
 
 ### Security
@@ -19,6 +22,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- A private solo beta readiness page (`docs/solo-beta-readiness.md`): the supported configuration, the checks to run where, and the known limitations to tell participants.
 - Personal workspaces can launch on their own: with `DOTRIX_ORGANISATIONS` off (the default on staging and production), organisation workspaces can't be created, joined, opened or moved into, and the app hides every way to reach one. A personal workspace also no longer shows Members, Permissions or invites. Existing organisations keep their data and return when the setting is turned on.
 
 - Optional first-workspace choice after signup, defaulting to Personal, with durable organisation setup and a labelled onboarding stepper.
@@ -112,6 +116,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
   conversation's title or first message, and audit events come without their details.
 
 ### Fixed
+
+- A notice about a run that stopped no longer has a red stripe down its left edge; its face and Continue button say what it is.
+- On tablets the agents panel and corner notices stay cards at the bottom right instead of stretching across the window; phones keep the full-width banners.
+- The web app opens a workspace even when the API is older than it and has no `/v1/features` yet; it then offers no organisations.
 
 - A reply that fails (a provider out of credits, a refused request) says so in Chat: "Nova didn't finish" with the provider's message as plain text, instead of showing that message as if the agent had written it.
 - Your computer's runner no longer removes an old worktree you've edited: a file changed in it in the last few days now counts, not only the folder itself.

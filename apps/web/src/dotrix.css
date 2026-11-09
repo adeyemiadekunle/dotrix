@@ -962,12 +962,16 @@
   }
   .agents-panel.sheet {
     right: 12px;
+  }
+}
+/* Phones: the sheet and the notices span the window, above the bottom navigation. Tablets keep
+   the corner cards. */
+@media (max-width: 640px) {
+  .agents-panel.sheet {
     left: 12px;
     width: auto;
     max-height: min(560px, 70vh);
   }
-}
-@media (max-width: 640px) {
   :root {
     --launcher-b: calc(68px + env(safe-area-inset-bottom, 0px)); /* above the bottom navigation */
   }
@@ -1014,11 +1018,6 @@
   box-shadow: var(--shadow-pop);
   animation: noticein 0.22s var(--ease) both;
 }
-.notice.blocked {
-  box-shadow:
-    var(--shadow-pop),
-    inset 3px 0 0 var(--red);
-}
 .notice-t {
   flex: 1;
   min-width: 0;
@@ -1045,6 +1044,11 @@
   }
 }
 @media (max-width: 900px) {
+  #toasts {
+    bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
+  }
+}
+@media (max-width: 640px) {
   .notices {
     position: static;
     width: auto;
@@ -1058,9 +1062,6 @@
   .agents-panel.sheet {
     box-shadow: none;
     border: 1px solid var(--border-strong);
-  }
-  #toasts {
-    bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
   }
 }
 @media (prefers-reduced-motion: reduce) {
