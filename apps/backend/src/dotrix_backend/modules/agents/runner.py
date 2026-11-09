@@ -103,6 +103,17 @@ CHECKPOINT_TOOL = "checkpoint"  # the engine's checkpoint tool (dotrix_engine.pi
 
 logger = logging.getLogger(__name__)
 
+
+def _read_only_specialist(spec: AgentSpec) -> AgentSpec:
+    """Retain authorized project reads while removing all project-changing tools."""
+    restricted = read_only(spec)
+    restricted.tools.extend(
+        tool for tool in ("code.read", "graph.read")
+        if tool in spec.tools and spec.can(tool) and tool not in restricted.tools
+    )
+    return restricted
+
+
 # The attempt this task is running (its lease token); a newer attempt fences it off.
 _LEASE: contextvars.ContextVar[int | None] = contextvars.ContextVar("agent_lease", default=None)
 _GRAPH: contextvars.ContextVar[tuple[uuid.UUID, Any] | None] = contextvars.ContextVar("agent_graph", default=None)
@@ -597,7 +608,10 @@ class AgentRunner:
                     session, run, specs, resolved, recovered=bool(payload.get("recovered")),
                 )
                 if read_only_run:
-                    specs = [read_only(spec) for spec in specs]
+                    # Cross-project read-only runs omit repository and graph tools because no
+                    # single project is bound. A specialist child is bound to this project:
+                    # retain only the read capabilities its original contract already grants.
+                    specs = [_read_only_specialist(spec) if child else read_only(spec) for spec in specs]
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
                 unattended = Unattended(

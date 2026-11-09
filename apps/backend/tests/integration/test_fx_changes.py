@@ -272,6 +272,14 @@ async def test_a_cut_off_fx_turn_recovers_from_its_journal_without_changing_the_
             monkeypatch.setattr(FxRuntime, "create", remember)
             attempt = asyncio.create_task(fx.runner.execute(run_id, payload))
             await asyncio.wait_for(written.wait(), 30)
+            from dotrix_backend.modules.agents.models import AgentRuntimeBinding
+
+            async with sessions() as session:
+                binding = await session.scalar(select(AgentRuntimeBinding).where(
+                    AgentRuntimeBinding.workspace_id == existing.workspace_id, AgentRuntimeBinding.run_id == run_id,
+                ))
+                snapshot = json.loads(nova_pilot_world[2].decrypt(binding.encrypted_context))
+                assert "Lyra → product" in snapshot["specialist_directory"]
             hosts[0].process.kill()  # the worker dies: no cancellation reaches libfx's journal
             attempt.cancel()
             with pytest.raises(asyncio.CancelledError):
@@ -440,3 +448,4 @@ async def test_a_run_bound_by_an_earlier_fx_version_runs_on_this_one(nova_pilot_
         upgraded = await session.get(AgentRuntimeBinding, binding.id)
         assert upgraded.runtime_version == fx_pilot._VERSION and upgraded.session_id == "fx-pilot-earlier"
         assert upgraded.encrypted_context is not None
+        assert "specialist_directory" not in json.loads(secrets.decrypt(upgraded.encrypted_context))

@@ -105,9 +105,9 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
               save.reset();
             }}
           >
-            Publish outcome to project
+            Share to project…
           </button>
-          <span className="faint">Create a project document or task from this reply.</span>
+          <span className="faint">Preview a document or task before sharing.</span>
         </div>
       )}
       {open && (

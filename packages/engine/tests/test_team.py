@@ -65,6 +65,7 @@ def test_delegation_briefs_and_findings() -> None:
     agent.invoke({"messages": [{"role": "user", "content": "check the vision"}]}, config("t4"))
     pm, specialist = str(model.received[0][0].content), str(model.received[1][0].content)
     assert "## Delegating" in pm and "delegate straight away" in pm
+    assert "Lyra (product-agent; delegation handle: product)" in pm
     assert "Answer with findings" in specialist and "ask for all of it in one turn" in specialist
     assert "## Delegating" not in specialist
 

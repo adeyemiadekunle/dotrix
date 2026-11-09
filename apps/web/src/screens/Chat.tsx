@@ -984,15 +984,16 @@ function Composer({
           aria-label="Message"
           aria-expanded={at.open}
         />
-        {onStop && (
-          <button type="button" className="kt-stop" onClick={onStop} disabled={stopDisabled} aria-label="Stop run" data-tip="Stop this turn">
-            <Ic n="square" s={11} />
-            Stop
+        {(!onStop || text.trim()) && (
+          <button className="kt-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled || submitting} aria-label="Send" data-tip="Send">
+            <Ic n="arrow-up" s={15} />
           </button>
         )}
-        <button className="kt-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled || submitting} aria-label="Send" data-tip="Send">
-          <Ic n="arrow-up" s={15} />
-        </button>
+        {onStop && (
+          <button type="button" className="kt-send kt-stop" onClick={onStop} disabled={stopDisabled} aria-label="Stop run" data-tip="Stop this turn">
+            <Ic n="square" s={12} />
+          </button>
+        )}
       </div>
       <div className="kt-foot cmp-foot">
         <div className="cmp-controls cmp-controls-left">
@@ -2392,22 +2393,22 @@ export function Session({ cs }: { cs: CodingSession }) {
                 }
               }}
             />
-            {latest?.can_stop && (latest.status === "running" || latest.status === "queued") && (
+            {latest?.can_stop && (latest.status === "running" || latest.status === "queued") ? (
               <button
                 type="button"
-                className="kt-stop"
+                className="kt-send kt-stop"
                 disabled={stop.isPending}
                 onClick={() => stop.mutate(latest.id)}
                 aria-label="Stop coding turn"
                 data-tip="Stop this turn"
               >
-                <Ic n="square" s={11} />
-                Stop
+                <Ic n="square" s={12} />
+              </button>
+            ) : (
+              <button className="kt-send" disabled={busy || !ask.trim() || follow.isPending} onClick={send} aria-label="Send" data-tip="Send">
+                <Ic n="arrow-up" s={15} />
               </button>
             )}
-            <button className="kt-send" disabled={busy || !ask.trim() || follow.isPending} onClick={send} aria-label="Send" data-tip="Send">
-              <Ic n="arrow-up" s={15} />
-            </button>
           </div>
           <div className="kt-foot">
             <span>{sessionModel(latest?.model)}</span>
@@ -2569,7 +2570,7 @@ function Conversations({ search }: { search: URLSearchParams }) {
           {listMin ? (
             <div className="chat-rail">
               <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
-                <Ic n="panel-left-open" s={16} />
+                <Ic n="sidebar-simple" s={18} />
               </button>
               <button className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
                 <Ic n="square-pen" s={16} />
