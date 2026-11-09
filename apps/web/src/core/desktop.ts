@@ -85,6 +85,20 @@ export function desktop(): Bridge | null {
   return found?.runners && found.worktree ? (found as Bridge) : null;
 }
 
+interface NotifyBridge {
+  notify: {
+    supported(): Promise<boolean>;
+    show(notice: { id: string; title: string; body: string; actions: string[] }): Promise<boolean>;
+    /** A click (action null) or a button (its label, macOS only) on a notification this page showed. */
+    onAction(listener: (id: string, action: string | null) => void): () => void;
+  };
+}
+
+/** The app's system notifications, or null in a browser or an app from before them. */
+export function desktopNotify(): NotifyBridge["notify"] | null {
+  return (globalThis as { dotrixDesktop?: Partial<NotifyBridge> }).dotrixDesktop?.notify ?? null;
+}
+
 /** The app's version, What's new and updates, or null in a browser or an app from before them. */
 export function desktopApp(): AppBridge | null {
   const found = (globalThis as { dotrixDesktop?: Partial<AppBridge> }).dotrixDesktop;

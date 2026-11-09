@@ -6,9 +6,12 @@
 // are made in the notice itself, the same ones Inbox makes: a coding turn waiting to start, one
 // small board change, and Continue for a run stopped at its model's limit. Anything to read first
 // (a document's diff, several changes, Kai's checked changes, a plan) opens it instead.
+// In the desktop app each new one is also a system notification, on any page: a click brings the
+// app forward to it, and on macOS its buttons make the same decision without opening the app.
 import { useEffect, useRef } from "react";
 
 import { continueLimited, decideChange, decideCoding } from "../core/agents";
+import { desktopNotify } from "../core/desktop";
 import { openDemoRequest } from "../core/demoRequest";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
@@ -18,7 +21,10 @@ import { D, S, render, task } from "../data/store";
 import { isLive, live } from "../data/live";
 import type { Notif } from "../data/types";
 import { Face } from "../ui/face";
+import { toast } from "../ui/toast";
 import { useDecide, useWorkspaceApprovals } from "../../lib/agent";
+import { api, unwrap } from "../../lib/api";
+import { queryClient } from "../../lib/queryClient";
 import { useCodingRun, useDecideCoding } from "../../lib/coding";
 import { useLiveNotifications } from "../../lib/workspace-data";
 
@@ -152,7 +158,9 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const narrow = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
   const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
-  const list = route === "home" ? notices(liveNotifs).slice(0, narrow ? 1 : 2) : [];
+  const all = notices(liveNotifs);
+  useSystemNotices(all, !isLive() || liveNotifs !== undefined);
+  const list = route === "home" ? all.slice(0, narrow ? 1 : 2) : [];
   // Toasts sit above floating notices (both live bottom right).
   useEffect(() => {
     if (inPanel) {
@@ -285,4 +293,76 @@ function ChangeNoticeActions({
       </button>
     </>
   );
+}
+
+/** In the desktop app, each notice that appears while it runs becomes a system notification (what
+ * already waited when it opened is on Home and in Inbox). Its click or button comes back here. */
+function useSystemNotices(all: Notice[], loaded: boolean) {
+  const latest = useRef(new Map<string, Notice>());
+  latest.current = new Map(all.map((n) => [n.key, n]));
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const bridge = desktopNotify();
+    if (!bridge) return;
+    return bridge.onAction((id, action) => {
+      const n = latest.current.get(id);
+      if (n) void systemAction(n, action);
+    });
+  }, []);
+  const keys = all.map((n) => n.key).join(" ");
+  useEffect(() => {
+    const bridge = desktopNotify();
+    if (!bridge || !loaded) return;
+    if (seen.current === null) {
+      seen.current = new Set(latest.current.keys());
+      return;
+    }
+    for (const n of latest.current.values()) {
+      if (seen.current.has(n.key)) continue;
+      seen.current.add(n.key);
+      const actions = n.act ? [n.act.label] : n.coding || n.changes ? ["Approve", "Reject"] : [];
+      void bridge.show({ id: n.key, title: `${n.name} ${n.title}`, body: n.text, actions }).catch(() => undefined);
+    }
+  }, [keys, loaded]);
+}
+
+/** A system notification's click opens the item; a button makes the notice's own decision, checked
+ * against the API first: anything no longer simple to decide (decided elsewhere, a diff to read)
+ * opens instead. */
+async function systemAction(n: Notice, action: string | null) {
+  if (action === null) return n.open();
+  try {
+    if (n.act && action === n.act.label) return n.act.run();
+    const approve = action === "Approve";
+    if (n.coding) {
+      const path = { workspace_id: n.coding.workspaceId, project_id: n.coding.projectId, coding_run_id: n.coding.runId };
+      const run = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}", { params: { path } }));
+      if (run.status !== "awaiting_approval" || !run.can_decide) return n.open();
+      await unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision", {
+          params: { path },
+          body: { decision: approve ? "approve" : "reject", reason: null },
+        }),
+      );
+      toast(approve ? `Kai is starting on ${run.issue_key}` : `Rejected Kai's turn on ${run.issue_key}`);
+    } else if (n.changes) {
+      const { workspaceId, projectId, runId } = n.changes;
+      const approvals = await unwrap(api.GET("/v1/workspaces/{workspace_id}/approvals", { params: { path: { workspace_id: workspaceId } } }));
+      const pending = approvals.filter((a) => a.run_id === runId && a.status === "pending");
+      if (pending.length !== 1 || !QUICK_TOOLS.has(pending[0].tool)) return n.open();
+      await unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/decisions", {
+          params: { path: { workspace_id: workspaceId, project_id: projectId, run_id: runId } },
+          body: { decisions: [{ approval_id: pending[0].id, decision: approve ? "approve" : "reject" }] },
+        }),
+      );
+      toast(approve ? "Approved" : "Rejected");
+    } else return n.open();
+    S.ui.noticesShut = [...S.ui.noticesShut, n.key];
+    render();
+  } catch (e) {
+    toast(e instanceof Error && e.message ? e.message : "That didn't go through; open it to try again", { kind: "err" });
+  } finally {
+    void queryClient.invalidateQueries();
+  }
 }
