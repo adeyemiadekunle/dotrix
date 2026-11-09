@@ -230,7 +230,7 @@ export function Onboarding() {
     });
   if (!signedIn)
     return (
-      <Frame art="workspace">
+      <Frame art="workspace" center>
         <Head title="Set up Dotrix" sub="Sign in or create an account to save your first project." />
         <div className="onb2-acts">
           <a href={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} className="btn btn-ghost onb2-btn">
@@ -244,7 +244,7 @@ export function Onboarding() {
     );
   if (workspaces.isLoading || profile.isLoading)
     return (
-      <Frame art="workspace">
+      <Frame art="workspace" center>
         <p role="status" className="muted">
           Loading your workspaces…
         </p>
@@ -252,7 +252,7 @@ export function Onboarding() {
     );
   if (workspaces.isError || profile.isError)
     return (
-      <Frame art="workspace">
+      <Frame art="workspace" center>
         <p role="alert" className="err">
           {errorMessage(workspaces.error ?? profile.error)}
         </p>
@@ -275,7 +275,7 @@ export function Onboarding() {
   const ownSetupHref = `/onboarding?${new URLSearchParams(ownWorkspace ? { mode: "project", workspace: ownWorkspace.id } : { mode: "project", team: "1" })}`;
   if (workspace && workspace.role !== "owner" && workspace.role !== "admin" && !creatingTeam && !needsWorkspaceChoice)
     return (
-      <Frame art="workspace">
+      <Frame art="workspace" center>
         <Head
           title="Open your team workspace"
           sub={`You already belong to ${workspace.name}. Only owners and admins create projects; you can use the projects shared with you.`}
@@ -1028,15 +1028,27 @@ function Head({ title, sub }: { title: string; sub: string }) {
 }
 
 /** The two columns: the step, its progress dots under it, and a quiet preview of what it sets up. */
-function Frame({ children, dots, art, projectKey = "" }: { children: ReactNode; dots?: ReactNode; art: Step; projectKey?: string }) {
+function Frame({
+  children,
+  dots,
+  art,
+  projectKey = "",
+  center = false,
+}: {
+  children: ReactNode;
+  dots?: ReactNode;
+  art: Step;
+  projectKey?: string;
+  center?: boolean;
+}) {
   return (
     <div className="onb2">
       <main className="onb2-main">
-        <div className="onb2-col">{children}</div>
+        <div className={`onb2-col ${center ? "center" : ""}`}>{children}</div>
         {dots}
       </main>
       <div className="onb2-art" aria-hidden>
-        <Preview step={art} projectKey={projectKey} />
+        <Preview key={art} step={art} projectKey={projectKey} />
       </div>
     </div>
   );

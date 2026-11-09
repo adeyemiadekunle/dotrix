@@ -3269,6 +3269,18 @@ section.side-panel-body[hidden] {
 
 /* Onboarding (screens/Onboarding.tsx): one decision per screen on the left, progress dots under it,
    a quiet preview of what the step sets up on the right (hidden on narrow screens). */
+/* Onboarding takes the whole window: the wordmark and theme toggle float over it, no footer. */
+.auth:has(.onb2) {
+  position: relative;
+}
+.auth:has(.onb2) .auth-top {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+}
+.auth:has(.onb2) .auth-foot {
+  display: none;
+}
 .auth-c:has(.onb2) {
   padding: 0;
   align-items: stretch;
@@ -3277,7 +3289,7 @@ section.side-panel-body[hidden] {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  min-height: calc(100vh - 120px);
+  min-height: 100vh;
 }
 .onb2-main {
   display: flex;
@@ -3285,7 +3297,7 @@ section.side-panel-body[hidden] {
   justify-content: center;
   align-items: center;
   gap: 40px;
-  padding: 48px 24px 32px;
+  padding: 88px 24px 40px;
 }
 .onb2-col {
   width: 100%;
@@ -3293,6 +3305,14 @@ section.side-panel-body[hidden] {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+/* A standalone screen (sign in, loading, an error, a team workspace): centred like a card. */
+.onb2-col.center {
+  text-align: center;
+}
+.onb2-col.center .onb2-acts {
+  justify-content: center;
+  flex-wrap: wrap;
 }
 .onb2-head h1 {
   margin: 0;
@@ -3516,37 +3536,97 @@ textarea.onb2-input {
   width: 28px;
   background: var(--text);
 }
+/* The preview: full height beside the step. Its rows ease in one after another when the step
+   changes, the group floats slowly, and a soft glow in the accent drifts behind it. */
 .onb2-art {
-  position: relative;
+  position: sticky;
+  top: 0;
+  height: 100vh;
   overflow: hidden;
   border-left: 1px solid var(--border);
   background: var(--bg-side);
   display: grid;
   place-items: center;
 }
+.onb2-art::before {
+  content: "";
+  position: absolute;
+  width: 70%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--acc) 16%, transparent), transparent 65%);
+  animation: onb2-glow 16s ease-in-out infinite alternate;
+}
 .onb2-art::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 40% 45%, transparent 20%, var(--bg-side) 75%);
+  background: radial-gradient(ellipse at 50% 50%, transparent 35%, var(--bg-side) 80%);
+  pointer-events: none;
 }
 .onb2-pv {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  transform: perspective(900px) rotateY(-14deg) rotateX(6deg) scale(1.15);
+  gap: 26px;
+  min-width: 300px;
   color: var(--text-3);
-  opacity: 0.55;
-  filter: blur(0.6px);
   font-size: 30px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  animation: onb2-float 9s ease-in-out infinite;
 }
 .onb2-pv-row {
   display: flex;
   align-items: center;
   gap: 18px;
   white-space: nowrap;
+  opacity: 0;
+  animation: onb2-row 0.7s var(--ease) forwards;
+}
+.onb2-pv-row:nth-child(2) {
+  animation-delay: 0.08s;
+}
+.onb2-pv-row:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.onb2-pv-row:nth-child(4) {
+  animation-delay: 0.24s;
+}
+.onb2-pv-row:nth-child(5) {
+  animation-delay: 0.32s;
+}
+.onb2-pv-row:nth-child(6) {
+  animation-delay: 0.4s;
+}
+.onb2-pv-row:nth-child(7) {
+  animation-delay: 0.48s;
+}
+@keyframes onb2-row {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 0.6;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes onb2-float {
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes onb2-glow {
+  from {
+    transform: translate(-18%, -12%) scale(0.9);
+  }
+  to {
+    transform: translate(16%, 14%) scale(1.1);
+  }
 }
 .onb2-pv-key {
   font-size: 20px;
@@ -3568,8 +3648,7 @@ textarea.onb2-input {
     display: none;
   }
   .onb2-main {
-    justify-content: flex-start;
-    padding-top: 24px;
+    padding: 80px 16px 32px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3577,4 +3656,20 @@ textarea.onb2-input {
   .onb2-choice {
     transition: none;
   }
+  .onb2-pv,
+  .onb2-art::before {
+    animation: none;
+  }
+  .onb2-pv-row {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+[data-motion="reduce"] .onb2-pv,
+[data-motion="reduce"] .onb2-art::before {
+  animation: none;
+}
+[data-motion="reduce"] .onb2-pv-row {
+  animation: none;
+  opacity: 0.6;
 }
