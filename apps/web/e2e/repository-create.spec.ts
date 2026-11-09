@@ -21,6 +21,7 @@ const repo = {
 async function start(page: Page) {
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
   await page.getByRole("radio", { name: "Start a new codebase", exact: true }).check();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByLabel("Project name", { exact: true }).fill("Booking");
   await page.getByLabel("Project key", { exact: true }).fill("BOOK");
   await page.getByLabel("Project goal", { exact: true }).fill("Help consultants schedule bookings.");

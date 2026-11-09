@@ -22,6 +22,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             className="ibtn"
             onClick={() => {
               setPref("theme", effectiveDark() ? "light" : "dark");
+              applyPrefs(); // these pages have no workspace shell to apply it on its next render
               flip((n) => n + 1);
             }}
             data-tip="Toggle theme"

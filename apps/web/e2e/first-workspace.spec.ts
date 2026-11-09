@@ -1,19 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { signUp } from "./helpers";
 
-test("skipping the first step keeps Personal even after selecting Organisation", async ({ page }) => {
+test("skipping the first step keeps Personal even after choosing to set up for a team", async ({ page }) => {
   await signUp(page);
   await page.goto("/onboarding");
-  await expect(page.getByRole("radio", { name: "Personal", exact: true })).toBeChecked();
+  await expect(page.getByLabel("Organisation name", { exact: true })).toHaveCount(0);
   const progress = page.getByRole("navigation", { name: "Onboarding progress", exact: true });
-  await expect(progress.locator('[aria-current="step"]')).toHaveText(/Workspace/);
-  await page.getByRole("radio", { name: "Organisation", exact: true }).check();
+  await expect(progress.locator('[aria-current="step"]')).toHaveText(/Profile/);
+  await page.getByRole("button", { name: "Setting up for a team?", exact: true }).click();
   await expect(page.getByLabel("Organisation name", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Create your first project", exact: true })).toBeVisible();
-  await expect(progress.locator('[aria-current="step"]')).toHaveText(/Project/);
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "How do you want to start?", exact: true })).toBeVisible();
+  await expect(progress.locator('[aria-current="step"]')).toHaveText(/Starting point/);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Create your first project", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How do you want to start?", exact: true })).toBeVisible();
   const state = await page.evaluate(async () => ({ user: await (await fetch("/v1/me")).json(), workspaces: await (await fetch("/v1/workspaces")).json() }));
   expect(state.workspaces).toHaveLength(1);
   expect(state.workspaces[0].kind).toBe("personal");
@@ -23,7 +23,7 @@ test("skipping the first step keeps Personal even after selecting Organisation",
 test("an organisation save recovers a lost response and the stepper preserves its workspace", async ({ page }) => {
   await signUp(page);
   await page.goto("/onboarding");
-  await page.getByRole("radio", { name: "Organisation", exact: true }).check();
+  await page.getByRole("button", { name: "Setting up for a team?", exact: true }).click();
   await page.getByLabel("Organisation name", { exact: true }).fill("First delivery team");
   let calls = 0;
   await page.route("**/me/onboarding-workspace", async (route) => {
@@ -33,7 +33,7 @@ test("an organisation save recovers a lost response and the stepper preserves it
     await route.abort("failed");
   });
   await page.getByLabel("Organisation name", { exact: true }).press("Enter");
-  await expect(page.getByRole("heading", { name: "Create your first project", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How do you want to start?", exact: true })).toBeVisible();
   const selected = new URL(page.url()).searchParams.get("workspace");
   expect(selected).toBeTruthy();
   const state = await page.evaluate(async () => ({ user: await (await fetch("/v1/me")).json(), workspaces: await (await fetch("/v1/workspaces")).json() }));
@@ -81,7 +81,7 @@ test("a saved organisation choice still allows personal setup after role restric
   await page.goto("/onboarding");
   await expect(page.getByRole("heading", { name: "Open your team workspace", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Set up a project in your own workspace", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Create a project", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How do you want to start?", exact: true })).toBeVisible();
   await expect(page.getByLabel("Workspace", { exact: true })).not.toHaveValue(organisation.id);
 });
 
@@ -100,7 +100,7 @@ test("a different saved choice opens its summary instead of continuing in the st
     },
     { times: 1 },
   );
-  await page.getByRole("button", { name: "Skip for now", exact: true }).click();
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your workspace is saved", exact: true })).toBeVisible();
   await expect(page.getByText(/Saved in another tab · Organisation/)).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Review it before continuing");
@@ -114,7 +114,7 @@ test("a background profile refetch reconciles another tab's saved organisation b
   await signUp(page);
   await page.clock.install();
   await page.goto("/onboarding");
-  await expect(page.getByRole("heading", { name: "Choose your workspace", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toBeVisible();
   const response = await page.request.post("/v1/me/onboarding-workspace", {
     headers: { "X-Requested-With": "e2e" },
     data: { kind: "organization", name: "Chosen from another tab" },
