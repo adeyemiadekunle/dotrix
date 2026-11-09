@@ -14,6 +14,7 @@ test("an idea needs only a working title and opens an editable Nova discussion w
   for (const name of ["Explore an idea", "Start a new codebase", "Connect an existing repository"])
     await expect(page.getByRole("radio", { name, exact: true })).toBeVisible();
   await page.getByRole("radio", { name: "Explore an idea", exact: true }).check();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByLabel("Project name", { exact: true }).fill("Booking concept");
   await page.getByLabel("Project key", { exact: true }).fill("IDEA");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
@@ -49,6 +50,7 @@ test("new codebases require a goal before repository setup and restore their sav
   await signUp(page);
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
   await page.getByRole("radio", { name: "Start a new codebase", exact: true }).check();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByLabel("Project name", { exact: true }).fill("New booking app");
   await page.getByLabel("Project key", { exact: true }).fill("NEW");
   await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
@@ -60,8 +62,8 @@ test("new codebases require a goal before repository setup and restore their sav
   tampered.searchParams.set("intent", "idea");
   tampered.searchParams.set("step", "project");
   await page.goto(tampered.href);
-  await expect(page.getByRole("radio", { name: "Start a new codebase", exact: true })).toBeChecked();
-  await expect(page.getByRole("radio", { name: "Start a new codebase", exact: true })).toBeDisabled();
+  // The saved project's own start wins over the URL: it shows as saved, and goes on to GitHub (an idea wouldn't).
+  await expect(page.getByRole("heading", { name: "New booking app is saved", exact: true })).toBeVisible();
   await expect(page.getByText("Help independent consultants schedule bookings.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create project", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Continue setup", exact: true }).click();
@@ -98,6 +100,7 @@ test("existing repositories start with GitHub selection and require confirmation
   );
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
   await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByLabel("Project name", { exact: true }).fill("Existing system");
   await page.getByLabel("Project key", { exact: true }).fill("EXIST");
   await page.getByRole("button", { name: "Create project", exact: true }).click();
