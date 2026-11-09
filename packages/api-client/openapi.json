@@ -50,6 +50,28 @@
         }
       }
     },
+    "/v1/features": {
+      "get": {
+        "tags": [
+          "features"
+        ],
+        "summary": "Get Features",
+        "description": "What this server offers (`DOTRIX_ORGANISATIONS`: off on a deployed server unless turned on).",
+        "operationId": "get_features",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Features"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/signup": {
       "post": {
         "tags": [
@@ -2227,7 +2249,7 @@
           "auth"
         ],
         "summary": "Choose Onboarding Workspace",
-        "description": "Save the first optional workspace choice. Personal is the default; no conversion or projects.",
+        "description": "Save the first optional workspace choice. Personal is the default; no conversion or projects.\n403 `organisations_unavailable` for an organisation while this server has them turned off.",
         "operationId": "choose_onboarding_workspace",
         "requestBody": {
           "content": {
@@ -2252,6 +2274,16 @@
           },
           "401": {
             "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3039,7 +3071,7 @@
           "workspaces"
         ],
         "summary": "List Workspaces",
-        "description": "Workspaces you belong to, with your role in each.",
+        "description": "Workspaces you belong to, with your role in each. Organisations are left out while this\nserver has them turned off (`GET /v1/features`).",
         "operationId": "list_workspaces",
         "responses": {
           "200": {
@@ -3078,7 +3110,7 @@
           "workspaces"
         ],
         "summary": "Create Workspace",
-        "description": "Create an organisation (a workspace for a team: invites, roles, many projects); you\nbecome its owner. Your personal workspace was created at sign-up.",
+        "description": "Create an organisation (a workspace for a team: invites, roles, many projects); you\nbecome its owner. Your personal workspace was created at sign-up. 403\n`organisations_unavailable` while this server has organisations turned off.",
         "operationId": "create_workspace",
         "requestBody": {
           "content": {
@@ -3103,6 +3135,16 @@
           },
           "401": {
             "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -30102,6 +30144,20 @@
         ],
         "title": "FailureReport"
       },
+      "Features": {
+        "properties": {
+          "organisations": {
+            "type": "boolean",
+            "title": "Organisations",
+            "description": "Organisation workspaces (teams: invites, roles, members) can be created and opened. When false, only personal workspaces are listed and the API refuses organisations."
+          }
+        },
+        "type": "object",
+        "required": [
+          "organisations"
+        ],
+        "title": "Features"
+      },
       "FileEntry": {
         "properties": {
           "path": {
@@ -39058,6 +39114,10 @@
     {
       "name": "health",
       "description": "Liveness and readiness probes."
+    },
+    {
+      "name": "features",
+      "description": "What this server offers, for clients to show only what works (no sign-in needed)."
     }
   ]
 }

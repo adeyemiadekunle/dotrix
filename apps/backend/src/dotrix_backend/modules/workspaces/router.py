@@ -6,10 +6,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from dotrix_backend.api.deps import CurrentUser, SessionDep, require_permission
+from dotrix_backend.api.deps import CurrentUser, SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.modules.auth.router import IMAGE_RESPONSE, image
 
+from .availability import require_organisations
 from .models import Membership
 from .permissions import Permission
 from .schemas import (
@@ -31,17 +32,20 @@ Owner = Annotated[Membership, Depends(require_permission(Permission.MANAGE_BILLI
 
 
 @router.get("")
-async def list_workspaces(user: CurrentUser, session: SessionDep) -> list[WorkspaceWithRole]:
-    """Workspaces you belong to, with your role in each."""
-    return await WorkspaceService(session).list_for_user(user)
+async def list_workspaces(user: CurrentUser, session: SessionDep, settings: SettingsDep) -> list[WorkspaceWithRole]:
+    """Workspaces you belong to, with your role in each. Organisations are left out while this
+    server has them turned off (`GET /v1/features`)."""
+    return await WorkspaceService(session).list_for_user(user, organisations=settings.organisations_enabled)
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, responses=errors(422))
+@router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 422))
 async def create_workspace(
-    data: WorkspaceCreate, user: CurrentUser, session: SessionDep
+    data: WorkspaceCreate, user: CurrentUser, session: SessionDep, settings: SettingsDep
 ) -> WorkspaceWithRole:
     """Create an organisation (a workspace for a team: invites, roles, many projects); you
-    become its owner. Your personal workspace was created at sign-up."""
+    become its owner. Your personal workspace was created at sign-up. 403
+    `organisations_unavailable` while this server has organisations turned off."""
+    require_organisations(settings)
     return await WorkspaceService(session).create(user, data)
 
 

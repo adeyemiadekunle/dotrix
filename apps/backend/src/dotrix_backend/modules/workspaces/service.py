@@ -17,6 +17,7 @@ from dotrix_backend.modules.projects.models import ProjectAccessLevel, ProjectMe
 from dotrix_backend.modules.projects.repository import ProjectRepository
 
 from .approval_modes import cap_of, rank
+from .availability import OrganisationsUnavailable
 from .models import Membership, Role, Workspace, WorkspaceKind
 from .permissions import Permission, can
 from .repository import MembershipRepository, WorkspaceRepository
@@ -82,17 +83,29 @@ class WorkspaceService:
         await self.session.commit()
         return WorkspaceWithRole.of(workspace, Role.OWNER)
 
-    async def list_for_user(self, user: User) -> list[WorkspaceWithRole]:
+    async def list_for_user(self, user: User, *, organisations: bool = True) -> list[WorkspaceWithRole]:
         return [
-            WorkspaceWithRole.of(ws, role) for ws, role in await self.workspaces.list_for_user(user.id)
+            WorkspaceWithRole.of(ws, role)
+            for ws, role in await self.workspaces.list_for_user(user.id)
+            if organisations or ws.kind is WorkspaceKind.PERSONAL
         ]
 
-    async def choose_first(self, user: User, data: FirstWorkspaceChoice) -> WorkspaceWithRole:
-        """One saved registration choice, serialized per person; retries cannot create teams twice."""
+    async def choose_first(
+        self, user: User, data: FirstWorkspaceChoice, *, organisations: bool = True
+    ) -> WorkspaceWithRole:
+        """One saved registration choice, serialized per person; retries cannot create teams twice.
+        With organisations turned off only Personal can be chosen, and an organisation saved
+        earlier gives way to it."""
+        if data.kind == "organization" and not organisations:
+            raise OrganisationsUnavailable()
         user = await self.session.scalar(select(User).where(User.id == user.id).with_for_update()
                                          .execution_options(populate_existing=True))
         if user is None or not user.is_active:
             raise NotFound("Account is no longer available")
+        if user.onboarding_workspace_id and not organisations:
+            saved = await self.session.get(Workspace, user.onboarding_workspace_id)
+            if saved is not None and saved.kind is WorkspaceKind.ORGANIZATION:
+                user.onboarding_workspace_id = None
         if user.onboarding_workspace_id:
             membership = await self.members.get(user.onboarding_workspace_id, user.id)
             if membership is None:

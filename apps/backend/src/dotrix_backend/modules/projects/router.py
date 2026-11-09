@@ -130,14 +130,18 @@ async def delete_project(access: ProjectManager, session: SessionDep, storage: S
 
 
 @router.post("/{project_id}/move", responses=errors(403, 409, 422))
-async def move_project(data: ProjectMove, access: ProjectManager, session: SessionDep) -> ProjectRead:
+async def move_project(
+    data: ProjectMove, access: ProjectManager, session: SessionDep, settings: SettingsDep
+) -> ProjectRead:
     """Move a project, with its knowledge, issues, documents, and conversations, to another
     workspace: from your personal workspace into an organisation, or back. You need to set up
     projects in both (owners and admins). 409 if the other workspace already has a project with
     its key or repo, or while one of its agent runs is working or waiting for approval. People
     who can't see it there are unassigned from its issues (logged) and stop watching them; linked
     checkouts follow the move on their next command."""
-    return await ProjectService(session).move(access.project, access.member, data.workspace_id)
+    return await ProjectService(session).move(
+        access.project, access.member, data.workspace_id, organisations=settings.organisations_enabled
+    )
 
 
 @router.get("/{project_id}/members")

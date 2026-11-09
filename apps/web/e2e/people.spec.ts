@@ -9,11 +9,11 @@ const slugOf = (page: Page) => new URL(page.url()).pathname.split("/")[2]!;
 
 test("a personal workspace stays private and a separate organisation invites", async ({ page }) => {
   await signUp(page);
-  await page.goto(`/w/${slugOf(page)}/members`);
-  await page.getByRole("button", { name: "Invite member" }).click();
-  await expect(page.getByText("A personal workspace is just for you")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send invites" })).toBeDisabled();
-  await page.keyboard.press("Escape");
+  // A personal workspace has no members to manage: its old link opens Home, with no way to invite.
+  const personal = slugOf(page);
+  await page.goto(`/w/${personal}/members`);
+  await expect(page).toHaveURL(new RegExp(`/w/${personal}$`));
+  await expect(page.getByRole("button", { name: "Invite member" })).toHaveCount(0);
 
   await createOrganisation(page);
   await page.goto(`/w/${slugOf(page)}/members`);

@@ -5,6 +5,7 @@
 import type { ApprovalMode } from "@/lib/agent";
 import { isLive, live } from "../data/live";
 import { me } from "../data/store";
+import { personal } from "./features";
 
 export type Perm =
   | "members:manage" // invite, remove, change roles
@@ -39,6 +40,6 @@ export function defaultApproval(): ApprovalMode {
   return mine.includes(wanted) ? wanted : "manual";
 }
 
-/** Invites: people who manage members. (In a personal workspace that's its owner, whose invite
- * dialog explains that a separate organisation workspace is needed.) */
-export const canInvite = () => allowed("members:manage");
+/** Invites: people who manage members, and only in an organisation (a personal workspace is
+ * just its owner's; the API refuses its invites too). */
+export const canInvite = () => allowed("members:manage") && !personal();

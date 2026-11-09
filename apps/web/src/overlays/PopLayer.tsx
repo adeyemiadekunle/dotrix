@@ -10,6 +10,7 @@ import { useLiveProjectTasks } from "@/lib/workspace-data";
 import { confirmDlg, promptDlg } from "../core/more";
 import { isLive, live, liveCommentById, taskPatched } from "../data/live";
 import { allowed, canInvite } from "../core/can";
+import { organisations } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import {
   archiveProject,
@@ -500,7 +501,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
               </button>
             ))}
             <Sep />
-            <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding?team=1"))} />
+            {organisations() && <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding?team=1"))} />}
             {allowed("workspace:manage") && (
               <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />
             )}

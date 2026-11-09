@@ -50,6 +50,11 @@ class Settings(DatabaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     # Swagger UI (/docs), ReDoc (/redoc), and /openapi.json. Turn off to hide the API surface.
     docs_enabled: bool = True
+    # Organisation workspaces (teams: invites, roles, members). Personal workspaces launch first, so
+    # a deployed server (staging, production) hides organisations unless this is set to true;
+    # development and tests keep them. Off: none can be created or opened, invites are refused, and
+    # the web app shows only personal workspaces. Their data is kept, so turning it on brings them back.
+    organisations: bool | None = None
 
     # Auth. The secret is required and never has a default.
     jwt_secret: SecretStr = Field(min_length=32)
@@ -291,6 +296,10 @@ class Settings(DatabaseSettings):
     @property
     def is_deployed(self) -> bool:
         return self.env in ("staging", "production")
+
+    @property
+    def organisations_enabled(self) -> bool:
+        return self.organisations if self.organisations is not None else not self.is_deployed
 
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:

@@ -7,7 +7,7 @@ import { PASSWORD, signUp } from "./helpers";
 const slugOf = (page: Page) => new URL(page.url()).pathname.split("/")[2]!;
 const settings = (page: Page, sec: string) => page.goto(`/w/${slugOf(page)}/settings/${sec}`);
 
-test("your profile: name and what you do are saved, and Members shows them", async ({ page }) => {
+test("your profile: name and what you do are saved, and your profile page shows them", async ({ page }) => {
   await signUp(page);
   await settings(page, "profile");
   await page.getByLabel("Full name").fill("Ada Lovelace");
@@ -18,8 +18,14 @@ test("your profile: name and what you do are saved, and Members shows them", asy
 
   await page.reload();
   await expect(page.getByLabel("What you do")).toHaveValue("Analyst");
-  await page.goto(`/w/${slugOf(page)}/members`);
-  await expect(page.locator("tr", { hasText: "Ada Lovelace" })).toBeVisible();
+  // A personal workspace has no Members page; your own profile page (the account menu's View profile) shows you.
+  await page
+    .getByRole("button", { name: /Ada Lovelace/ })
+    .first()
+    .click();
+  await page.locator(".mi", { hasText: "View profile" }).click();
+  await expect(page.locator("#main-content")).toContainText("Ada Lovelace");
+  await expect(page.locator("#main-content")).toContainText("Analyst");
 });
 
 test("where you're signed in: each browser is listed, and another one can be signed out", async ({ page, browser }) => {

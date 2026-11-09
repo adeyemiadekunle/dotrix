@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
 import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
 import { AGENTS, CODING_AGENT } from "../data/seed-dotrix";
+import { useOrganisations } from "../core/features";
 import { Ic } from "../core/icons";
 import { PROJECT_STARTS, projectStart, projectDiscussionHref, projectImplementationHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
 import { Face } from "../ui/face";
@@ -46,8 +47,13 @@ export function Onboarding() {
   );
   const [teamName, setTeamName] = useState("");
   const [workspaceKind, setWorkspaceKind] = useState<"personal" | "organization">("personal");
-  const [creatingTeam, setCreatingTeam] = useState(query.get("team") === "1");
+  const [teamAsked, setCreatingTeam] = useState(query.get("team") === "1");
+  // Organisations may be turned off on this server (personal workspaces launch first): then
+  // every team option here is hidden, and the API refuses one anyway.
+  const orgs = useOrganisations();
+  const creatingTeam = orgs && teamAsked;
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const chosenKind = orgs ? workspaceKind : "personal";
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [accessLevel, setAccessLevel] = useState<"workspace" | "restricted">("workspace");
@@ -342,7 +348,7 @@ export function Onboarding() {
             className="onb2-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void chooseWorkspace(workspaceKind, true);
+              void chooseWorkspace(chosenKind, true);
             }}
           >
             <Head title="Set up your profile" sub="Choose how you'll appear in Dotrix." />
@@ -364,7 +370,7 @@ export function Onboarding() {
                   />
                 </span>
               </label>
-              {workspaceKind === "organization" ? (
+              {chosenKind === "organization" ? (
                 <label className="field">
                   Organisation name
                   <input
@@ -386,10 +392,15 @@ export function Onboarding() {
                 </label>
               ) : (
                 <p className="onb2-hint">
-                  Your projects start in your own private workspace.{" "}
-                  <button type="button" className="link" onClick={() => setWorkspaceKind("organization")}>
-                    Setting up for a team?
-                  </button>
+                  Your projects start in your own private workspace.
+                  {orgs && (
+                    <>
+                      {" "}
+                      <button type="button" className="link" onClick={() => setWorkspaceKind("organization")}>
+                        Setting up for a team?
+                      </button>
+                    </>
+                  )}
                 </p>
               )}
             </fieldset>
@@ -400,7 +411,7 @@ export function Onboarding() {
               <button
                 className="btn btn-primary onb2-btn"
                 type="submit"
-                disabled={busy || !typedName.trim() || (workspaceKind === "organization" && !teamName.trim())}
+                disabled={busy || !typedName.trim() || (chosenKind === "organization" && !teamName.trim())}
               >
                 Continue
               </button>
@@ -514,6 +525,7 @@ export function Onboarding() {
             )}
             {workspaceId && workspaces.isSuccess && !workspace && <p role="alert">This workspace is unavailable. Select another workspace to continue.</p>}
             {addingProject &&
+              orgs &&
               (creatingTeam ? (
                 <div className="onb2-team">
                   <label className="field">

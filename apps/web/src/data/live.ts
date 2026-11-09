@@ -19,6 +19,7 @@ import { issueKeys, issueOptions, type Issue, type Scope } from "@/lib/issues";
 import { RECUR_OUT, STATUS_OUT, fromApi, hashTint, logComment, ms, toAttachment, toAutomation, toChecklist, toFile, toTask } from "@/lib/view-models";
 import { invalidateLiveQueries, queryClient } from "@/lib/queryClient";
 
+import { featuresQuery } from "../core/features";
 import { fmtDate, uid } from "../core/utils";
 import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -92,7 +93,8 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
   void invalidateLiveQueries();
   render();
   try {
-    const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces()]);
+    // The features first, so menus know whether organisations exist here (core/features.ts).
+    const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces(), queryClient.fetchQuery(featuresQuery)]);
     const ws = wss.find((w) => w.slug === slug);
     if (!ws) {
       live.mode = "live"; // so showDemo puts the demo's data back
