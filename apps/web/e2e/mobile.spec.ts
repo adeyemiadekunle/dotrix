@@ -19,9 +19,13 @@ test("on a phone the board, a task and Chat fit the screen, and the sidebar open
   await card.click();
   const drawer = page.getByRole("dialog", { name: "Task: Draft the pricing page" });
   await expect(drawer.getByRole("textbox", { name: "Task title" })).toBeInViewport();
-  const size = await drawer.boundingBox();
-  expect(size!.x).toBeGreaterThanOrEqual(0);
-  expect(size!.x + size!.width).toBeLessThanOrEqual(390);
+  // It slides in, so wait for it to settle inside the screen.
+  await expect
+    .poll(async () => {
+      const size = await drawer.boundingBox();
+      return size !== null && size.x >= 0 && size.x + size.width <= 390;
+    })
+    .toBe(true);
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();
 
