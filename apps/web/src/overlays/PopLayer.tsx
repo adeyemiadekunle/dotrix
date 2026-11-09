@@ -567,10 +567,15 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <Mi icon="keyboard" label="Keyboard shortcuts" onClick={shortcuts} r={<kbd>?</kbd>} />
             <Mi icon="command" label="Command menu" onClick={() => (closePop(), openPaletteSoon())} r={<kbd>{MOD}K</kbd>} />
             <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "sessions" }))} />
-            <Sep />
-            <div className="mh">Prototype</div>
-            <Mi icon={S.ui.offline ? "wifi" : "wifi-off"} label={S.ui.offline ? "Go back online" : "Simulate offline"} onClick={toggleOffline} />
-            <Mi icon="rotate-ccw" label="Reset demo data" onClick={resetDemo} />
+            {!isLive() && (
+              <>
+                {/* The sample workspace only: a real one has nothing to reset or simulate. */}
+                <Sep />
+                <div className="mh">Prototype</div>
+                <Mi icon={S.ui.offline ? "wifi" : "wifi-off"} label={S.ui.offline ? "Go back online" : "Simulate offline"} onClick={toggleOffline} />
+                <Mi icon="rotate-ccw" label="Reset demo data" onClick={resetDemo} />
+              </>
+            )}
           </>
         ),
       };
