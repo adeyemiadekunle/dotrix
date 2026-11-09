@@ -97,6 +97,13 @@ _DELEGATION_GUIDE = _GUIDE.replace(
 )
 
 
+def _specialist_directory(spec: AgentSpec, specs: list[AgentSpec]) -> str:
+    """Show the names of specialists that Nova's contract permits it to call."""
+    available = [item for item in specs if item.handle in ("product", "architecture", "research", "reviewer", "documentation")
+                 and ("*" in spec.can_call or item.handle in spec.can_call)]
+    return ", ".join(f"{item.name} → {item.handle}" for item in available) or "none"
+
+
 @dataclass(frozen=True)
 class _Connection:
     model: str
@@ -219,7 +226,6 @@ async def _turn(
         scope = RuntimeRunScope(workspace_id, run.project_id, run_id, run.requested_by_id,
                                 PM_HANDLE, token, session_id)
         guide = _DELEGATION_GUIDE if durable and not coding_outcome and spec.can("delegate") else _GUIDE
-        instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}{work_mode_guide(work_mode.value)}"
         if existing is not None and existing.encrypted_context:
             snapshot = json.loads(secrets.decrypt(existing.encrypted_context))
         else:  # a new run, or one bound before the context was pinned: today's context
@@ -228,6 +234,12 @@ async def _turn(
                 "context": await build_context_pack(session, project, run, embedder),
                 "code_context": code_context,
             }
+            # Existing bindings without this field keep their original instructions.
+            if existing is None and durable and not coding_outcome and spec.can("delegate"):
+                snapshot["specialist_directory"] = _specialist_directory(spec, specs)
+        if "specialist_directory" in snapshot:
+            guide += f"\nBuilt-in specialists (name → delegation handle): {snapshot['specialist_directory']}.\n"
+        instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}{work_mode_guide(work_mode.value)}"
         rules = snapshot["rules"]
         instructions = "\n\n".join(part for part in (
             rules.get("base", ""), rules.get(PM_HANDLE, ""), instructions,

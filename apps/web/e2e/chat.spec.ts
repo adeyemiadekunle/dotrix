@@ -298,7 +298,12 @@ test("active project chat can queue, cancel, and steer without losing a failed d
     await page.goto(location);
     await expect(page.getByLabel("Delivery action")).toHaveValue("queue");
     const box = page.getByLabel("Message");
+    const stop = page.getByRole("button", { name: "Stop run" });
+    await expect(stop).toBeVisible();
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toHaveCount(0);
     await box.fill("Compare the alternatives afterward");
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+    await expect(stop).toBeVisible();
     await box.press("Enter");
     await expect(box).toHaveValue("");
     await expect(page.getByText("Compare the alternatives afterward")).toBeVisible();
@@ -327,7 +332,7 @@ test("selected chat outcomes preview project visibility, retry safely and retain
   await openChat(page, "?project=PUB");
   await page.getByLabel("Message").fill("Private discussion about database choices");
   await page.getByLabel("Message").press("Enter");
-  await page.getByRole("button", { name: "Publish outcome to project", exact: true }).click();
+  await page.getByRole("button", { name: "Share to project…", exact: true }).click();
   const panel = page.getByRole("region", { name: "Publish selected outcome", exact: true });
   await panel.getByLabel("Outcome title", { exact: true }).fill("Database decision");
   await panel.getByLabel("Selected content", { exact: true }).fill("Use PostgreSQL. Rationale: transactions. Open question: hosting.");
@@ -358,7 +363,7 @@ test("selected chat outcomes preview project visibility, retry safely and retain
   await expect(page.getByRole("button", { name: "Open shared requirements", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("button", { name: "Open shared requirements", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Publish outcome to project", exact: true }).click();
+  await page.getByRole("button", { name: "Share to project…", exact: true }).click();
   await panel.getByLabel("Destination", { exact: true }).selectOption("task");
   await panel.getByLabel("Outcome title", { exact: true }).fill("Implement database");
   await panel.getByLabel("Selected content", { exact: true }).fill("Add the schema. Acceptance: migrations run. Hosting remains open.");
@@ -391,7 +396,7 @@ test("decision publication pins the reviewed predecessor and shares versioned su
   await openChat(page, "?project=DEC");
   await page.getByLabel("Message").fill("Discuss a replacement decision");
   await page.getByLabel("Message").press("Enter");
-  await page.getByRole("button", { name: "Publish outcome to project", exact: true }).click();
+  await page.getByRole("button", { name: "Share to project…", exact: true }).click();
   const panel = page.getByRole("region", { name: "Publish selected outcome", exact: true });
   await panel.getByLabel("Destination", { exact: true }).selectOption("decisions");
   await panel.getByLabel("Outcome title", { exact: true }).fill("Replacement choice");

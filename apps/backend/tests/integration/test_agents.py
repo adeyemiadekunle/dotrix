@@ -672,6 +672,47 @@ async def test_specialists_can_run_on_a_cheaper_model(project, db_client: AsyncC
     assert "You are Lyra, the product agent" in str(specialist.received[0][0].content)
 
 
+async def test_read_only_specialist_reads_project_code(project, db_client, agent_script, db_session, monkeypatch):
+    """A delegated read-only child gets its contract's code tool through the real scheduler."""
+    from langchain_core.tools import tool
+
+    from dotrix_backend.modules.agents.llm import ModelChoice
+    from dotrix_backend.modules.projects.models import Project
+
+    ada, _, base = await project()
+    runner = db_client._transport.app.state.runner
+    saved_project = await db_session.get(Project, uuid.UUID(base.rsplit("/", 1)[-1]))
+    saved_project.specialist_model = "test:cheap"
+    await db_session.commit()
+
+    @tool
+    async def code_read(path: str) -> str:
+        """Read a permitted repository file."""
+        return "README evidence" if path == "README.md" else "Not found"
+
+    async def project_code(_workspace_id, _project_id, context):
+        return [code_read], context
+
+    monkeypatch.setattr(runner, "_code", project_code)
+    pm = agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "readme", "agent": "product", "brief": "Read README.md",
+                                            "expected_result": "Repository evidence"}]),
+        "Lyra read the README.",
+    )
+    specialist = agent_script.specialists_say(
+        tool_call("code_read", path="README.md"),
+        tool_call("submit_specialist_result", summary="README evidence", evidence=["README.md"]),
+        "README evidence",
+    )
+    monkeypatch.setattr(runner, "model_factory", lambda project, model, keys=None: ModelChoice(
+        model=specialist if model == "test:cheap" else pm, web_search=None))
+    done = await run(db_client, base, ada.headers, "Ask Lyra to read README.md")
+    assert done["status"] == "completed", done
+    assert "code_read" in specialist.tools_received[0]
+    messages = [message for turn in specialist.received for message in turn if message.type == "tool"]
+    assert any(message.name == "code_read" and "README evidence" in str(message.content) for message in messages)
+
+
 async def test_project_model_settings(project, db_client: AsyncClient, signup, add_member) -> None:
     ada, team, base = await project()
     res = await db_client.patch(

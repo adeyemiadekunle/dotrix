@@ -2360,24 +2360,8 @@ section.side-panel-body[hidden] {
   cursor: default;
 }
 .kt-stop {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  flex: none;
-  padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--red) 28%, var(--border));
-  border-radius: 999px;
-  background: var(--red-soft);
-  color: var(--red);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.kt-stop:hover:not(:disabled) {
-  border-color: var(--red);
+  background: var(--text);
+  color: var(--bg);
 }
 .kt-stop:disabled {
   opacity: 0.6;

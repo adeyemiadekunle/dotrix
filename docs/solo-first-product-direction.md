@@ -73,6 +73,8 @@ Recent local live testing identified the following; confirm each against the cur
 
 Inventory the current screens and capabilities. Assign each **keep**, **revamp**, **hide/defer** or **remove**, with a reason, dependencies, migration impact and required work. Do not infer removal merely from a feature being outside the first release.
 
+The initial assessment and prioritized next steps are in the [Phase 1 feature audit](solo-release-phase-1-audit.md). Its recommendations require validation and product review before destructive removal or release claims.
+
 ### 2. Fix the core loop
 
 Resolve confirmed identity, specialist access, composer and coding-outcome issues. Verify handoff constraints, approval decisions and truthful results. Done when a developer can take a scoped repository task through an unmerged, reviewed PR and receive evidence and limitations in the original chat.

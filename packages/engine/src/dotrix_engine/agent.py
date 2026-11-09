@@ -488,7 +488,7 @@ def build_team(
     )
 
     team = _callable(pm, specs)
-    names = ", ".join(spec.agent_name for spec in team) or "none yet"
+    names = ", ".join(f"{spec.name} ({spec.agent_name}; delegation handle: {spec.handle})" for spec in team) or "none yet"
     pm_instructions = f"""{introduce(pm, project_name)}
 
 {description}
