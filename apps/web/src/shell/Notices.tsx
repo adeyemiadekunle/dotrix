@@ -2,7 +2,8 @@
 // agent's change waiting for approval (Approve, or Open it), a plan to steer, a coding tool
 // waiting to start or that couldn't finish. On Home only (elsewhere they'd cover the page), and
 // only while the agents panel is closed (it lists the same things); the newest two, bottom
-// right; closing one keeps it closed for this session.
+// right; closing one keeps it closed for this session. In a real workspace, a coding turn waiting
+// for approval is decided in the notice itself (the same decision Inbox makes).
 import { useEffect, useRef } from "react";
 
 import { decideChange, decideCoding } from "../core/agents";
@@ -10,10 +11,13 @@ import { openDemoRequest } from "../core/demoRequest";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { waitingChanges } from "../core/presence";
-import { CODING_TOOLS } from "../data/seed-dotrix";
+import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import { D, S, render, task } from "../data/store";
-import { isLive } from "../data/live";
+import { isLive, live } from "../data/live";
+import type { Notif } from "../data/types";
 import { Face } from "../ui/face";
+import { useCodingRun, useDecideCoding } from "../../lib/coding";
+import { useLiveNotifications } from "../../lib/workspace-data";
 
 interface Notice {
   key: string;
@@ -24,10 +28,12 @@ interface Notice {
   text: string;
   mood: "needs" | "blocked";
   act?: { label: string; run: () => void };
+  /** A real workspace's coding turn waiting for approval: decided here. */
+  coding?: { workspaceId: string; projectId: string; runId: string };
   open: () => void;
 }
 
-function notices(): Notice[] {
+function notices(liveNotifs: Notif[] | undefined): Notice[] {
   const out: Notice[] = [];
   // One notice per reply: a single change can be approved here, several open the conversation.
   const byMsg = new Map<string, ReturnType<typeof waitingChanges>>();
@@ -51,8 +57,24 @@ function notices(): Notice[] {
     });
   }
   // A real workspace's approvals arrive as notifications.
-  for (const n of D().notifs)
-    if ((n.type === "approval" || n.type === "checkpoint") && !n.read && n.by) {
+  for (const n of liveNotifs ?? D().notifs) {
+    if (n.read) continue;
+    if (n.type === "approval" && n.codingRun && n.project && live.ws) {
+      const runId = n.codingRun;
+      out.push({
+        key: n.id,
+        at: n.at,
+        c: CODING_AGENT.c,
+        name: CODING_AGENT.name,
+        title: "needs your approval",
+        text: n.snippet || n.text,
+        mood: "needs",
+        coding: { workspaceId: live.ws.id, projectId: n.project, runId },
+        open: () => go("inbox", {}, { search: `n=${n.id}` }),
+      });
+      continue;
+    }
+    if ((n.type === "approval" || n.type === "checkpoint") && n.by) {
       const a = D().agents.find((x) => x.handle === n.by);
       // the seeded workspace's notifications repeat its conversations' changes, shown above
       if (!a || (n.thread && D().threads.some((t) => t.id === n.thread))) continue;
@@ -67,6 +89,7 @@ function notices(): Notice[] {
         open: () => go("inbox", {}, { search: `n=${n.id}` }),
       });
     }
+  }
   for (const cs of D().coding) {
     const tool = CODING_TOOLS.find((t) => t.id === `agent:${cs.tool}`);
     const key = task(cs.task)?.key ?? "";
@@ -105,7 +128,8 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
   const { route } = useRoute();
   const ref = useRef<HTMLDivElement>(null);
   const narrow = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
-  const list = route === "home" ? notices().slice(0, narrow ? 1 : 2) : [];
+  const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
+  const list = route === "home" ? notices(liveNotifs).slice(0, narrow ? 1 : 2) : [];
   // Toasts sit above floating notices (both live bottom right).
   useEffect(() => {
     if (inPanel) {
@@ -139,7 +163,9 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
             </span>
             <span className="notice-x">{n.text}</span>
           </button>
-          {n.act ? (
+          {n.coding ? (
+            <CodingNoticeActions {...n.coding} open={n.open} done={() => shut(n.key)} />
+          ) : n.act ? (
             <button className="btn btn-sm btn-primary" onClick={n.act.run}>
               {n.act.label}
             </button>
@@ -154,5 +180,43 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Approve or reject a turn that waits to start, as Inbox does. Checked changes waiting to be pushed
+ * open Inbox instead, where their files and any CI-sensitive ones are shown before accepting. */
+function CodingNoticeActions({
+  workspaceId,
+  projectId,
+  runId,
+  open,
+  done,
+}: {
+  workspaceId: string;
+  projectId: string;
+  runId: string;
+  open: () => void;
+  done: () => void;
+}) {
+  const scope = { workspaceId, projectId };
+  const run = useCodingRun(scope, runId);
+  const decide = useDecideCoding(scope, run.data?.issue_key ?? "");
+  const r = run.data;
+  if (!r || r.status !== "awaiting_approval" || !r.can_decide)
+    return (
+      <button className="btn btn-sm btn-secondary" onClick={open}>
+        {r?.status === "changes_ready" ? "Review" : "Open"}
+      </button>
+    );
+  const decision = (approve: boolean) => decide.mutate({ runId: r.id, decision: approve ? "approve" : "reject" }, { onSuccess: done });
+  return (
+    <>
+      <button className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
+        Reject
+      </button>
+      <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
+        Approve
+      </button>
+    </>
   );
 }
