@@ -1301,6 +1301,36 @@ async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
     assert after["status"] in ("pr_opened", "no_changes", "running")
 
 
+async def test_build_in_auto_starts_kai_at_once_without_an_approval_notification(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script
+) -> None:
+    """Only Auto lets Nova's first handoff start Kai at once; Manual and Accept edits wait in Inbox.
+    The requester is recorded as approver, and the PR stays the review point."""
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "auto", "member_permissions": ["agents:code"]}, headers=ada.headers)
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "Looks right.", "Kai has started.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                         json={"message": "Build it", "work_mode": "build", "approval_mode": "auto"})
+    said = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
+    assert said and "Kai has started" in said[0], said
+    [built] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
+    assert built["approval_mode"] == "auto" and built["status"] != "awaiting_approval", built
+    assert built["decided_by_id"] == ada.id and built["decision_reason"].startswith("Started at once")
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    assert not any(n.get("coding_run_id") == built["id"] for n in notes)
+
+    # Cat may instruct Kai but not approve agent changes, so Auto in their conversation still waits.
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other"})).json()
+    agent_script.say(tool_call("start_coding", issue_key=other["key"]), "Kai waits for approval.")
+    await db_client.post(f"{base}/agent/runs", headers=cat.headers,
+                         json={"message": "Build it", "work_mode": "build", "approval_mode": "auto"})
+    [theirs] = (await db_client.get(f"{base}/coding/runs?issue={other['key']}", headers=cat.headers)).json()
+    assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval", theirs
+
+
 async def test_changes_to_files_ci_runs_wait_for_a_person_in_every_mode(
     db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
 ) -> None:
