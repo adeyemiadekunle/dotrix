@@ -7,6 +7,7 @@ import { openTask, setPref, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, Logo, WsLogo } from "../core/icons";
 import { allowed, canInvite } from "../core/can";
+import { personal } from "../core/features";
 import { invite, newProject, newTask, openModal, shortcuts, signOut, switchWs } from "../core/more";
 import { go } from "../core/nav";
 import { effectiveDark } from "../core/theme";
@@ -42,6 +43,8 @@ export function toggleDark() {
 const NEEDS: Record<string, () => boolean> = {
   "c-proj": () => allowed("projects:manage"),
   "c-inv": canInvite,
+  "c-mem": () => !personal(),
+  "c-ws": () => D().workspaces.length > 1,
   "c-agents": () => allowed("workspace:manage"),
 };
 

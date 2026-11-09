@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Features
+         * @description What this server offers (`DOTRIX_ORGANISATIONS`: off on a deployed server unless turned on).
+         */
+        get: operations["get_features"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/signup": {
         parameters: {
             query?: never;
@@ -785,6 +805,7 @@ export interface paths {
         /**
          * Choose Onboarding Workspace
          * @description Save the first optional workspace choice. Personal is the default; no conversion or projects.
+         *     403 `organisations_unavailable` for an organisation while this server has them turned off.
          */
         post: operations["choose_onboarding_workspace"];
         delete?: never;
@@ -1022,14 +1043,16 @@ export interface paths {
         };
         /**
          * List Workspaces
-         * @description Workspaces you belong to, with your role in each.
+         * @description Workspaces you belong to, with your role in each. Organisations are left out while this
+         *     server has them turned off (`GET /v1/features`).
          */
         get: operations["list_workspaces"];
         put?: never;
         /**
          * Create Workspace
          * @description Create an organisation (a workspace for a team: invites, roles, many projects); you
-         *     become its owner. Your personal workspace was created at sign-up.
+         *     become its owner. Your personal workspace was created at sign-up. 403
+         *     `organisations_unavailable` while this server has organisations turned off.
          */
         post: operations["create_workspace"];
         delete?: never;
@@ -7299,6 +7322,14 @@ export interface components {
              */
             messages: components["schemas"]["FailureGroup"][];
         };
+        /** Features */
+        Features: {
+            /**
+             * Organisations
+             * @description Organisation workspaces (teams: invites, roles, members) can be created and opened. When false, only personal workspaces are listed and the API refuses organisations.
+             */
+            organisations: boolean;
+        };
         /**
          * FileEntry
          * @description A file in the manifest: metadata, no content.
@@ -11134,6 +11165,26 @@ export interface operations {
             };
         };
     };
+    get_features: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Features"];
+                };
+            };
+        };
+    };
     signup: {
         parameters: {
             query?: never;
@@ -12738,6 +12789,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
             /** @description Not found, or not visible to you */
             404: {
                 headers: {
@@ -13395,6 +13455,15 @@ export interface operations {
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

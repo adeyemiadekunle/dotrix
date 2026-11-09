@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { hasSession } from "@/lib/api";
 
+import { personal } from "../core/features";
 import { applyPrefs } from "../core/theme";
 import { DotsLoader, Ic } from "../core/icons";
 import { WS, back, currentSlug, go, useRoute, type Route } from "../core/nav";
@@ -52,7 +53,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   notifications: ToInbox,
   chat: Chat,
   codes: Coding,
-  members: Members,
+  members: () => (personal() ? <ToHome /> : <Members />),
   member: MemberPage,
   teams: ToMembers,
   team: ToMembers,

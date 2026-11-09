@@ -153,6 +153,7 @@ TAGS: list[dict[str, str]] = [
         "organisation workspace.",
     },
     {"name": "health", "description": "Liveness and readiness probes."},
+    {"name": "features", "description": "What this server offers, for clients to show only what works (no sign-in needed)."},
 ]
 
 

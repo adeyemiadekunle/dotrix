@@ -6,6 +6,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
 import { allowed, canInvite, type Perm } from "../core/can";
+import { organisations, personal } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -370,7 +371,7 @@ function Workspace() {
           </div>
         </div>
       </form>
-      {d.ws.kind === "personal" && (
+      {d.ws.kind === "personal" && organisations() && (
         <div className="sblock">
           <h2>Work with a team</h2>
           <SRow t="Create an organisation" d="Keep this workspace personal. Create a separate organisation, then move selected projects when needed.">
@@ -2818,6 +2819,9 @@ const SEC_TABS: Record<string, [string, string][]> = {
   ],
 };
 
+/** Pages only an organisation has. */
+const TEAM_ONLY = new Set(["members", "permissions"]);
+
 const ITEM_NEEDS: Record<string, Perm> = {
   workspace: "workspace:manage",
   permissions: "workspace:manage",
@@ -2827,10 +2831,12 @@ const ITEM_NEEDS: Record<string, Perm> = {
 export function Settings() {
   const { params } = useRoute();
   const asked = params.sec || S.ui.settings || "profile";
-  const sec = asked === "devices" ? "sessions" : asked === "models" ? "my-models" : asked;
+  const renamed = asked === "devices" ? "sessions" : asked === "models" ? "my-models" : asked;
+  // A personal workspace is just yours: no members or roles to manage (an old link opens your profile).
+  const sec = personal() && TEAM_ONLY.has(renamed) ? "profile" : renamed;
   const admin = allowed("workspace:manage");
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
-  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true);
+  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k));
   const page = SEC_PAGE[sec] ?? sec;
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
   const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[page];

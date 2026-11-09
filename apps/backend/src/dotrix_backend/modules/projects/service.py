@@ -34,7 +34,7 @@ from dotrix_backend.modules.knowledge.service import KnowledgeService
 from dotrix_backend.modules.repo_knowledge.models import RepoBaselineReview, RepoPath, RepoSnapshot
 from dotrix_backend.modules.research.models import ResearchSource
 from dotrix_backend.modules.search.models import KnowledgeChunk
-from dotrix_backend.modules.workspaces.models import Membership, Role
+from dotrix_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.layout import skeleton
@@ -202,12 +202,14 @@ class ProjectService:
             await self.session.delete(existing)
         await self.session.commit()
 
-    async def move(self, project: Project, actor: Membership, target_id: uuid.UUID) -> ProjectRead:
+    async def move(
+        self, project: Project, actor: Membership, target_id: uuid.UUID, *, organisations: bool = True
+    ) -> ProjectRead:
         """Move a project, with everything in it, to another workspace where you can set up
         projects (owners and admins in both). Its key and repo must be free there, and no agent
-        run may be working or waiting on an approval."""
+        run may be working or waiting on an approval. Not into an organisation while they're off."""
         target = await MembershipRepository(self.session).get(target_id, actor.user_id)
-        if target is None:
+        if target is None or not organisations and target.workspace.kind is not WorkspaceKind.PERSONAL:
             raise NotFound("Workspace not found")
         if not can(target, Permission.MANAGE_PROJECTS):
             raise Forbidden(f"Your role there ({target.role}) can't add projects")

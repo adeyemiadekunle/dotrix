@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from dotrix_backend.api import features
 from dotrix_backend.modules.activity.router import router as activity
 from dotrix_backend.modules.activity.router import workspace_router as workspace_activity
 from dotrix_backend.modules.admin.router import router as admin
@@ -46,6 +47,7 @@ from dotrix_backend.modules.search.router import workspace_router as workspace_s
 from dotrix_backend.modules.workspaces.router import router as workspaces
 
 router = APIRouter(prefix="/v1")
+router.include_router(features.router)
 for module_router in (
     auth,
     admin,

@@ -15,6 +15,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Personal workspaces can launch on their own: with `DOTRIX_ORGANISATIONS` off (the default on staging and production), organisation workspaces can't be created, joined, opened or moved into, and the app hides every way to reach one. A personal workspace also no longer shows Members, Permissions or invites. Existing organisations keep their data and return when the setting is turned on.
+
 - Optional first-workspace choice after signup, defaulting to Personal, with durable organisation setup and a labelled onboarding stepper.
 
 - Project readiness across setup, Overview and empty task views, with private model evidence and next actions that explain missing prerequisites and permissions.
