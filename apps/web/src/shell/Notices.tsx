@@ -149,7 +149,9 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
           },
     );
   }
-  return out.filter((n) => !S.ui.noticesShut.includes(n.key)).sort((a, b) => b.at - a.at);
+  // Decisions first (an agent waits on them), then what's blocked (a limit, a failed turn); newest first in each.
+  const rank = (n: Notice) => (n.mood === "needs" ? 0 : 1);
+  return out.filter((n) => !S.ui.noticesShut.includes(n.key)).sort((a, b) => rank(a) - rank(b) || b.at - a.at);
 }
 
 /** Floating bottom right; `inPanel` stacks them at the foot of the agents panel instead. */
