@@ -117,6 +117,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A notice about a run that stopped no longer has a red stripe down its left edge; its face and Continue button say what it is.
 - On tablets the agents panel and corner notices stay cards at the bottom right instead of stretching across the window; phones keep the full-width banners.
 - The web app opens a workspace even when the API is older than it and has no `/v1/features` yet; it then offers no organisations.
 

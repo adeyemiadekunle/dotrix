@@ -1018,11 +1018,6 @@
   box-shadow: var(--shadow-pop);
   animation: noticein 0.22s var(--ease) both;
 }
-.notice.blocked {
-  box-shadow:
-    var(--shadow-pop),
-    inset 3px 0 0 var(--red);
-}
 .notice-t {
   flex: 1;
   min-width: 0;
