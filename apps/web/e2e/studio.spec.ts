@@ -55,6 +55,14 @@ test("the command palette finds an agent and opens Chat with it", async ({ page 
 test("the agents panel shows who needs you, and approving from it settles the change", async ({ page }) => {
   await page.goto("/w/dotrix");
   const panel = page.getByRole("complementary", { name: "Agents" });
+  // Closed by default: the launcher at the bottom right opens it over the page, and Escape closes it.
+  await expect(panel).toBeHidden();
+  const launcher = page.getByRole("button", { name: /^Agents: \d+ waiting on you$/ });
+  await launcher.click();
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(launcher).toHaveAttribute("aria-expanded", "false");
+  await launcher.click();
   await expect(panel.getByText("Nova", { exact: true })).toBeVisible();
   const claude = panel.locator(".ap-row", { hasText: "Kai" }); // the coding agent, whichever engine codes
   await expect(claude.getByText("Needs you")).toBeVisible();

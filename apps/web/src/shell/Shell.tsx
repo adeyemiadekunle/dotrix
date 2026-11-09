@@ -6,7 +6,6 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type 
 import { openPop, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, WsLogo } from "../core/icons";
-import { presence } from "../core/presence";
 import { allowed } from "../core/can";
 import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
@@ -15,7 +14,7 @@ import { D, S, allTasks, pColor, projByKey, render, useStudio, visibleProjects }
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
-import { AgentsPanel, agentsShown, inCodeTab, panelColumn, toggleAgents } from "./AgentsPanel";
+import { AgentsLauncher, AgentsPanel, agentsShown, inCodeTab } from "./AgentsPanel";
 import { desktopApp } from "../core/desktop";
 import { UpdateBar, openWhatsNew, useWhatsNewAfterUpdate } from "./DesktopApp";
 import { Notices } from "./Notices";
@@ -124,9 +123,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <a className="skip" href="#main-content">
         Skip to content
       </a>
-      <div
-        className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""} ${agentsShown() && panelColumn() ? "with-agents" : ""} ${here === "chat" || here === "codes" ? "no-topbar" : ""}`}
-      >
+      <div className={`shell ${sideCollapsed() ? "collapsed" : ""} ${u.mnav ? "mnav" : ""} ${here === "chat" || here === "codes" ? "no-topbar" : ""}`}>
         <Sidebar />
         <SideTip />
         {u.mnav && <div className="side-scrim" onClick={() => ((S.ui.mnav = false), render())} />}
@@ -152,10 +149,11 @@ export function Shell({ children }: { children: ReactNode }) {
         </main>
         {agentsShown() && (
           <>
-            {!panelColumn() && <div className="agents-scrim" onClick={() => ((S.ui.agentsSheet = false), rerender())} />}
+            <div className="agents-scrim" onClick={() => ((S.ui.agentsSheet = false), rerender())} />
             <AgentsPanel />
           </>
         )}
+        {!inCodeTab() && <AgentsLauncher />}
         <BottomNav openNavigation={openNavigation} />
       </div>
       <PopLayer />
@@ -447,7 +445,6 @@ function Crumbs() {
 
 function Topbar({ openNavigation }: { openNavigation: (e: MouseEvent<HTMLButtonElement>) => void }) {
   const unread = D().notifs.some((n) => !n.read);
-  const waiting = presence().filter((p) => p.state === "needs" || p.state === "blocked").length;
   return (
     <header className="topbar">
       <button className="ibtn mnav-btn" onClick={openNavigation} aria-label="Open navigation" aria-controls="main-navigation" aria-expanded={S.ui.mnav}>
@@ -460,19 +457,6 @@ function Topbar({ openNavigation }: { openNavigation: (e: MouseEvent<HTMLButtonE
         <span className="lbltxt">Search or jump to…</span>
         <span className="kbd">{MOD}K</span>
       </button>
-      {!inCodeTab() && (
-        <button
-          className={`ibtn ${agentsShown() ? "on" : ""}`}
-          onClick={toggleAgents}
-          data-tip="Agents"
-          aria-label={agentsShown() ? "Hide the agents panel" : "Show the agents panel"}
-          aria-pressed={agentsShown()}
-          style={{ position: "relative" }}
-        >
-          <Ic n="bot" s={16} />
-          {waiting > 0 && !agentsShown() && <span className="top-dot" />}
-        </button>
-      )}
       <button className="ibtn" onClick={() => go("inbox")} data-tip="Inbox" aria-label="Inbox" style={{ position: "relative" }}>
         <Ic n="bell" s={16} />
         {unread && (

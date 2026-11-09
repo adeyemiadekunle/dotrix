@@ -25,8 +25,6 @@ export const DEFAULT_PREFS = {
   openTasks: "drawer" as "drawer" | "full",
   name: "Tanjim Islam",
   title: "Head of Product",
-  /** the agents panel on the right, on wide screens */
-  agentsPanel: true,
 };
 export type Prefs = typeof DEFAULT_PREFS;
 
