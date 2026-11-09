@@ -11,6 +11,7 @@ import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
 import { D, S, allTasks, pColor, projByKey, render, useStudio, visibleProjects } from "../data/store";
+import { isMine, tasksLabel } from "../core/features";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
@@ -41,7 +42,7 @@ export const ROUTE_NAMES: Record<string, string> = {
 };
 
 /** A page's name. */
-export const routeName = (route: string) => ROUTE_NAMES[route];
+export const routeName = (route: string) => (route === "mytasks" ? tasksLabel() : ROUTE_NAMES[route]);
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -222,7 +223,7 @@ function Sidebar() {
   const u = S.ui;
   const d = D();
   const unreadInbox = d.notifs.filter((n) => !n.read).length;
-  const myOpen = allTasks().filter((t) => t.assignee === d.me && t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) <= 0).length;
+  const myOpen = allTasks().filter((t) => isMine(t) && t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) <= 0).length;
   const projs = visibleProjects().filter((p) => p.status !== "complete");
   const inProj = route === "project" ? projByKey(params.id)?.id : null;
   return (
@@ -257,7 +258,7 @@ function Sidebar() {
         )}
         <SItem route="home" label="Home" icon="house" />
         <SItem route="inbox" label="Inbox" icon="inbox" ct={unreadInbox || ""} dot />
-        <SItem route="mytasks" label="My Tasks" icon="circle-check" ct={myOpen || ""} />
+        <SItem route="mytasks" label={tasksLabel()} icon="circle-check" ct={myOpen || ""} />
         <SItem route="chat" label="Chat" icon="message-square" />
         <SItem route="codes" label="Codes" icon="code" />
         <SItem route="projects" label="Projects" icon="folder-kanban" />
@@ -505,7 +506,7 @@ function BottomNav({ openNavigation }: { openNavigation: (e: MouseEvent<HTMLButt
   return (
     <nav className="bottomnav" aria-label="Primary">
       {b("home", "Home", "house")}
-      {b("mytasks", "My Tasks", "circle-check")}
+      {b("mytasks", tasksLabel(), "circle-check")}
       {b("projects", "Projects", "folder-kanban")}
       {b("inbox", "Inbox", "inbox", unread ? <span className="bdot" /> : null)}
       <button onClick={openNavigation} aria-controls="main-navigation" aria-expanded={S.ui.mnav}>

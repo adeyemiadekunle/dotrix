@@ -14,6 +14,7 @@ import type { Schemas } from "@/lib/api";
 import { inviteLinkCreated, invitesSent, models, projectAgentModels, projectAgentModelsSaved, projectMemberSet, projectMembers, useApi } from "../data/account";
 import { filesAttached, isLive, live, projectChanged } from "../data/live";
 import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, type Modal } from "../data/store";
+import { tasksLabel } from "../core/features";
 import type { FileItem, Member, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -1314,7 +1315,7 @@ export const SHORTCUTS: [string, [string, string[]][]][] = [
     "Navigate",
     [
       ["Go to Home", ["G", "H"]],
-      ["Go to My Tasks", ["G", "T"]],
+      [`Go to ${tasksLabel()}`, ["G", "T"]],
       ["Go to Projects", ["G", "P"]],
       ["Go to Inbox", ["G", "I"]],
       ["Go to Settings", ["G", "S"]],

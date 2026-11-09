@@ -6,6 +6,7 @@ import { TODAY, ago, dOff, diffD, parse } from "../core/utils";
 import { isLive, live, taskPatched } from "../data/live";
 import { useLiveAllTasks, useLiveArchivedTasks, useLiveMyTasks, useLiveStarredTasks } from "../../lib/workspace-data";
 import { D, S, allTasks, canSee, isOver, mutate, proj, render } from "../data/store";
+import { isMine, personal, tasksLabel } from "../core/features";
 import { ListView, MiniRow } from "../components/TaskList";
 import { applyView, groupTasks, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty, StIcon } from "../ui/helpers";
@@ -37,9 +38,12 @@ export function MyTasks() {
   const setView = (v: typeof view) => ((S.ui.myTab = v), render());
   const v = viewOf(k);
   const ws = live.ws?.id;
-  const liveMine = useLiveMyTasks(ws, isLive());
+  // In a personal workspace every task is yours, assigned or not (core/features.ts).
+  const solo = personal();
+  const liveMine = useLiveMyTasks(ws, isLive() && !solo);
+  const liveAll = useLiveAllTasks(ws, isLive() && solo);
   const mine = applyView(
-    (isLive() ? (liveMine ?? []) : allTasks()).filter((t) => t.assignee === D().me),
+    (isLive() ? ((solo ? liveAll : liveMine) ?? []) : allTasks()).filter(isMine),
     v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v,
   );
   const groups: Group[] = [
@@ -86,7 +90,7 @@ export function MyTasks() {
     <div className="page flush">
       <div className="ph">
         <div>
-          <h1>My Tasks</h1>
+          <h1>{tasksLabel()}</h1>
           <p>
             {groups[1]!.tasks.length} due today · {groups[0]!.tasks.length} overdue · {groups[2]!.tasks.length} upcoming
           </p>

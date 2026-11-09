@@ -10,6 +10,7 @@ import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
 import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse, relDate } from "../core/utils";
 import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, visibleProjects, who } from "../data/store";
+import { isMine, personal as isPersonal, tasksLabel } from "../core/features";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveNotifications } from "../../lib/workspace-data";
 import type { Notif } from "../data/types";
@@ -106,7 +107,7 @@ export function Home() {
   const liveAll = useLiveAllTasks(live.ws?.id, isLive());
   const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
   const all = isLive() ? (liveAll ?? []) : allTasks();
-  const mineAll = all.filter((t) => t.assignee === D().me);
+  const mineAll = all.filter(isMine);
   const activeP = visibleProjects().filter((p) => canSee(p) && p.status !== "complete");
   const open = all.filter((t) => t.status !== "done");
   const doneWk = all.filter((t) => t.status === "done" && t.completedAt && Date.now() - t.completedAt < 7 * DAY);
@@ -134,8 +135,10 @@ export function Home() {
   const waiting = (isLive() ? (liveNotifs ?? []) : D().notifs).filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
   // From the old workspace Overview: tasks by status and how the work is spread.
   const counts = STATUSES.map((st) => ({ st, n: all.filter((t) => t.status === st.id).length }));
-  // A personal workspace is one person's: no teammates to invite or to balance work across.
-  const personal = D().ws.kind === "personal";
+  // A personal workspace is one person's: no teammates to invite or to balance work across, and
+  // every task is yours.
+  const personal = isPersonal();
+  const dueWeek = open.filter((t) => t.due && diffD(parse(t.due)!, TODAY) >= 0 && diffD(parse(t.due)!, TODAY) <= 7).length;
   const load = D()
     .members.filter((m) => m.status === "active")
     .map((m) => ({ m, ts: all.filter((t) => t.assignee === m.id && t.status !== "done") }))
@@ -201,7 +204,7 @@ export function Home() {
             Open tasks
           </span>
           <span className="v">{open.length}</span>
-          <span className="d">{open.filter((t) => t.assignee === D().me).length} assigned to you</span>
+          <span className="d">{personal ? `${dueWeek} due this week` : `${open.filter((t) => t.assignee === D().me).length} assigned to you`}</span>
         </button>
         <button className="stat" onClick={() => goTasks("done")}>
           <span className="k">
@@ -226,9 +229,9 @@ export function Home() {
         <div className="stack">
           <section className="panel" aria-labelledby="h-mytasks">
             <div className="panel-h">
-              <h2 id="h-mytasks">My tasks</h2>
+              <h2 id="h-mytasks">{personal ? "Tasks" : "My tasks"}</h2>
               <div className="acts">
-                <div className="seg" role="tablist" aria-label="My tasks" onKeyDown={tabKeys}>
+                <div className="seg" role="tablist" aria-label={personal ? "Tasks" : "My tasks"} onKeyDown={tabKeys}>
                   {(
                     [
                       ["upcoming", "Upcoming"],
@@ -250,7 +253,7 @@ export function Home() {
                     </button>
                   ))}
                 </div>
-                <button className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip="Open My Tasks" aria-label="Open My Tasks">
+                <button className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip={`Open ${tasksLabel()}`} aria-label={`Open ${tasksLabel()}`}>
                   <Ic n="arrow-up-right" s={15} />
                 </button>
               </div>
@@ -262,7 +265,13 @@ export function Home() {
                 <Empty
                   icon={tab === "overdue" ? "circle-check" : "list-checks"}
                   title={tab === "overdue" ? "Nothing overdue" : "No tasks here"}
-                  text={tab === "overdue" ? "Every task assigned to you is on schedule." : "Add a task to get things moving."}
+                  text={
+                    tab === "overdue"
+                      ? personal
+                        ? "Every task is on schedule."
+                        : "Every task assigned to you is on schedule."
+                      : "Add a task to get things moving."
+                  }
                   cls="sm"
                 />
               )}
@@ -303,7 +312,7 @@ export function Home() {
                     <th>Open</th>
                     <th>Overdue</th>
                     <th style={{ textAlign: "left" }}>Due</th>
-                    <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>
+                    {!personal && <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -337,9 +346,11 @@ export function Home() {
                         <td style={{ textAlign: "left" }} className="num muted">
                           {fmtDate(p.due)}
                         </td>
-                        <td style={{ textAlign: "right", paddingRight: 14 }}>
-                          <AvStack ids={p.members} max={3} />
-                        </td>
+                        {!personal && (
+                          <td style={{ textAlign: "right", paddingRight: 14 }}>
+                            <AvStack ids={p.members} max={3} />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
