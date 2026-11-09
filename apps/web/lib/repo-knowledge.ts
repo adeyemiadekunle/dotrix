@@ -6,10 +6,7 @@ import { toast } from "sonner";
 
 import { api, errorMessage, unwrap } from "./api";
 import type { Scope } from "./issues";
-
-export type Coverage = Schemas["RepoCoverageRead"];
 export type DomainCoverage = Schemas["DomainCoverage"];
-export type RepoPath = Schemas["RepoPathRead"];
 export type PathStatus = Schemas["PathStatus"];
 export type RepoPage = Schemas["RepoPageRead"];
 

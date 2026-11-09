@@ -2,6 +2,9 @@ import { expect, type Page } from "@playwright/test";
 
 export const PASSWORD = "e2e-only-password-1234";
 
+// Specs still written for the older screens (admin, pipelines, research), parked until rewritten.
+export const NOT_WIRED = "Written for the older app; not rewritten for the current screens yet";
+
 let counter = 0;
 
 /** A fresh account per test (the e2e database is shared by the run). */
@@ -54,23 +57,32 @@ export async function moveProjectToOrganisation(page: Page, projectKey: string, 
   return target;
 }
 
-/** Signs up, then creates a docs-only project (it opens on its Overview) and goes to its board. Returns the project key. */
-export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM") {
-  const user = await signUp(page);
-  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "New project", exact: true }).click();
-  await page.getByRole("radio", { name: "Explore an idea", exact: true }).check();
-  await page.getByLabel("Project name", { exact: true }).fill(name);
-  await page.getByLabel("Project key", { exact: true }).fill(key);
-  await page.getByRole("button", { name: "Create project", exact: true }).click();
-  await page.getByRole("button", { name: /^(Continue|Set up models later)$/ }).click();
-  await page.getByRole("link", { name: "Open project", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/p/${key}/overview`));
-  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Board", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/p/${key}/board`));
-  return { user, key };
+/** The workspace the page is in, from the API. */
+export async function currentWorkspace(page: Page) {
+  const slug = new URL(page.url()).pathname.split("/")[2]!;
+  const workspaces = await (await page.request.get("/v1/workspaces")).json();
+  const workspace = workspaces.find((item: { slug: string }) => item.slug === slug);
+  if (!workspace) throw new Error("Workspace not found");
+  return workspace as { id: string; slug: string };
 }
 
-/** Why a spec of the API-backed workspace pages is parked: /w/… shows the seeded UI until
- * each screen is wired to the API (CLAUDE.md). Un-park a spec
- * when its screens are wired, updating it for their markup. */
-export const NOT_WIRED = "the workspace runs on seeded data until this screen is wired to the API";
+const WRITE = { "X-Requested-With": "e2e" };
+
+/** Signs up, creates a docs-only project through the API (project setup has its own flow tests) and opens its board. */
+export async function signUpWithProject(page: Page, name = "Kumove", key = "KUM") {
+  const user = await signUp(page);
+  const workspace = await currentWorkspace(page);
+  const created = await page.request.post(`/v1/workspaces/${workspace.id}/projects`, { headers: WRITE, data: { key, name, source: "docs_only" } });
+  expect(created.status()).toBe(201);
+  const project = (await created.json()) as { id: string };
+  await page.goto(`/w/${workspace.slug}/p/${key}/board`);
+  await expect(page.getByRole("navigation", { name: "Project" })).toBeVisible();
+  return { user, key, workspace, project };
+}
+
+/** A task made through the API, as a colleague or an import would leave one. */
+export async function createTask(page: Page, workspaceId: string, projectId: string, data: Record<string, unknown>) {
+  const created = await page.request.post(`/v1/workspaces/${workspaceId}/projects/${projectId}/issues`, { headers: WRITE, data });
+  expect(created.status()).toBe(201);
+  return (await created.json()) as { id: string; key: string };
+}

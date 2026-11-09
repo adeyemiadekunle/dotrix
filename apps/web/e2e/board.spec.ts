@@ -1,117 +1,102 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-import { NOT_WIRED, signUpWithProject } from "./helpers";
+import { createTask, signUpWithProject } from "./helpers";
 
-test.fixme(true, NOT_WIRED);
+// A real workspace's board: what a person does there is saved by the API, so each test reloads
+// the page to see it again.
 
-test("create an issue, move it, and comment on it", async ({ page }) => {
+const column = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
+
+test("create a task, move it to In Progress, and comment on it", async ({ page }) => {
   const { key } = await signUpWithProject(page);
 
-  await page.getByRole("button", { name: "New issue" }).click();
-  await page.getByLabel("Title").fill("Write the onboarding docs");
-  await page.getByRole("button", { name: "Create issue" }).click();
+  await page.getByRole("toolbar").getByRole("button", { name: "New task" }).click();
+  const form = page.getByRole("dialog", { name: "New task" });
+  await form.getByRole("textbox", { name: "Task name" }).fill("Write the onboarding docs");
+  await form.getByRole("button", { name: "Create task" }).click();
+  await expect(form).toBeHidden();
 
-  // The new issue opens in the drawer.
-  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
-  const drawer = page.getByRole("dialog");
-  await expect(drawer.getByLabel("Title")).toHaveValue("Write the onboarding docs");
+  // It starts in To Do, with the project's next key.
+  const card = column(page, "To Do").getByRole("button", { name: "Write the onboarding docs" });
+  await expect(card).toContainText(`${key}-1`);
+  await card.click();
 
-  await drawer.getByLabel("Status").click();
-  await page.getByRole("option", { name: "In progress" }).click();
-  await expect(drawer.getByText("changed status from To do to In progress")).toBeVisible();
+  const drawer = page.getByRole("dialog", { name: "Task: Write the onboarding docs" });
+  await drawer.getByRole("button", { name: /^Status/ }).click();
+  await page.getByRole("menuitemradio", { name: /In Progress/ }).click();
+  await expect(drawer.getByRole("button", { name: "Status: In Progress" })).toBeVisible();
 
-  await drawer.getByLabel("Comment", { exact: true }).fill("Starting with the **CLI** guide.");
-  await drawer.getByRole("button", { name: "Comment" }).click();
-  await expect(drawer.getByText("Starting with the")).toBeVisible();
-  await page.keyboard.press("Escape");
+  await drawer.getByRole("textbox", { name: "Comment" }).fill("Starting with the CLI guide.");
+  await drawer.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(drawer.getByText("Starting with the CLI guide.")).toBeVisible();
+  await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();
+  await expect(column(page, "In Progress").getByText("Write the onboarding docs")).toBeVisible();
 
-  // On the board, in the In progress column.
-  const inProgress = page.locator("section").filter({ has: page.getByText("In progress", { exact: true }) });
-  await expect(inProgress.getByText("Write the onboarding docs")).toBeVisible();
-
-  // Search filters the board and lives in the URL.
-  await page.getByLabel("Search issues").fill("nothing matches this");
-  await expect(page).toHaveURL(/q=nothing/);
-  await expect(page.getByText("Write the onboarding docs")).toHaveCount(0);
-  await page.getByRole("button", { name: "Clear" }).click();
-  await expect(page.getByText("Write the onboarding docs")).toBeVisible();
-});
-
-test("a new issue like an existing one points to it", async ({ page }) => {
-  const { key } = await signUpWithProject(page);
-  await page.getByRole("button", { name: "New issue" }).click();
-  await page.getByLabel("Title").fill("Add dark mode to the dispatch screen");
-  await page.getByRole("button", { name: "Create issue" }).click();
-  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
-  await page.keyboard.press("Escape");
-
-  await page.getByRole("button", { name: "New issue" }).click();
-  await page.getByLabel("Title").fill("Add a dark mode toggle");
-  await expect(page.getByText("Similar issues already exist. Is it one of these?")).toBeVisible();
-  // Opening the match instead of creating a duplicate.
-  await page.getByRole("button", { name: `${key}-1 Add dark mode to the dispatch screen` }).click();
-  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
-});
-
-test("a column's + starts the issue in that column, and the Filter menu narrows the board", async ({ page }) => {
-  const { key } = await signUpWithProject(page);
-
-  await page.getByRole("button", { name: "Add to Blocked" }).click();
-  await expect(page.getByText("It starts in Blocked.")).toBeVisible();
-  await page.getByLabel("Title").fill("Waiting on the pricing rules");
-  await page.getByRole("button", { name: "Create issue" }).click();
-  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
-  await page.keyboard.press("Escape");
-
-  const blocked = page.locator("section").filter({ has: page.getByText("Blocked", { exact: true }) });
-  await expect(blocked.getByText("Waiting on the pricing rules")).toBeVisible();
-
-  // A filter from the menu shows as a chip; removing the chip brings the issue back.
-  await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Type" }).click();
-  await page.getByRole("menuitemcheckbox", { name: "Bug" }).click();
-  await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(/type=bug/);
-  await expect(page.getByText("Waiting on the pricing rules")).toHaveCount(0);
-  await page.getByRole("button", { name: "Remove the type filter" }).click();
-  await expect(page.getByText("Waiting on the pricing rules")).toBeVisible();
-});
-
-test("project settings save through the unsaved-changes bar", async ({ page }) => {
-  await signUpWithProject(page, "Kumove", "KUM");
-  await page.getByRole("link", { name: "Project settings" }).click();
-
-  // The bar only appears once something has changed.
-  await expect(page.getByText("Unsaved changes")).toHaveCount(0);
-  await page.getByLabel("Name").fill("Kumove app");
-  await expect(page.getByText("Unsaved changes")).toBeVisible();
-  await page.getByRole("button", { name: "Discard" }).click();
-  await expect(page.getByLabel("Name")).toHaveValue("Kumove");
-
-  await page.getByLabel("Name").fill("Kumove app");
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText("Unsaved changes")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Kumove app" })).toBeVisible();
-});
-
-test("the keyboard moves a card to the next column", async ({ page }) => {
-  const { key } = await signUpWithProject(page);
-  await page.getByRole("button", { name: "New issue" }).click();
-  await page.getByLabel("Title").fill("Draft the pricing page");
-  await page.getByRole("button", { name: "Create issue" }).click();
-  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
-  await page.keyboard.press("Escape");
-
-  // Space picks the card up, the right arrow moves it to In progress, Space drops it.
-  const card = page.getByRole("button", { name: /Draft the pricing page/ });
-  await card.focus();
-  await page.keyboard.press("Space");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("Space");
-
-  const inProgress = page.locator("section").filter({ has: page.getByText("In progress", { exact: true }) });
-  await expect(inProgress.getByText("Draft the pricing page")).toBeVisible();
+  // Saved, not only on this screen.
   await page.reload();
-  await expect(inProgress.getByText("Draft the pricing page")).toBeVisible();
+  await expect(column(page, "In Progress").getByText("Write the onboarding docs")).toBeVisible();
+  await column(page, "In Progress").getByRole("button", { name: "Write the onboarding docs" }).click();
+  await expect(page.getByRole("dialog").getByText("Starting with the CLI guide.")).toBeVisible();
+});
+
+test("a column's + starts the task in that column, and search narrows the board", async ({ page }) => {
+  // An empty board has no columns yet, so there's a task to begin with.
+  const { workspace, project } = await signUpWithProject(page);
+  await createTask(page, workspace.id, project.id, { title: "Draft the pricing page" });
+  await page.reload();
+
+  await page.getByRole("button", { name: "Add task to Blocked" }).click();
+  const name = page.getByRole("textbox", { name: "New task name" });
+  await name.fill("Waiting on the pricing rules");
+  await name.press("Enter");
+  await expect(column(page, "Blocked").getByRole("button", { name: "Waiting on the pricing rules" })).toBeVisible();
+
+  await page.reload();
+  await expect(column(page, "Blocked").getByRole("button", { name: "Waiting on the pricing rules" })).toBeVisible();
+
+  const search = page.getByRole("textbox", { name: "Search tasks" });
+  await search.fill("nothing matches this");
+  await expect(page.getByText("Waiting on the pricing rules")).toHaveCount(0);
+  await search.fill("pricing");
+  await expect(column(page, "Blocked").getByText("Waiting on the pricing rules")).toBeVisible();
+});
+
+test("marking a card complete moves it to Done, and List shows the same tasks", async ({ page }) => {
+  const { workspace, project, key } = await signUpWithProject(page);
+  await createTask(page, workspace.id, project.id, { title: "Draft the pricing page" });
+  await createTask(page, workspace.id, project.id, { title: "Check the invoices" });
+  await page.reload();
+
+  const card = column(page, "To Do").getByRole("button", { name: "Draft the pricing page" });
+  await card.hover();
+  await card.getByRole("button", { name: "Mark complete" }).click();
+  await expect(column(page, "Done").getByText("Draft the pricing page")).toBeVisible();
+  await expect(column(page, "To Do").getByText("Check the invoices")).toBeVisible();
+
+  await page.getByRole("navigation", { name: "Project views" }).getByRole("button", { name: "List", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${key}/list`));
+  await expect(page.getByText("Draft the pricing page", { exact: true })).toBeVisible();
+  await expect(page.getByText("Check the invoices", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("navigation", { name: "Project views" }).getByRole("button", { name: "Board", exact: true }).click();
+  await expect(column(page, "Done").getByText("Draft the pricing page")).toBeVisible();
+});
+
+test("the project's views open from its tabs: Overview, Knowledge and Activity", async ({ page }) => {
+  const { key } = await signUpWithProject(page);
+  const views = page.getByRole("navigation", { name: "Project views" });
+
+  await views.getByRole("button", { name: "Overview", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${key}/overview`));
+  await expect(page.getByRole("heading", { name: "Kumove", level: 1 })).toBeVisible();
+
+  await views.getByRole("button", { name: "Knowledge", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${key}/knowledge`));
+  await expect(page.getByText("vision.md").first()).toBeVisible();
+
+  await views.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${key}/activity`));
+  await expect(page.getByText(/No activity yet|created Kumove/).first()).toBeVisible();
 });

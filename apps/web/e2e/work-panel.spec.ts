@@ -89,6 +89,7 @@ async function mockWorkspace(
   search = "codes?session=session1",
   openPanel = true,
   reviewAvailable = () => true,
+  before: () => Promise<void> = async () => {},
 ) {
   await context.addCookies([{ name: "dx_session", value: "1", url: baseURL }]);
   await page.route("**/v1/**", async (route) => {
@@ -143,6 +144,7 @@ async function mockWorkspace(
     }
     await route.fulfill({ status: 200, json: data });
   });
+  await before(); // routes added here win over the ones above
   await page.goto(`/w/test-workspace/${search}`);
   if (openPanel) await barButton(page, "Changes").click();
 }
@@ -280,4 +282,30 @@ test("live session menus still pin using the current workspace and project scope
   const request = await submitted;
   expect(new URL(request.url()).pathname).toBe("/v1/workspaces/w1/projects/p1/coding/sessions/session1");
   expect(request.postDataJSON()).toEqual({ pinned: true });
+});
+
+test("a working turn is followed over a stream: what Kai does appears without polling", async ({ page, context, baseURL }) => {
+  const working = { ...turn(2), status: "running", summary: null, files_changed: [], review_run_id: null, event_count: 1 };
+  const said = (text: string) => ({ seq: 0, kind: "text", text, at: date });
+  let reads = 0;
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", async (route) => {
+      reads += 1;
+      await route.fulfill({ status: 200, json: [turn(1), { ...working, events: [said("Reading the navigation")] }] });
+    });
+    // The stream: the turn as it works, then (once the test lets it) finished, and the end.
+    await page.route("**/coding/sessions/session1/stream", async (route) => {
+      await held;
+      const frame = (turns: unknown) => `event: turns\ndata: ${JSON.stringify(turns)}\n\n`;
+      const done = { ...turn(2), summary: "Pointed the plans link at the page's own section.", events: [said("Reading the navigation")] };
+      await route.fulfill({ status: 200, contentType: "text/event-stream", body: frame([turn(1), done]) + "event: end\ndata: {}\n\n" });
+    });
+  });
+  await expect(page.getByText("Kai is working")).toBeVisible();
+  release();
+  await expect(page.getByText("Pointed the plans link at the page's own section.")).toBeVisible();
+  // The finished turn came over the stream: the page didn't ask for the session again.
+  expect(reads).toBe(1);
 });

@@ -38,8 +38,10 @@ import {
   type WorkMode,
 } from "@/lib/agent";
 import {
+  isActive as isOpenTurn,
   useCodingAvailability,
   useCodingSession,
+  useCodingSessionStream,
   useCodingSessions,
   useDecideCoding,
   useFollowUp,
@@ -1967,6 +1969,8 @@ export function Session({ cs }: { cs: CodingSession }) {
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
   const latest = turns.at(-1);
+  // The open session is followed as it happens; its turns land in the query above.
+  useCodingSessionStream(scope, cs.session_id, turns.some(isOpenTurn));
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);

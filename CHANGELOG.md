@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Codes follows Kai as it works: an open session's steps, command output, status and changes arrive over a live stream instead of a check every few seconds, so a turn no longer looks slower than it is. If the stream can't be kept open, Codes goes back to checking.
 - In a personal workspace every task is yours: My Tasks becomes Tasks and lists unassigned tasks too, and Home shows your open tasks due this week instead of who they're assigned to, with no Team column.
 
 ### Security

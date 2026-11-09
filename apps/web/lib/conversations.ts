@@ -7,8 +7,6 @@ import { toast } from "sonner";
 import { isActive, type Run, type RunStreamState } from "@/lib/agent";
 import { api, ensureSession, errorMessage, unwrap } from "@/lib/api";
 
-export type CrossConversation = Schemas["WorkspaceConversation"];
-
 const POLL_MS = 1500;
 const keys = {
   list: (workspaceId: string | undefined) => ["conversations", workspaceId] as const,

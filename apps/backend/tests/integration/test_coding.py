@@ -2154,3 +2154,34 @@ async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
     assert results and "not delivered" in results[-1]
     unchanged = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert unchanged["note"] == note and unchanged["brief"] == stored["brief"]
+
+
+async def test_a_session_streams_its_turns_as_they_change(db_client: AsyncClient, coding) -> None:
+    """Codes follows a session over server-sent events: its turns first, again each time one moves,
+    and the end once nothing waits or works. As private as the session."""
+    ada, cat, _, _, _, _ = coding
+    base, run = await _asked(db_client, coding)
+    stream = f"{base}/coding/sessions/{run['session_id']}/stream"
+
+    async def work() -> None:
+        await asyncio.sleep(0.8)
+        await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING)
+        await asyncio.sleep(1.2)
+        await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, summary="Nothing to change")
+
+    working = asyncio.create_task(work())
+    response = await db_client.get(stream, headers=ada.headers)
+    await working
+    assert response.status_code == 200 and response.headers["content-type"].startswith("text/event-stream")
+    events = [(block.split("\n")[0].removeprefix("event: "), json.loads(block.split("\n")[1].removeprefix("data: ")))
+              for block in response.text.split("\n\n") if block.startswith("event: ")]
+    assert [name for name, _ in events] == ["turns", "turns", "turns", "end"]
+    assert [data[0]["status"] for name, data in events if name == "turns"] == ["awaiting_approval", "running", "no_changes"]
+    assert events[2][1][0]["summary"] == "Nothing to change" and events[2][1][0]["id"] == run["id"]
+
+    # Finished: the turns once, then the end.
+    again = await db_client.get(stream, headers=ada.headers)
+    assert [b.split("\n")[0] for b in again.text.split("\n\n") if b] == ["event: turns", "event: end"]
+    # Someone else's session, and one that doesn't exist.
+    assert (await db_client.get(stream, headers=cat.headers)).status_code == 404
+    assert (await db_client.get(f"{base}/coding/sessions/{uuid.uuid4()}/stream", headers=ada.headers)).status_code == 404

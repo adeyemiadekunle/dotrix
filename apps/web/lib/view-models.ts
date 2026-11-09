@@ -5,7 +5,7 @@ import type { Schemas } from "@dotrix/api-client";
 
 import { PCOLORS } from "@/src/core/constants";
 import { uid } from "@/src/core/utils";
-import { htmlToMd, mdToHtml } from "@/src/data/markdown";
+import { mdToHtml } from "@/src/data/markdown";
 import { AGENTS } from "@/src/data/seed-dotrix";
 import type {
   Activity,
@@ -15,7 +15,6 @@ import type {
   Automation,
   CodingSession,
   FileItem,
-  KnowledgeFile,
   Member,
   Notif,
   NotifType,
@@ -29,7 +28,7 @@ import { fileType, fsize } from "@/src/ui/helpers";
 /** An id the API made (a project or user), not one the store made up for a new item. */
 export const fromApi = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(id);
 
-export const STATUS_IN: Record<string, Task["status"]> = {
+const STATUS_IN: Record<string, Task["status"]> = {
   backlog: "backlog",
   todo: "todo",
   in_progress: "progress",
@@ -45,16 +44,16 @@ export const STATUS_OUT: Record<Task["status"], Schemas["IssueStatus"]> = {
   review: "review",
   done: "done",
 };
-export const ROLE_IN: Record<string, Member["role"]> = { owner: "Owner", admin: "Admin", member: "Member", guest: "Guest" };
-export const AGENT_IN: Record<string, string> = { "project-manager": "auto", pm: "auto", auto: "auto" };
+const ROLE_IN: Record<string, Member["role"]> = { owner: "Owner", admin: "Admin", member: "Member", guest: "Guest" };
+const AGENT_IN: Record<string, string> = { "project-manager": "auto", pm: "auto", auto: "auto" };
 const TINTS = Object.values(PCOLORS);
 
 export const hashTint = (s: string) => TINTS[[...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TINTS.length]!;
 export const ms = (s: string | null | undefined) => (s ? new Date(s).getTime() : Date.now());
 /** An agent or Kai (the coding agent) as the store names it ("auto", "research", "agent:coding-agent"). */
 const CODING_IDS = new Set(["coding-agent", "claude-code", "codex", "opencode"]);
-export const agentId = (a: string | null | undefined) => (a ? (CODING_IDS.has(a) ? `agent:${a}` : (AGENT_IN[a] ?? a)) : null);
-export const actor = (user: string | null | undefined, agent: string | null | undefined) => user ?? agentId(agent) ?? "";
+const agentId = (a: string | null | undefined) => (a ? (CODING_IDS.has(a) ? `agent:${a}` : (AGENT_IN[a] ?? a)) : null);
+const actor = (user: string | null | undefined, agent: string | null | undefined) => user ?? agentId(agent) ?? "";
 
 export function toMember(m: Schemas["MemberRead"]): Member {
   return {
@@ -105,7 +104,7 @@ export function toProject(p: Schemas["ProjectRead"], members: Schemas["MemberRea
   };
 }
 
-export const RECUR_IN: Record<string, string> = { daily: "Daily", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly" };
+const RECUR_IN: Record<string, string> = { daily: "Daily", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly" };
 export const RECUR_OUT: Record<string, Schemas["Recurrence"]> = {
   Daily: "daily",
   Weekly: "weekly",
@@ -113,7 +112,7 @@ export const RECUR_OUT: Record<string, Schemas["Recurrence"]> = {
   Monthly: "monthly",
 };
 
-export const toSubtask = (c: Schemas["ChecklistItem"]): Subtask => ({
+const toSubtask = (c: Schemas["ChecklistItem"]): Subtask => ({
   id: c.id,
   title: c.title,
   done: c.done ?? false,
@@ -132,8 +131,7 @@ export const toAttachment = (a: Schemas["AttachmentRead"]): Attachment => ({
   at: ms(a.created_at),
 });
 /** Stand-ins for the attachments a list row only counts (cards show the count); the drawer loads the real ones. */
-export const counted = (n: number): Attachment[] =>
-  Array.from({ length: n }, (_, k) => ({ id: `counted-${k}`, name: "", type: "other", size: "", by: "", at: 0 }));
+const counted = (n: number): Attachment[] => Array.from({ length: n }, (_, k) => ({ id: `counted-${k}`, name: "", type: "other", size: "", by: "", at: 0 }));
 
 export type IssueLike = Schemas["WorkspaceIssue"] | (Schemas["IssueRead"] & { project_id?: string });
 export function toTask(i: IssueLike, projectId: string, order: number): Task {
@@ -168,7 +166,7 @@ export function toTask(i: IssueLike, projectId: string, order: number): Task {
   };
 }
 
-export const NOTIF_IN: Record<string, NotifType> = {
+const NOTIF_IN: Record<string, NotifType> = {
   assigned: "assign",
   mention: "mention",
   watching: "update",
@@ -246,10 +244,6 @@ export const toAutomation = (a: Schemas["AutomationRead"]): Automation => ({
   last: a.last_run_at ? ms(a.last_run_at) : undefined,
   lastError: a.last_error ?? undefined,
 });
-
-export function toKnowledge(f: Schemas["FileRead"], pid: string): KnowledgeFile {
-  return { path: f.path, project: pid, content: f.content, version: f.version, by: "", at: ms(f.updated_at) };
-}
 export function toFile(d: Schemas["DocumentRead"], pid: string): FileItem {
   return {
     id: d.id,
@@ -358,5 +352,3 @@ export function toCodingSession(s: Schemas["CodingSessionRead"]): CodingSession 
     turns: [],
   };
 }
-
-export { htmlToMd, mdToHtml };
