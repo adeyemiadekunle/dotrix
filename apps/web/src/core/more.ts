@@ -6,32 +6,13 @@ import { PR } from "./constants";
 import { applyPatch, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
 import { go, routeOf } from "./nav";
 import { dOff, uid } from "./utils";
-import {
-  D,
-  DEFAULT_PREFS,
-  S,
-  allTasks,
-  canSee,
-  commentsOf,
-  logAct,
-  me,
-  mem,
-  mutate,
-  proj,
-  render,
-  save,
-  task,
-  tasksOf,
-  visibleProjects,
-  type Modal,
-} from "../data/store";
+import { D, DEFAULT_PREFS, S, allTasks, canSee, logAct, me, mem, mutate, proj, render, save, task, tasksOf, visibleProjects, type Modal } from "../data/store";
 import {
   fileDeleted,
   fileDuplicated,
   fileRenamed,
   isLive,
   live,
-  liveCommentsOf,
   projectChanged,
   projectCreated,
   projectDeleted,
@@ -42,6 +23,7 @@ import {
 } from "../data/live";
 import { inviteResent, isInvite, memberRemoved, ownershipTransferred } from "../data/account";
 import { seed } from "../data/seed";
+import { commentCount } from "../data/tasks";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -292,7 +274,7 @@ export function delTask(id: string) {
   const t = task(id);
   S.ui.pop = null;
   if (!t) return;
-  const n = isLive() ? (t.commentCount ?? liveCommentsOf(t).length) : commentsOf(t.id).length;
+  const n = commentCount(t);
   const undoable = !isLive(); // a real workspace's delete is for good
   confirmDlg({
     title: "Delete task?",

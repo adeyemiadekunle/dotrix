@@ -8,9 +8,9 @@ import { editProject, newTask, openModal, share } from "../core/more";
 import { openPop, toggleFavProj } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { go, useRoute } from "../core/nav";
-import { D, canSee, projByKey, tasksOf } from "../data/store";
+import { D, canSee, projByKey } from "../data/store";
 import { isLive, live } from "../data/live";
-import { useLiveProjectTasks } from "../../lib/workspace-data";
+import { useProjectTasks } from "../data/tasks";
 import type { Project as P } from "../data/types";
 import { LCOLS, ListView } from "../components/TaskList";
 import { applyView, groupTasks, viewOf, ViewToolbar } from "../shell/viewEngine";
@@ -45,8 +45,7 @@ const LIST_COLS = ["status", "assignee", "priority", "due", "labels"];
 
 function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const v = viewOf(k);
-  const liveTasks = useLiveProjectTasks(live.ws?.id, p.id, isLive());
-  const base = isLive() ? (liveTasks ?? []) : tasksOf(p.id);
+  const { tasks: base, loading } = useProjectTasks(p.id);
   const ts = applyView(base, v);
   const addBtn = (
     <div className="row" style={{ gap: 8 }}>
@@ -61,7 +60,8 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
       </button>
     </div>
   );
-  const noTasks = !base.length;
+  // Still loading isn't empty: the toolbar shows alone until the tasks arrive.
+  const noTasks = !loading && !base.length;
   const emptyAll = (
     <>
       <ProjectReadiness workspaceId={isLive() ? live.ws?.id : undefined} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} compact />
@@ -77,7 +77,7 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
     return (
       <>
         <ViewToolbar k={k} group={false} right={addBtn} />
-        {noTasks ? emptyAll : <Board ts={ts} k={k} project={p.id} />}
+        {noTasks ? emptyAll : loading ? null : <Board ts={ts} k={k} project={p.id} />}
       </>
     );
   // Table folded into List (its columns can be hidden); old Table views and links open List.
@@ -85,7 +85,7 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
     return (
       <>
         <ViewToolbar k={k} cols={LIST_COLS.map((c) => [c, LCOLS[c]![0]])} right={addBtn} />
-        <div className="list-wrap">{noTasks ? emptyAll : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>
+        <div className="list-wrap">{noTasks ? emptyAll : loading ? null : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>
       </>
     );
   return <Empty icon="file-question" title="Page not found" text="That view doesn't exist." />;
