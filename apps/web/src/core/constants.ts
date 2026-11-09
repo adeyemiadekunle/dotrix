@@ -80,3 +80,6 @@ export const TYPES: { id: IssueType; name: string; icon: string; c: string }[] =
   { id: "sub-task", name: "Sub-task", icon: "corner-down-right", c: "var(--gray)" },
 ];
 export const TY = Object.fromEntries(TYPES.map((t) => [t.id, t])) as Record<IssueType, (typeof TYPES)[number]>;
+
+/** Where "Report a problem" goes: the repository's issues (it's public). */
+export const ISSUES_URL = "https://github.com/adeyemiadekunle/dotrix/issues/new";

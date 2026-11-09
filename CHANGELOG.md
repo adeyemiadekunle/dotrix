@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Help & resources has "Report a problem", which opens a new issue on dotrix's GitHub repository.
 - Help & resources shows "Reset demo data" and "Simulate offline" only in the sample workspace, not in your own.
 - In a personal workspace every task is yours: My Tasks becomes Tasks and lists unassigned tasks too, and Home shows your open tasks due this week instead of who they're assigned to, with no Team column.
 

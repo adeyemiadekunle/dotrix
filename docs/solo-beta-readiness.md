@@ -81,7 +81,7 @@ evidence lives when a check passes.
 
 ### Support paths
 
-- [ ] A way to report a problem from the app (Help & resources) and where it goes.
+- [x] A way to report a problem from the app: Help & resources → Report a problem opens a new issue on the repository (public), 2026-11-09.
 - [ ] The CHANGELOG's Unreleased section turned into a version before the beta (`python scripts/release.py bump`), and What's new showing it in the desktop app.
 - [ ] A short "Getting started" for beta participants: the supported configuration above, how to connect a key and GitHub, what Manual approval means, how to stop a run, and how to report a problem.
 
