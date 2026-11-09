@@ -14,7 +14,7 @@ import type { Schemas } from "@/lib/api";
 import { inviteLinkCreated, invitesSent, models, projectAgentModels, projectAgentModelsSaved, projectMemberSet, projectMembers, useApi } from "../data/account";
 import { filesAttached, isLive, live, projectChanged } from "../data/live";
 import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, type Modal } from "../data/store";
-import { tasksLabel } from "../core/features";
+import { personal, tasksLabel } from "../core/features";
 import type { FileItem, Member, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -662,7 +662,7 @@ function ProjectModal({ m }: { m: Modal }) {
           </div>
         </div>
         <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-          <div className="field" style={{ flex: 1, minWidth: 150 }}>
+          <div className="field" style={{ flex: 1, minWidth: 150 }} hidden={personal()}>
             <label className="label" htmlFor="p-lead">
               Lead
             </label>

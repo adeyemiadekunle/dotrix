@@ -93,8 +93,9 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
   void invalidateLiveQueries();
   render();
   try {
-    // The features first, so menus know whether organisations exist here (core/features.ts).
-    const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces(), queryClient.fetchQuery(featuresQuery)]);
+    // The features first, so menus know whether organisations exist here (core/features.ts). An
+    // API without the probe (older than the web) just offers none, rather than failing to load.
+    const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces(), queryClient.fetchQuery(featuresQuery).catch(() => undefined)]);
     const ws = wss.find((w) => w.slug === slug);
     if (!ws) {
       live.mode = "live"; // so showDemo puts the demo's data back

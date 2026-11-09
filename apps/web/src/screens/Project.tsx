@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 
 import { Ic } from "../core/icons";
+import { personal } from "../core/features";
 import { editProject, newTask, openModal, share } from "../core/more";
 import { openPop, toggleFavProj } from "../core/actions";
 import { PSTAT } from "../core/constants";
@@ -171,16 +172,20 @@ export function Project() {
               <Ic n="message-square" s={13} />
               Ask in Chat
             </button>
-            <button className="row" onClick={() => share(p.id)} aria-label="Members" style={{ gap: 0 }}>
-              <AvStack ids={p.members} max={5} cls="md" />
-            </button>
-            <button className="ibtn ibtn-sm" onClick={() => share(p.id)} data-tip="Add member" aria-label="Add member">
-              <Ic n="user-plus" s={15} />
-            </button>
-            <button className="btn btn-secondary btn-sm hide-m" onClick={() => share(p.id)}>
-              <Ic n="share-2" s={13} />
-              Share
-            </button>
+            {!personal() && (
+              <>
+                <button className="row" onClick={() => share(p.id)} aria-label="Members" style={{ gap: 0 }}>
+                  <AvStack ids={p.members} max={5} cls="md" />
+                </button>
+                <button className="ibtn ibtn-sm" onClick={() => share(p.id)} data-tip="Add member" aria-label="Add member">
+                  <Ic n="user-plus" s={15} />
+                </button>
+                <button className="btn btn-secondary btn-sm hide-m" onClick={() => share(p.id)}>
+                  <Ic n="share-2" s={13} />
+                  Share
+                </button>
+              </>
+            )}
             <button className="ibtn ibtn-sm" onClick={() => editProject(p.id)} data-tip="Project settings" aria-label="Project settings">
               <Ic n="settings" s={15} />
             </button>
