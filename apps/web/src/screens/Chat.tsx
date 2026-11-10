@@ -65,7 +65,9 @@ import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
-import { D, S, canSee, me, proj, projByKey, render, task, visibleProjects, who } from "../data/store";
+import { D, S, canSee, me, proj, projByKey, render, task, who } from "../data/store";
+import { useProjects } from "../data/lists";
+import { useAllTasks } from "../data/tasks";
 import { Markdown } from "@/components/markdown";
 import { PublishChatOutcome } from "../components/PublishChatOutcome";
 import { RunApprovals } from "../components/RunApprovals";
@@ -1277,7 +1279,7 @@ function NewChat({
   mode0: string | null;
 }) {
   const ws = wsId();
-  const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
+  const ps = useProjects().items.filter((p) => canSee(p));
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ""));
   const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
@@ -1376,20 +1378,15 @@ function NewChat({
 export function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
   const ps = new Set(
-    visibleProjects()
-      .filter((p) => canSee(p) && !p.archived)
+    useProjects()
+      .items.filter((p) => canSee(p))
       .map((p) => p.id),
   );
   const personal = D().ws.kind === "personal";
-  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
-  const mine =
-    (isLive() ? liveTasks : undefined)?.filter(
-      (t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me),
-    ) ??
-    (!isLive()
-      ? D().tasks.filter((t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me))
-      : []);
-  const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (D().tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
+  const { tasks } = useAllTasks();
+  const mine = tasks.filter((t) => ps.has(t.project) && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
+  // A real workspace's tasks are known by key; the sample's by id.
+  const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
   const [note, setNote] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
   const [menuBtn, setMenuBtn] = useState(false);

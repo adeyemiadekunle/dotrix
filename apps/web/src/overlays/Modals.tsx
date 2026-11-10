@@ -14,6 +14,7 @@ import type { Schemas } from "@/lib/api";
 import { inviteLinkCreated, invitesSent, models, projectAgentModels, projectAgentModelsSaved, projectMemberSet, projectMembers, useApi } from "../data/account";
 import { filesAttached, isLive, live, projectChanged } from "../data/live";
 import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, type Modal } from "../data/store";
+import { useMembers } from "../data/lists";
 import { personal, tasksLabel } from "../core/features";
 import type { FileItem, Member, Task } from "../data/types";
 import { Av, FT, FilePrev, Lbl, PrPill, StPill, fileType, fsize } from "../ui/helpers";
@@ -722,6 +723,7 @@ function ProjectModal({ m }: { m: Modal }) {
 /* ---------- share ---------- */
 const PERMS = ["Can view", "Can comment", "Can edit", "Full access"];
 function ShareModal({ m }: { m: Modal }) {
+  const { items: members } = useMembers();
   const p = proj(m.id as string)! as ReturnType<typeof proj> & { perms?: Record<string, string>; access?: string };
   p.perms = p.perms || {};
   p.access = p.access || "workspace";
@@ -814,7 +816,7 @@ function ShareModal({ m }: { m: Modal }) {
                   <span className="r">{x.email}</span>
                 </button>
               ))}
-            {!D().members.some((x) => !p.members.includes(x.id) && (x.name.toLowerCase().includes(q.toLowerCase()) || x.email.includes(q.toLowerCase()))) && (
+            {!members.some((x) => !p.members.includes(x.id) && (x.name.toLowerCase().includes(q.toLowerCase()) || x.email.includes(q.toLowerCase()))) && (
               <div className="mi faint" style={{ cursor: "default" }}>
                 {q.includes("@") ? `Press Invite to send an invitation to ${q}` : "No matching members — enter an email to invite someone new"}
               </div>
@@ -927,6 +929,7 @@ function ShareModal({ m }: { m: Modal }) {
 /** Who sees a project in a real workspace: everyone, or (restricted) owners, admins, and the
  * people added. Changes go to the API as they're made. */
 function LiveShareModal({ m }: { m: Modal }) {
+  const { items: members } = useMembers();
   const p = proj(m.id as string)!;
   const [rows, setRows] = useState<Schemas["ProjectMemberRead"][] | null>(null);
   const [q, setQ] = useState("");
@@ -954,7 +957,7 @@ function LiveShareModal({ m }: { m: Modal }) {
     void projectChanged(p, ["private"]).then(load);
   };
   const seeing = new Set((rows ?? []).map((r) => r.user_id));
-  const candidates = D().members.filter(
+  const candidates = members.filter(
     (x) => !seeing.has(x.id) && x.status !== "invited" && (x.name.toLowerCase().includes(q.toLowerCase()) || x.email.toLowerCase().includes(q.toLowerCase())),
   );
   const VIA: Record<string, string> = { role: "Owners and admins see every project", workspace: "Everyone in the workspace", added: "Added to this project" };

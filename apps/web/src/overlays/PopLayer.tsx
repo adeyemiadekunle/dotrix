@@ -62,7 +62,8 @@ import {
 } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
-import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects, people } from "../data/store";
+import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, people } from "../data/store";
+import { useProjects } from "../data/lists";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import type { Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
@@ -358,16 +359,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
       };
     case "project":
       return {
-        inner: (
-          <PopList
-            p={p}
-            search="Move to project…"
-            items={visibleProjects()
-              .filter((q) => canSee(q) && q.status !== "complete")
-              .map((q) => ({ id: q.id, name: q.name, html: <span className="pdot" style={css({ "--c": pColor(q) })} />, on: t?.project === q.id }))}
-            onPick={pick("project")}
-          />
-        ),
+        inner: <MoveToProject p={p} current={t?.project as string | undefined} onPick={pick("project")} />,
       };
     case "recur":
       return {
@@ -820,7 +812,16 @@ function BulkMenu({ p }: { p: P }) {
   );
 }
 
+/** "Move to project…": the projects you can open that aren't finished. (PopInner is a plain function, so the list's hook lives here.) */
+function MoveToProject({ p, current, onPick }: { p: P; current: string | undefined; onPick: (v: string) => void }) {
+  const items = useProjects()
+    .items.filter((q) => canSee(q) && q.status !== "complete")
+    .map((q) => ({ id: q.id, name: q.name, html: <span className="pdot" style={css({ "--c": pColor(q) })} />, on: current === q.id }));
+  return <PopList p={p} search="Move to project…" items={items} onPick={onPick} />;
+}
+
 function CtxMenu({ p }: { p: P }) {
+  const { items: projects } = useProjects();
   const id = p.id as string;
   const to = (type: string) => () => {
     S.ui.pop = { ...S.ui.pop!, type, q: "" };
@@ -861,7 +862,7 @@ function CtxMenu({ p }: { p: P }) {
   if (p.ctx === "project") {
     const pr = proj(id);
     if (!pr) return null;
-    const vis = visibleProjects();
+    const vis = projects;
     return (
       <>
         <Mi icon="arrow-up-right" label="Open" onClick={() => (closePop(), go("project", { id: pr.key }))} />
