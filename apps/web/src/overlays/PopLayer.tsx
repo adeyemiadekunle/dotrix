@@ -63,7 +63,7 @@ import {
 import { currentSlug, go } from "../core/nav";
 import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
 import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, people } from "../data/store";
-import { useProjects } from "../data/lists";
+import { useMembers, useProjects } from "../data/lists";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import type { Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
@@ -822,6 +822,7 @@ function MoveToProject({ p, current, onPick }: { p: P; current: string | undefin
 
 function CtxMenu({ p }: { p: P }) {
   const { items: projects } = useProjects();
+  const { items: members } = useMembers();
   const id = p.id as string;
   const to = (type: string) => () => {
     S.ui.pop = { ...S.ui.pop!, type, q: "" };
@@ -899,7 +900,7 @@ function CtxMenu({ p }: { p: P }) {
   if (p.ctx === "member") {
     const m = mem(id);
     if (!m) return null;
-    const myRole = D().members.find((x) => x.id === D().me)?.role;
+    const myRole = members.find((x) => x.id === D().me)?.role;
     const canRm = m.role !== "Owner" && m.id !== D().me && (myRole === "Owner" || myRole === "Admin");
     const invited = m.status === "invited";
     return (

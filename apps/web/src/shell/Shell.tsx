@@ -11,7 +11,7 @@ import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
 import { D, S, pColor, projByKey, render, useStudio } from "../data/store";
-import { useNotifs, useProjects } from "../data/lists";
+import { useMembers, useNotifs, useProjects } from "../data/lists";
 import { useAllTasks } from "../data/tasks";
 import { isMine, tasksLabel } from "../core/features";
 import { Av } from "../ui/helpers";
@@ -393,6 +393,7 @@ function Sidebar() {
 }
 
 function Crumbs() {
+  const { items: members } = useMembers();
   const { route, params } = useRoute();
   const out: ReactNode[] = [];
   const c = (label: string, onClick?: () => void, cur = false, icon?: ReactNode) => (
@@ -428,7 +429,7 @@ function Crumbs() {
       );
   } else if (route === "member") {
     out.push(c("Members", () => go("members")));
-    out.push(c(D().members.find((m) => m.id === params.id)?.name || "Member", undefined, true));
+    out.push(c(members.find((m) => m.id === params.id)?.name || "Member", undefined, true));
   } else out.push(c(routeName(route) || "Not found", undefined, true));
   return (
     <nav className="crumbs trunc" aria-label="Breadcrumb">

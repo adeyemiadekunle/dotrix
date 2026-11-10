@@ -9,7 +9,7 @@ import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { ago, dayBucket } from "../core/utils";
 import { D, S, commentsOf, mutate, pColor, proj, render, task, toolName, who } from "../data/store";
-import { useNotifs } from "../data/lists";
+import { useCodingSessions, useNotifs, useThreads } from "../data/lists";
 import type { Notif, NotifType } from "../data/types";
 import { ChangeCard } from "../components/Changes";
 import { CiSensitiveNote } from "../components/CiSensitiveNote";
@@ -225,8 +225,10 @@ function TaskPreview({ n, onBack }: { n: Notif; onBack: () => void }) {
 /* ---------- What the agents need from you ---------- */
 
 function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
-  const th = n.thread ? D().threads.find((t) => t.id === n.thread) : null;
-  const cs = n.task ? D().coding.find((c) => c.task === n.task && (c.status === "awaiting_approval" || n.type !== "approval")) : null;
+  const { items: threads } = useThreads();
+  const { items: sessions } = useCodingSessions();
+  const th = n.thread ? threads.find((t) => t.id === n.thread) : null;
+  const cs = n.task ? sessions.find((c) => c.task === n.task && (c.status === "awaiting_approval" || n.type !== "approval")) : null;
   const t = n.task ? task(n.task) : null;
   const p = projOf(n);
   const changes = th?.messages.flatMap((m) => m.changes ?? []) ?? [];

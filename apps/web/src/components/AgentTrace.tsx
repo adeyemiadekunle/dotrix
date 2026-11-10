@@ -30,7 +30,7 @@ import type { SpecialistTask } from "@/lib/team";
 import { parseStack, parseTests, repoPath, type StackTrace, type TestRun } from "../core/agentOutput";
 
 import { Ic } from "../core/icons";
-import { D } from "../data/store";
+import { useAgents } from "../data/lists";
 import { Face } from "../ui/face";
 
 const Spinner = () => <Ic n="spinner-gap" cls="animate-spin" />;
@@ -136,7 +136,7 @@ const TASK_STATUS: Record<SpecialistTask["status"], [string, TraceStatus | undef
  *  found: the summary, findings, risks and the evidence it cited. `children` (an approval) goes last. */
 function Subagent({ task, children }: { task: SpecialistTask; children?: ReactNode }) {
   const [said, status] = TASK_STATUS[task.status] ?? [task.status.replaceAll("_", " "), undefined];
-  const agent = D().agents.find((a) => a.handle === task.agent);
+  const agent = useAgents().items.find((a) => a.handle === task.agent);
   const name = agent?.name ?? agentName(task.agent ?? "auto");
   const result = task.task_result;
   const waiting = task.status === "awaiting_approval";

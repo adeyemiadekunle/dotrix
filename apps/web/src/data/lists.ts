@@ -1,7 +1,11 @@
 // The workspace's lists for the screens that show them, like data/tasks.ts does for tasks: the API's
 // (TanStack Query) in a real workspace, the store's in the seeded one. A screen reads them here and
 // doesn't know which it has; `loading` is true until the API's first answer (never in the sample).
+import { useCodingSessions as useLiveCodingSessions } from "../../lib/coding";
+import { useCrossConversations } from "../../lib/conversations";
+import { readSlot } from "../../lib/store-slots";
 import {
+  useLiveAgents,
   useLiveAudit,
   useLiveMembers,
   useLiveNotifications,
@@ -13,7 +17,7 @@ import {
 } from "../../lib/workspace-data";
 import { isLive, live } from "./live";
 import { D, visibleProjects } from "./store";
-import type { Activity, AuditEvent, Automation, FileItem, Member, Notif, Project } from "./types";
+import type { Activity, Agent, AuditEvent, Automation, CodingSession, FileItem, Member, Notif, Project, Thread } from "./types";
 
 type List<T> = { items: T[]; loading: boolean };
 const from = <T>(on: boolean, api: T[] | undefined, store: () => T[]): List<T> =>
@@ -76,4 +80,24 @@ export function useAutomations(): List<Automation> {
 export function useAudit(): List<AuditEvent> {
   const on = isLive();
   return from(on, useLiveAudit(live.ws?.id, on), () => D().audit);
+}
+
+/** The workspace's agents. */
+export function useAgents(): List<Agent> {
+  const on = isLive();
+  return from(on, useLiveAgents(live.ws?.id, on), () => D().agents);
+}
+
+/** Your conversations, as the store lists them (the same objects as `D().threads`). */
+export function useThreads(): List<Thread> {
+  const on = isLive();
+  const q = useCrossConversations(live.ws?.id, on);
+  return from(on, q.data && live.ws ? readSlot("threads", live.ws.id) : undefined, () => D().threads);
+}
+
+/** Kai's coding sessions you can see, as the store lists them (the same objects as `D().coding`). */
+export function useCodingSessions(): List<CodingSession> {
+  const on = isLive();
+  const q = useLiveCodingSessions(live.ws?.id, on);
+  return from(on, q.data && live.ws ? readSlot("coding", live.ws.id) : undefined, () => D().coding);
 }
