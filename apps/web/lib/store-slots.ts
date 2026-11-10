@@ -4,9 +4,9 @@
 // mounts them) keep them loaded and fresh; this file only reads.
 //
 // A slot builds its list once per version of the cached data and gives back that same array (and the
-// same objects in it) until the data changes, like the old mirror did: code that changes an item in
-// place, or replaces the list (`D().members = …`), sees its change until the next refetch brings the
-// API's answer. `forgetSlots()` drops those changes at once (a write the API refused).
+// same objects in it) until the data changes. Changes go through the saves in data/live.ts, which
+// change the cache; a list can't be replaced from outside once it has loaded. `forgetSlots()` builds
+// every list again from the cache (a write the API refused).
 import type { Schemas } from "./api";
 import type { WorkspaceIssueFilters } from "./issues";
 import { queryClient } from "./queryClient";
@@ -163,14 +163,6 @@ export function readSlot<K extends SlotName>(name: K, ws: string): Item<K>[] | u
   const value = s.build(inputs);
   built.set(name, { ws, inputs, value });
   return value;
-}
-
-/** Replace a slot's list until the cache's data changes. False while the slot hasn't loaded (the caller keeps its own list). */
-export function writeSlot<K extends SlotName>(name: K, ws: string, value: Item<K>[]): boolean {
-  const inputs = SLOTS[name].inputs(ws);
-  if (!inputs) return false;
-  built.set(name, { ws, inputs, value });
-  return true;
 }
 
 /** Build every slot again from the cache, dropping changes that never reached it. */

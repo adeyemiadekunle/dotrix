@@ -169,12 +169,14 @@ export function CommentItem({ c }: { c: Comment }) {
                 aria-label="Delete comment"
                 data-tip="Delete"
                 onClick={() => {
+                  if (isLive()) {
+                    commentDeleted(c); // for good: no undo; the save takes it out of the issue's history
+                    toast("Comment deleted");
+                    return;
+                  }
                   const snap = snapshot();
                   mutate(() => (D().comments = D().comments.filter((x) => x !== c)));
-                  if (isLive()) {
-                    commentDeleted(c); // for good: no undo
-                    toast("Comment deleted");
-                  } else toast("Comment deleted", { action: "Undo", onAction: () => restore(snap) });
+                  toast("Comment deleted", { action: "Undo", onAction: () => restore(snap) });
                 }}
               >
                 <Ic n="trash-2" s={12} />

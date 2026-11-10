@@ -2,6 +2,7 @@
 // for someone to approve its change or steer its plan, a coding tool running or waiting, or idle.
 // One place for the agents panel, the corner notices, and the faces' moods.
 import { decideChange, decideCoding } from "./agents";
+import { isLive } from "../data/live";
 import { D, S, task } from "../data/store";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import type { ChatMessage, ProposedChange, Thread } from "../data/types";
@@ -129,7 +130,14 @@ export function presence(activity: AgentActivity[] = []): Presence[] {
     const key = task(cs.task)?.key ?? "";
     const base = { id: CODING_AGENT.id, name: CODING_AGENT.name, role: "Coding", c: CODING_AGENT.c, session: cs.id };
     if (cs.status === "awaiting_approval")
-      tools.push({ ...base, state: "needs", mood: "needs", now: `Waiting for approval to code ${key}`, approve: () => decideCoding(cs, true) });
+      // A real workspace's session list doesn't name its waiting turn: it's approved in Codes or the Inbox.
+      tools.push({
+        ...base,
+        state: "needs",
+        mood: "needs",
+        now: `Waiting for approval to code ${key}`,
+        approve: isLive() ? undefined : () => decideCoding(cs, true),
+      });
     else if (cs.status === "changes_ready") tools.push({ ...base, state: "needs", mood: "needs", now: `Changes ready for acceptance · ${key}` });
     else if (cs.status === "recovery_required") tools.push({ ...base, state: "blocked", mood: "blocked", now: `Needs recovery · ${key}` });
     else if (cs.status === "failed") tools.push({ ...base, state: "blocked", mood: "blocked", now: `Couldn't finish ${key}` });

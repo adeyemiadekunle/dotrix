@@ -218,6 +218,8 @@ export const toolName = (tool: string) => who(`agent:${tool}`)?.name ?? tool;
 
 /* ---------- activity ---------- */
 export function logAct(verb: string, t?: Task | null, extra = "") {
+  // A real workspace's activity comes from the API (its lists are the query cache).
+  if (liveData) return;
   D().activity.unshift({ id: uid("a"), by: D().me, verb, task: t?.id ?? null, project: t?.project ?? null, at: Date.now(), extra });
   if (t) t.updated = Date.now();
 }
