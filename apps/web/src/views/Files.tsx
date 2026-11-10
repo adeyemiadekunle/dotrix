@@ -6,9 +6,8 @@ import { openPop, openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { previewFile } from "../core/more";
 import { ago } from "../core/utils";
-import { D, S, mem, render, task } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveProjectFiles } from "../../lib/workspace-data";
+import { S, mem, render, task } from "../data/store";
+import { useProjectFiles } from "../data/lists";
 import { handleFiles, uploads } from "../overlays/Drawer";
 import { Av, Empty, FT, FilePrev, fileType } from "../ui/helpers";
 
@@ -23,11 +22,7 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
   const q = u.fileQ.toLowerCase();
   const ft = u.fileType;
   const sort = u.fileSort;
-  const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: pid } : undefined;
-  const liveDocs = useLiveProjectFiles(scope);
-  const fs = (isLive() ? (liveDocs ?? []) : D().files).filter(
-    (f) => f.project === pid && (!q || f.name.toLowerCase().includes(q)) && (ft === "all" || f.type === ft),
-  );
+  const fs = useProjectFiles(pid).items.filter((f) => (!q || f.name.toLowerCase().includes(q)) && (ft === "all" || f.type === ft));
   fs.sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : sort === "type" ? a.type.localeCompare(b.type) : b.at - a.at));
   const ups = uploads.filter((x) => x.project === pid);
   const view = u.fileView;

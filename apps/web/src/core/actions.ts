@@ -20,7 +20,7 @@ export function guarded(fn: () => void): boolean {
 }
 
 /* ---------- tasks ---------- */
-export function nextKey(p: Project & { seq?: number }) {
+function nextKey(p: Project & { seq?: number }) {
   p.seq = (p.seq || 200) + 1;
   return p.key + "-" + p.seq;
 }

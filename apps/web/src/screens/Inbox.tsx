@@ -9,13 +9,13 @@ import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { ago, dayBucket } from "../core/utils";
 import { D, S, commentsOf, mutate, pColor, proj, render, task, toolName, who } from "../data/store";
+import { useNotifs } from "../data/lists";
 import type { Notif, NotifType } from "../data/types";
 import { ChangeCard } from "../components/Changes";
 import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { isLive, live, liveCommentsOf, notifsRead } from "../data/live";
 import { useCodingRun, useDecideCoding } from "../../lib/coding";
 import { useIssue } from "../../lib/issues";
-import { useLiveNotifications } from "../../lib/workspace-data";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
 import { Av, CommentText, Empty } from "../ui/helpers";
@@ -433,8 +433,7 @@ const tabOf = (k: string | null) => (k && TABS.find(([id, , ts]) => id === k || 
 const qs = (n: string | null, tab: string) => [n && `n=${n}`, tab !== "all" && `tab=${tab}`].filter(Boolean).join("&");
 
 export function Inbox() {
-  const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
-  const notifs = isLive() ? (liveNotifs ?? []) : D().notifs;
+  const { items: notifs } = useNotifs();
   const { search } = useRoute();
   const tab = tabOf(search.get("tab") || S.ui.inboxCat);
   const all = notifs.slice().sort((a, b) => b.at - a.at);
@@ -445,7 +444,7 @@ export function Inbox() {
   if (S.ui.inboxUnread) ns = ns.filter((n) => !n.read);
   const autoPin = useRef<string | null>(null);
   const selId = search.get("n") || S.ui.inboxSel;
-  const selRaw = D().notifs.find((n) => n.id === selId) || null;
+  const selRaw = notifs.find((n) => n.id === selId) || null;
   // An explicit pick survives a tab switch; a row the auto-preview pinned does not,
   // so a mention previewed in All can't linger beside the Needs you rows.
   const sel = selRaw && (search.get("n") || autoPin.current !== selRaw.id || inTab(selRaw, tab)) ? selRaw : null;
@@ -467,7 +466,7 @@ export function Inbox() {
   }, [sel, shownId]);
   const select = (id: string) => {
     S.ui.inboxSel = id;
-    const n = D().notifs.find((x) => x.id === id);
+    const n = notifs.find((x) => x.id === id);
     if (n && !n.read && !staysUnread(n.type)) markRead(n);
     go("inbox", {}, { replace: true, search: qs(id, tab) });
   };

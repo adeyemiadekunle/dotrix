@@ -66,6 +66,7 @@ import {
 import { automationAdded, automationRemoved, automationToggled, isLive, live, reloadAgents } from "../data/live";
 import { useLiveAgents } from "../../lib/workspace-data";
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
+import { useAudit, useAutomations, useProjects } from "../data/lists";
 import { SHORTCUTS } from "../overlays/Modals";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -1389,11 +1390,12 @@ function SeedRules() {
 }
 
 function Automations() {
+  const { items: automations } = useAutomations();
   return (
     <>
       <div className="panel" style={{ overflow: "hidden" }}>
-        {D().automations.length ? (
-          D().automations.map((a) => {
+        {automations.length ? (
+          automations.map((a) => {
             const p = proj(a.project);
             return (
               <div key={a.id} className="mini" style={{ minHeight: 56, cursor: "default", gap: 12 }}>
@@ -1451,7 +1453,7 @@ function Automations() {
           ["Flag stale documents", "Weekly, lists documents that may be out of date."],
           ["Triage new bugs", "When an issue is created, Nova checks for duplicates and fills in the fields."],
         ].map(([n, d]) => {
-          const on = D().automations.some((x) => x.name === n);
+          const on = automations.some((x) => x.name === n);
           return (
             <SRow key={n} t={n} d={d}>
               <Tog
@@ -1549,6 +1551,7 @@ function GitHubContent({
   onRemove: (id: string, login: string) => void;
   onInstall: () => void;
 }) {
+  const { items: projects } = useProjects();
   const byProject = new Map((options ?? []).filter((repo) => repo.project_key).map((repo) => [repo.project_key!, repo]));
   if (!s.configured)
     return (
@@ -1608,7 +1611,7 @@ function GitHubContent({
       </div>
       <div className="sblock">
         <h2>Connected repositories</h2>
-        {visibleProjects().map((p) => {
+        {projects.map((p) => {
           const cur = byProject.get(p.key);
           return (
             <SRow
@@ -1657,6 +1660,7 @@ const DEMO_PRESETS: Record<string, { label: string; hosts: string[] }> = {
 /** Owners and admins choose the hosts Kai's sandboxes may reach besides the model API: for every project,
  *  and on top of that for one. Each is somewhere an agent could send data, so it stays a short list. */
 function SandboxNetworkSettings() {
+  const { items: projects } = useProjects();
   const [scope, setScope] = useState("");
   const loaded = useApi(() => sandboxNetwork(scope || undefined), [scope]);
   const [presets, setPresets] = useState<string[] | null>(null);
@@ -1705,7 +1709,7 @@ function SandboxNetworkSettings() {
         <SRow t="Applies to" d={scope ? "This project, on top of what every project may reach" : "Every project"}>
           <select className="select" style={{ width: "auto", minWidth: 200 }} value={scope} onChange={(e) => pick(e.target.value)} aria-label="Applies to">
             <option value="">Every project</option>
-            {visibleProjects().map((p) => (
+            {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>
@@ -1804,6 +1808,7 @@ function GitHub() {
 }
 
 function Audit() {
+  const { items: audit } = useAudit();
   return (
     <div className="panel" style={{ overflowX: "auto" }}>
       <table className="perm-t" style={{ minWidth: 560 }}>
@@ -1816,7 +1821,7 @@ function Audit() {
           </tr>
         </thead>
         <tbody>
-          {D().audit.map((a) => (
+          {audit.map((a) => (
             <tr key={a.id}>
               <td style={{ paddingLeft: 14, textAlign: "left" }} className="muted">
                 {ago(a.at)}

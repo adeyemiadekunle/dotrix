@@ -8,9 +8,9 @@ import { Ic } from "../core/icons";
 import { newProject } from "../core/more";
 import { go } from "../core/nav";
 import { ago, fmtDate, minsAgo } from "../core/utils";
-import { S, canSee, mem, progressOf, render, tasksOf, visibleProjects } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveProjects } from "../../lib/workspace-data";
+import { S, canSee, mem, progressOf, render } from "../data/store";
+import { useProjects } from "../data/lists";
+import { useAllTasks, useProjectTasks } from "../data/tasks";
 import type { Project } from "../data/types";
 import { Av, AvStack, Empty, PIcon, PStatus, ProgBar } from "../ui/helpers";
 
@@ -24,7 +24,7 @@ const more = (p: Project) => (e: React.MouseEvent<HTMLElement>) => {
 };
 
 function ProjectCard({ p }: { p: Project }) {
-  const ts = tasksOf(p.id);
+  const { tasks: ts } = useProjectTasks(p.id);
   const pr = progressOf(p.id);
   const open = ts.filter((t) => t.status !== "done").length;
   const locked = !canSee(p);
@@ -98,8 +98,10 @@ export function Projects() {
   const q = u.projQ.toLowerCase();
   const st = u.projStatus;
   const sort = u.projSort;
-  const liveProjects = useLiveProjects(live.ws?.id, isLive());
-  const base = (isLive() ? (liveProjects ?? []) : visibleProjects()).filter((p) => canSee(p) && !p.archived);
+  const { items: projects } = useProjects();
+  const { tasks } = useAllTasks();
+  const count = (pid: string) => tasks.filter((t) => t.project === pid).length;
+  const base = projects.filter((p) => canSee(p));
   const ps = base.filter((p) => (st === "all" || p.status === st) && (!q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)));
   const sorter = (
     { recent: (p: Project) => p.last, name: (p: Project) => p.name, due: (p: Project) => p.due, progress: (p: Project) => -progressOf(p.id) } as Record<
@@ -227,7 +229,7 @@ export function Projects() {
                       </span>
                     </span>
                   </td>
-                  <td className="num">{tasksOf(p.id).length}</td>
+                  <td className="num">{count(p.id)}</td>
                   <td style={{ textAlign: "left" }} className="num muted">
                     {fmtDate(p.start)}
                   </td>
@@ -255,8 +257,7 @@ export function Projects() {
         <div>
           <h1>Projects</h1>
           <p>
-            {visibleProjects().filter((p) => p.status !== "complete").length} active · {visibleProjects().filter((p) => p.status === "complete").length}{" "}
-            completed
+            {projects.filter((p) => p.status !== "complete").length} active · {projects.filter((p) => p.status === "complete").length} completed
           </p>
         </div>
         <div className="acts">

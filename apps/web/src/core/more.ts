@@ -3,7 +3,7 @@
 // files, saved views), with their wording and undo.
 import { allowed, canInvite } from "./can";
 import { PR } from "./constants";
-import { applyPatch, changeTask, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
+import { applyPatch, changeTask, closePop, copy, createTask, guarded, openTask } from "./actions";
 import { go, routeOf } from "./nav";
 import { dOff, uid } from "./utils";
 import { D, DEFAULT_PREFS, S, allTasks, canSee, logAct, me, mem, mutate, proj, render, save, task, tasksOf, visibleProjects, type Modal } from "../data/store";
@@ -206,7 +206,8 @@ export function createProject(f: { name: string; desc?: string; icon: string; co
     milestones: [],
     last: 0,
   };
-  D().projects.push(p);
+  // A real workspace lists it through its save (the cache); the sample adds it to the store.
+  if (!isLive()) D().projects.push(p);
   D().projOrder.unshift(p.id);
   D().activity.unshift({ id: uid("a"), by: D().me, verb: "created project", task: null, project: p.id, at: Date.now(), extra: "" });
   const tm = TEMPLATES.find((t) => t.id === tmplId);
@@ -239,20 +240,21 @@ export function invite() {
 }
 export function deleteTasks(ids: string[], { send = true } = {}) {
   const set = new Set(ids);
-  if (send) tasksDeleted(D().tasks.filter((t) => set.has(t.id)));
+  if (S.ui.drawer && set.has(S.ui.drawer)) S.ui.drawer = null;
+  ids.forEach((i) => S.ui.sel.delete(i));
+  // A real workspace takes them out of the lists through the save (the cache); the sample edits the store.
+  if (isLive()) return void (send && tasksDeleted(D().tasks.filter((t) => set.has(t.id))));
   D().tasks = D().tasks.filter((t) => !set.has(t.id));
   D().tasks.forEach((t) => (t.deps = t.deps.filter((d) => !set.has(d))));
   D().comments = D().comments.filter((c) => !set.has(c.task));
-  if (S.ui.drawer && set.has(S.ui.drawer)) S.ui.drawer = null;
-  ids.forEach((i) => S.ui.sel.delete(i));
 }
 export function dupTask(id: string) {
   const t = task(id)!;
   S.ui.pop = null;
   let n: Task | undefined;
   mutate(() => {
+    // createTask gives it the project's next key (a real workspace's, the API's).
     n = createTask({ ...JSON.parse(JSON.stringify(t)), id: uid("t"), key: undefined, title: t.title + " (copy)", created: Date.now(), fav: false });
-    n.key = nextKey(proj(n.project)!);
   });
   toast("Task duplicated", { action: "Open", onAction: () => openTask(n!.id) });
 }
@@ -337,7 +339,9 @@ export function delProject(id: string) {
       const snap = snapshot();
       if (
         guarded(() => {
-          // Deleting the project deletes its issues on the API: none are sent one by one.
+          D().projOrder = D().projOrder.filter((x) => x !== p.id);
+          // A real workspace takes it and its issues out of the lists through its save (projectDeleted).
+          if (isLive()) return;
           deleteTasks(
             D()
               .tasks.filter((t) => t.project === p.id)
@@ -345,7 +349,6 @@ export function delProject(id: string) {
             { send: false },
           );
           D().projects = D().projects.filter((x) => x !== p);
-          D().projOrder = D().projOrder.filter((x) => x !== p.id);
           D().files = D().files.filter((f) => f.project !== p.id);
         })
       ) {
@@ -494,13 +497,10 @@ export function removeMember(id: string) {
     run: () => {
       if (isLive()) {
         // Permanent on the API: no undo. The store follows once it's done.
+        // memberRemoved takes them out of the cached lists; the refetch unassigns their issues.
         void memberRemoved(m)
           .then(() => {
-            mutate(() => {
-              D().members = D().members.filter((x) => x.id !== m.id);
-              D().tasks.forEach((t) => t.assignee === m.id && (t.assignee = null));
-              D().projects.forEach((p) => (p.members = p.members.filter((x) => x !== m.id)));
-            });
+            render();
             if (here().route === "member") go("members");
             toast(pending ? `Revoked the invite to ${m.email}` : `Removed ${m.name}`);
           })

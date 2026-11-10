@@ -10,7 +10,9 @@ import { allowed } from "../core/can";
 import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
-import { D, S, allTasks, pColor, projByKey, render, useStudio, visibleProjects } from "../data/store";
+import { D, S, pColor, projByKey, render, useStudio } from "../data/store";
+import { useNotifs, useProjects } from "../data/lists";
+import { useAllTasks } from "../data/tasks";
 import { isMine, tasksLabel } from "../core/features";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
@@ -222,9 +224,9 @@ function Sidebar() {
   const { route, params } = useRoute();
   const u = S.ui;
   const d = D();
-  const unreadInbox = d.notifs.filter((n) => !n.read).length;
-  const myOpen = allTasks().filter((t) => isMine(t) && t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) <= 0).length;
-  const projs = visibleProjects().filter((p) => p.status !== "complete");
+  const unreadInbox = useNotifs().items.filter((n) => !n.read).length;
+  const myOpen = useAllTasks().tasks.filter((t) => isMine(t) && t.status !== "done" && t.due && diffD(parse(t.due)!, TODAY) <= 0).length;
+  const projs = useProjects().items.filter((p) => p.status !== "complete");
   const inProj = route === "project" ? projByKey(params.id)?.id : null;
   return (
     <nav id="main-navigation" className="side" aria-label="Main" inert={narrow() && !u.mnav ? true : undefined}>
@@ -445,7 +447,7 @@ function Crumbs() {
 }
 
 function Topbar({ openNavigation }: { openNavigation: (e: MouseEvent<HTMLButtonElement>) => void }) {
-  const unread = D().notifs.some((n) => !n.read);
+  const unread = useNotifs().items.some((n) => !n.read);
   return (
     <header className="topbar">
       <button className="ibtn mnav-btn" onClick={openNavigation} aria-label="Open navigation" aria-controls="main-navigation" aria-expanded={S.ui.mnav}>
@@ -495,7 +497,7 @@ export function setPaletteOpener(f: () => void) {
 
 function BottomNav({ openNavigation }: { openNavigation: (e: MouseEvent<HTMLButtonElement>) => void }) {
   const { route } = useRoute();
-  const unread = D().notifs.some((n) => !n.read);
+  const unread = useNotifs().items.some((n) => !n.read);
   const b = (r: Route, label: string, icon: string, extra?: ReactNode) => (
     <button className={route === r ? "on" : ""} onClick={() => go(r)}>
       <Ic n={icon} s={19} />
