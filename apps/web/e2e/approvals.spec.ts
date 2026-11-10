@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { createTask, signUp } from "./helpers";
 
 // What waits on you is decided where it's shown: a corner notice on Home and the agents panel
 // approve or reject in place, the same decision the Inbox makes (here against stubbed coding turns).
@@ -88,6 +88,8 @@ test("the agents panel rejects a Kai session waiting to start, without opening i
   await signUp(page);
   const key = "PANE";
   const p = await project(page, key);
+  // The issue the session codes, so the panel can name it.
+  await createTask(page, p.workspace, p.id, { title: "Fix the login" });
   const sessionId = "01a19000-0000-7000-8000-000000000021";
   const runId = "01a19000-0000-7000-8000-000000000022";
   const at = new Date().toISOString();
@@ -130,7 +132,7 @@ test("the agents panel rejects a Kai session waiting to start, without opening i
   await page.getByRole("button", { name: /^Agents/ }).click();
   const panel = page.getByRole("complementary", { name: "Agents" });
   await expect(panel).toContainText(`Waiting for approval to code ${key}-1`);
-  await panel.getByRole("button", { name: "Reject" }).click();
+  await panel.getByRole("button", { name: "Reject", exact: true }).click();
   expect((await decided).postDataJSON()).toEqual({ decision: "reject", reason: null });
   await expect(page.getByText(`Rejected Kai's turn on ${key}-1`)).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/w/${p.slug}/projects$`));
