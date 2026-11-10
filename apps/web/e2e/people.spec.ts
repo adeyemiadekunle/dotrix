@@ -35,6 +35,8 @@ test("a personal workspace stays private and a separate organisation invites", a
 });
 
 test("join by link, see a restricted project once added, then become the owner; removing someone", async ({ page, browser }) => {
+  // Two browsers, an organisation, a restricted project, a handover and a removal: close to a minute on its own.
+  test.slow();
   await signUp(page, newUser("Ada Owner"));
   await createOrganisation(page);
   const slug = slugOf(page);
@@ -84,7 +86,10 @@ test("join by link, see a restricted project once added, then become the owner; 
   // Restrict the project and add Bob.
   await page.goto(`/w/${slug}/p/SEC/overview`);
   await page.getByRole("button", { name: "Share" }).click();
+  // Added people only count once the project is restricted on the server: wait for that save.
+  const restricted = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/projects\/[^/]+$/.test(new URL(r.url()).pathname));
   await page.getByLabel("General access").selectOption("private");
+  expect((await restricted).status()).toBe(200);
   await expect(page.getByText("Owners, admins, and the people added")).toBeVisible();
   await page.getByPlaceholder(/Add people/).fill("Bob");
   await page.locator(".modal .mi", { hasText: "Bob Member" }).click();
