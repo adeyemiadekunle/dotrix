@@ -1,20 +1,17 @@
-// Drag and drop, as is: global listeners keyed on
-// data attributes. Board cards between columns (data-drag-card, data-drop-col, data-col-body),
-// list rows (a row's handle data-drag-row; the row data-task-row, data-group, data-lkey), calendar
-// items onto days (data-drag-cal, data-drop-day), sidebar projects (data-drag-proj,
-// data-proj-drop), files onto drop zones and the drawer (data-dropzone, data-dropzone-task), table
-// column widths (data-rsz) and timeline bars (data-bar, data-dw).
+// Drag and drop: global listeners keyed on data attributes. Board cards between columns
+// (data-drag-card, data-drop-col, data-col-body), list rows (a row's handle data-drag-row; the row
+// data-task-row, data-group, data-lkey), sidebar projects (data-drag-proj, data-proj-drop), and
+// files onto drop zones and the drawer (data-dropzone, data-dropzone-task).
 import { PR, ST } from "./constants";
-import { applyPatch, updateTask } from "./actions";
-import { addD, diffD, fmtDate, iso, parse } from "./utils";
-import { taskRanked } from "../data/live";
+import { applyPatch } from "./actions";
+import { isLive, taskRanked } from "../data/live";
 import { D, S, mutate, proj, render, save, task } from "../data/store";
 import type { Task } from "../data/types";
 import { viewOf } from "../shell/viewEngine";
 import { handleFiles } from "../overlays/Drawer";
 import { toast } from "../ui/toast";
 type Drag = {
-  type: "card" | "row" | "cal" | "proj";
+  type: "card" | "row" | "proj";
   id: string;
   col?: string;
   before?: string | null;
@@ -22,7 +19,6 @@ type Drag = {
   pos?: "before" | "after";
   group?: string;
   lkey?: string;
-  day?: string;
 };
 let DRAG: Drag | null = null;
 const $ = <T extends Element = HTMLElement>(s: string) => document.querySelector<T>(s);
@@ -41,17 +37,10 @@ export function installDragDrop() {
   document.addEventListener("dragstart", (e) => {
     const card = closest(e, "[data-drag-card]");
     const row = closest(e, "[data-drag-row]");
-    const cal = closest(e, "[data-drag-cal]");
     const sp = closest(e, "[data-drag-proj]");
-    const el = card || row || cal || sp;
+    const el = card || row || sp;
     if (!el) return;
-    DRAG = card
-      ? { type: "card", id: card.dataset.dragCard! }
-      : row
-        ? { type: "row", id: row.dataset.dragRow! }
-        : cal
-          ? { type: "cal", id: cal.dataset.dragCal! }
-          : { type: "proj", id: sp!.dataset.dragProj! };
+    DRAG = card ? { type: "card", id: card.dataset.dragCard! } : row ? { type: "row", id: row.dataset.dragRow! } : { type: "proj", id: sp!.dataset.dragProj! };
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
       try {
@@ -120,13 +109,6 @@ export function installDragDrop() {
       DRAG.pos = before ? "before" : "after";
       DRAG.group = row.dataset.group;
       DRAG.lkey = row.dataset.lkey;
-    } else if (DRAG.type === "cal") {
-      const day = closest(e, "[data-drop-day]");
-      if (!day) return;
-      e.preventDefault();
-      $$(".over").forEach((x) => x !== day && x.classList.remove("over"));
-      day.classList.add("over");
-      DRAG.day = day.dataset.dropDay;
     } else if (DRAG.type === "proj") {
       const it = closest(e, "[data-proj-drop]");
       if (!it) return;
@@ -172,15 +154,16 @@ export function installDragDrop() {
         order = prev ? (prev.order + nx.order) / 2 : nx.order - 1;
       } else order = colTs.length ? colTs[colTs.length - 1]!.order + 1 : t.order;
       const moved = t.status !== d.col;
+      // A real workspace shows the new place and column through the saves (the cache); the sample edits the task.
       mutate(() => {
-        t.order = order;
+        if (!isLive()) t.order = order;
         if (moved) applyPatch(t, { status: d.col as Task["status"] });
       });
       // The API's rank is per project: place it by its neighbour there.
       const sameProject = colTs.filter((x) => x.project === t.project);
       const before = d.before ? task(d.before) : undefined;
-      if (before?.project === t.project) taskRanked(t, before, undefined);
-      else if (!d.before && sameProject.length) taskRanked(t, undefined, sameProject[sameProject.length - 1]);
+      if (before?.project === t.project) taskRanked(t, before, undefined, order);
+      else if (!d.before && sameProject.length) taskRanked(t, undefined, sameProject[sameProject.length - 1], order);
       if (moved) toast(`Moved “${t.title}” to ${ST[d.col as Task["status"]].name}`, { ms: 2200 });
     } else if (d.type === "row" && d.target) {
       const t = task(d.id)!;
@@ -202,22 +185,15 @@ export function installDragDrop() {
       }
       let switched = false;
       mutate(() => {
-        t.order = order;
+        if (!isLive()) t.order = order;
         applyPatch(t, patch);
         if (v && v.sort.f !== "manual") {
           v.sort = { f: "manual", dir: 1 };
           switched = true;
         }
       });
-      // After the store has its new place, which the lists' cached rows take as their rank.
-      if (tg.project === t.project) taskRanked(t, d.pos === "before" ? tg : undefined, d.pos === "after" ? tg : undefined);
+      if (tg.project === t.project) taskRanked(t, d.pos === "before" ? tg : undefined, d.pos === "after" ? tg : undefined, order);
       if (switched) toast("Sorted manually to keep your order", { kind: "info", ms: 2200 });
-    } else if (d.type === "cal" && d.day) {
-      const t = task(d.id)!;
-      if (t.due === d.day) return;
-      const len = t.start && t.due ? diffD(parse(t.due)!, parse(t.start)!) : null;
-      updateTask(t.id, { due: d.day, ...(len != null ? { start: iso(addD(parse(d.day)!, -len)) } : {}) });
-      toast(`Rescheduled “${t.title}” to ${fmtDate(d.day)}`, { ms: 2200 });
     } else if (d.type === "proj" && d.before && d.before !== d.id) {
       const o = D().projOrder.filter((x) => x !== d.id);
       o.splice(o.indexOf(d.before), 0, d.id);
@@ -226,63 +202,4 @@ export function installDragDrop() {
       render();
     }
   });
-  /* timeline bar drag + table column resize (pointer events) */
-  document.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    const rz = closest(e, "[data-rsz]");
-    if (rz) {
-      e.preventDefault();
-      e.stopPropagation();
-      const c = rz.dataset.rsz!;
-      const v = viewOf(rz.dataset.key!);
-      const tbl = rz.closest("table")!;
-      const col = tbl.querySelector<HTMLElement>(`col[data-col="${c}"]`)!;
-      const w0 = col.getBoundingClientRect().width || parseFloat(col.style.width);
-      const tw0 = tbl.getBoundingClientRect().width;
-      const x0 = e.clientX;
-      rz.classList.add("on");
-      const mv = (ev: PointerEvent) => {
-        const w = Math.max(64, w0 + ev.clientX - x0);
-        col.style.width = w + "px";
-        tbl.style.width = tw0 + w - w0 + "px";
-      };
-      const up = (ev: PointerEvent) => {
-        removeEventListener("pointermove", mv);
-        removeEventListener("pointerup", up);
-        v.colW[c] = Math.max(64, Math.round(w0 + ev.clientX - x0));
-        save();
-        render();
-      };
-      addEventListener("pointermove", mv);
-      addEventListener("pointerup", up);
-      return;
-    }
-    const b = closest(e, "[data-bar]");
-    if (!b) return;
-    const x0 = e.clientX;
-    const l0 = parseFloat(b.style.left);
-    const dw = +b.dataset.dw!;
-    let moved = false;
-    const mv = (ev: PointerEvent) => {
-      const dx = ev.clientX - x0;
-      if (Math.abs(dx) > 4) {
-        moved = true;
-        b.classList.add("dragging");
-      }
-      if (moved) b.style.left = l0 + Math.round(dx / dw) * dw + "px";
-    };
-    const up = (ev: PointerEvent) => {
-      removeEventListener("pointermove", mv);
-      removeEventListener("pointerup", up);
-      if (!moved) return;
-      const days = Math.round((ev.clientX - x0) / dw);
-      const t = task(b.dataset.bar)!;
-      if (!days) return render();
-      updateTask(t.id, { due: iso(addD(parse(t.due)!, days)), start: t.start ? iso(addD(parse(t.start)!, days)) : null });
-      toast(`Moved “${t.title}” ${Math.abs(days)} day${Math.abs(days) > 1 ? "s" : ""} ${days > 0 ? "later" : "earlier"}`, { ms: 2200 });
-    };
-    addEventListener("pointermove", mv);
-    addEventListener("pointerup", up);
-  });
 }
-/** A timeline bar that was just dragged shouldn't also open its task. */

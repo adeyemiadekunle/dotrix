@@ -4,7 +4,7 @@
 // coding" asks Kai, the coding agent, to work on it, approved like any agent change.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
+import { applyPatch, changeSubtasks, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
 import { startCoding } from "../core/agents";
 import {
   attachmentRemoved,
@@ -16,7 +16,6 @@ import {
   isLive,
   issueFileAttached,
   live,
-  taskPatched,
 } from "../data/live";
 import { TY } from "../core/constants";
 import { Ic } from "../core/icons";
@@ -396,11 +395,11 @@ function Rte({ t, desc }: { t: Task; desc: string }) {
 
 /* ---------- subtasks ---------- */
 function toggleSub(t: Task, s: Subtask) {
+  const done = !s.done;
   mutate(() => {
-    s.done = !s.done;
-    logAct(s.done ? "completed subtask on" : "reopened subtask on", t, `“${s.title}”`);
+    changeSubtasks(t, (items) => items.map((x) => (x.id === s.id ? { ...x, done } : x)));
+    logAct(done ? "completed subtask on" : "reopened subtask on", t, `“${s.title}”`);
   });
-  taskPatched(t, ["subtasks"]);
 }
 function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
   const i = t.subtasks.indexOf(s);
@@ -425,10 +424,9 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         labels: [...t.labels],
         desc: s.note ? `<p>${s.note}</p>` : "",
       });
-      t.subtasks = t.subtasks.filter((x) => x !== s);
+      changeSubtasks(t, (items) => items.filter((x) => x.id !== s.id));
       logAct("converted a subtask of", t, `into ${n.key}`);
     });
-    taskPatched(t, ["subtasks"]);
     S.ui.subOpen = null;
     render();
     toast(`Converted to ${n!.key}`, { action: "Open", onAction: () => openTaskById(n!.id) });
@@ -461,8 +459,8 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => {
             if (title.trim() && title.trim() !== s.title) {
-              mutate(() => ((s.title = title.trim()), (t.updated = Date.now())));
-              taskPatched(t, ["subtasks"]);
+              const next = title.trim();
+              mutate(() => changeSubtasks(t, (items) => items.map((x) => (x.id === s.id ? { ...x, title: next } : x))));
             }
           }}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), e.currentTarget.blur())}
@@ -542,10 +540,9 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
           onClick={() => {
             S.ui.subOpen = null;
             mutate(() => {
-              t.subtasks = t.subtasks.filter((x) => x !== s);
+              changeSubtasks(t, (items) => items.filter((x) => x.id !== s.id));
               logAct("removed a subtask from", t, `“${s.title}”`);
             });
-            taskPatched(t, ["subtasks"]);
           }}
         >
           <Ic n="trash-2" s={13} />
@@ -1098,10 +1095,9 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
             if (e.key === "Enter" && v.trim()) {
               const title = v.trim();
               mutate(() => {
-                t.subtasks.push({ id: uid("s"), title, done: false });
+                changeSubtasks(t, (items) => [...items, { id: uid("s"), title, done: false }]);
                 logAct("added subtask to", t, `“${title}”`);
               });
-              taskPatched(t, ["subtasks"]);
               setV("");
             }
           }}
