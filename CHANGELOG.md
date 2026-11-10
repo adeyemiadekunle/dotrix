@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Editing, moving, commenting on or adding a task refreshes only what tasks appear in (task lists, activity, notifications, search) instead of reloading the whole workspace, so the app does less after every change.
 - A new task shows on the board and in the project's list the moment you add it, before the server has answered; if it can't be saved, it's taken away again with the reason.
 - Codes follows Kai as it works: an open session's steps, command output, status and changes arrive over a live stream instead of a check every few seconds, so a turn no longer looks slower than it is. If the stream can't be kept open, Codes goes back to checking.
 - Help & resources has "Report a problem", which opens a new issue on dotrix's GitHub repository.

@@ -6,9 +6,9 @@ import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode 
 import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
 import { ISSUES_URL, LABELS, PRIOS, PSTAT, STATUSES, TYPES, type ProjectStatusId } from "../core/constants";
 import { useCloseSession, useDeleteSandbox, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
-import { useLiveProjectTasks } from "@/lib/workspace-data";
 import { confirmDlg, promptDlg } from "../core/more";
 import { isLive, live, liveCommentById, taskPatched } from "../data/live";
+import { useProjectTasks } from "../data/tasks";
 import { allowed, canInvite } from "../core/can";
 import { organisations } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
@@ -748,8 +748,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
 
 /** "Blocked by" candidates: the project's other issues, live when signed in. */
 function DepsMenu({ p, tk }: { p: P; tk: Task }) {
-  const liveTasks = useLiveProjectTasks(live.ws?.id, tk.project, isLive());
-  const cands = isLive() ? (liveTasks ?? []).filter((x) => x.id !== tk.id) : D().tasks.filter((x) => x.project === tk.project && x.id !== tk.id && !x.archived);
+  const cands = useProjectTasks(tk.project).tasks.filter((x) => x.id !== tk.id);
   return (
     <PopList
       p={p}

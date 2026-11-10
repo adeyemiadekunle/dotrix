@@ -3,10 +3,10 @@ import { Ic } from "../core/icons";
 import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dOff, diffD, parse } from "../core/utils";
-import { isLive, live, taskPatched } from "../data/live";
-import { useLiveAllTasks, useLiveArchivedTasks, useLiveMyTasks, useLiveStarredTasks } from "../../lib/workspace-data";
-import { D, S, allTasks, canSee, isOver, mutate, proj, render } from "../data/store";
-import { isMine, personal, tasksLabel } from "../core/features";
+import { isLive, taskPatched } from "../data/live";
+import { useAllTasks, useArchivedTasks, useMyTasks, useStarredTasks } from "../data/tasks";
+import { D, S, isOver, mutate, proj, render } from "../data/store";
+import { tasksLabel } from "../core/features";
 import { ListView, MiniRow } from "../components/TaskList";
 import { applyView, groupTasks, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty, StIcon } from "../ui/helpers";
@@ -14,8 +14,7 @@ import { toast } from "../ui/toast";
 
 export function WorkspaceTasks() {
   const k = "tasks";
-  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
-  const tasks = applyView(isLive() ? (liveTasks ?? []) : allTasks(), viewOf(k));
+  const tasks = applyView(useAllTasks().tasks, viewOf(k));
   return (
     <div className="page flush">
       <div className="ph">
@@ -37,15 +36,8 @@ export function MyTasks() {
   const view = S.ui.myTab;
   const setView = (v: typeof view) => ((S.ui.myTab = v), render());
   const v = viewOf(k);
-  const ws = live.ws?.id;
   // In a personal workspace every task is yours, assigned or not (core/features.ts).
-  const solo = personal();
-  const liveMine = useLiveMyTasks(ws, isLive() && !solo);
-  const liveAll = useLiveAllTasks(ws, isLive() && solo);
-  const mine = applyView(
-    (isLive() ? ((solo ? liveAll : liveMine) ?? []) : allTasks()).filter(isMine),
-    v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v,
-  );
+  const mine = applyView(useMyTasks().tasks, v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v);
   const groups: Group[] = [
     {
       key: "overdue",
@@ -133,9 +125,7 @@ export function MyTasks() {
 
 /** Tasks you starred, from every project you can see. */
 function Starred() {
-  const ws = live.ws?.id;
-  const starred = useLiveStarredTasks(ws, isLive());
-  const ts = isLive() ? (starred ?? []) : allTasks().filter((t) => t.fav);
+  const { tasks: ts } = useStarredTasks();
   return (
     <div style={{ padding: "0 24px 24px" }}>
       {ts.length ? (
@@ -178,13 +168,7 @@ function purgeTask(id: string) {
 
 /** Archived tasks: restore them or delete them for good. Archived projects are restored from Settings → Projects. */
 function Archived() {
-  const ws = live.ws?.id;
-  const archived = useLiveArchivedTasks(ws, isLive());
-  const ts = isLive()
-    ? (archived ?? [])
-    : D()
-        .tasks.filter((t) => t.archived && canSee(proj(t.project)) && !proj(t.project)?.archived)
-        .sort((a, b) => ((b as ArchivedAt).archivedAt || 0) - ((a as ArchivedAt).archivedAt || 0));
+  const { tasks: ts } = useArchivedTasks();
   return (
     <div style={{ padding: "0 24px 24px" }}>
       {ts.length ? (
