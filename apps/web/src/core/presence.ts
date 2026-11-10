@@ -2,10 +2,10 @@
 // for someone to approve its change or steer its plan, a coding tool running or waiting, or idle.
 // One place for the agents panel, the corner notices, and the faces' moods.
 import { decideChange, decideCoding } from "./agents";
-import { isLive } from "../data/live";
+import { codingSessionDecided, isLive, runChangesDecided } from "../data/live";
 import { D, S, task } from "../data/store";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
-import type { ChatMessage, ProposedChange, Thread } from "../data/types";
+import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
 import type { Mood } from "../ui/face";
 import type { AgentActivity } from "@/lib/team";
 
@@ -24,8 +24,9 @@ export interface Presence {
   session?: string;
   project?: string;
   review?: boolean;
-  /** approve what it waits for, when that's one change */
+  /** approve or reject what it waits on you for, from the agents panel */
   approve?: () => void;
+  reject?: () => void;
 }
 
 const READY: Record<string, string> = {
@@ -55,6 +56,14 @@ export function waitingChanges(): Waiting[] {
 /** Approvals and checkpoints from the API's notifications (a real workspace has no seeded threads). */
 const pendingNotifs = () => D().notifs.filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read && n.by);
 
+/** Approve or reject what a Kai session waits on you for. A real workspace finds its waiting turn when you
+ * click (the session list doesn't name it); the sample decides its own session (checked changes there wait in it). */
+function sessionDecisions(cs: CodingSession): Pick<Presence, "approve" | "reject"> {
+  if (isLive()) return { approve: () => void codingSessionDecided(cs.project, cs.id, true), reject: () => void codingSessionDecided(cs.project, cs.id, false) };
+  if (cs.status !== "awaiting_approval") return {};
+  return { approve: () => decideCoding(cs, true), reject: () => decideCoding(cs, false) };
+}
+
 export function presence(activity: AgentActivity[] = []): Presence[] {
   const waiting = waitingChanges();
   const notifs = pendingNotifs();
@@ -68,6 +77,9 @@ export function presence(activity: AgentActivity[] = []): Presence[] {
     );
     if (liveTask) {
       const state: State = liveTask.status === "awaiting_approval" ? "needs" : ["failed", "blocked"].includes(liveTask.status) ? "blocked" : "working";
+      // Its changes wait on you: decided here, all of them, as the Inbox does.
+      const decide = (approve: boolean) => () => void runChangesDecided(liveTask.project_id, liveTask.run_id, approve);
+      const waits = liveTask.status === "awaiting_approval";
       return {
         ...base,
         state,
@@ -76,6 +88,8 @@ export function presence(activity: AgentActivity[] = []): Presence[] {
         thread: liveTask.thread_id ?? undefined,
         project: liveTask.project_key,
         review: a.handle === "reviewer",
+        approve: waits ? decide(true) : undefined,
+        reject: waits ? decide(false) : undefined,
       };
     }
     if (busy && busy.agent === a.handle) return { ...base, state: "working", mood: "working", now: `Answering in “${busy.title}”`, thread: busy.id };
@@ -94,10 +108,16 @@ export function presence(activity: AgentActivity[] = []): Presence[] {
             : `Waiting for approval · ${w.ch.title}`,
         thread: w.th.id,
         approve: !steer && others === 1 ? () => decideChange(w.ch.id, true) : undefined,
+        reject: !steer && others === 1 ? () => decideChange(w.ch.id, false) : undefined,
       };
     }
     const n = notifs.find((x) => x.by === a.handle);
-    if (n) return { ...base, state: "needs", mood: "needs", now: n.text };
+    if (n) {
+      // A real workspace's run waiting on changes: decided here; a plan to steer opens it.
+      const decide =
+        isLive() && n.type === "approval" && n.run && n.project ? (approve: boolean) => () => void runChangesDecided(n.project!, n.run!, approve) : null;
+      return { ...base, state: "needs", mood: "needs", now: n.text, approve: decide?.(true), reject: decide?.(false) };
+    }
     const recentReview = a.handle === "reviewer" ? activity.find((item) => item.agent === "reviewer") : undefined;
     return {
       ...base,
@@ -130,15 +150,9 @@ export function presence(activity: AgentActivity[] = []): Presence[] {
     const key = task(cs.task)?.key ?? "";
     const base = { id: CODING_AGENT.id, name: CODING_AGENT.name, role: "Coding", c: CODING_AGENT.c, session: cs.id };
     if (cs.status === "awaiting_approval")
-      // A real workspace's session list doesn't name its waiting turn: it's approved in Codes or the Inbox.
-      tools.push({
-        ...base,
-        state: "needs",
-        mood: "needs",
-        now: `Waiting for approval to code ${key}`,
-        approve: isLive() ? undefined : () => decideCoding(cs, true),
-      });
-    else if (cs.status === "changes_ready") tools.push({ ...base, state: "needs", mood: "needs", now: `Changes ready for acceptance · ${key}` });
+      tools.push({ ...base, state: "needs", mood: "needs", now: `Waiting for approval to code ${key}`, ...sessionDecisions(cs) });
+    else if (cs.status === "changes_ready")
+      tools.push({ ...base, state: "needs", mood: "needs", now: `Changes ready for acceptance · ${key}`, ...sessionDecisions(cs) });
     else if (cs.status === "recovery_required") tools.push({ ...base, state: "blocked", mood: "blocked", now: `Needs recovery · ${key}` });
     else if (cs.status === "failed") tools.push({ ...base, state: "blocked", mood: "blocked", now: `Couldn't finish ${key}` });
     else if (cs.status === "running" || cs.status === "queued")

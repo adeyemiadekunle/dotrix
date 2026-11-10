@@ -1,14 +1,13 @@
 // Corner notices (after Orbit's): only what needs a person, with the action in the notice. An
-// agent's change waiting for approval (Approve, or Open it), a plan to steer, a coding tool
-// waiting to start or that couldn't finish. On Home only (elsewhere they'd cover the page), and
-// only while the agents panel is closed (it lists the same things); the newest two, bottom
-// right; closing one keeps it closed for this session. In a real workspace, the simple decisions
-// are made in the notice itself, the same ones Inbox makes: a coding turn waiting to start, one
-// small board change, and Continue for a run stopped at its model's limit. Anything to read first
-// (a document's diff, several changes, Kai's checked changes, a plan) opens it instead.
+// agent's changes waiting for approval, a plan to steer, a coding turn waiting to start or with
+// checked changes to push, or one that couldn't finish. On Home only (elsewhere they'd cover the
+// page), and only while the agents panel is closed (it lists the same things); the newest two,
+// bottom right; closing one keeps it closed for this session. An approval is decided in the notice
+// itself (Approve or Reject: every change the run waits on, or Kai's turn), the same decision the
+// Inbox makes; Continue goes on after a model's limit. A plan to steer opens it (it needs a choice).
 // In the desktop app each new one is also a system notification, on any page: a click brings the
 // app forward to it, and on macOS its buttons make the same decision without opening the app.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { continueLimited, decideChange, decideCoding } from "../core/agents";
 import { desktopNotify } from "../core/desktop";
@@ -18,14 +17,12 @@ import { go, useRoute } from "../core/nav";
 import { waitingChanges } from "../core/presence";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import { D, S, render, task } from "../data/store";
-import { isLive, live } from "../data/live";
+import { codingRunDecided, codingSessionDecided, isLive, live, runChangesDecided } from "../data/live";
 import type { Notif } from "../data/types";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
-import { useDecide, useWorkspaceApprovals } from "../../lib/agent";
-import { api, unwrap } from "../../lib/api";
-import { queryClient } from "../../lib/queryClient";
-import { useCodingRun, useDecideCoding } from "../../lib/coding";
+import { useWorkspaceApprovals } from "../../lib/agent";
+import { useCodingRun } from "../../lib/coding";
 import { useLiveNotifications } from "../../lib/workspace-data";
 
 interface Notice {
@@ -39,8 +36,12 @@ interface Notice {
   act?: { label: string; run: () => void };
   /** A real workspace's coding turn waiting for approval: decided here. */
   coding?: { workspaceId: string; projectId: string; runId: string };
-  /** A real workspace's agent run paused on changes: one small one is decided here. */
+  /** A real workspace's agent run paused on changes: decided here, all of them. */
   changes?: { workspaceId: string; projectId: string; runId: string };
+  /** A real workspace's Kai session waiting on you (its waiting turn is found when you decide). */
+  session?: { projectId: string; sessionId: string };
+  /** The sample's approve and reject. */
+  decide?: { approve: () => void; reject: () => void };
   open: () => void;
 }
 
@@ -63,7 +64,7 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
       title: steer ? "wants you to steer its plan" : "needs your approval",
       text: ws.length > 1 ? `${ws.length} changes · ${ws.map((x) => x.ch.title).join(", ")}` : w.ch.title,
       mood: "needs",
-      act: one ? { label: "Approve", run: () => decideChange(w.ch.id, true) } : undefined,
+      decide: one ? { approve: () => decideChange(w.ch.id, true), reject: () => decideChange(w.ch.id, false) } : undefined,
       open: () => (isLive() ? go("chat", {}, { search: `thread=${w.th.id}` }) : openDemoRequest({ thread: w.th.id })),
     });
   }
@@ -119,10 +120,14 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
       });
     }
   }
+  // A turn an approval notification already names is decided there, once.
+  const notified = new Set((liveNotifs ?? []).filter((n) => n.type === "approval" && n.codingRun && !n.read).map((n) => `${n.project}:${n.task}`));
   for (const cs of D().coding) {
     const tool = CODING_TOOLS.find((t) => t.id === `agent:${cs.tool}`);
     const key = task(cs.task)?.key ?? "";
-    if (!tool || (cs.status !== "awaiting_approval" && cs.status !== "failed")) continue;
+    const waits = cs.status === "awaiting_approval" || (isLive() && cs.status === "changes_ready");
+    if (!tool || (!waits && cs.status !== "failed")) continue;
+    if (waits && isLive() && notified.has(`${cs.project}:${cs.task}`)) continue;
     const open = () => (isLive() ? go("codes", {}, { search: `session=${cs.id}` }) : openDemoRequest({ task: cs.task }));
     out.push(
       cs.status === "failed"
@@ -141,11 +146,12 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
             at: cs.at,
             c: tool.c,
             name: tool.name,
-            title: "wants to start coding",
+            title: cs.status === "changes_ready" ? "has changes to push" : "wants to start coding",
             text: `${key} ${task(cs.task)?.title ?? ""}`,
             mood: "needs",
-            // A real workspace approves the turn where it's shown (Codes, the Inbox): Open goes there.
-            act: isLive() ? undefined : { label: "Approve", run: () => decideCoding(cs, true) },
+            ...(isLive()
+              ? { session: { projectId: cs.project, sessionId: cs.id } }
+              : { decide: { approve: () => decideCoding(cs, true), reject: () => decideCoding(cs, false) } }),
             open,
           },
     );
@@ -201,6 +207,12 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
             <CodingNoticeActions {...n.coding} open={n.open} done={() => shut(n.key)} />
           ) : n.changes ? (
             <ChangeNoticeActions {...n.changes} open={n.open} done={() => shut(n.key)} />
+          ) : n.session || n.decide ? (
+            <Decide
+              approve={async () => (n.session ? await codingSessionDecided(n.session.projectId, n.session.sessionId, true) : (n.decide!.approve(), true))}
+              reject={async () => (n.session ? await codingSessionDecided(n.session.projectId, n.session.sessionId, false) : (n.decide!.reject(), true))}
+              done={() => shut(n.key)}
+            />
           ) : n.act ? (
             <button className="btn btn-sm btn-primary" onClick={n.act.run}>
               {n.act.label}
@@ -219,8 +231,28 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
   );
 }
 
-/** Approve or reject a turn that waits to start, as Inbox does. Checked changes waiting to be pushed
- * open Inbox instead, where their files and any CI-sensitive ones are shown before accepting. */
+/** Reject and Approve buttons for a decision that resolves when it has gone through (or been refused). */
+function Decide({ approve, reject, done }: { approve: () => Promise<boolean>; reject: () => Promise<boolean>; done: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const run = (f: () => Promise<boolean>) => {
+    setBusy(true);
+    void f()
+      .then((ok) => ok && done())
+      .finally(() => setBusy(false));
+  };
+  return (
+    <>
+      <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => run(reject)}>
+        Reject
+      </button>
+      <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(approve)}>
+        Approve
+      </button>
+    </>
+  );
+}
+
+/** Approve or reject a turn of Kai's that waits on you, as Inbox does: to start, or its checked changes to be pushed. */
 function CodingNoticeActions({
   workspaceId,
   projectId,
@@ -234,33 +266,17 @@ function CodingNoticeActions({
   open: () => void;
   done: () => void;
 }) {
-  const scope = { workspaceId, projectId };
-  const run = useCodingRun(scope, runId);
-  const decide = useDecideCoding(scope, run.data?.issue_key ?? "");
-  const r = run.data;
-  if (!r || r.status !== "awaiting_approval" || !r.can_decide)
+  const r = useCodingRun({ workspaceId, projectId }, runId).data;
+  if (!r || !(r.status === "awaiting_approval" || r.status === "changes_ready") || !r.can_decide)
     return (
       <button className="btn btn-sm btn-secondary" onClick={open}>
-        {r?.status === "changes_ready" ? "Review" : "Open"}
+        Open
       </button>
     );
-  const decision = (approve: boolean) => decide.mutate({ runId: r.id, decision: approve ? "approve" : "reject" }, { onSuccess: done });
-  return (
-    <>
-      <button className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
-        Reject
-      </button>
-      <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
-        Approve
-      </button>
-    </>
-  );
+  return <Decide approve={() => codingRunDecided(projectId, runId, true)} reject={() => codingRunDecided(projectId, runId, false)} done={done} />;
 }
 
-// Board changes are short enough to decide from the notice; a document's edit has a diff to read.
-const QUICK_TOOLS = new Set(["create_issue", "update_issue", "comment_issue", "link_items"]);
-
-/** Approve or reject an agent's one waiting board change, as Inbox does; anything else opens Inbox. */
+/** Approve or reject every change an agent's run waits on you for, as Inbox does. */
 function ChangeNoticeActions({
   workspaceId,
   projectId,
@@ -275,27 +291,14 @@ function ChangeNoticeActions({
   done: () => void;
 }) {
   const approvals = useWorkspaceApprovals(workspaceId);
-  const decide = useDecide({ workspaceId, projectId });
   const pending = (approvals.data ?? []).filter((a) => a.run_id === runId && a.status === "pending");
-  const [only] = pending;
-  if (pending.length !== 1 || !QUICK_TOOLS.has(only.tool))
+  if (!pending.length)
     return (
       <button className="btn btn-sm btn-secondary" onClick={open}>
-        {pending.length ? "Review" : "Open"}
+        Open
       </button>
     );
-  const decision = (approve: boolean) =>
-    decide.mutate({ runId, decisions: [{ approval_id: only.id, decision: approve ? "approve" : "reject" }] }, { onSuccess: done });
-  return (
-    <>
-      <button className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
-        Reject
-      </button>
-      <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
-        Approve
-      </button>
-    </>
-  );
+  return <Decide approve={() => runChangesDecided(projectId, runId, true)} reject={() => runChangesDecided(projectId, runId, false)} done={done} />;
 }
 
 /** In the desktop app, each notice that appears while it runs becomes a system notification (what
@@ -323,7 +326,7 @@ function useSystemNotices(all: Notice[], loaded: boolean) {
     for (const n of latest.current.values()) {
       if (seen.current.has(n.key)) continue;
       seen.current.add(n.key);
-      const actions = n.act ? [n.act.label] : n.coding || n.changes ? ["Approve", "Reject"] : [];
+      const actions = n.act ? [n.act.label] : n.coding || n.changes || n.session || n.decide ? ["Approve", "Reject"] : [];
       void bridge.show({ id: n.key, title: `${n.name} ${n.title}`, body: n.text, actions }).catch(() => undefined);
     }
   }, [keys, loaded]);
@@ -337,35 +340,17 @@ async function systemAction(n: Notice, action: string | null) {
   try {
     if (n.act && action === n.act.label) return n.act.run();
     const approve = action === "Approve";
-    if (n.coding) {
-      const path = { workspace_id: n.coding.workspaceId, project_id: n.coding.projectId, coding_run_id: n.coding.runId };
-      const run = await unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}", { params: { path } }));
-      if (run.status !== "awaiting_approval" || !run.can_decide) return n.open();
-      await unwrap(
-        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision", {
-          params: { path },
-          body: { decision: approve ? "approve" : "reject", reason: null },
-        }),
-      );
-      toast(approve ? `Kai is starting on ${run.issue_key}` : `Rejected Kai's turn on ${run.issue_key}`);
-    } else if (n.changes) {
-      const { workspaceId, projectId, runId } = n.changes;
-      const approvals = await unwrap(api.GET("/v1/workspaces/{workspace_id}/approvals", { params: { path: { workspace_id: workspaceId } } }));
-      const pending = approvals.filter((a) => a.run_id === runId && a.status === "pending");
-      if (pending.length !== 1 || !QUICK_TOOLS.has(pending[0].tool)) return n.open();
-      await unwrap(
-        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/decisions", {
-          params: { path: { workspace_id: workspaceId, project_id: projectId, run_id: runId } },
-          body: { decisions: [{ approval_id: pending[0].id, decision: approve ? "approve" : "reject" }] },
-        }),
-      );
-      toast(approve ? "Approved" : "Rejected");
-    } else return n.open();
+    // The same decisions as the notice's buttons (they say how it went, and refetch what it changed).
+    let ok: boolean;
+    if (n.coding) ok = await codingRunDecided(n.coding.projectId, n.coding.runId, approve);
+    else if (n.changes) ok = await runChangesDecided(n.changes.projectId, n.changes.runId, approve);
+    else if (n.session) ok = await codingSessionDecided(n.session.projectId, n.session.sessionId, approve);
+    else if (n.decide) ok = (approve ? n.decide.approve() : n.decide.reject(), true);
+    else return n.open();
+    if (!ok) return;
     S.ui.noticesShut = [...S.ui.noticesShut, n.key];
     render();
   } catch (e) {
     toast(e instanceof Error && e.message ? e.message : "That didn't go through; open it to try again", { kind: "err" });
-  } finally {
-    void queryClient.invalidateQueries();
   }
 }

@@ -1064,3 +1064,90 @@ export function commentReacted(c: Comment, emoji: string, on: boolean) {
     refresh: ISSUES,
   });
 }
+
+/* ---------- decisions from the agents panel and the corner notices ---------- */
+
+/** What an approval or a rejection can change: the run and what it was about to write, the queues, the Inbox. */
+const DECIDED = [...ISSUES, ...KNOWLEDGE, "approvals", "agent", "threads", "conversations", "run-events", "coding-run", "coding-runs", "coding-session"];
+type CodingRun = Schemas["CodingRunRead"];
+/** A turn of Kai's waits on you: to start, or (Manual) for its checked changes to be pushed. */
+const waitsOnYou = (r: CodingRun) => (r.status === "awaiting_approval" || r.status === "changes_ready") && r.can_decide;
+const nothingWaits = () => {
+  toast("Nothing here waits on you any more", { kind: "info" });
+  refresh(DECIDED);
+  return false;
+};
+
+async function decideCodingRun(projectId: string, r: CodingRun, approve: boolean): Promise<boolean> {
+  const pushing = r.status === "changes_ready";
+  const done = await write({
+    what: approve ? "The approval" : "The rejection",
+    touches: [],
+    request: () =>
+      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/decision", {
+        params: { path: { ...projectPath(projectId), coding_run_id: r.id } },
+        body: { decision: approve ? "approve" : "reject", reason: null },
+      }),
+    refresh: DECIDED,
+  });
+  if (done)
+    toast(approve ? (pushing ? `Pushing Kai's changes on ${r.issue_key}` : `Kai is starting on ${r.issue_key}`) : `Rejected Kai's turn on ${r.issue_key}`);
+  return done !== undefined;
+}
+
+/** Approve or reject a turn of Kai's by its id (an approval notification names it). */
+export async function codingRunDecided(projectId: string, runId: string, approve: boolean): Promise<boolean> {
+  try {
+    const r = await unwrap(
+      api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}", {
+        params: { path: { ...projectPath(projectId), coding_run_id: runId } },
+      }),
+    );
+    return waitsOnYou(r) ? decideCodingRun(projectId, r, approve) : nothingWaits();
+  } catch (e) {
+    failed(approve ? "The approval" : "The rejection", e);
+    return false;
+  }
+}
+
+/** Approve or reject the turn of a Kai session that waits on you (the session list doesn't name it: its turns do). */
+export async function codingSessionDecided(projectId: string, sessionId: string, approve: boolean): Promise<boolean> {
+  try {
+    const runs = await unwrap(
+      api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}", {
+        params: { path: { ...projectPath(projectId), session_id: sessionId } },
+      }),
+    );
+    const r = [...runs].reverse().find(waitsOnYou);
+    return r ? decideCodingRun(projectId, r, approve) : nothingWaits();
+  } catch (e) {
+    failed(approve ? "The approval" : "The rejection", e);
+    return false;
+  }
+}
+
+/** Approve or reject every change an agent's run waits on you for. */
+export async function runChangesDecided(projectId: string, runId: string, approve: boolean): Promise<boolean> {
+  try {
+    const approvals = await unwrap(api.GET("/v1/workspaces/{workspace_id}/approvals", { params: { path: { workspace_id: wsId() } } }));
+    const pending = approvals.filter((a) => a.run_id === runId && a.status === "pending");
+    if (!pending.length) return nothingWaits();
+    const decision: "approve" | "reject" = approve ? "approve" : "reject";
+    const done = await write({
+      what: approve ? "The approval" : "The rejection",
+      touches: [],
+      request: () =>
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/decisions", {
+          params: { path: { ...projectPath(projectId), run_id: runId } },
+          body: { decisions: pending.map((a) => ({ approval_id: a.id, decision })) },
+        }),
+      refresh: DECIDED,
+    });
+    const n = pending.length === 1 ? "the change" : `${pending.length} changes`;
+    if (done) toast(approve ? `Approved ${n}` : `Rejected ${n}`);
+    return done !== undefined;
+  } catch (e) {
+    failed(approve ? "The approval" : "The rejection", e);
+    return false;
+  }
+}

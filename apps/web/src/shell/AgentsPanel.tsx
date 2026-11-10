@@ -61,6 +61,17 @@ function Row({ p }: { p: Presence }) {
         {p.state === "working" && <span className="ap-bar" aria-hidden />}
         {p.approve && (
           <span className="ap-acts">
+            {p.reject && (
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  p.reject!();
+                }}
+              >
+                Reject
+              </button>
+            )}
             <button
               className="btn btn-sm btn-primary"
               onClick={(e) => {
