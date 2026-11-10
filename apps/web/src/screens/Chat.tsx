@@ -66,7 +66,7 @@ import { MOD, ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
 import { D, S, canSee, me, proj, projByKey, render, task, who } from "../data/store";
-import { useProjects } from "../data/lists";
+import { useAgents, useProjects } from "../data/lists";
 import { useAllTasks } from "../data/tasks";
 import { Markdown } from "@/components/markdown";
 import { PublishChatOutcome } from "../components/PublishChatOutcome";
@@ -421,7 +421,8 @@ export function Message({
   children?: React.ReactNode;
 }) {
   const w = who(m.by);
-  const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
+  const { items: agents } = useAgents();
+  const agent = m.role === "agent" ? agents.find((a) => a.handle === m.by) : null;
   const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
   const liveDocs = useLiveKnowledgeFiles(isLive() && live.ws && projectId ? { workspaceId: live.ws.id, projectId } : undefined, isLive() && m.role === "agent");
   const refs =
@@ -916,7 +917,7 @@ function Composer({
   const [text, setText] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const a = D().agents.find((x) => x.handle === agent);
+  const a = useAgents().items.find((x) => x.handle === agent);
   // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
   const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, modes: modeOptions, mode, onMode: setMode });
   useEffect(() => {
@@ -1050,6 +1051,7 @@ function Composer({
 }
 
 function Conversation({ id, projectId, title }: { id: string; projectId: string | null; title: string }) {
+  const { items: agents } = useAgents();
   const ws = wsId();
   const p = proj(projectId ?? "");
   const scope = useMemo(() => (ws && projectId ? { workspaceId: ws, projectId } : undefined), [ws, projectId]);
@@ -1147,7 +1149,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           )}
           <span className="chat-faces hide-m" aria-label="Agents in this conversation">
             {[...new Set(runs.map((r) => handleOf(r.agent)))].map((h) => {
-              const ag = D().agents.find((x) => x.handle === h);
+              const ag = agents.find((x) => x.handle === h);
               return ag ? (
                 <span key={h} data-tip={`${ag.name} · ${ag.role}`}>
                   <Face c={ag.c} size={20} mood={moodOf(h)} />
@@ -1177,9 +1179,9 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             {active && (
               <div className="chat-msg agent working">
                 <div className="who">
-                  <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
-                  <b>{agentName(agent)}</b>
-                  <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
+                  <Face c={agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
+                  <b>{agents.find((a) => a.handle === agent)?.name ?? agent}</b>
+                  <span className="role">{agents.find((a) => a.handle === agent)?.role}</span>
                 </div>
                 <div className="body">
                   <Trace className="agent-trace" aria-live="polite">

@@ -6,7 +6,8 @@ import { Ic } from "../core/icons";
 import { TODAY, diffD, initials, parse, relDate } from "../core/utils";
 import { moodOf } from "../core/presence";
 import { Face } from "./face";
-import { D, pColor, who } from "../data/store";
+import { pColor, who } from "../data/store";
+import { useMembers } from "../data/lists";
 import type { FileItem, Project, Task } from "../data/types";
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 /** A person's (or an agent's) avatar; nobody: the dashed "unassigned" circle. */
@@ -205,7 +206,7 @@ export function Hl({ text, q }: { text: string; q: string }) {
 }
 /** A comment's text with @mentions marked. */
 export function CommentText({ text }: { text: string }) {
-  const names = D().members.map((m) => "@" + m.name);
+  const names = useMembers().items.map((m) => "@" + m.name);
   const parts: ReactNode[] = [];
   let rest = text;
   let k = 0;

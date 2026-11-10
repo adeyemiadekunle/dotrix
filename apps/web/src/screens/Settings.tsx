@@ -64,9 +64,8 @@ import {
   type NotifSettings,
 } from "../data/account";
 import { automationAdded, automationRemoved, automationToggled, isLive, live, reloadAgents } from "../data/live";
-import { useLiveAgents } from "../../lib/workspace-data";
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
-import { useAudit, useAutomations, useProjects } from "../data/lists";
+import { useAgents, useAudit, useAutomations, useMembers, useProjects } from "../data/lists";
 import { SHORTCUTS } from "../overlays/Modals";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -408,7 +407,7 @@ const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : "
 
 /** An agent's contract in a real workspace: loaded from the API, saved as a new version. */
 function LiveAgent({ handle }: { handle: string }) {
-  const liveAgents = useLiveAgents(live.ws?.id, isLive());
+  const { items: agents } = useAgents();
   const a = useApi(() => agentDetail(handle), [handle]);
   const cat = useApi(agentCatalog);
   const ms = useApi(models);
@@ -421,7 +420,7 @@ function LiveAgent({ handle }: { handle: string }) {
   const ag = a.data;
   const v = f ?? fieldsOf(ag);
   const set = (patch: Partial<AgentFields>) => setF({ ...v, ...patch });
-  const look = (isLive() ? (liveAgents ?? []) : D().agents).find((x) => x.handle === handle);
+  const look = agents.find((x) => x.handle === handle);
   const save = () => {
     if (!v.instructions.trim()) return toast("Give the agent instructions", { kind: "err" });
     setBusy(true);
@@ -612,9 +611,8 @@ function LiveAgent({ handle }: { handle: string }) {
 function Agents() {
   const [guidance, setGuidance] = useState<Record<string, string>>({});
   const [kaiGuidance, setKaiGuidance] = useState("");
-  const liveAgents = useLiveAgents(live.ws?.id, isLive());
+  const { items: agents } = useAgents();
   const roster = useBuiltinTeam(isLive() ? live.ws?.id : undefined);
-  const agents = isLive() ? (liveAgents ?? []) : D().agents;
   const sel = agents.find((a) => a.handle === S.ui.agentSel);
   if (isLive() && (sel || S.ui.agentSel === "coding-agent")) return <LiveAgent key={S.ui.agentSel} handle={S.ui.agentSel!} />;
   if (!isLive() && S.ui.agentSel === "coding-agent")
@@ -1175,8 +1173,7 @@ function MyAgentRow({
 }
 
 function MyAgents() {
-  const liveAgents = useLiveAgents(live.ws?.id, isLive());
-  const agents = [...(isLive() ? (liveAgents ?? []) : D().agents), { handle: "coding-agent", name: "Kai", desc: "Implements your instructed coding work." }];
+  const agents = [...useAgents().items, { handle: "coding-agent", name: "Kai", desc: "Implements your instructed coding work." }];
   const prefs = useApi(isLive() ? myAgents : async () => [] as { handle: string; instructions: string; model?: string | null }[]);
   const ms = useApi(isLive() ? models : async () => DEMO_MODELS.map((m) => ({ id: m })));
   if (prefs.error) return <div className="alert danger">{prefs.error}</div>;
@@ -2834,6 +2831,7 @@ const ITEM_NEEDS: Record<string, Perm> = {
 };
 
 export function Settings() {
+  const { items: members } = useMembers();
   const { params } = useRoute();
   const asked = params.sec || S.ui.settings || "profile";
   const renamed = asked === "devices" ? "sessions" : asked === "models" ? "my-models" : asked;
@@ -2844,7 +2842,7 @@ export function Settings() {
   const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k));
   const page = SEC_PAGE[sec] ?? sec;
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
-  const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[page];
+  const lead = sec === "members" ? `${members.length} ${LEADS.members}` : LEADS[page];
   return (
     <div className="set">
       <nav className="set-nav" aria-label="Settings">
