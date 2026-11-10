@@ -55,6 +55,17 @@ const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) 
     return r;
   });
 
+/** What a change to an issue can show up in: the issue lists and details, activity, notifications, the graph,
+ * search, the audit log, a project's readiness, and Kai's sessions (assigning Kai starts one). */
+const ISSUE_FED = ["issues", "activity", "notifications", "graph", "search", "audit", "project-readiness", "coding-sessions", "coding", "agent-activity"];
+const refreshIssues = () => void queryClient.invalidateQueries({ predicate: (q) => ISSUE_FED.includes(q.queryKey[0] as string) });
+/** A write to an issue: it refetches what issues feed, not the members, projects, documents and the rest. */
+const sendIssue = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) =>
+  unwrap(p).then((r) => {
+    refreshIssues();
+    return r;
+  });
+
 type WIssue = Schemas["WorkspaceIssue"];
 /** Every workspace-scoped issues cache (the filtered list variants and the starred-keys set share this prefix). */
 const issuesCaches = { queryKey: ["issues", "workspace"] } as const;
@@ -274,7 +285,7 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
     ...(archived === undefined ? {} : { archived_at: archived ? new Date().toISOString() : null }),
     ...(parent === undefined ? {} : { parent_key: parent }),
   }));
-  void send(
+  void sendIssue(
     api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } }, body }),
   )
     .then(async (i) => {
@@ -345,7 +356,7 @@ export function taskCreated(t: Task): Promise<void> {
   } as unknown as WIssue);
   // The lists are mirrored into the store as new objects, so look the task up again by its key.
   const copies = () => new Set([t, ...D().tasks.filter((x) => x.project === t.project && x.key === was)]);
-  const made = send(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: projectPath(t.project) }, body }))
+  const made = sendIssue(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: projectPath(t.project) }, body }))
     .then((i) => {
       const { description: _d, ...row } = i;
       replaceIssueRow(t.project, was, row as unknown as Partial<WIssue>);
@@ -428,7 +439,7 @@ export function commentPosted(t: Task, text: string, mentions: string[] = []) {
       : i,
   );
   patchIssueRows(t, (r) => ({ comment_count: r.comment_count + 1 }));
-  void send(
+  void sendIssue(
     api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments", {
       params: { path: { ...projectPath(t.project), key: t.key } },
       body: { body: text, mentions },
@@ -445,7 +456,7 @@ export function taskRanked(t: Task, before: Task | undefined, after: Task | unde
   const body = before ? { before: before.key } : { after: after!.key };
   // A project's lists sort by rank: show the new place now; the refetch brings the API's own number.
   patchIssueRows(t, () => ({ rank: t.order }));
-  void send(
+  void sendIssue(
     api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank", {
       params: { path: { ...projectPath(t.project), key: t.key } },
       body: body as Schemas["RankRequest"],
@@ -729,7 +740,7 @@ export async function issueFileAttached(file: File, t: Task, onProgress: (pct: n
   );
   t.attachments = (i.attachments ?? []).map(toAttachment);
   patchIssueRows(t, (r) => ({ attachment_count: r.attachment_count + 1 }));
-  invalidateLiveQueries();
+  refreshIssues();
   render();
   onProgress(100);
 }
@@ -767,7 +778,7 @@ export function taskStarred(t: Task) {
       .find((r) => r.key === t.key && r.project_id === t.project);
     return row ? [...rows, row] : rows;
   });
-  void send(
+  void sendIssue(
     on
       ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path)
       : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path),
@@ -782,7 +793,7 @@ export function taskStarred(t: Task) {
 export function attachmentRemoved(t: Task, attachmentId: string) {
   if (!isLive() || t.key.startsWith("new-") || attachmentId.startsWith("counted-")) return;
   patchIssueRows(t, (r) => ({ attachment_count: Math.max(0, r.attachment_count - 1) }));
-  void send(
+  void sendIssue(
     api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/attachments/{attachment_id}", {
       params: { path: { ...projectPath(t.project), key: t.key, attachment_id: attachmentId } },
     }),
@@ -804,7 +815,7 @@ export function tasksDeleted(ts: Task[]) {
     if (t.key.startsWith("new-")) continue;
     queryClient.setQueriesData<WIssue[]>(issuesCaches, (rows) => rows?.filter((r) => !(r.key === t.key && r.project_id === t.project)));
     queryClient.removeQueries({ queryKey: issueKeys.issue(issueScope(t.project), t.key) });
-    void send(
+    void sendIssue(
       api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(t.project), key: t.key } } }),
     ).catch(async (e) => {
       failed(`Deleting “${t.title}”`, e);
@@ -838,7 +849,7 @@ export function projectDeleted(pr: Project) {
 export async function taskMoved(t: Task, toProject: string) {
   const from = t.key;
   try {
-    const i = await send(
+    const i = await sendIssue(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/move", {
         params: { path: { ...projectPath(t.project), key: from } },
         body: { project_id: toProject },
@@ -862,7 +873,7 @@ const commentPath = (c: Comment) => {
 /** A comment's new text (its author only; the store shows it already). */
 export function commentEdited(c: Comment) {
   if (!isLive() || !fromApi(c.id)) return;
-  void send(
+  void sendIssue(
     api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", {
       params: { path: commentPath(c) },
       body: { body: c.text },
@@ -875,18 +886,18 @@ export function commentEdited(c: Comment) {
 /** A comment deleted (already gone from the store). */
 export function commentDeleted(c: Comment) {
   if (!isLive() || !fromApi(c.id)) return;
-  void send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", { params: { path: commentPath(c) } })).catch(
-    (e) => {
-      failed("Deleting the comment", e);
-      void invalidateLiveQueries();
-    },
-  );
+  void sendIssue(
+    api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}", { params: { path: commentPath(c) } }),
+  ).catch((e) => {
+    failed("Deleting the comment", e);
+    void invalidateLiveQueries();
+  });
 }
 /** Your reaction added or taken back (the store shows it already). */
 export function commentReacted(c: Comment, emoji: string, on: boolean) {
   if (!isLive() || !fromApi(c.id)) return;
   const path = { params: { path: { ...commentPath(c), emoji } } };
-  void send(
+  void sendIssue(
     on
       ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}", path)
       : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments/{comment_id}/reactions/{emoji}", path),
