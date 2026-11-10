@@ -12,6 +12,7 @@ import { useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./is
 import { useKnowledge, useKnowledgeFile } from "./knowledge";
 import { useNotifications } from "./notifications";
 import { useProjects } from "./queries";
+import { queryClient } from "./queryClient";
 import { useStarredProjects } from "./stars";
 import { ms, toActivity, toAgent, toAudit, toAutomation, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
 import type { Activity, Agent, AuditEvent, Automation, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
@@ -58,9 +59,33 @@ export function useLiveAllTasks(workspaceId: string | undefined, enabled = true)
   return useLiveTasks(workspaceId, {}, enabled);
 }
 
-/** Every issue including archived ones, rank-ordered — the synchronous store mirror keeps them all reachable. */
+/** The query every task lookup reads: all of a workspace's issues, archived ones too. */
+const EVERY_ISSUE: WorkspaceIssueFilters = { archived: "include", order: "created" };
+type IssueRows = Schemas["WorkspaceIssue"][];
+/** The Tasks made from the rows last seen. One Task per issue for as long as the cached rows don't change,
+ * so code that looks a task up twice gets the same object (the store's lookups, the drawer, the actions). */
+let seen: { rows: IssueRows; starred: IssueRows | undefined; tasks: Task[] } | null = null;
+function tasksFrom(rows: IssueRows, starred: IssueRows | undefined): Task[] {
+  if (seen?.rows === rows && seen.starred === starred) return seen.tasks;
+  const fav = new Set((starred ?? []).map((i) => i.key));
+  const tasks = rows.map((i) => ({ ...toTask(i, i.project_id, i.rank), fav: fav.has(i.key) }));
+  seen = { rows, starred, tasks };
+  return tasks;
+}
+/** Every task of a workspace from the query cache as it is now, without a hook (the store's `D().tasks`
+ * in a real workspace). Undefined until the issues have loaded. */
+export function cachedWorkspaceTasks(workspaceId: string): Task[] | undefined {
+  const rows = queryClient.getQueryData<IssueRows>(["issues", "workspace", workspaceId, EVERY_ISSUE]);
+  return rows && tasksFrom(rows, queryClient.getQueryData<IssueRows>(["issues", "workspace", workspaceId, "starred-keys"]));
+}
+/** Make the Tasks again from the cached rows, dropping what was changed on them without reaching the cache. */
+export function forgetWorkspaceTasks() {
+  seen = null;
+}
+
+/** Every issue including archived ones, rank-ordered: the same Tasks `cachedWorkspaceTasks` gives. */
 export function useLiveWorkspaceTasks(workspaceId: string | undefined, enabled = true): Task[] | undefined {
-  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, { archived: "include", order: "created" });
+  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, EVERY_ISSUE);
   const starred = useQuery({
     queryKey: ["issues", "workspace", workspaceId, "starred-keys"],
     queryFn: () =>
@@ -71,11 +96,7 @@ export function useLiveWorkspaceTasks(workspaceId: string | undefined, enabled =
       ),
     enabled: enabled && Boolean(workspaceId),
   });
-  return useMemo(() => {
-    if (!issues.data) return undefined;
-    const fav = new Set((starred.data ?? []).map((i) => i.key));
-    return issues.data.map((i) => ({ ...toTask(i, i.project_id, i.rank), fav: fav.has(i.key) }));
-  }, [issues.data, starred.data]);
+  return issues.data && tasksFrom(issues.data, starred.data);
 }
 
 /** The signed-in person's notifications as store Notifs (Home's waiting card, the Inbox). */
