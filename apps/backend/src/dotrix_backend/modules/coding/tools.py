@@ -388,6 +388,7 @@ OPENCODE_PROVIDERS = {
         OpenCodeProvider("mistral", "mistral", "Mistral", "MISTRAL_API_KEY", "api.mistral.ai", "mistral_api_key"),
         OpenCodeProvider("groq", "groq", "Groq", "GROQ_API_KEY", "api.groq.com", "groq_api_key"),
         OpenCodeProvider("openrouter", "openrouter", "OpenRouter", "OPENROUTER_API_KEY", "openrouter.ai", "openrouter_api_key"),
+        OpenCodeProvider("nvidia", "nvidia", "NVIDIA", "NVIDIA_API_KEY", "integrate.api.nvidia.com", "nvidia_api_key"),
     )
 }
 # Never offered to the model: the sandbox can't reach the web, and a run has nobody to answer.

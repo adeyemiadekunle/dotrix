@@ -80,6 +80,7 @@ const PROVIDERS: Record<string, string> = {
   mistral: "Mistral",
   groq: "Groq",
   openrouter: "OpenRouter",
+  nvidia: "NVIDIA",
 };
 
 /** A model's provider as people read it, from its id's prefix ("openai:gpt-5.5" → "OpenAI"); "" without one. */

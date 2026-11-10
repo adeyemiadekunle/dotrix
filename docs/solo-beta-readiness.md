@@ -17,7 +17,7 @@ list the beta is released against.
 | GitHub | One GitHub App installation per account, one connected repository per project; PRs, checks, Juno's review on the PR, CI failures triaged | The App needs Contents, Pull requests, Checks (read), Actions (read), Issues (write) and the Check suite event. |
 | Chat models (personal keys) | Anthropic, OpenAI, Google | Personal BYOK only: every run uses the person's own encrypted key, and nothing runs without one. Google works for DeepAgents conversations; fx chat on Google is not supported (libfx rejects Gemini's stream endings). |
 | Chat runtime | DeepAgents (default), fx per conversation | fx has been checked live on Anthropic only. |
-| Coding engines | Claude Code (Anthropic), Codex (OpenAI), OpenCode (Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter), fx (OpenAI-compatible providers) | A session picks a model; the engine follows it. Each engine is pinned in the coding image. |
+| Coding engines | Claude Code (Anthropic), Codex (OpenAI), OpenCode (Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA), fx (OpenAI-compatible providers) | A session picks a model; the engine follows it. Each engine is pinned in the coding image. |
 | Where coding runs | Cloud: Docker sandboxes on the worker with gVisor, or Docker Cloud sandboxes. Local: the desktop app or CLI runner in the person's own folder | Local turns run commands only when `sbx` (Docker Sandboxes) is installed; without it the tool only edits files. |
 | Approvals | Manual, Accept edits, Auto; Nova's first handoff to Kai starts at once only in Auto | Changes to files CI runs wait for a person in every mode. |
 | Desktop app | Windows installer and self-updates | Unsigned (SmartScreen warns). macOS later. |
