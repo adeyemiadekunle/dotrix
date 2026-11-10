@@ -28,6 +28,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Fixed
 
 - Approve on a coding session waiting in the agents panel or a corner notice no longer looks approved without starting it: it approves the turn on the server.
+- A project conversation on an xAI, DeepSeek, Mistral, Groq or OpenRouter model no longer fails before it starts. Those providers have no built-in web search, and the run refused to start without one.
 - Changing the status, priority or assignee of several selected tasks at once in List is saved. Before, it showed the change but didn't keep it after a reload.
 - A card dragged to a new place in its board column, or a row dragged in a project's list, keeps that place. The board showed a project's tasks by due date, so a card went back to where it was.
 - A project's board and list no longer say "No tasks here" for a moment while its tasks are still loading.
@@ -38,7 +39,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
-- NVIDIA as a model provider: connect your build.nvidia.com key (`nvapi-…`) in Account → Your models to use NVIDIA's hosted models, which are free to try with rate limits, for chat and for Kai (on OpenCode or fx). Nemotron 3 Ultra and DeepSeek V4.1 Flash are offered to start.
+- NVIDIA as a model provider: connect your build.nvidia.com key (`nvapi-…`) in Account → Your models to use NVIDIA's hosted models, which are free to try with rate limits, for chat and for Kai (on OpenCode or fx). Six are offered, each checked live for fast, working tool calls: Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Bolt, Mistral Large 4, Gemma 4 31B and Laguna XS 2.1.
 - A private solo beta readiness page (`docs/solo-beta-readiness.md`): the supported configuration, the checks to run where, and the known limitations to tell participants.
 - Personal workspaces can launch on their own: with `DOTRIX_ORGANISATIONS` off (the default on staging and production), organisation workspaces can't be created, joined, opened or moved into, and the app hides every way to reach one. A personal workspace also no longer shows Members, Permissions or invites. Existing organisations keep their data and return when the setting is turned on.
 

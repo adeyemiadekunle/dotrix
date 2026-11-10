@@ -45,9 +45,11 @@ TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
 _APPROVAL = {"allowed_decisions": ["approve", "edit", "reject"]}
 
 
-def _web_search_tool(model: str) -> dict:
+def native_web_search(model: str) -> dict | None:
     """Provider-native web search. Each provider's built-in tool has a
-    different shape, and the wrong one fails at the first model call."""
+    different shape, and the wrong one fails at the first model call. None for a provider without
+    one (xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA): its agents search with our own web
+    tools (`dotrix_engine.web`, given as `web_tools`) where they're configured, else not at all."""
     provider = model.split(":", 1)[0] if ":" in model else ""
     if provider == "anthropic":
         return {"type": "web_search_20250305", "name": "web_search", "max_uses": 8}
@@ -55,10 +57,7 @@ def _web_search_tool(model: str) -> dict:
         return {"type": "web_search"}
     if provider in ("google_genai", "google_vertexai"):
         return {"google_search": {}}
-    raise ValueError(
-        f"No built-in web search known for provider {provider!r}. "
-        f"Pass our own search (`dotrix_engine.web`, Tavily) as `web_tools` instead."
-    )
+    return None
 
 
 def _task_tools(config: ProjectConfig) -> tuple[list, list]:
@@ -643,5 +642,5 @@ def build_agent(config: ProjectConfig, checkpointer: object | None = None):
         backend,
         checkpointer=checkpointer,
         task_tools=_task_tools(config),
-        web_search=_web_search_tool(config.model),
+        web_search=native_web_search(config.model),
     )

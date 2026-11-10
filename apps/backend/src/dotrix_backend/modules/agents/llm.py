@@ -15,7 +15,7 @@ from dotrix_backend.core.errors import DomainError
 from dotrix_backend.core.model_providers import PROVIDERS, Provider
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.projects.models import Project
-from dotrix_engine.agent import _web_search_tool
+from dotrix_engine.agent import native_web_search
 
 
 class ModelUnavailable(DomainError):
@@ -139,7 +139,7 @@ def settings_model_factory(settings: Settings) -> ModelFactory:
         specialist = project.specialist_model
         return ModelChoice(
             model=_build(chosen, keys, thinking=settings.chat_thinking_effort),
-            web_search=_web_search_tool(chosen),
+            web_search=native_web_search(chosen),
             specialist_model=_build(specialist, keys) if specialist and specialist != chosen else None,
         )
 

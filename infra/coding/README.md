@@ -249,7 +249,8 @@ it.
   Groq, and OpenRouter (Chat Completions), each using only its selected provider's test key. NVIDIA
   (2026-11-10): OpenCode 2.1.4 knows it from its own catalogue (`nvidia`, 22 models), and OpenCode and fx
   each ran a turn against a fake Chat Completions endpoint in the image (the key as `Bearer`, the model name
-  as NVIDIA's, tools sent); not yet on NVIDIA's real API.
+  as NVIDIA's, tools sent), then each fixed a one-line bug on NVIDIA's real API on Nemotron 3 Ultra (read,
+  edit, ran a check, reported; usage back). Not yet through the egress proxy or on a gateway.
   The real Docker isolation and Stop tests passed with this image.
 - **Not yet:**
   - Paid model calls with the added providers.
