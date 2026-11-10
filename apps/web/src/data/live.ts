@@ -17,7 +17,7 @@ import { issueKeys, issueOptions, type Issue, type Scope } from "@/lib/issues";
 import { RECUR_OUT, STATUS_OUT, fromApi, hashTint, logComment, ms, toAttachment, toAutomation, toChecklist, toFile, toTask } from "@/lib/view-models";
 import { invalidateLiveQueries, queryClient } from "@/lib/queryClient";
 import { MutationObserver, type QueryKey } from "@tanstack/react-query";
-import { SLOT_NAMES, forgetSlots, readSlot, writeSlot } from "@/lib/store-slots";
+import { SLOT_NAMES, forgetSlots, readSlot } from "@/lib/store-slots";
 
 import { featuresQuery } from "../core/features";
 import { fmtDate, uid } from "../core/utils";
@@ -202,13 +202,17 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       automations: [],
     };
     // Its lists are the query cache's, read as they are now (lib/store-slots.ts): nothing copies them in,
-    // so a lookup never lags behind a write. Until a list's queries have loaded, it's an array of its own.
+    // so a lookup never lags behind a write. Until a list's queries have loaded, it's an array of its own;
+    // after that a change goes through its save (below), and replacing the list does nothing.
     for (const name of SLOT_NAMES) {
       let early: unknown[] = [];
       Object.defineProperty(data, name, {
         enumerable: true,
         get: () => readSlot(name, ws.id) ?? early,
-        set: (v: never[]) => void (writeSlot(name, ws.id, v) || (early = v)),
+        set: (v: unknown[]) => {
+          if (readSlot(name, ws.id) === undefined) early = v;
+          else if (import.meta.env.DEV) console.warn(`D().${name} is the query cache here: change it through its save in data/live.ts.`);
+        },
       });
     }
     // Live data gets its own object — the demo's seed stays in S.data, untouched.

@@ -144,7 +144,8 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
             title: "wants to start coding",
             text: `${key} ${task(cs.task)?.title ?? ""}`,
             mood: "needs",
-            act: { label: "Approve", run: () => decideCoding(cs, true) },
+            // A real workspace approves the turn where it's shown (Codes, the Inbox): Open goes there.
+            act: isLive() ? undefined : { label: "Approve", run: () => decideCoding(cs, true) },
             open,
           },
     );

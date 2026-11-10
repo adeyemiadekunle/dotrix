@@ -159,3 +159,24 @@ test("tasks selected in List change status together, and it's saved", async ({ p
   await expect(column(page, "In Progress").getByText("Draft the pricing page")).toBeVisible();
   await expect(column(page, "In Progress").getByText("Check the invoices")).toBeVisible();
 });
+
+test("archiving a task can be undone, and the undo is saved", async ({ page }) => {
+  const { workspace, project } = await signUpWithProject(page);
+  await createTask(page, workspace.id, project.id, { title: "Draft the pricing page" });
+  await page.reload();
+
+  const card = column(page, "To Do").getByRole("button", { name: "Draft the pricing page" });
+  await card.click({ button: "right" });
+  const archived = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/issues\/[A-Z]+-\d+$/.test(new URL(r.url()).pathname));
+  await page.locator(".mi", { hasText: "Archive" }).first().click();
+  expect((await archived).status()).toBe(200);
+  await expect(column(page, "To Do").getByText("Draft the pricing page")).toHaveCount(0);
+
+  const restored = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/issues\/[A-Z]+-\d+$/.test(new URL(r.url()).pathname));
+  await page.getByRole("button", { name: "Undo" }).click();
+  expect((await restored).status()).toBe(200);
+  await expect(column(page, "To Do").getByText("Draft the pricing page")).toBeVisible();
+
+  await page.reload();
+  await expect(column(page, "To Do").getByText("Draft the pricing page")).toBeVisible();
+});

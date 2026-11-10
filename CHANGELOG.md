@@ -26,6 +26,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Approve on a coding session waiting in the agents panel or a corner notice no longer looks approved without starting it: in your own workspace it opens the session in Codes, where you approve it.
 - Changing the status, priority or assignee of several selected tasks at once in List is saved. Before, it showed the change but didn't keep it after a reload.
 - A card dragged to a new place in its board column, or a row dragged in a project's list, keeps that place. The board showed a project's tasks by due date, so a card went back to where it was.
 - A project's board and list no longer say "No tasks here" for a moment while its tasks are still loading.

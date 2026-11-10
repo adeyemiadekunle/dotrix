@@ -18,7 +18,6 @@ import {
   projectDeleted,
   showDemo,
   signOutLive,
-  taskPatched,
   tasksDeleted,
 } from "../data/live";
 import { inviteResent, isInvite, memberRemoved, ownershipTransferred } from "../data/account";
@@ -38,14 +37,18 @@ export function restore(snap: string) {
   render();
 }
 
-/** Undo for real workspaces: put the snapshot back, then send the restored field again.
- * (resend re-finds what changed — the restored copies are new objects.) */
+/** Undo a change to some tasks' `key`: the sample puts its snapshot back; a real workspace saves what
+ * each one had (its lists are the query cache, so there is no snapshot to put back). */
 function restoreSend(snap: string, ids: string[], key: "archived" | "status") {
-  restore(snap);
-  for (const id of ids) {
-    const t = task(id);
-    if (t) taskPatched(t, [key]);
-  }
+  if (!isLive()) return restore(snap);
+  const was = new Map((JSON.parse(snap) as { tasks: Task[] }).tasks.map((t) => [t.id, t]));
+  mutate(() => {
+    for (const id of ids) {
+      const t = task(id);
+      const before = was.get(id);
+      if (t && before) changeTask(t, { [key]: before[key] });
+    }
+  });
 }
 
 /* ---------- modals ---------- */
@@ -209,7 +212,8 @@ export function createProject(f: { name: string; desc?: string; icon: string; co
   // A real workspace lists it through its save (the cache); the sample adds it to the store.
   if (!isLive()) D().projects.push(p);
   D().projOrder.unshift(p.id);
-  D().activity.unshift({ id: uid("a"), by: D().me, verb: "created project", task: null, project: p.id, at: Date.now(), extra: "" });
+  // A real workspace's activity comes from the API.
+  if (!isLive()) D().activity.unshift({ id: uid("a"), by: D().me, verb: "created project", task: null, project: p.id, at: Date.now(), extra: "" });
   const tm = TEMPLATES.find((t) => t.id === tmplId);
   (tm?.tasks || []).forEach((title, i) => createTask({ project: p.id, title, status: i ? "todo" : "progress" }));
   projectCreated(p);
@@ -316,9 +320,9 @@ export function archiveProject(id: string) {
         toast(`Archived ${p.name}`, {
           action: "Undo",
           onAction: () => {
-            restore(snap);
+            if (!isLive()) return restore(snap);
             const r = proj(p.id);
-            if (r) void projectChanged(r, ["archived"]);
+            if (r) void projectChanged({ ...r, archived: false }, ["archived"]);
           },
         });
       }

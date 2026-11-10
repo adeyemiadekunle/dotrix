@@ -52,7 +52,8 @@ export function createTask(f: Partial<Task>): Task {
     key: f.key || nextKey(p),
   } as Task;
   t.project = p.id;
-  D().tasks.push(t);
+  // A real workspace lists it through its save (taskCreated puts its row in the cache).
+  if (!isLive()) D().tasks.push(t);
   logAct("created", t);
   void taskCreated(t);
   return t;
@@ -164,7 +165,8 @@ export function toggleFavProj(id: string) {
 export function setProjectStatus(id: string, v: ProjectStatusId) {
   const pr = proj(id)!;
   mutate(() => {
-    if (!isLive()) pr.status = v;
+    if (isLive()) return;
+    pr.status = v;
     D().activity.unshift({
       id: uid("a"),
       by: D().me,
