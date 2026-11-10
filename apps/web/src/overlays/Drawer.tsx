@@ -23,8 +23,7 @@ import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
-import { mdToHtml } from "../data/markdown";
-import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
+import { D, S, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import type { CodingSession, Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
@@ -32,8 +31,7 @@ import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "..
 import { toast } from "../ui/toast";
 import { SharedCodingOutcomes } from "../components/SharedCodingOutcomes";
 import { useCodingRuns } from "@/lib/coding";
-import { useIssue } from "@/lib/issues";
-import { logActivity, logComment, toAttachment } from "@/lib/view-models";
+import { useTask, useTaskDetail } from "../data/tasks";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -652,10 +650,9 @@ function CodingSection({ t }: { t: Task }) {
 /* ---------- the drawer ---------- */
 export function Drawer() {
   const id = S.ui.drawer;
-  const t = id ? task(id) : undefined;
+  const { task: t, find } = useTask(id);
+  const detail = useTaskDetail(t);
   const ref = useRef<HTMLElement>(null);
-  const scope = isLive() && live.ws && t ? { workspaceId: live.ws.id, projectId: t.project } : undefined;
-  const liveIssue = useIssue(scope, isLive() && t ? t.key : null);
   useEffect(() => {
     if (t && ref.current && !ref.current.contains(document.activeElement)) ref.current.focus({ preventScroll: true });
   }, [id]);
@@ -670,16 +667,8 @@ export function Drawer() {
   if (!t) return null;
   const p = proj(t.project)!;
   const u = S.ui;
-  const issue = liveIssue.data;
-  const cs = isLive() ? (issue?.log ?? []).filter((e) => e.kind === "commented" && e.body).map((e) => logComment(e, t.id)) : commentsOf(t.id);
+  const { comments: cs, activity: acts, attachments: atts } = detail;
   const sd = t.subtasks.filter((s) => s.done).length;
-  const acts = isLive()
-    ? (issue?.log ?? [])
-        .filter((e) => e.kind !== "commented")
-        .map((e) => logActivity(e, t.id))
-        .reverse()
-    : D().activity.filter((a) => a.task === t.id);
-  const atts = isLive() ? (issue?.attachments ?? []).map(toAttachment) : t.attachments;
   const tab = u.drawerTab;
   const ups = uploads.filter((x) => x.task === t.id);
   const sub = u.subOpen && u.subOpen.tid === t.id ? t.subtasks.find((s) => s.id === u.subOpen!.sid) : undefined;
@@ -848,13 +837,13 @@ export function Drawer() {
                   >
                     {t.deps.length ? (
                       t.deps.map((d) =>
-                        task(d) ? (
+                        find(d) ? (
                           <span key={d} style={{ display: "contents" }}>
                             <span className="depchip mono" style={{ fontSize: 11, padding: "1px 5px", borderRadius: 4, background: "var(--surface-3)" }}>
-                              {task(d)!.key}
+                              {find(d)!.key}
                             </span>
                             <span className="trunc" style={{ maxWidth: 160 }}>
-                              {task(d)!.title}
+                              {find(d)!.title}
                             </span>
                           </span>
                         ) : null,
@@ -868,15 +857,15 @@ export function Drawer() {
                   </button>,
                 )}
               </dl>
-              {isLive() && !issue ? (
+              {detail.state !== "ready" ? (
                 // The list rows carry no description — typing into an empty editor now would
                 // overwrite the real one on blur; wait for the detail query instead.
                 <div className="dsec">
                   <h3>Description</h3>
-                  {liveIssue.isError ? (
+                  {detail.state === "error" ? (
                     <div className="muted">
                       The description didn't load.{" "}
-                      <button className="btn btn-link" onClick={() => void liveIssue.refetch()}>
+                      <button className="btn btn-link" onClick={detail.retry}>
                         Try again
                       </button>
                     </div>
@@ -885,7 +874,7 @@ export function Drawer() {
                   )}
                 </div>
               ) : (
-                <Rte t={t} desc={isLive() ? mdToHtml(issue?.description ?? "") : t.desc} />
+                <Rte t={t} desc={detail.desc} />
               )}
               <Subtasks t={t} sd={sd} />
               <div className="dsec">
