@@ -1,5 +1,6 @@
 // Mirrors the workspace queries into the synchronous store slots the task kit still reads
-// (task(), proj()/who()/mem() lookups, PopLayer, presence, badges). The queries are the source
+// (proj()/who()/mem() lookups, PopLayer, presence, badges). Tasks are the exception: the store reads
+// them from the query cache directly, and this only redraws when they change. The queries are the source
 // of truth — these arrays are replaced, never merged — while writes keep flowing through
 // live.ts's senders and come back here through cache invalidation. The demo (/w/dotrix) is
 // never live, so nothing is mirrored and its seeded store is untouched. Deleting a slot's
@@ -64,7 +65,7 @@ export function StoreBridge() {
         ? [...kept, ...fresh.filter((p) => p.fav).map((p) => p.id), ...fresh.filter((p) => !p.fav).map((p) => p.id)]
         : [...projects.filter((p) => p.fav), ...projects.filter((p) => !p.fav)].map((p) => p.id);
     }
-    if (tasks) d.tasks = tasks;
+    // Tasks aren't copied: D().tasks reads the query cache itself (data/live.ts). This effect only redraws.
     if (notifs) d.notifs = notifs;
     if (acts) d.activity = acts;
     if (convos.data) d.threads = convos.data.map(toThread);

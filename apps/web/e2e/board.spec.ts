@@ -27,7 +27,10 @@ test("create a task, move it to In Progress, and comment on it", async ({ page }
   await expect(drawer.getByRole("button", { name: "Status: In Progress" })).toBeVisible();
 
   await drawer.getByRole("textbox", { name: "Comment" }).fill("Starting with the CLI guide.");
+  // The reload below comes a moment later: wait for the comment to be saved, not only shown.
+  const saved = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname.endsWith("/comments"));
   await drawer.getByRole("button", { name: "Comment", exact: true }).click();
+  expect((await saved).status()).toBe(201);
   await expect(drawer.getByText("Starting with the CLI guide.")).toBeVisible();
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();

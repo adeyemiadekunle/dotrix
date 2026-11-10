@@ -18,6 +18,7 @@ import { api, apiFetch, authPost, hasSession, problemMessage, unwrap, type Schem
 import { issueKeys, issueOptions, type Issue, type Scope } from "@/lib/issues";
 import { RECUR_OUT, STATUS_OUT, fromApi, hashTint, logComment, ms, toAttachment, toAutomation, toChecklist, toFile, toTask } from "@/lib/view-models";
 import { invalidateLiveQueries, queryClient } from "@/lib/queryClient";
+import { cachedWorkspaceTasks, forgetWorkspaceTasks } from "@/lib/workspace-data";
 
 import { featuresQuery } from "../core/features";
 import { fmtDate, uid } from "../core/utils";
@@ -102,6 +103,7 @@ const replaceIssueRow = (projectId: string, key: string, next?: Partial<WIssue>)
 
 /** A send failed after the store already showed the change: put the queries' data back over it. */
 const restoreMirror = () => {
+  forgetWorkspaceTasks();
   live.mirrorRev++;
   render();
 };
@@ -172,6 +174,14 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
       audit: [],
       automations: [],
     };
+    // Its tasks are the query cache's, read as they are now: nothing copies them in, so a lookup never
+    // lags behind a write. Until the issues have loaded (and for a write to the list itself) it's this array.
+    let early: Task[] = [];
+    Object.defineProperty(data, "tasks", {
+      enumerable: true,
+      get: () => cachedWorkspaceTasks(ws.id) ?? early,
+      set: (v: Task[]) => void (early = v),
+    });
     // Live data gets its own object — the demo's seed stays in S.data, untouched.
     setLiveData(data);
     S.prefs.name = me.display_name;
