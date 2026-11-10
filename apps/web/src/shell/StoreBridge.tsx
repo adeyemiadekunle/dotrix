@@ -1,16 +1,14 @@
-// Mirrors the workspace queries into the synchronous store slots the task kit still reads
-// (proj()/who()/mem() lookups, PopLayer, presence, badges). Tasks are the exception: the store reads
-// them from the query cache directly, and this only redraws when they change. The queries are the source
-// of truth — these arrays are replaced, never merged — while writes keep flowing through
-// live.ts's senders and come back here through cache invalidation. The demo (/w/dotrix) is
-// never live, so nothing is mirrored and its seeded store is untouched. Deleting a slot's
-// readers lets its mirror go.
+// Keeps the workspace's queries loaded for the store. In a real workspace the store's lists
+// (`D().tasks`, `.members`, `.projects`, `.notifs`, …) read those queries' cache directly
+// (lib/store-slots.ts, data/live.ts); nothing is copied here. This mounts the queries so they
+// fetch and stay fresh, redraws the store-reading screens when one changes, keeps the sidebar's
+// project order, and says when the directory (members, agents, projects) is ready. The demo
+// (/w/dotrix) is never live, so nothing here runs for it.
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useCodingSessions } from "../../lib/coding";
 import { useCrossConversations } from "../../lib/conversations";
-import { toCodingSession, toThread } from "../../lib/view-models";
 import {
   useLiveAgents,
   useLiveAudit,
@@ -54,10 +52,7 @@ export function StoreBridge() {
   useEffect(() => {
     if (!wsId) return;
     const d = D();
-    if (members) d.members = members;
-    if (agents) d.agents = agents;
     if (projects) {
-      d.projects = projects;
       // Sidebar order: starred first on first fill, then kept (drags stay), new projects last.
       const kept = d.projOrder.filter((id) => projects.some((p) => p.id === id));
       const fresh = projects.filter((p) => !kept.includes(p.id));
@@ -65,19 +60,10 @@ export function StoreBridge() {
         ? [...kept, ...fresh.filter((p) => p.fav).map((p) => p.id), ...fresh.filter((p) => !p.fav).map((p) => p.id)]
         : [...projects.filter((p) => p.fav), ...projects.filter((p) => !p.fav)].map((p) => p.id);
     }
-    // Tasks aren't copied: D().tasks reads the query cache itself (data/live.ts). This effect only redraws.
-    if (notifs) d.notifs = notifs;
-    if (acts) d.activity = acts;
-    if (convos.data) d.threads = convos.data.map(toThread);
-    if (sessions.data) d.coding = sessions.data.map(toCodingSession);
-    if (files) d.files = files;
-    if (knowledge) d.knowledge = knowledge;
-    if (autos) d.automations = autos;
-    if (audit) d.audit = audit;
     // Once the directory has resolved the shell may mount (screens read me()/proj() synchronously).
     if (members && agents && projects) live.dirReady = true;
     if (members || agents || projects || tasks || notifs || acts || convos.data || sessions.data || files || knowledge || autos || audit) render();
-    // mirrorRev is in the deps so a failed send re-runs this and overwrites the optimistic edit.
+    // mirrorRev is in the deps so a failed send redraws with the cache as it is (forgetSlots dropped the edit).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsId, live.mirrorRev, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
   return null;
