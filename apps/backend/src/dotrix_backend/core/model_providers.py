@@ -20,4 +20,6 @@ PROVIDERS = {
     "mistral": Provider("MISTRAL_API_KEY", "mistral_api_key", "api_key", "Mistral", "https://api.mistral.ai/v1"),
     "groq": Provider("GROQ_API_KEY", "groq_api_key", "api_key", "Groq", "https://api.groq.com/openai/v1"),
     "openrouter": Provider("OPENROUTER_API_KEY", "openrouter_api_key", "api_key", "OpenRouter", "https://openrouter.ai/api/v1"),
+    # NVIDIA's hosted models (build.nvidia.com, keys "nvapi-…"): Chat Completions only, no Responses API.
+    "nvidia": Provider("NVIDIA_API_KEY", "nvidia_api_key", "api_key", "NVIDIA", "https://integrate.api.nvidia.com/v1"),
 }

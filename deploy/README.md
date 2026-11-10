@@ -136,7 +136,7 @@ setup. If you put a firewall or an egress proxy in front of the VPS, allow HTTPS
 
 | Host | What for |
 | --- | --- |
-| `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, `api.x.ai`, `api.deepseek.com`, `api.mistral.ai`, `api.groq.com`, `openrouter.ai` | People's model keys: chat, specialists, coding (only the providers people connect) |
+| `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, `api.x.ai`, `api.deepseek.com`, `api.mistral.ai`, `api.groq.com`, `openrouter.ai`, `integrate.api.nvidia.com` | People's model keys: chat, specialists, coding (only the providers people connect) |
 | `github.com`, `api.github.com` | Sign-in, the GitHub App, checkouts, pushes and PRs |
 | `connect.docker.com`, `hub.docker.com`, and each sandbox's endpoint host | Docker Cloud sandboxes (`docker-cloud`): the Sandboxes API, signing in, and a sandbox's files and commands |
 | `api.osv.dev` | `dependency_advisories`: known vulnerabilities in a repository's dependencies. Without it the tool says OSV can't be reached; nothing else breaks |

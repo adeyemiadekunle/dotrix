@@ -36,7 +36,7 @@ const TEAM = [
   { name: "Kai", role: "Coding", c: "#5C95C4", text: "Writes the code in a sandbox and opens the pull request." },
 ];
 
-const PROVIDERS = ["Anthropic", "OpenAI", "Google", "xAI", "DeepSeek", "Mistral", "Groq", "OpenRouter"];
+const PROVIDERS = ["Anthropic", "OpenAI", "Google", "xAI", "DeepSeek", "Mistral", "Groq", "OpenRouter", "NVIDIA"];
 const ENGINES = ["Claude Code", "Codex", "OpenCode", "fx"];
 
 function Window({ src, alt, eager = false }: { src: string; alt: string; eager?: boolean }) {

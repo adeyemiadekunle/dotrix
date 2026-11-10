@@ -9,8 +9,8 @@ ever see Kai; the engine is never named in a step, failure, commit or PR.
 | --- | --- | --- |
 | Claude Code | Anthropic | Automatically for an Anthropic model |
 | Codex | OpenAI | Automatically for an OpenAI model |
-| OpenCode 2 | Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter | Automatically for the other providers |
-| fx (ACP, `fx-acp.mjs`) | OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter (not Google yet) | Only when a person prefers it, or `DOTRIX_CODING_AGENT=fx` |
+| OpenCode 2 | Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA | Automatically for the other providers |
+| fx (ACP, `fx-acp.mjs`) | OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA (not Google yet) | Only when a person prefers it, or `DOTRIX_CODING_AGENT=fx` |
 
 A new session picks a model (your default model to start), and the engine follows it: your
 preferred engine in Account → Your models where it can run that model, otherwise the one in the
@@ -117,7 +117,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, `opencode`, or `fx` |
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
 | `DOTRIX_CODING_OPENCODE_MODEL` | first available catalogue model | Optional server default, e.g. `xai:grok-4.7` |
-| `DOTRIX_CODING_FX_MODEL` | first available model | fx's default, on an OpenAI-compatible endpoint: OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter (not Google yet) |
+| `DOTRIX_CODING_FX_MODEL` | first available model | fx's default, on an OpenAI-compatible endpoint: OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA (not Google yet) |
 | `DOTRIX_CODING_FX_DRIVER` | `/opt/dotrix/fx-acp.mjs` | Where the image puts the ACP driver |
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
@@ -220,7 +220,7 @@ checks all of this against a real container (it's skipped where the image isn't 
    openshell provider profile import -f infra/coding/dotrix-opencode-openai.yaml --global
    openshell provider profile import -f infra/coding/dotrix-opencode-google.yaml --global
    # fx, one per provider it may run on (not yet checked on a gateway):
-   for p in openai anthropic xai deepseek mistral groq openrouter; do
+   for p in openai anthropic xai deepseek mistral groq openrouter nvidia; do
      openshell provider profile import -f "infra/coding/dotrix-fx-$p.yaml" --global
    done
    ```
@@ -246,7 +246,10 @@ it.
   checked against fake Anthropic and OpenAI-compatible APIs (turns, resume in a fresh sandbox,
   Stop, base URLs), and through the egress proxy to the real api.anthropic.com.
 - The coding image also completed fake local API runs for xAI (Responses), DeepSeek, Mistral,
-  Groq, and OpenRouter (Chat Completions), each using only its selected provider's test key.
+  Groq, and OpenRouter (Chat Completions), each using only its selected provider's test key. NVIDIA
+  (2026-11-10): OpenCode 2.1.4 knows it from its own catalogue (`nvidia`, 22 models), and OpenCode and fx
+  each ran a turn against a fake Chat Completions endpoint in the image (the key as `Bearer`, the model name
+  as NVIDIA's, tools sent); not yet on NVIDIA's real API.
   The real Docker isolation and Stop tests passed with this image.
 - **Not yet:**
   - Paid model calls with the added providers.

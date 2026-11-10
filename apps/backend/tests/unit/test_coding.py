@@ -105,7 +105,7 @@ def test_a_persons_default_needs_a_compatible_key_and_auto_supports_other_provid
     assert model_for(_settings(), CodingAgent.OPENCODE, {"xai"}) == "xai:grok-4.7"
     assert choose_agent(_settings(), {"xai"}, preferred="codex") is CodingAgent.OPENCODE
     assert choose_agent(_settings(openai_api_key=SecretStr("  "))) is None
-    for provider in ("xai", "deepseek", "mistral", "groq", "openrouter"):
+    for provider in ("xai", "deepseek", "mistral", "groq", "openrouter", "nvidia"):
         spec = OPENCODE_PROVIDERS[provider]
         model = f"{provider}:test-model"
         tool = tool_for(CodingAgent.OPENCODE, model)

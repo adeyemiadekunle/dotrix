@@ -21,6 +21,7 @@ def search_files(query: str) -> str:
     ("mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
     ("groq", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
     ("openrouter", "https://openrouter.ai/api/v1", "openai/gpt-5.5"),
+    ("nvidia", "https://integrate.api.nvidia.com/v1", "nvidia/nemotron-3-ultra-550b-a55b"),
 ])
 def test_compatible_providers_use_their_fixed_endpoint(provider: str, endpoint: str, model: str) -> None:
     chat = build_chat_model(f"{provider}:{model}", "test-provider-key")

@@ -155,7 +155,7 @@ class Settings(DatabaseSettings):
     coding_opencode_model: str | None = None
     # fx as Kai's engine (infra/coding/fx-acp.mjs drives `fx acp` in the sandbox): chosen when a person picks it
     # or `coding_agent` is "fx". Its model: "provider:model" on an OpenAI-compatible endpoint (OpenAI,
-    # Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter).
+    # Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA).
     coding_fx_model: str | None = None
     coding_fx_driver: str = "/opt/dotrix/fx-acp.mjs"  # where the coding image puts the driver
     coding_timeout_minutes: int = Field(default=30, ge=1, le=240)
@@ -209,6 +209,7 @@ class Settings(DatabaseSettings):
     mistral_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("MISTRAL_API_KEY", "DOTRIX_MISTRAL_API_KEY"))
     groq_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("GROQ_API_KEY", "DOTRIX_GROQ_API_KEY"))
     openrouter_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("OPENROUTER_API_KEY", "DOTRIX_OPENROUTER_API_KEY"))
+    nvidia_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("NVIDIA_API_KEY", "DOTRIX_NVIDIA_API_KEY"))
     # People connect their own provider keys (Account → Your models), stored encrypted with
     # these Fernet keys: comma-separated, the first encrypts, every one decrypts (to rotate, put
     # a new key first and re-save). None: people can't connect keys.
@@ -231,6 +232,9 @@ class Settings(DatabaseSettings):
         "mistral:mistral-small-latest",
         "groq:openai/gpt-oss-120b",
         "openrouter:openai/gpt-5.5",
+        # NVIDIA's hosted models are free to try (rate limited); both call tools.
+        "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia:deepseek-ai/deepseek-v4.1-flash",
     ]
     # Juno's reviews of Kai's PRs, and its look at their failed CI, posted on the PR as comments (never
     # approvals); needs the GitHub App's Pull requests (write). Off: they stay in dotrix only.

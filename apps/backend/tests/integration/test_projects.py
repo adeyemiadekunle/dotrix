@@ -125,7 +125,7 @@ async def test_project_model_choice(signup, create_team, db_client: AsyncClient)
     changed = await db_client.patch(url, json={"model": "openai:gpt-5"}, headers=ada.headers)
     assert changed.json()["model"] == "openai:gpt-5"
     for model in ("xai:grok-4.7", "deepseek:deepseek-flash", "mistral:mistral-small-latest",
-                  "groq:openai/gpt-oss-120b", "openrouter:openai/gpt-5.5"):
+                  "groq:openai/gpt-oss-120b", "openrouter:openai/gpt-5.5", "nvidia:deepseek-ai/deepseek-v4.1-flash"):
         res = await db_client.patch(url, json={"model": model}, headers=ada.headers)
         assert res.status_code == 200 and res.json()["model"] == model
     for bad in ("gpt-5", "unsupported:large", "anthropic:"):
