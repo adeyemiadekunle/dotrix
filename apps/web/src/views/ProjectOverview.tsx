@@ -10,9 +10,9 @@ import { editProject, share } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dayBucket, diffD, fmtDate, parse } from "../core/utils";
 import { D, isOver, mem, pColor, progressOf, task } from "../data/store";
+import { useProjectActivity } from "../data/lists";
 import { useProjectTasks } from "../data/tasks";
 import { isLive, live, liveCommentsOf } from "../data/live";
-import { useLiveProjectActivity } from "../../lib/workspace-data";
 import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
@@ -29,7 +29,7 @@ function goFilteredList(p: Project, st: string) {
 export function ProjectOverview({ p }: { p: Project }) {
   const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
   const { tasks: ts } = useProjectTasks(p.id);
-  const liveActs = useLiveProjectActivity(scope);
+  const { items: projectActs } = useProjectActivity(p.id);
   const pr = progressOf(p.id);
   const cnt = STATUSES.map((s) => ({ s, n: ts.filter((t) => t.status === s.id).length }));
   const over = ts.filter(isOver);
@@ -37,7 +37,7 @@ export function ProjectOverview({ p }: { p: Project }) {
     ts.filter((t) => t.status !== "done" && t.due),
     { f: "due", dir: 1 },
   ).slice(0, 6);
-  const acts = (isLive() ? (liveActs ?? []) : D().activity.filter((a) => a.project === p.id)).slice(0, 6);
+  const acts = projectActs.slice(0, 6);
   const daysLeft = p.due ? diffD(parse(p.due)!, TODAY) : null;
   const threads = D()
     .threads.filter((t) => t.project === p.id)
@@ -287,9 +287,7 @@ export function ProjectOverview({ p }: { p: Project }) {
 }
 
 export function ProjectActivity({ p }: { p: Project }) {
-  const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
-  const liveActs = useLiveProjectActivity(scope);
-  const as = isLive() ? (liveActs ?? []) : D().activity.filter((a) => a.project === p.id);
+  const { items: as } = useProjectActivity(p.id);
   // Live: comments ride the issue queries' logs — the drawer and Inbox fill the cache.
   const cs: Activity[] = (
     isLive()

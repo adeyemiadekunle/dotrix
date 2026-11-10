@@ -7,9 +7,9 @@ import { Ic } from "../core/icons";
 import { copyEmail, invite, newTask } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, minsAgo } from "../core/utils";
-import { D, S, allTasks, canSee, isOver, me, mem, render, visibleProjects } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveMembers } from "../../lib/workspace-data";
+import { D, S, canSee, isOver, me, mem, render } from "../data/store";
+import { useActivity, useMembers, useProjects } from "../data/lists";
+import { useAllTasks } from "../data/tasks";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks } from "../shell/viewEngine";
 import { Av, Empty, PIcon } from "../ui/helpers";
@@ -101,8 +101,9 @@ export function Members() {
   const u = S.ui;
   const q = (u.memQ || "").toLowerCase();
   const role = u.memRole || "all";
-  const liveMembers = useLiveMembers(live.ws?.id, isLive());
-  const members = isLive() ? (liveMembers ?? []) : D().members;
+  const { items: members } = useMembers();
+  const { items: projects } = useProjects();
+  const { tasks } = useAllTasks();
   const ms = members.filter((m) => (role === "all" || m.role === role) && (!q || m.name.toLowerCase().includes(q) || m.email.includes(q)));
   const isAdmin = ["Owner", "Admin"].includes(me()!.role);
   const tab = u.membersTab;
@@ -174,8 +175,8 @@ export function Members() {
                 </thead>
                 <tbody>
                   {ms.map((m) => {
-                    const ap = visibleProjects().filter((p) => p.members.includes(m.id) && p.status !== "complete").length;
-                    const ot = allTasks().filter((t) => t.assignee === m.id && t.status !== "done").length;
+                    const ap = projects.filter((p) => p.members.includes(m.id) && p.status !== "complete").length;
+                    const ot = tasks.filter((t) => t.assignee === m.id && t.status !== "done").length;
                     return (
                       <tr key={m.id} onContextMenu={ctx(m.id)}>
                         <td style={{ paddingLeft: 14 }}>
@@ -253,14 +254,16 @@ export function Members() {
 export function MemberPage() {
   const { params } = useRoute();
   const m = mem(params.id);
+  // Hooks first, then the early return.
+  const { tasks: all } = useAllTasks();
+  const { items: projects } = useProjects();
+  const { items: feed } = useActivity();
   if (!m) return <NotFound />;
-  const ts = allTasks().filter((t) => t.assignee === m.id);
+  const ts = all.filter((t) => t.assignee === m.id);
   const open = ts.filter((t) => t.status !== "done");
   const done = ts.filter((t) => t.status === "done");
-  const ps = visibleProjects().filter((p) => p.members.includes(m.id) && p.status !== "complete" && canSee(p));
-  const acts = D()
-    .activity.filter((a) => a.by === m.id)
-    .slice(0, 8);
+  const ps = projects.filter((p) => p.members.includes(m.id) && p.status !== "complete" && canSee(p));
+  const acts = feed.filter((a) => a.by === m.id).slice(0, 8);
   const tab = S.ui.memTab || "assigned";
   const list = tab === "assigned" ? sortTasks(open, { f: "due", dir: 1 }) : done;
   return (

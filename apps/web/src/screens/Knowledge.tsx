@@ -10,9 +10,10 @@ import { go } from "../core/nav";
 import { ago, uid } from "../core/utils";
 import { allowed } from "../core/can";
 import { isLive, knowledgeSaved, live } from "../data/live";
-import { useLiveKnowledgeFile, useLiveKnowledgeFiles, useLiveProjectFiles } from "../../lib/workspace-data";
+import { useLiveKnowledgeFile, useLiveKnowledgeFiles } from "../../lib/workspace-data";
 import { useLessons } from "../../lib/lessons";
 import { D, S, mutate, render, who } from "../data/store";
+import { useProjectFiles } from "../data/lists";
 import type { KnowledgeFile, Project } from "../data/types";
 import { Markdown } from "@/components/markdown";
 import { Coverage } from "../views/Coverage";
@@ -116,8 +117,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
     </button>
   );
   // The uploaded originals sit beside the documents made from them.
-  const liveDocs = useLiveProjectFiles(scope);
-  const nFiles = isLive() ? (liveDocs?.length ?? 0) : D().files.filter((f) => f.project === p.id).length;
+  const nFiles = useProjectFiles(p.id).items.length;
   const seg = (
     <div className="seg" role="tablist" aria-label="Knowledge">
       {(

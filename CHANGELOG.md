@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Saving a setting (your models and keys, the workspace's permissions and approval limits, an agent, a repository) refreshes only what it affects. Before, it reloaded the whole workspace.
 - Every change you make to tasks, comments, projects, members, notifications, documents, files and automations shows everywhere at once and refreshes only what it affects. If it can't be saved, it's undone with the reason, without reloading the rest of the workspace.
 - People, projects, notifications, activity, files, documents and automations show a change the moment it arrives, everywhere in the app, instead of a moment later on some screens.
 - Menus, list rows and drag and drop read a task from the same data as the board, with no copy in between, so a change shows everywhere in the same moment.

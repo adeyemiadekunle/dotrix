@@ -9,10 +9,10 @@ import { Ic } from "../core/icons";
 import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
 import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse, relDate } from "../core/utils";
-import { D, S, canSee, isOver, pColor, progressOf, proj, visibleProjects, who } from "../data/store";
+import { D, S, canSee, isOver, pColor, progressOf, proj, who } from "../data/store";
+import { useNotifs, useProjects } from "../data/lists";
 import { isMine, personal as isPersonal, tasksLabel } from "../core/features";
-import { isLive, live } from "../data/live";
-import { useLiveNotifications } from "../../lib/workspace-data";
+import { isLive } from "../data/live";
 import { useAllTasks } from "../data/tasks";
 import type { Notif } from "../data/types";
 import { STATUSES } from "../core/constants";
@@ -106,9 +106,10 @@ export function Home() {
     return () => observer.disconnect();
   }, []);
   const { tasks: all } = useAllTasks();
-  const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
+  const { items: notifs } = useNotifs();
+  const { items: projects } = useProjects();
   const mineAll = all.filter(isMine);
-  const activeP = visibleProjects().filter((p) => canSee(p) && p.status !== "complete");
+  const activeP = projects.filter((p) => canSee(p) && p.status !== "complete");
   const open = all.filter((t) => t.status !== "done");
   const doneWk = all.filter((t) => t.status === "done" && t.completedAt && Date.now() - t.completedAt < 7 * DAY);
   const over = all.filter(isOver);
@@ -132,7 +133,7 @@ export function Home() {
     ),
   });
   const dls = [dl("Today", 0, 0), dl("Tomorrow", 1, 1), dl("This week", 2, 7)];
-  const waiting = (isLive() ? (liveNotifs ?? []) : D().notifs).filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
+  const waiting = notifs.filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
   // From the old workspace Overview: tasks by status and how the work is spread.
   const counts = STATUSES.map((st) => ({ st, n: all.filter((t) => t.status === st.id).length }));
   // A personal workspace is one person's: no teammates to invite or to balance work across, and
