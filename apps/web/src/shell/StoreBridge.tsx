@@ -60,12 +60,12 @@ export function StoreBridge() {
         ? [...kept, ...fresh.filter((p) => p.fav).map((p) => p.id), ...fresh.filter((p) => !p.fav).map((p) => p.id)]
         : [...projects.filter((p) => p.fav), ...projects.filter((p) => !p.fav)].map((p) => p.id);
     }
-    // Once the directory has resolved the shell may mount (screens read me()/proj() synchronously).
+    // Once the directory has resolved the shell may mount (screens read me()/proj() synchronously). loadWorkspace
+    // clears the flag when it loads the same workspace again, whose queries may answer with nothing new: it's a dep.
     if (members && agents && projects) live.dirReady = true;
     if (members || agents || projects || tasks || notifs || acts || convos.data || sessions.data || files || knowledge || autos || audit) render();
-    // mirrorRev is in the deps so a failed send redraws with the cache as it is (forgetSlots dropped the edit).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsId, live.mirrorRev, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
+  }, [wsId, live.dirReady, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
   return null;
 }
 

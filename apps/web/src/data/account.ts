@@ -7,9 +7,10 @@
 import { useEffect, useState } from "react";
 
 import { api, unwrap, type Schemas } from "@/lib/api";
-import { invalidateLiveQueries } from "@/lib/queryClient";
+import { invalidateLiveQueries, queryClient } from "@/lib/queryClient";
 
-/** Writes also refresh the TanStack caches the migrated screens read. */
+/** Settings' saves refetch every query once the API has them: they're rare, and a workspace setting
+ * (a role's permissions, the approval cap, a connected repository) can change what any screen shows. */
 const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) =>
   unwrap(p).then((r) => {
     invalidateLiveQueries();
@@ -166,17 +167,19 @@ function toInvited(i: Schemas["InviteRead"]): Member {
   };
 }
 
-/** Pending email invites, shown with the members as "Invite pending" (owners and admins see them). */
+/** The pending invites the store lists with the members (lib/store-slots.ts), once that list has loaded. */
+const invitesKey = () => ["members", live.ws!.id, "invites"] as const;
+/** Change the pending invites; false while they haven't loaded (the store's own list takes the change). */
+function patchInvites(fn: (is: Schemas["InviteRead"][]) => Schemas["InviteRead"][]): boolean {
+  if (queryClient.getQueryData(invitesKey()) === undefined) return false;
+  queryClient.setQueryData<Schemas["InviteRead"][]>(invitesKey(), (is) => is && fn(is));
+  return true;
+}
+
+/** Pending email invites, shown with the members as "Invite pending" (owners and admins see them): fetched again. */
 export async function loadInvites() {
   if (!isLive() || live.ws!.kind !== "organization") return;
-  try {
-    const invites = await unwrap(api.GET("/v1/workspaces/{workspace_id}/invites", wsPath()));
-    const pending = invites.filter((i) => i.kind === "email" && i.email).map(toInvited);
-    D().members = [...D().members.filter((m) => !isInvite(m.id)), ...pending];
-    render();
-  } catch {
-    /* members only: no invites to show */
-  }
+  await queryClient.invalidateQueries({ queryKey: invitesKey() });
 }
 
 /** Invite people by email; each one sent is listed as pending. Returns how many were sent. */
@@ -187,7 +190,8 @@ export async function invitesSent(emails: string[], role: Member["role"]): Promi
       const i = await unwrap(
         api.POST("/v1/workspaces/{workspace_id}/invites", { ...wsPath(), body: { email, role: role.toLowerCase() as Schemas["EmailInviteCreate"]["role"] } }),
       );
-      D().members = [...D().members.filter((m) => m.email.toLowerCase() !== email.toLowerCase() || !isInvite(m.id)), toInvited(i)];
+      const other = (x: { email?: string | null }) => (x.email ?? "").toLowerCase() !== email.toLowerCase();
+      if (!patchInvites((is) => [...is.filter(other), i])) D().members = [...D().members.filter((m) => other(m) || !isInvite(m.id)), toInvited(i)];
       sent++;
     } catch (e) {
       failed(`The invite to ${email}`, e);
@@ -212,7 +216,8 @@ async function inviteRevoked(m: Member) {
       params: { path: { workspace_id: live.ws!.id, invite_id: m.id.slice(INVITE_ID.length) } },
     }),
   );
-  D().members = D().members.filter((x) => x.id !== m.id);
+  const id = m.id.slice(INVITE_ID.length);
+  if (!patchInvites((is) => is.filter((i) => i.id !== id))) D().members = D().members.filter((x) => x.id !== m.id);
   render();
 }
 
