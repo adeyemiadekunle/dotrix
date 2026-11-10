@@ -201,7 +201,6 @@ export function installDragDrop() {
         if (g === "project" && proj(d.group)) patch.project = d.group;
       }
       let switched = false;
-      if (tg.project === t.project) taskRanked(t, d.pos === "before" ? tg : undefined, d.pos === "after" ? tg : undefined);
       mutate(() => {
         t.order = order;
         applyPatch(t, patch);
@@ -210,6 +209,8 @@ export function installDragDrop() {
           switched = true;
         }
       });
+      // After the store has its new place, which the lists' cached rows take as their rank.
+      if (tg.project === t.project) taskRanked(t, d.pos === "before" ? tg : undefined, d.pos === "after" ? tg : undefined);
       if (switched) toast("Sorted manually to keep your order", { kind: "info", ms: 2200 });
     } else if (d.type === "cal" && d.day) {
       const t = task(d.id)!;

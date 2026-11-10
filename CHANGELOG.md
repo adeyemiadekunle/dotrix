@@ -11,11 +11,17 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- A new task shows on the board and in the project's list the moment you add it, before the server has answered; if it can't be saved, it's taken away again with the reason.
 - Codes follows Kai as it works: an open session's steps, command output, status and changes arrive over a live stream instead of a check every few seconds, so a turn no longer looks slower than it is. If the stream can't be kept open, Codes goes back to checking.
 - Help & resources has "Report a problem", which opens a new issue on dotrix's GitHub repository.
 - In a personal workspace a project shows no members, Add member, Share or Lead (in its header, Overview, the Projects list and its settings): there's only you.
 - Help & resources shows "Reset demo data" and "Simulate offline" only in the sample workspace, not in your own.
 - In a personal workspace every task is yours: My Tasks becomes Tasks and lists unassigned tasks too, and Home shows your open tasks due this week instead of who they're assigned to, with no Team column.
+
+### Fixed
+
+- A card dragged to a new place in its board column, or a row dragged in a project's list, keeps that place. The board showed a project's tasks by due date, so a card went back to where it was.
+- A project's board and list no longer say "No tasks here" for a moment while its tasks are still loading.
 
 ### Security
 

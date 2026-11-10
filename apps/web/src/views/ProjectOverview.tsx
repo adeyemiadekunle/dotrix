@@ -9,9 +9,10 @@ import { Ic } from "../core/icons";
 import { editProject, share } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dayBucket, diffD, fmtDate, parse } from "../core/utils";
-import { D, isOver, mem, pColor, progressOf, task, tasksOf } from "../data/store";
+import { D, isOver, mem, pColor, progressOf, task } from "../data/store";
+import { useProjectTasks } from "../data/tasks";
 import { isLive, live, liveCommentsOf } from "../data/live";
-import { useLiveProjectActivity, useLiveProjectTasks } from "../../lib/workspace-data";
+import { useLiveProjectActivity } from "../../lib/workspace-data";
 import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
@@ -27,9 +28,8 @@ function goFilteredList(p: Project, st: string) {
 
 export function ProjectOverview({ p }: { p: Project }) {
   const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
-  const liveTasks = useLiveProjectTasks(live.ws?.id, p.id, isLive());
+  const { tasks: ts } = useProjectTasks(p.id);
   const liveActs = useLiveProjectActivity(scope);
-  const ts = isLive() ? (liveTasks ?? []) : tasksOf(p.id);
   const pr = progressOf(p.id);
   const cnt = STATUSES.map((s) => ({ s, n: ts.filter((t) => t.status === s.id).length }));
   const over = ts.filter(isOver);

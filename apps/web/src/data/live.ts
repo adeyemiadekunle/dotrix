@@ -63,6 +63,30 @@ const issuesCaches = { queryKey: ["issues", "workspace"] } as const;
 const patchIssueRows = (t: Task, patch: (r: WIssue) => Partial<WIssue>) => {
   queryClient.setQueriesData<WIssue[]>(issuesCaches, (rows) => rows?.map((r) => (r.key === t.key && r.project_id === t.project ? { ...r, ...patch(r) } : r)));
 };
+/** The issue lists a new issue belongs in before the API has answered: not the starred or archived ones,
+ * and a list of someone's issues only when it is theirs. */
+const listsNewIssue = (key: readonly unknown[], row: WIssue) => {
+  const f = key[3];
+  if (key[2] !== live.ws?.id || !f || typeof f !== "object") return false;
+  const { starred, archived, assignee, reporter, watching, status, type, label, due_before } = f as Record<string, unknown>;
+  if (starred || watching || reporter || label || due_before || archived === "only") return false;
+  if (assignee && !(assignee === "me" && row.assignee_user_id === D().me)) return false;
+  if (Array.isArray(status) && !status.includes(row.status)) return false;
+  return !(Array.isArray(type) && !type.includes(row.type));
+};
+/** Put a row for an issue being created into the lists it belongs in, so the board shows it at once. */
+const addIssueRow = (row: WIssue) => {
+  queryClient.setQueriesData<WIssue[]>({ ...issuesCaches, predicate: (q) => listsNewIssue(q.queryKey, row) }, (rows) => (rows ? [...rows, row] : rows));
+};
+/** Swap a row for another (the issue the API made), or drop it (the API refused). */
+const replaceIssueRow = (projectId: string, key: string, next?: Partial<WIssue>) => {
+  const it = (r: WIssue) => r.key === key && r.project_id === projectId;
+  queryClient.setQueriesData<WIssue[]>(issuesCaches, (rows) => {
+    if (!rows?.some(it)) return rows;
+    return next ? rows.map((r) => (it(r) ? { ...r, ...next } : r)) : rows.filter((r) => !it(r));
+  });
+};
+
 /** An id the API made (a project or user), not one the store made up for a new item. */
 
 /** A send failed after the store already showed the change: put the queries' data back over it. */
@@ -294,27 +318,62 @@ export function taskCreated(t: Task): Promise<void> {
     priority: full.priority ?? "none",
     parent: t.parent ?? null,
   };
+  // The lists the screens read get its row now, under its provisional key; the API's answer replaces it.
+  const was = t.id;
+  const p = D().projects.find((x) => x.id === t.project);
+  const now = new Date().toISOString();
+  addIssueRow({
+    ...rest,
+    key: was,
+    title: t.title,
+    type: t.type,
+    status: body.status,
+    priority: body.priority,
+    labels: body.labels,
+    depends_on: body.depends_on,
+    checklist: body.checklist,
+    parent_key: t.parent ?? null,
+    archived_at: null,
+    attachment_count: 0,
+    comment_count: 0,
+    rank: t.order,
+    created_at: now,
+    updated_at: now,
+    project_id: t.project,
+    project_key: p?.key ?? "",
+    project_name: p?.name ?? "",
+  } as unknown as WIssue);
+  // The lists are mirrored into the store as new objects, so look the task up again by its key.
+  const copies = () => new Set([t, ...D().tasks.filter((x) => x.project === t.project && x.key === was)]);
   const made = send(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", { params: { path: projectPath(t.project) }, body }))
     .then((i) => {
-      const was = t.id;
-      t.id = t.key = i.key;
+      const { description: _d, ...row } = i;
+      replaceIssueRow(t.project, was, row as unknown as Partial<WIssue>);
+      const all = [...copies()];
+      const starred = all.some((x) => x.fav);
+      for (const x of all) x.id = x.key = i.key;
       if (S.ui.drawer === was) S.ui.drawer = i.key;
       D().activity.forEach((a) => a.task === was && (a.task = i.key));
       render();
       // Starred while it was being created.
-      if (t.fav) taskStarred(t);
+      if (starred) taskStarred({ ...t, fav: true });
     })
     .catch((e) => {
       failed(`“${t.title}”`, e);
-      D().tasks = D().tasks.filter((x) => x !== t);
+      replaceIssueRow(t.project, was);
+      const gone = copies();
+      D().tasks = D().tasks.filter((x) => !gone.has(x));
+      if (S.ui.drawer === was) S.ui.drawer = null;
       render();
-    });
-  creating.set(t, made);
+    })
+    .finally(() => creating.delete(was));
+  creating.set(was, made);
   return made;
 }
-const creating = new WeakMap<Task, Promise<void>>();
+/** Issues being created, by their provisional key (the store's Task object changes as the lists are mirrored). */
+const creating = new Map<string, Promise<void>>();
 /** Settles once a new issue is on the API (or failed to be), e.g. before adding files to it. */
-const whenCreated = (t: Task) => creating.get(t) ?? Promise.resolve();
+const whenCreated = (t: Task) => creating.get(t.key) ?? Promise.resolve();
 
 const issueScope = (pid: string): Scope => ({ workspaceId: wsId(), projectId: pid });
 
@@ -384,6 +443,8 @@ export function commentPosted(t: Task, text: string, mentions: string[] = []) {
 export function taskRanked(t: Task, before: Task | undefined, after: Task | undefined) {
   if (!isLive() || (!before && !after)) return;
   const body = before ? { before: before.key } : { after: after!.key };
+  // A project's lists sort by rank: show the new place now; the refetch brings the API's own number.
+  patchIssueRows(t, () => ({ rank: t.order }));
   void send(
     api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank", {
       params: { path: { ...projectPath(t.project), key: t.key } },
@@ -391,6 +452,7 @@ export function taskRanked(t: Task, before: Task | undefined, after: Task | unde
     }),
   ).catch((e) => {
     failed("The new order", e);
+    invalidateLiveQueries();
     restoreMirror();
   });
 }

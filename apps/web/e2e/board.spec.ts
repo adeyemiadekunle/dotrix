@@ -100,3 +100,36 @@ test("the project's views open from its tabs: Overview, Knowledge and Activity",
   await expect(page).toHaveURL(new RegExp(`/p/${key}/activity`));
   await expect(page.getByText(/No activity yet|created Kumove/).first()).toBeVisible();
 });
+
+test("a card dragged above another keeps its place, and a new task shows before the API answers", async ({ page }) => {
+  const { workspace, project } = await signUpWithProject(page);
+  for (const title of ["First card", "Second card", "Third card"]) await createTask(page, workspace.id, project.id, { title });
+  await page.reload();
+
+  const todo = column(page, "To Do");
+  const titles = () => todo.locator(".kcard .title").allTextContents();
+  await expect.poll(titles).toEqual(["First card", "Second card", "Third card"]);
+
+  await todo.getByRole("button", { name: "Third card" }).dragTo(todo.getByRole("button", { name: "First card" }), { targetPosition: { x: 24, y: 4 } });
+  await expect.poll(titles).toEqual(["Third card", "First card", "Second card"]);
+  await page.reload();
+  await expect.poll(titles).toEqual(["Third card", "First card", "Second card"]);
+
+  // The card is there while the API is still working on it.
+  let answer = () => {};
+  await page.route("**/v1/workspaces/*/projects/*/issues", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    await new Promise<void>((done) => (answer = done));
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "Add task to To Do" }).click();
+  const name = page.getByRole("textbox", { name: "New task name" });
+  await name.fill("Fourth card");
+  await name.press("Enter");
+  await expect(todo.getByRole("button", { name: "Fourth card" })).toBeVisible();
+  const saved = page.waitForResponse((r) => r.request().method() === "POST" && /\/issues$/.test(new URL(r.url()).pathname));
+  answer();
+  expect((await saved).status()).toBe(201);
+  await page.reload();
+  await expect(todo.getByRole("button", { name: "Fourth card" })).toBeVisible();
+});

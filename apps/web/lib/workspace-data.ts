@@ -17,7 +17,7 @@ import { ms, toActivity, toAgent, toAudit, toAutomation, toFile, toMember, toNot
 import type { Activity, Agent, AuditEvent, Automation, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
 
 /** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
-function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean): Task[] | undefined {
+function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean, byRank = false): Task[] | undefined {
   const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, filters);
   const starred = useQuery({
     queryKey: ["issues", "workspace", workspaceId, "starred-keys"],
@@ -32,8 +32,8 @@ function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFi
   return useMemo(() => {
     if (!issues.data) return undefined;
     const fav = new Set((starred.data ?? []).map((i) => i.key));
-    return issues.data.map((i, order) => ({ ...toTask(i, i.project_id, order), fav: fav.has(i.key) }));
-  }, [issues.data, starred.data]);
+    return issues.data.map((i, order) => ({ ...toTask(i, i.project_id, byRank ? i.rank : order), fav: fav.has(i.key) }));
+  }, [issues.data, starred.data, byRank]);
 }
 
 /** Issues assigned to you across every project you can see (My Tasks → Assigned). */
@@ -96,9 +96,9 @@ export function useLiveProjectActivity(scope: Scope | undefined, enabled = true)
   return useMemo(() => feed.data?.map(toActivity), [feed.data]);
 }
 
-/** A project's non-archived issues as store Tasks (Board and List). */
+/** A project's non-archived issues as store Tasks, in the project's own order: its rank, which dragging changes (Board and List). */
 export function useLiveProjectTasks(workspaceId: string | undefined, projectId: string | undefined, enabled = true) {
-  const tasks = useLiveTasks(workspaceId, {}, enabled && Boolean(projectId));
+  const tasks = useLiveTasks(workspaceId, {}, enabled && Boolean(projectId), true);
   return useMemo(() => tasks?.filter((t) => t.project === projectId && !t.archived), [tasks, projectId]);
 }
 
