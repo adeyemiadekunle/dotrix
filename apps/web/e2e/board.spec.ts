@@ -136,3 +136,26 @@ test("a card dragged above another keeps its place, and a new task shows before 
   await page.reload();
   await expect(todo.getByRole("button", { name: "Fourth card" })).toBeVisible();
 });
+
+test("tasks selected in List change status together, and it's saved", async ({ page }) => {
+  const { workspace, project, key } = await signUpWithProject(page);
+  await createTask(page, workspace.id, project.id, { title: "Draft the pricing page" });
+  await createTask(page, workspace.id, project.id, { title: "Check the invoices" });
+  await page.goto(page.url().replace(/\/board$/, "/list"));
+  await expect(page).toHaveURL(new RegExp(`/p/${key}/list`));
+
+  await page.getByLabel("Select all").first().check();
+  const bar = page.getByRole("toolbar", { name: "Bulk actions" });
+  await expect(bar).toContainText("2 selected");
+  const saved = Promise.all(
+    [0, 1].map((i) => page.waitForResponse((r) => r.request().method() === "PATCH" && /\/issues\/[A-Z]+-\d+$/.test(new URL(r.url()).pathname) && i >= 0)),
+  );
+  await bar.getByRole("button", { name: "Status" }).click();
+  await page.locator(".mi", { hasText: "In Progress" }).click();
+  await saved;
+
+  await page.reload();
+  await page.getByRole("navigation", { name: "Project views" }).getByRole("button", { name: "Board", exact: true }).click();
+  await expect(column(page, "In Progress").getByText("Draft the pricing page")).toBeVisible();
+  await expect(column(page, "In Progress").getByText("Check the invoices")).toBeVisible();
+});

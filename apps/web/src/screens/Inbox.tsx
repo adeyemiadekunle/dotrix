@@ -63,19 +63,21 @@ const TYPE_IC: Record<string, string> = {
   stale: "file-clock",
 };
 
+// A real workspace marks them read through the save (the cache); the sample edits the store.
 function toggleRead(id: string) {
   const n = D().notifs.find((x) => x.id === id)!;
-  mutate(() => (n.read = !n.read));
-  if (n.read) notifsRead([n.id]); // the API keeps read, not unread
+  // The API keeps read, not unread: marking one unread stays in this browser until the next refresh.
+  if (!isLive() || n.read) mutate(() => (n.read = !n.read));
+  else notifsRead([n.id]);
 }
 function markAllRead(types: string[]) {
   const ns = D().notifs.filter((n) => types.includes(n.type) && !n.read);
+  if (isLive()) return notifsRead(ns.map((n) => n.id));
   mutate(() => ns.forEach((n) => (n.read = true)));
-  notifsRead(ns.map((n) => n.id));
 }
 function markRead(n: Notif) {
+  if (isLive()) return notifsRead([n.id]);
   mutate(() => (n.read = true));
-  notifsRead([n.id]);
 }
 
 function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) => void }) {

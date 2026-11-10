@@ -3,11 +3,25 @@
 // closes it. Picks apply to a task, or to the open New task form ("__form").
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
-import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
+import {
+  applyPatch,
+  changeSubtasks,
+  closePop,
+  copy,
+  openTask,
+  projMove,
+  setPref,
+  setProjectStatus,
+  setRole,
+  toggleDone,
+  toggleFavProj,
+  toggleFavTask,
+  updateTask,
+} from "../core/actions";
 import { ISSUES_URL, LABELS, PRIOS, PSTAT, STATUSES, TYPES, type ProjectStatusId } from "../core/constants";
 import { useCloseSession, useDeleteSandbox, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
 import { confirmDlg, promptDlg } from "../core/more";
-import { isLive, live, liveCommentById, taskPatched } from "../data/live";
+import { isLive, live, liveCommentById } from "../data/live";
 import { useProjectTasks } from "../data/tasks";
 import { allowed, canInvite } from "../core/can";
 import { organisations } from "../core/features";
@@ -263,10 +277,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             onPick={(v) => {
               S.ui.pop = null;
               mutate(() => {
-                sb.assignee = v || null;
+                changeSubtasks(tk!, (items) => items.map((x) => (x.id === sb.id ? { ...x, assignee: v || null } : x)));
                 logActSub("assigned a subtask on", tk!, v ? `to ${mem(v)!.name}` : "(unassigned)");
               });
-              taskPatched(tk!, ["subtasks"]);
             }}
           />
         ),
@@ -396,10 +409,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
           const sb = tk!.subtasks[p.i as number]!;
           S.ui.pop = null;
           mutate(() => {
-            sb.due = v || null;
+            changeSubtasks(tk!, (items) => items.map((x) => (x.id === sb.id ? { ...x, due: v || null } : x)));
             logActSub("set a subtask due date on", tk!, v ? fmtDate(v) : "(cleared)");
           });
-          taskPatched(tk!, ["subtasks"]);
           return;
         }
         pick(field)(v);
@@ -771,7 +783,8 @@ function BulkMenu({ p }: { p: P }) {
   const set = (f: keyof Task, v: string | null) => {
     const ids = [...S.ui.sel];
     S.ui.pop = null;
-    mutate(() => ids.forEach((id) => task(id) && Object.assign(task(id)!, { [f]: v, updated: Date.now() })));
+    // Each through applyPatch, so a real workspace saves it (and the activity says so).
+    mutate(() => ids.forEach((id) => task(id) && applyPatch(task(id)!, { [f]: v })));
   };
   if (p.type === "bulk-status")
     return (

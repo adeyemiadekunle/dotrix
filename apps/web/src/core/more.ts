@@ -3,7 +3,7 @@
 // files, saved views), with their wording and undo.
 import { allowed, canInvite } from "./can";
 import { PR } from "./constants";
-import { applyPatch, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
+import { applyPatch, changeTask, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
 import { go, routeOf } from "./nav";
 import { dOff, uid } from "./utils";
 import { D, DEFAULT_PREFS, S, allTasks, canSee, logAct, me, mem, mutate, proj, render, save, task, tasksOf, visibleProjects, type Modal } from "../data/store";
@@ -264,10 +264,9 @@ export function archiveTask(id: string) {
   S.ui.pop = null;
   if (S.ui.drawer === t.id) S.ui.drawer = null;
   mutate(() => {
-    t.archived = true;
+    changeTask(t, { archived: true });
     logAct("archived", t);
   });
-  taskPatched(t, ["archived"]);
   toast(`Archived “${t.title}”`, { action: "Undo", onAction: () => restoreSend(snap, [t.id], "archived") });
 }
 export function delTask(id: string) {
@@ -309,8 +308,8 @@ export function archiveProject(id: string) {
     icon: "archive",
     run: () => {
       const snap = snapshot();
-      if (guarded(() => (p.archived = true))) {
-        void projectChanged(p, ["archived"]);
+      if (guarded(() => !isLive() && (p.archived = true))) {
+        void projectChanged({ ...p, archived: true }, ["archived"]);
         if (here().route === "project") go("projects");
         toast(`Archived ${p.name}`, {
           action: "Undo",
@@ -421,8 +420,7 @@ export function colArchive(key: string) {
   const ts = colTasks(key, "done");
   S.ui.pop = null;
   const snap = snapshot();
-  if (guarded(() => ts.forEach((t) => (t.archived = true)))) {
-    ts.forEach((t) => taskPatched(t, ["archived"]));
+  if (guarded(() => ts.forEach((t) => changeTask(t, { archived: true })))) {
     toast(`Archived ${ts.length} completed tasks`, {
       action: "Undo",
       onAction: () =>
@@ -542,11 +540,12 @@ export function renameFile(id: string) {
     run: (v) => {
       if (!v || v === f.name) return;
       const was = f.name;
+      // A real workspace shows the new name through its save (the cache); the sample edits the file.
+      if (isLive()) return fileRenamed({ ...f, name: v, type: fileType(v) }, was);
       mutate(() => {
         f.name = v;
         f.type = fileType(v);
       });
-      fileRenamed(f, was);
     },
   });
 }
@@ -575,7 +574,6 @@ export function delFile(id: string) {
     danger: true,
     run: () => {
       if (isLive()) {
-        mutate(() => (D().files = D().files.filter((x) => x !== f)));
         fileDeleted(f);
         toast(`Deleted ${f.name}`);
         return;
@@ -674,7 +672,7 @@ export function escapeHtml(s: string) {
 
 export function restoreProject(id: string) {
   const p = proj(id)!;
-  mutate(() => (p.archived = false));
-  void projectChanged(p, ["archived"]);
+  mutate(() => !isLive() && (p.archived = false));
+  void projectChanged({ ...p, archived: false }, ["archived"]);
   toast(`Restored ${p.name}`);
 }

@@ -493,11 +493,10 @@ export function commentPosted(t: Task, text: string, mentions: string[] = []) {
 }
 
 /** A rank change in a list or on the board: place it before the issue that now follows it. */
-export function taskRanked(t: Task, before: Task | undefined, after: Task | undefined) {
+export function taskRanked(t: Task, before: Task | undefined, after: Task | undefined, rank = t.order) {
   if (!isLive() || (!before && !after)) return;
   const body = before ? { before: before.key } : { after: after!.key };
   const at = { key: t.key, project: t.project };
-  const rank = t.order;
   void write({
     what: "The new order",
     touches: [["issues", "workspace"]],

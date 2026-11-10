@@ -1423,8 +1423,8 @@ function Automations() {
                     disabled={isLive() && live.ws?.role !== "owner" && !a.unattended}
                     onChange={(e) => {
                       const on = e.target.checked;
-                      mutate(() => (a.unattended = on));
-                      automationToggled(a, "unattended");
+                      if (isLive()) automationToggled({ ...a, unattended: on }, "unattended");
+                      else mutate(() => (a.unattended = on));
                     }}
                   />
                   Without approval
@@ -1432,8 +1432,8 @@ function Automations() {
                 <Tog
                   on={a.enabled}
                   set={(v) => {
-                    mutate(() => (a.enabled = v));
-                    automationToggled(a);
+                    if (isLive()) automationToggled({ ...a, enabled: v });
+                    else mutate(() => (a.enabled = v));
                   }}
                   label={`Turn ${a.name} on`}
                 />

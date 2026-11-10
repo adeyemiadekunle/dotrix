@@ -1,5 +1,6 @@
-// Actions: what clicks and keys do to the workspace.
-// They change the seeded data through mutate(); wiring the API turns these into API calls.
+// Actions: what clicks and keys do to the workspace. In the sample workspace they change the
+// store through mutate(). In a real workspace they leave the store's objects alone and hand the
+// change to its save (data/live.ts), which shows it in the query cache the store's lists read.
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";
 import { inviteResent, isInvite } from "../data/account";
@@ -58,16 +59,18 @@ export function createTask(f: Partial<Task>): Task {
 }
 const RECUR_DAYS: Record<string, number> = { Daily: 1, Weekly: 7, "Every 2 weeks": 14, Monthly: 30 };
 
-export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Partial<Task>): string[] {
+export function applyPatch(task: Task & { prevStatus?: Task["status"] }, patch: Partial<Task>): string[] {
   const msgs: string[] = [];
   const changed: (keyof Task)[] = [];
+  // A real workspace edits a copy, the change its save shows in the cache; the sample edits the task.
+  const t = isLive() ? { ...task } : task;
   for (const k of Object.keys(patch) as (keyof Task)[]) {
     const old = t[k];
     const nv = patch[k];
     if (JSON.stringify(old) === JSON.stringify(nv)) continue;
-    // A real workspace moves an issue on the API (a new key there); the store follows its answer.
+    // A real workspace moves an issue on the API (a new key there); the lists follow its answer.
     if (k === "project" && isLive()) {
-      void taskMoved(t, nv as string);
+      void taskMoved(task, nv as string);
       continue;
     }
     changed.push(k);
@@ -114,6 +117,14 @@ export function applyPatch(t: Task & { prevStatus?: Task["status"] }, patch: Par
   taskPatched(t, changed);
   return msgs;
 }
+/** A task's fields changed outside applyPatch (its checklist, archiving): the sample edits the task; a
+ * real workspace leaves it alone and saves the change, which shows in the cache the lists read. */
+export function changeTask(t: Task, patch: Partial<Task>) {
+  if (isLive()) return taskPatched({ ...t, ...patch }, Object.keys(patch) as (keyof Task)[]);
+  Object.assign(t, patch, { updated: Date.now() });
+}
+/** A task's checklist, changed: `fn` gets the items and returns the new list (new objects for what changed). */
+export const changeSubtasks = (t: Task, fn: (items: Task["subtasks"]) => Task["subtasks"]) => changeTask(t, { subtasks: fn(t.subtasks) });
 export function updateTask(id: string, patch: Partial<Task>) {
   const t = task(id);
   if (!t) return;
@@ -123,33 +134,37 @@ export function updateTask(id: string, patch: Partial<Task>) {
 export function toggleDone(id: string) {
   const t = task(id) as (Task & { prevStatus?: Task["status"] }) | undefined;
   if (!t) return;
-  const wasDone = t.status === "done";
+  const was = t.status;
+  const wasDone = was === "done";
   S.ui.pop = null;
   updateTask(t.id, { status: wasDone ? (t.prevStatus && t.prevStatus !== "done" ? t.prevStatus : "todo") : "done" });
-  if (!wasDone && !S.ui.offline) toast(`Completed “${t.title}”`, { action: "Undo", onAction: () => updateTask(t.id, { status: t.prevStatus || "todo" }) });
+  // Undo puts back the status it had: kept here, since a real workspace's task is made again from the cache.
+  if (!wasDone && !S.ui.offline) toast(`Completed “${t.title}”`, { action: "Undo", onAction: () => updateTask(t.id, { status: was }) });
 }
 export function toggleFavTask(id: string) {
   const t = task(id)!;
+  const fav = !t.fav;
   mutate(() => {
-    t.fav = !t.fav;
+    if (!isLive()) t.fav = fav;
   });
-  taskStarred(t);
+  taskStarred({ ...t, fav });
   S.ui.pop = null;
-  toast(t.fav ? "Added to favorites" : "Removed from favorites", { ms: 1800 });
+  toast(fav ? "Added to favorites" : "Removed from favorites", { ms: 1800 });
 }
 export function toggleFavProj(id: string) {
   const p = proj(id)!;
+  const fav = !p.fav;
   mutate(() => {
-    p.fav = !p.fav;
+    if (!isLive()) p.fav = fav;
   });
-  projectStarred(p);
+  projectStarred({ ...p, fav });
   S.ui.pop = null;
-  toast(p.fav ? `Added ${p.name} to favorites` : "Removed from favorites", { ms: 1800 });
+  toast(fav ? `Added ${p.name} to favorites` : "Removed from favorites", { ms: 1800 });
 }
 export function setProjectStatus(id: string, v: ProjectStatusId) {
   const pr = proj(id)!;
   mutate(() => {
-    pr.status = v;
+    if (!isLive()) pr.status = v;
     D().activity.unshift({
       id: uid("a"),
       by: D().me,
@@ -160,7 +175,7 @@ export function setProjectStatus(id: string, v: ProjectStatusId) {
       extra: "to " + PSTAT[v].name,
     });
   });
-  projectChanged(pr, ["status"]);
+  void projectChanged({ ...pr, status: v }, ["status"]);
   S.ui.pop = null;
   toast(`${pr.name} marked ${PSTAT[v].name}`);
 }
@@ -176,9 +191,9 @@ export function setRole(id: string, role: string) {
     return;
   }
   mutate(() => {
-    m.role = role as typeof m.role;
+    if (!isLive()) m.role = role as typeof m.role;
   });
-  roleChanged(m);
+  roleChanged({ ...m, role: role as typeof m.role });
   S.ui.pop = null;
   toast(`${m.name} is now ${role === "Admin" ? "an" : "a"} ${role}`);
 }
