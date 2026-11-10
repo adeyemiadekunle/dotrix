@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Approve and Reject work in place in the agents panel and the corner notices for everything that waits on you: Kai's turns waiting to start or with checked changes to push, and all of an agent's waiting changes, not only a single board change. A plan to steer still opens, since it needs your choice.
 - Saving a setting (your models and keys, the workspace's permissions and approval limits, an agent, a repository) refreshes only what it affects. Before, it reloaded the whole workspace.
 - Every change you make to tasks, comments, projects, members, notifications, documents, files and automations shows everywhere at once and refreshes only what it affects. If it can't be saved, it's undone with the reason, without reloading the rest of the workspace.
 - People, projects, notifications, activity, files, documents and automations show a change the moment it arrives, everywhere in the app, instead of a moment later on some screens.
@@ -26,7 +27,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
-- Approve on a coding session waiting in the agents panel or a corner notice no longer looks approved without starting it: in your own workspace it opens the session in Codes, where you approve it.
+- Approve on a coding session waiting in the agents panel or a corner notice no longer looks approved without starting it: it approves the turn on the server.
 - Changing the status, priority or assignee of several selected tasks at once in List is saved. Before, it showed the change but didn't keep it after a reload.
 - A card dragged to a new place in its board column, or a row dragged in a project's list, keeps that place. The board showed a project's tasks by due date, so a card went back to where it was.
 - A project's board and list no longer say "No tasks here" for a moment while its tasks are still loading.
