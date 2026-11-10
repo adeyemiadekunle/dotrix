@@ -232,9 +232,15 @@ class Settings(DatabaseSettings):
         "mistral:mistral-small-latest",
         "groq:openai/gpt-oss-120b",
         "openrouter:openai/gpt-5.5",
-        # NVIDIA's hosted models are free to try (rate limited); both call tools.
+        # NVIDIA's hosted models, free to try (rate limited). Each passed a live check (2026-11-10): a streamed
+        # tool call with each delta's index and a tool_calls finish (libfx needs both), then an answer from the
+        # tool's result, in under ~6 s. Most others NVIDIA lists answer 404 or are too slow.
         "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
-        "nvidia:deepseek-ai/deepseek-v4.1-flash",
+        "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b",
+        "nvidia:nvidia/nemotron-3.5-bolt-e4b",
+        "nvidia:mistralai/mistral-large-4-1t-a52b",
+        "nvidia:google/gemma-4-31b-it",
+        "nvidia:poolside/laguna-xs-2.1",
     ]
     # Juno's reviews of Kai's PRs, and its look at their failed CI, posted on the PR as comments (never
     # approvals); needs the GitHub App's Pull requests (write). Off: they stay in dotrix only.

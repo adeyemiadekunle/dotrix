@@ -70,6 +70,16 @@ def test_factory_builds_the_projects_model() -> None:
     assert choice.web_search == {"google_search": {}}
 
 
+@pytest.mark.parametrize("model", [
+    "xai:grok-4.7", "deepseek:deepseek-flash", "mistral:mistral-small-latest", "groq:openai/gpt-oss-120b",
+    "openrouter:openai/gpt-5.5", "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+])
+def test_providers_without_a_built_in_web_search_still_run(model: str) -> None:
+    """A conversation on them used to fail before its first model call (no native search to give)."""
+    choice = settings_model_factory(settings())(Project(model=model), keys={model.partition(":")[0]: "test-key"})
+    assert choice.model.model_name == model.partition(":")[2] and choice.web_search is None
+
+
 def test_e2e_models_need_the_flag_and_never_run_in_production() -> None:
     project = Project(model="e2e:rules")
     with pytest.raises(ModelUnavailable):
