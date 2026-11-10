@@ -1,31 +1,41 @@
 import { devices, expect, test } from "@playwright/test";
 
-import { NOT_WIRED, signUpWithProject } from "./helpers";
+import { createTask, signUpWithProject } from "./helpers";
 
-test.fixme(true, NOT_WIRED);
-
-// A phone: the sidebar is a sheet, the board's columns stack, and the chat input stays on screen.
+// A phone: the sidebar is a sheet behind "Open navigation", and a task and Chat's message box
+// stay on the screen.
 test.use({ ...devices["Pixel 7"], viewport: { width: 390, height: 844 } });
 
-test("on a phone the board stacks its columns and chat keeps its input on screen", async ({ page }) => {
-  const { key } = await signUpWithProject(page);
+test("on a phone the board, a task and Chat fit the screen, and the sidebar opens as a sheet", async ({ page }) => {
+  const { workspace, project } = await signUpWithProject(page);
+  await createTask(page, workspace.id, project.id, { title: "Draft the pricing page" });
+  await page.reload();
 
-  // Stacked columns, with Done folded away until it's opened.
-  await expect(page.getByRole("button", { name: "Hide To do" })).toBeVisible();
-  await page.getByRole("button", { name: "Show Done" }).click();
-  await expect(page.getByRole("button", { name: "Hide Done" })).toBeVisible();
+  // Nothing is wider than the phone.
+  const card = page.getByRole("region", { name: "To Do", exact: true }).getByRole("button", { name: "Draft the pricing page" });
+  await expect(card).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
-  // "Ask in Chat" opens the workspace's Chat about this project; its input sits inside the screen.
-  await page.getByRole("link", { name: "Ask in Chat" }).click();
-  await expect(page).toHaveURL(new RegExp(`/chat\\?project=${key}`));
-  const box = page.getByLabel("Message the agents");
-  await expect(box).toBeInViewport();
-  await box.fill("What's open?");
-  await box.press("Enter");
-  await expect(page.getByText("Test model reply: What's open?")).toBeVisible();
-  await expect(box).toBeInViewport();
+  await card.click();
+  const drawer = page.getByRole("dialog", { name: "Task: Draft the pricing page" });
+  await expect(drawer.getByRole("textbox", { name: "Task title" })).toBeInViewport();
+  // It slides in, so wait for it to settle inside the screen.
+  await expect
+    .poll(async () => {
+      const size = await drawer.boundingBox();
+      return size !== null && size.x >= 0 && size.x + size.width <= 390;
+    })
+    .toBe(true);
+  await drawer.getByRole("button", { name: "Close" }).click();
+  await expect(drawer).toBeHidden();
 
-  // The sidebar opens as a sheet from the header's toggle.
-  await page.getByRole("button", { name: "Toggle Sidebar" }).first().click();
-  await expect(page.getByRole("link", { name: "Notifications", exact: true })).toBeVisible();
+  // The sidebar is a sheet: opened from the top bar, it takes you to Chat and closes.
+  const nav = page.getByRole("navigation", { name: "Main", exact: true });
+  await expect(nav.getByRole("button", { name: "Chat", exact: true })).not.toBeInViewport();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(nav.getByRole("button", { name: "Chat", exact: true })).toBeInViewport();
+  await nav.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect(page).toHaveURL(/\/chat/);
+  await expect(nav.getByRole("button", { name: "Chat", exact: true })).not.toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

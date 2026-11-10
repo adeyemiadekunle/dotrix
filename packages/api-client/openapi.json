@@ -21950,6 +21950,91 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/stream": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Stream Coding Session",
+        "description": "A coding session as it changes, as server-sent events: `turns` (the session's turns, as\n`GET .../sessions/{session_id}` returns them) first and each time one moved, within about half\na second, then `end` once no turn waits or works. The connection closes after ten minutes:\nopen it again. As private as the session; comment lines keep the connection open.",
+        "operationId": "stream_coding_session",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-sent events",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns": {
       "post": {
         "tags": [

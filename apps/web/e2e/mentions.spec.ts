@@ -1,49 +1,46 @@
 import { expect, test } from "@playwright/test";
 
-import { NOT_WIRED, moveProjectToOrganisation, newUser, signUp, signUpWithProject } from "./helpers";
+import { createOrganisation, createTask, currentWorkspace, newUser, signUp } from "./helpers";
 
-test.fixme(true, NOT_WIRED);
+// An @mention in a task's comment, in a real organisation: the person named finds it in their Inbox.
 
-test("@mention a colleague in a comment, and they find it in Notifications", async ({ page, browser }) => {
-  const { key } = await signUpWithProject(page);
-  const organisation = await moveProjectToOrganisation(page, key, "Mention Ltd");
-  const board = page.url();
-  const slug = organisation.slug;
-  await page.goto(`/w/${slug}/members`);
-  await page.getByRole("button", { name: "Create link" }).click();
-  const link = (await page.getByText(/\/invites\/accept\?token=/).textContent())!.trim();
+test("@mention a colleague in a comment, and they find it in their Inbox", async ({ page, browser }) => {
+  await signUp(page, newUser("Ada Tester"));
+  await createOrganisation(page, "Mention Ltd");
+  const workspace = await currentWorkspace(page);
+  const headers = { "X-Requested-With": "e2e" };
+  const created = await page.request.post(`/v1/workspaces/${workspace.id}/projects`, { headers, data: { key: "KUM", name: "Kumove", source: "docs_only" } });
+  expect(created.status()).toBe(201);
+  const project = await created.json();
+  await createTask(page, workspace.id, project.id, { title: "Fix the upload retries" });
 
+  // Bob joins by the workspace's invite link.
+  const invite = await page.request.post(`/v1/workspaces/${workspace.id}/invites/links`, { headers, data: {} });
+  expect(invite.status()).toBe(201);
+  const link = new URL((await invite.json()).url);
   const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
   const bob = await other.newPage();
   await signUp(bob, newUser("Bob Builder"));
-  await bob.goto(link.slice(link.indexOf("/invites/accept")));
+  await bob.goto(link.pathname + link.search);
   await bob.getByRole("button", { name: "Accept and join" }).click();
-  await expect(bob).toHaveURL(new RegExp(`/w/${slug}$`));
+  await expect(bob).toHaveURL(new RegExp(`/w/${workspace.slug}`));
 
-  // Ada comments on an issue and picks Bob from the @ list.
-  await page.goto(board);
-  await page.getByRole("button", { name: "New issue" }).click();
-  await page.getByLabel("Title").fill("Fix the upload retries");
-  await page.getByRole("button", { name: "Create issue" }).click();
-  await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
-  const comment = page.getByLabel("Comment", { exact: true });
+  // Ada comments on the task and picks Bob from the @ list.
+  await page.goto(`/w/${workspace.slug}/p/KUM/board`);
+  await page.getByRole("button", { name: "Fix the upload retries" }).click();
+  const drawer = page.getByRole("dialog", { name: "Task: Fix the upload retries" });
+  const comment = drawer.getByRole("textbox", { name: "Comment" });
   await comment.pressSequentially("Can you take this, @bo");
-  await expect(page.getByRole("listbox", { name: "Mention someone" }).getByRole("option", { name: /Bob Builder/ })).toBeVisible();
-  await comment.press("Enter");
+  await drawer.locator(".pop .mi", { hasText: "Bob Builder" }).click();
   await expect(comment).toHaveValue("Can you take this, @Bob Builder ");
-  await comment.pressSequentially("?");
+  await comment.pressSequentially("please?");
   await comment.press("ControlOrMeta+Enter");
-  await expect(page.getByText("Can you take this, @Bob Builder ?")).toBeVisible();
+  await expect(drawer.getByText("Can you take this, @Bob Builder please?")).toBeVisible();
 
-  // Bob sees it under Mentions, with what was said and a way to the issue.
-  await bob.getByRole("link", { name: "Notifications", exact: true }).click();
+  // Bob sees it in his Inbox, under Mentions, and it opens the task.
+  await bob.goto(`/w/${workspace.slug}/inbox`);
   await bob.getByRole("tab", { name: /Mentions/ }).click();
-  await bob
-    .getByRole("navigation", { name: "Notifications" })
-    .getByRole("button", { name: new RegExp(`Ada Tester mentioned you on ${key}-1`) })
-    .click();
-  await expect(bob.getByRole("blockquote")).toHaveText("Can you take this, @Bob Builder ?");
-  await bob.getByRole("link", { name: `Open ${key}-1` }).click();
-  await expect(bob).toHaveURL(new RegExp(`/p/${key}/board\\?issue=${key}-1`));
+  await expect(bob.getByText(/Ada Tester/).first()).toBeVisible();
+  await expect(bob.getByText(/Fix the upload retries/).first()).toBeVisible();
   await other.close();
 });

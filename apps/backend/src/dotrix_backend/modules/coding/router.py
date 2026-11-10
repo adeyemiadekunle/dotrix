@@ -5,6 +5,8 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
+from pydantic import TypeAdapter
 
 from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.jobs import Jobs, get_jobs
@@ -49,6 +51,7 @@ from .schemas import (
     SharedCodingOutcomeRead,
 )
 from .service import CodingService
+from .stream import follow_session
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/coding",
@@ -240,6 +243,44 @@ async def get_coding_session(session_id: uuid.UUID, access: ProjectViewer, codin
     """A coding session's turns, first to latest: each a run with what the agent did. Sessions are
     private like conversations: whoever started it, and approvers while a turn waits on them."""
     return await coding.session_turns(access, session_id)
+
+
+_TURNS = TypeAdapter(list[CodingRunRead])
+
+
+@router.get(
+    "/sessions/{session_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}, "description": "Server-sent events"}},
+)
+async def stream_coding_session(
+    session_id: uuid.UUID, request: Request, access: ProjectViewer, coding: Coding, settings: SettingsDep,
+    jobs: Annotated[Jobs, Depends(get_jobs)], github: Annotated[GitHubApp, Depends(get_github_app)],
+) -> StreamingResponse:
+    """A coding session as it changes, as server-sent events: `turns` (the session's turns, as
+    `GET .../sessions/{session_id}` returns them) first and each time one moved, within about half
+    a second, then `end` once no turn waits or works. The connection closes after ten minutes:
+    open it again. As private as the session; comment lines keep the connection open."""
+    await coding.session_turns(access, session_id)
+    secrets = request.app.state.secrets
+
+    async def events():
+        follow = follow_session(
+            request.app.state.runner.session_factory,
+            lambda session: CodingService(session, settings, jobs, secrets=secrets, github=github),
+            access, session_id,
+        )
+        async for event, turns in follow:
+            if event == "ping":
+                yield ": ping\n\n"
+            elif turns is None:
+                yield f"event: {event}\ndata: {{}}\n\n"
+            else:
+                yield f"event: {event}\ndata: {_TURNS.dump_json(turns).decode()}\n\n"
+
+    return StreamingResponse(
+        events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 
 @router.post("/sessions/{session_id}/turns", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))

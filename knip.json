@@ -4,7 +4,6 @@
   "ignoreWorkspaces": ["apps/backend", "apps/cli", "packages/engine"],
   "workspaces": {
     "apps/web": {
-      "entry": ["lib/*.ts"],
       "project": ["**/*.{ts,tsx,css}"],
       "ignoreDependencies": ["tailwindcss"]
     },

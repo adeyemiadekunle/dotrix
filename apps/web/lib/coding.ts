@@ -1,23 +1,21 @@
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
-import { api, errorMessage, unwrap } from "@/lib/api";
+import { api, ensureSession, errorMessage, unwrap } from "@/lib/api";
 import type { Scope } from "@/lib/issues";
 import { desktop } from "@/src/core/desktop";
 
 export type CodingRun = Schemas["CodingRunRead"];
-export type CodingRunStatus = Schemas["CodingRunStatus"];
+type CodingRunStatus = Schemas["CodingRunStatus"];
 export type CodingSession = Schemas["CodingSessionRead"];
-export type PrState = Schemas["PrState"];
 type ApprovalMode = NonNullable<Schemas["CodingRunCreate"]["approval_mode"]>;
 
 const path = (scope: Scope) => ({ workspace_id: scope.workspaceId, project_id: scope.projectId });
 const runsKey = (scope: Scope | undefined, issueKey?: string | null) => ["coding-runs", scope?.projectId, issueKey];
 
-export const AGENT_NAMES: Record<Schemas["CodingAgent"], string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", fx: "fx" };
-
-export const STATUS_LABELS: Record<CodingRunStatus, string> = {
+const STATUS_LABELS: Record<CodingRunStatus, string> = {
   awaiting_approval: "Waiting for approval",
   rejected: "Rejected",
   queued: "Starting",
@@ -29,8 +27,6 @@ export const STATUS_LABELS: Record<CodingRunStatus, string> = {
   recovery_required: "Needs recovery",
   stopped: "Stopped",
 };
-
-export const PR_LABELS: Record<PrState, string> = { open: "Open", merged: "Merged", closed: "Closed" };
 
 /** A turn's status in words, saying where a local one waits. */
 export function statusLabel(run: Pick<CodingRun, "status" | "location" | "runner_name">): string {
@@ -173,8 +169,24 @@ export function useCodingSessions(workspaceId: string | undefined, enabled = tru
   });
 }
 
-/** A session's turns, first to latest; polled while one waits or works. */
+// The sessions this page follows over a stream right now: their turns arrive as they change, so
+// nothing polls them.
+const followed = new Set<string>();
+const watchers = new Set<() => void>();
+function follow(sessionId: string, on: boolean): void {
+  if (on === followed.has(sessionId)) return;
+  if (on) followed.add(sessionId);
+  else followed.delete(sessionId);
+  watchers.forEach((notify) => notify());
+}
+const watch = (notify: () => void) => {
+  watchers.add(notify);
+  return () => void watchers.delete(notify);
+};
+
+/** A session's turns, first to latest; polled while one waits or works, unless a stream follows it. */
 export function useCodingSession(scope: Scope | undefined, sessionId: string | null | undefined) {
+  const live = useSyncExternalStore(watch, () => Boolean(sessionId && followed.has(sessionId)));
   return useQuery({
     queryKey: ["coding-session", scope?.projectId, sessionId],
     queryFn: () =>
@@ -185,8 +197,64 @@ export function useCodingSession(scope: Scope | undefined, sessionId: string | n
       ),
     enabled: Boolean(scope && sessionId),
     refetchOnMount: "always",
-    refetchInterval: (query) => pace(query.state.data),
+    refetchInterval: (query) => (live ? false : pace(query.state.data)),
   });
+}
+
+/**
+ * Follow a session as it happens (Codes' open session): the server sends its turns each time one
+ * moves, straight into `useCodingSession`'s data. While a turn waits or works only; a dropped
+ * connection goes back to polling until it's open again.
+ */
+export function useCodingSessionStream(scope: Scope | undefined, sessionId: string | null | undefined, active: boolean): void {
+  const queryClient = useQueryClient();
+  const [attempt, setAttempt] = useState(0);
+  const failures = useRef(0);
+  useEffect(() => {
+    if (!scope || !sessionId || !active || typeof EventSource === "undefined") return;
+    let source: EventSource | undefined;
+    let closed = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let statuses = "";
+    // An EventSource can't refresh an expired session itself: check it's current first.
+    void ensureSession().then(() => {
+      if (closed) return;
+      source = new EventSource(`/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/coding/sessions/${sessionId}/stream`);
+      const stream = source;
+      stream.addEventListener("open", () => {
+        failures.current = 0;
+        follow(sessionId, true);
+      });
+      stream.addEventListener("turns", (event) => {
+        const turns = JSON.parse((event as MessageEvent).data) as CodingRun[];
+        queryClient.setQueryData(["coding-session", scope.projectId, sessionId], turns);
+        // A turn moved on: the lists that show its status follow.
+        const now = turns.map((turn) => `${turn.id}:${turn.status}`).join();
+        if (statuses && statuses !== now) {
+          void queryClient.invalidateQueries({ queryKey: ["coding-sessions"] });
+          void queryClient.invalidateQueries({ queryKey: ["coding-runs", scope.projectId] });
+          void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+        }
+        statuses = now;
+      });
+      // Nothing waits or works any more: the server is done, so don't let EventSource reconnect.
+      stream.addEventListener("end", () => {
+        stream.close();
+        follow(sessionId, false);
+      });
+      stream.onerror = () => {
+        stream.close();
+        follow(sessionId, false);
+        if (!closed) retry = setTimeout(() => setAttempt((a) => a + 1), Math.min(1000 * 2 ** failures.current++, 15_000));
+      };
+    });
+    return () => {
+      closed = true;
+      clearTimeout(retry);
+      source?.close();
+      follow(sessionId, false);
+    };
+  }, [scope, sessionId, active, queryClient, attempt]);
 }
 
 /** One run (a notification's coding approval). */
@@ -319,13 +387,18 @@ export function useCodingFile(scope: Scope | undefined, runId: string | undefine
   });
 }
 
-/** Every event of a turn (its commands and their output, for the panel's Terminal), refreshed while it works. */
-export function useCodingEvents(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status"> | undefined, enabled: boolean) {
-  return useQuery({
-    queryKey: ["coding-run", scope?.projectId, run?.id, "events", run?.status],
+/**
+ * Every event of a turn (its commands and their output, for the panel's Terminal). While the turn
+ * works, only what's new since the last one read is fetched, each time the turn reports more.
+ */
+export function useCodingEvents(scope: Scope | undefined, run: Pick<CodingRun, "id" | "status" | "event_count"> | undefined, enabled: boolean) {
+  const queryClient = useQueryClient();
+  const queryKey = ["coding-run", scope?.projectId, run?.id, "events"];
+  const query = useQuery({
+    queryKey,
     queryFn: async () => {
-      const all: CodingEventRead[] = [];
-      let after = -1;
+      const all: CodingEventRead[] = [...(queryClient.getQueryData<CodingEventRead[]>(queryKey) ?? [])];
+      let after = all.at(-1)?.seq ?? -1;
       for (let page = 0; page < 10; page++) {
         const got = await unwrap(
           api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/events", {
@@ -339,9 +412,23 @@ export function useCodingEvents(scope: Scope | undefined, run: Pick<CodingRun, "
       return all;
     },
     enabled: Boolean(scope && run) && enabled,
-    placeholderData: (previous, query) => (query?.queryKey[2] === run?.id ? previous : undefined), // the same turn's, while its next status loads
-    refetchInterval: run && ACTIVE_TURN.includes(run.status) ? 2_000 : false,
+    staleTime: Infinity,
   });
+  // The turn said more, or moved on: read what's new.
+  const { refetch, data } = query;
+  const have = data?.length ?? null;
+  const count = run?.event_count ?? 0;
+  const status = run?.status;
+  const asked = useRef("");
+  useEffect(() => {
+    if (have == null || !enabled || !run?.id) return;
+    const mark = `${run.id}:${count}:${status}`;
+    if (asked.current === mark) return;
+    const loadedJustNow = !asked.current.startsWith(`${run.id}:`);
+    asked.current = mark;
+    if (!loadedJustNow || count > have) void refetch();
+  }, [refetch, have, count, status, enabled, run?.id]);
+  return query;
 }
 
 /** Published code evidence is shared with the task; coding conversations remain private. */

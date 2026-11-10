@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Codes follows Kai as it works: an open session's steps, command output, status and changes arrive over a live stream instead of a check every few seconds, so a turn no longer looks slower than it is. If the stream can't be kept open, Codes goes back to checking.
 - Help & resources has "Report a problem", which opens a new issue on dotrix's GitHub repository.
 - In a personal workspace a project shows no members, Add member, Share or Lead (in its header, Overview, the Projects list and its settings): there's only you.
 - Help & resources shows "Reset demo data" and "Simulate offline" only in the sample workspace, not in your own.

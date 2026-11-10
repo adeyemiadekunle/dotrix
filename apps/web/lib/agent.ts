@@ -12,7 +12,6 @@ import type { Scope } from "./issues";
 
 export type Run = Schemas["AgentRunRead"];
 export type Approval = Schemas["ApprovalRead"];
-export type WorkspaceApproval = Schemas["WorkspaceApprovalRead"];
 export type Decision = Schemas["Decision"];
 
 export type AgentId = NonNullable<Schemas["RunCreate"]["agent"]>;
@@ -38,36 +37,8 @@ export const WORK_MODES: [WorkMode, string, string][] = [
 
 /** Each mode's icon, in the composer and its menu. */
 export const MODE_ICONS: Record<WorkMode, string> = { discuss: "message-circle", plan: "list-checks", build: "hammer", review: "eye" };
-export type ModelOption = Schemas["ModelOption"];
 
 export const isActive = (run: Pick<Run, "status">) => ["queued", "running", "waiting_children", "waiting_dependency"].includes(run.status);
-
-export type AgentOption = { id: AgentId; name: string; description: string };
-
-/** Who can answer in the chat, in the + menu's order: the built-ins. A project's own list
- * (with custom agents) comes from `useChatAgents` in `lib/agents.ts`. */
-export const AGENTS: AgentOption[] = [
-  { id: "auto", name: "Auto", description: "The project manager answers and brings in the specialists it needs" },
-  { id: "product", name: "Product agent", description: "Features, user stories, business rules, acceptance criteria" },
-  { id: "architecture", name: "Architecture agent", description: "The system's design and what a change would touch" },
-  { id: "research", name: "Research agent", description: "Searches the web: regulations, APIs, competitors, markets" },
-  { id: "reviewer", name: "Reviewer agent", description: "Checks what's built against the requirements (read-only)" },
-  { id: "documentation", name: "Documentation agent", description: "Keeps the documents tidy and writes decisions down" },
-];
-
-/** "Research agent", or "Auto" for the project manager; "@handle" for an agent not in `options`. */
-export function agentLabel(id: string | null | undefined, options: AgentOption[] = AGENTS): string {
-  return options.find((a) => a.id === (id || "auto"))?.name ?? `@${id}`;
-}
-
-/** "@research …" at the start of a message picks that agent: [agent, the rest], or null. */
-export function mentionedAgent(text: string, options: AgentOption[] = AGENTS): [AgentId, string] | null {
-  const match = /^@([a-z][a-z0-9-]*)\s+/i.exec(text);
-  if (!match) return null;
-  const said = match[1].toLowerCase();
-  const agent = options.find((a) => a.id === said) ?? options.find((a) => a.name.toLowerCase().startsWith(said));
-  return agent ? [agent.id, text.slice(match[0].length)] : null;
-}
 
 /** The models a conversation can start on in this workspace. */
 export function useModels(workspaceId: string | undefined) {
@@ -141,7 +112,7 @@ export function useChatRuntimeOptions(scope: Scope | undefined) {
 const POLL_MS = 1500;
 const WAITING_POLL_MS = 5000;
 
-export const agentKeys = {
+const agentKeys = {
   project: (s: Scope) => ["agent", s.projectId] as const,
   thread: (s: Scope, threadId: string) => ["agent", s.projectId, "thread", threadId] as const,
   recent: (s: Scope) => ["agent", s.projectId, "recent"] as const,
@@ -171,17 +142,6 @@ export function useThread(scope: Scope | undefined, threadId: string | null) {
   });
 }
 
-export interface ThreadSummary {
-  threadId: string;
-  title: string;
-  kind: Run["kind"];
-  updatedAt: string;
-  waiting: boolean;
-}
-
-/** Recent conversations, newest activity first (grouped from recent runs). */
-export type WorkspaceThread = Schemas["WorkspaceThread"];
-
 /** Every conversation in the workspace's projects you can see, most recently active first (Chat). */
 export function useWorkspaceThreads(workspaceId: string | undefined, enabled = true) {
   return useQuery({
@@ -189,35 +149,6 @@ export function useWorkspaceThreads(workspaceId: string | undefined, enabled = t
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/threads", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId) && enabled,
     refetchInterval: 20_000,
-  });
-}
-
-export function useRecentThreads(scope: Scope | undefined) {
-  return useQuery({
-    queryKey: scope ? agentKeys.recent(scope) : ["agent", "none"],
-    queryFn: async (): Promise<ThreadSummary[]> => {
-      const runs = await unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
-          params: { path: path(scope!), query: { limit: 100 } },
-        }),
-      );
-      const threads = new Map<string, ThreadSummary>();
-      // Newest first: the first run seen sets the activity time; the oldest names the thread.
-      for (const run of runs) {
-        const known = threads.get(run.thread_id);
-        threads.set(run.thread_id, {
-          threadId: run.thread_id,
-          // Runs come newest first, so the last one seen is the thread's first run, which
-          // carries its title (older threads, from before titles, fall back to the message).
-          title: run.title ?? known?.title ?? runTitle(run),
-          kind: run.kind,
-          updatedAt: known?.updatedAt ?? run.updated_at,
-          waiting: (known?.waiting ?? false) || run.status === "awaiting_approval",
-        });
-      }
-      return [...threads.values()];
-    },
-    enabled: Boolean(scope),
   });
 }
 
@@ -294,46 +225,6 @@ export function useThreadPlans(scope: Scope | undefined, threadId: string | null
       ),
     enabled: Boolean(scope && threadId),
   });
-}
-
-export function useBriefing(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, _: void) =>
-    unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/briefing", { params: { path: path(s) } })),
-  );
-}
-
-export function useArchitectureDraft(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, _: void) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/architecture-draft", {
-        params: { path: path(s) },
-        body: { repo_summary: null },
-      }),
-    ),
-  );
-}
-
-/** The Project Manager triages a bug report or request: duplicates first, then a proposed issue or comment. */
-export function useTriage(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, report: string) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/triage", {
-        params: { path: path(s) },
-        body: { report },
-      }),
-    ),
-  );
-}
-
-/** The Reviewer reviews one issue against its acceptance criteria. */
-export function useReviewIssue(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, key: string) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/issues/{key}/review", {
-        params: { path: { ...path(s), key } },
-      }),
-    ),
-  );
 }
 
 export function useDecide(scope: Scope | undefined) {
@@ -425,8 +316,6 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
   return { text, activity, thinking };
 }
 
-export type RunEvent = Schemas["RunEventRead"];
-
 /** What a run did, kept after it: its steps (what the agents were doing), in order, and what Nova thought. */
 export function useRunSteps(scope: Scope | undefined, runId: string, enabled: boolean) {
   return useQuery({
@@ -470,42 +359,9 @@ export function useContinueRun(scope: Scope | undefined) {
   );
 }
 
-export function useRenameThread(scope: Scope | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ threadId, title }: { threadId: string; title: string }) =>
-      unwrap(
-        api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}", {
-          params: { path: { ...path(scope!), thread_id: threadId } },
-          body: { title },
-        }),
-      ),
-    onError: (e) => toast.error(errorMessage(e)),
-    onSettled: async () => {
-      if (!scope) return;
-      await queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
-      await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
-    },
-  });
-}
-
 /** A run someone stopped (it's recorded as failed with "Stopped by …"). */
 export const wasStopped = (run: Pick<Run, "status" | "error">) =>
   run.status === "cancelled" || (run.status === "failed" && (run.error ?? "").startsWith("Stopped"));
-
-/** What the agents did across the workspace in the last `days` days (owners and admins). */
-export function useWorkspaceAgentUsage(workspaceId: string | undefined, enabled: boolean, days = 7) {
-  return useQuery({
-    queryKey: ["agent-usage", workspaceId, days],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/agent-usage", {
-          params: { path: { workspace_id: workspaceId! }, query: { days } },
-        }),
-      ),
-    enabled: Boolean(workspaceId) && enabled,
-  });
-}
 
 export function useChatInputs(scope: Scope | undefined, threadId: string) {
   const client = useQueryClient();
