@@ -1,6 +1,7 @@
 """Live chat on real models: Nova on each chat runtime (DeepAgents, fx) and each provider (Anthropic,
-OpenAI), through the public API with the requester's own key. Each test runs only when its provider's
-key is given (DOTRIX_LIVE_ANTHROPIC_API_KEY, DOTRIX_LIVE_OPENAI_API_KEY); they make a few paid calls."""
+OpenAI, NVIDIA), through the public API with the requester's own key. Each test runs only when its provider's
+key is given (DOTRIX_LIVE_ANTHROPIC_API_KEY, DOTRIX_LIVE_OPENAI_API_KEY, DOTRIX_LIVE_NVIDIA_API_KEY); they
+make a few calls (NVIDIA's hosted models are free to try, rate limited)."""
 import os
 
 import pytest
@@ -14,7 +15,8 @@ from dotrix_backend.modules.agents.llm import settings_model_factory
 from dotrix_backend.modules.model_keys.models import UserModelKey
 
 LIVE = {"anthropic": ("DOTRIX_LIVE_ANTHROPIC_API_KEY", "anthropic:claude-haiku-5-5"),
-        "openai": ("DOTRIX_LIVE_OPENAI_API_KEY", "openai:gpt-5.5")}
+        "openai": ("DOTRIX_LIVE_OPENAI_API_KEY", "openai:gpt-5.5"),
+        "nvidia": ("DOTRIX_LIVE_NVIDIA_API_KEY", "nvidia:nvidia/nemotron-3-ultra-550b-a55b")}
 
 
 def _cases():
