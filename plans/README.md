@@ -42,7 +42,7 @@ the audit nor the other plans.
 | [027](027-a-network-blip-doesnt-eject-you.md) | A brief network failure doesn't replace the workspace with an error or sign you out | P1 | S | — | TODO |
 | [028](028-a-new-reply-never-shows-the-last-one.md) | A new reply never starts by showing the previous reply's text | P2 | S | — | TODO |
 | [029](029-local-turns-send-exact-patches-and-all-events.md) | A turn coded on your computer sends its patch byte for byte and all of its steps | P1 | M | — | TODO |
-| [030](030-dependency-reader-handles-real-requirements-files.md) | The dependency reader gets versions right in hash-pinned requirements files, and one bad manifest doesn't break the view | P1 | S | — | TODO |
+| [030](030-dependency-reader-handles-real-requirements-files.md) | The dependency reader gets versions right in hash-pinned requirements files, and one bad manifest doesn't break the view | P1 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
