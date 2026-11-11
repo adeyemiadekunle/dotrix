@@ -77,6 +77,11 @@ function useDirectoryFailed(wsId: string | undefined): boolean {
   const subscribe = useCallback((onChange: () => void) => client.getQueryCache().subscribe(onChange), [client]);
   return useSyncExternalStore(
     subscribe,
-    () => Boolean(wsId) && ["members", "projects", "agents"].some((kind) => client.getQueryState([kind, wsId])?.status === "error"),
+    () => Boolean(wsId) && directoryFailed(["members", "projects", "agents"].map((kind) => client.getQueryState([kind, wsId]))),
   );
+}
+
+/** A directory query counts as failed only if it never loaded: a failed background refetch keeps its data on screen. */
+export function directoryFailed(states: ({ status: string; data: unknown } | undefined)[]): boolean {
+  return states.some((state) => state?.status === "error" && state.data === undefined);
 }
