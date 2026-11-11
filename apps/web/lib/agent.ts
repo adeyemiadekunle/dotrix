@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ApiError, api, ensureSession, errorMessage, unwrap } from "./api";
-import type { Scope } from "./issues";
+import { issueQueriesOf, type Scope } from "./issues";
 
 export type Run = Schemas["AgentRunRead"];
 export type Approval = Schemas["ApprovalRead"];
@@ -165,7 +165,7 @@ function useAgentMutation<Vars, Result>(scope: Scope | undefined, fn: (scope: Sc
       await queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
       await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
       // Approved actions may have changed issues or files.
-      await queryClient.invalidateQueries({ queryKey: ["issues", scope.projectId] });
+      for (const queryKey of issueQueriesOf(scope)) await queryClient.invalidateQueries({ queryKey });
     },
   });
 }
@@ -301,6 +301,7 @@ export function useRunStream(scope: Scope | undefined, runId: string, active: bo
         void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
         void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
         void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
+        for (const queryKey of issueQueriesOf(scope)) void queryClient.invalidateQueries({ queryKey });
       });
       stream.addEventListener("open", () => (failures.current = 0));
       stream.onerror = () => {
