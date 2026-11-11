@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.modules.agents.models import RunStatus
@@ -33,6 +34,29 @@ async def _admin(db_client: AsyncClient) -> None:
 async def test_bootstrap_only_while_no_account_exists(db_client: AsyncClient) -> None:
     assert (await db_client.get("/v1/admin/bootstrap")).json()["enabled"] is True
     await _admin(db_client)
+    assert (await db_client.get("/v1/admin/bootstrap")).json()["enabled"] is False
+    assert (await db_client.post("/v1/admin/signup", json=ADMIN)).status_code == 403
+
+
+async def test_signup_needs_the_bootstrap_token_when_one_is_set(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = "test-bootstrap-token-0123456789"
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings, "admin_bootstrap_token", SecretStr(token))
+    assert (await db_client.get("/v1/admin/bootstrap")).json() == {"enabled": True, "token_required": True}
+    assert (await db_client.post("/v1/admin/signup", json=ADMIN)).status_code == 403
+    assert (await db_client.post("/v1/admin/signup", json={**ADMIN, "bootstrap_token": "wrong-token"})).status_code == 403
+    assert (await db_client.post("/v1/admin/signup", json={**ADMIN, "bootstrap_token": token})).status_code == 201
+    assert (await db_client.get("/v1/admin/bootstrap")).json()["enabled"] is False
+
+
+async def test_a_deployed_server_without_a_token_keeps_signup_closed(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings, "env", "production")
+    monkeypatch.setattr(settings, "admin_bootstrap_token", None)
     assert (await db_client.get("/v1/admin/bootstrap")).json()["enabled"] is False
     assert (await db_client.post("/v1/admin/signup", json=ADMIN)).status_code == 403
 

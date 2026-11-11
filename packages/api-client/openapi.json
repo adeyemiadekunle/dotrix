@@ -826,7 +826,7 @@
           "admin"
         ],
         "summary": "Admin Bootstrap",
-        "description": "Whether admin sign-up is open: true only while no admin account exists.",
+        "description": "Whether admin sign-up is open (no admin account exists and, on a deployed server, the\nbootstrap token is configured), and whether the form must ask for that token.",
         "operationId": "admin_bootstrap",
         "responses": {
           "200": {
@@ -858,7 +858,7 @@
           "admin"
         ],
         "summary": "Admin Signup",
-        "description": "Bootstrap the first admin account. The console is for whoever operates the deployment,\nnot app users \u2014 sign-up closes once the first account exists. Rate-limited per IP.",
+        "description": "Bootstrap the first admin account with the deployment's bootstrap token. The console is\nfor whoever operates the deployment, not app users \u2014 sign-up closes once the first account\nexists. Rate-limited per IP.",
         "operationId": "admin_signup",
         "requestBody": {
           "content": {
@@ -24746,6 +24746,11 @@
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
+          },
+          "token_required": {
+            "type": "boolean",
+            "title": "Token Required",
+            "default": false
           }
         },
         "type": "object",
@@ -24753,7 +24758,7 @@
           "enabled"
         ],
         "title": "AdminBootstrap",
-        "description": "Whether the sign-up form is open: true only while no admin account exists."
+        "description": "Whether the sign-up form is open (no admin account exists, and on a deployed server the\nbootstrap token is configured), and whether it asks for that token."
       },
       "AdminLogin": {
         "properties": {
@@ -24834,6 +24839,18 @@
             "maxLength": 200,
             "minLength": 8,
             "title": "Password"
+          },
+          "bootstrap_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bootstrap Token"
           }
         },
         "type": "object",
@@ -24843,7 +24860,7 @@
           "password"
         ],
         "title": "AdminSignup",
-        "description": "Create an admin account by proving you own the workspace: your app account's email and\npassword. The admin gets its own credentials from then on \u2014 separate from your sign-in."
+        "description": "Create the first admin account. On a deployed server this needs the deployment's\nbootstrap token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN). The admin has its own credentials,\nseparate from any app account."
       },
       "AdminWorkspace": {
         "properties": {

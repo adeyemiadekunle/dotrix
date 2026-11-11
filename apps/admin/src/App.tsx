@@ -68,15 +68,19 @@ function usePage(): [string, (p: string) => void] {
 }
 
 function Login({ onAuth }: { onAuth: () => void }) {
-  const boot = useQuery({ queryKey: ["bootstrap"], queryFn: () => rawCall<{ enabled: boolean }>("/admin/bootstrap"), staleTime: 60_000 });
+  const boot = useQuery({
+    queryKey: ["bootstrap"],
+    queryFn: () => rawCall<{ enabled: boolean; token_required?: boolean }>("/admin/bootstrap"),
+    staleTime: 60_000,
+  });
   const first = boot.data?.enabled === true;
-  const [f, setF] = useState({ email: "", name: "", password: "" });
+  const [f, setF] = useState({ email: "", name: "", password: "", token: "" });
   const [show, setShow] = useState(false);
   const auth = useMutation({
     mutationFn: () =>
       rawCall<void>(first ? "/admin/signup" : "/admin/login", {
         method: "POST",
-        body: first ? f : { email: f.email, password: f.password },
+        body: first ? { email: f.email, name: f.name, password: f.password, bootstrap_token: f.token || undefined } : { email: f.email, password: f.password },
       }),
     onSuccess: onAuth,
   });
@@ -99,6 +103,7 @@ function Login({ onAuth }: { onAuth: () => void }) {
               ? "This form is open only until the first account exists. The account is separate from any dotrix app account."
               : "For whoever operates dotrix. A dotrix app account doesn't sign in here."}
           </p>
+          {first && boot.data?.token_required && <p className="ad-auth-sub">Ask whoever deployed dotrix for the setup token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN).</p>}
         </div>
         {auth.isError && (
           <p className="ad-auth-error" role="alert">
@@ -110,6 +115,12 @@ function Login({ onAuth }: { onAuth: () => void }) {
           <label>
             Name
             <input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
+          </label>
+        )}
+        {first && boot.data?.token_required && (
+          <label>
+            Setup token
+            <input className="input" type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} required autoComplete="off" />
           </label>
         )}
         <label>

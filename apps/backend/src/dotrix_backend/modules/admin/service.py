@@ -1,11 +1,10 @@
-"""Admin accounts: create by proving workspace ownership once, then a separate sign-in.
+"""Admin accounts: created once with the deployment's bootstrap token, then a separate sign-in.
 
-The admin token (`type=admin`, 12h) only ever reaches the workspace it was proven on: the
-admin reads as its owner (a pseudo-membership, role OWNER), so every scoped query stays
-inside it. Refresh tokens live in `admin_sessions`, one active token per session, rotated on
-every use — a replayed token gets a 401."""
+Refresh tokens live in `admin_sessions`, one active token per session, rotated on every
+use — a replayed token gets a 401."""
 from __future__ import annotations
 
+import hmac
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -65,13 +64,26 @@ class AdminService:
         await self.session.flush()  # the access token's sid is this row's id
         return _admin_token(admin.id, session.id, self.settings), refresh
 
+    def token_required(self) -> bool:
+        return self.settings.admin_bootstrap_token is not None or self.settings.is_deployed
+
     async def bootstrap_available(self) -> bool:
-        """Sign-up is open only while no admin account exists — the console is for the person
-        operating the deployment, never for app users."""
+        """Sign-up is open only while no admin account exists, and on a deployed server only
+        when its bootstrap token is configured: the console is for whoever operates the
+        deployment, never for app users."""
+        if self.settings.is_deployed and self.settings.admin_bootstrap_token is None:
+            return False
         return not await self.session.scalar(select(func.count(AdminUser.id)))
 
     async def signup(self, data: AdminSignup) -> tuple[str, str]:
+        # One sign-up at a time, so two requests can't both find "no admin yet".
+        await self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended("admin:bootstrap", 0))))
         if not await self.bootstrap_available():
+            raise Forbidden("Admin sign-up is closed")
+        expected = self.settings.admin_bootstrap_token
+        if expected is not None and not hmac.compare_digest(
+            expected.get_secret_value().encode(), (data.bootstrap_token or "").encode()
+        ):
             raise Forbidden("Admin sign-up is closed")
         admin = AdminUser(
             email=data.email.lower(),

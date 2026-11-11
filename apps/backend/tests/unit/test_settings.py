@@ -81,3 +81,9 @@ def test_development_keeps_plain_docker_and_unlimited_runs_available() -> None:
     local = settings(coding_sandbox="docker", coding_max_runs=0)
     assert local.coding_docker_runtime is None
     assert local.coding_max_runs == 0
+
+
+def test_the_admin_bootstrap_token_must_be_long_enough() -> None:
+    with pytest.raises(ValidationError):
+        settings(admin_bootstrap_token="too-short")
+    assert settings(admin_bootstrap_token="x" * 24).admin_bootstrap_token is not None
