@@ -30,6 +30,8 @@ from dotrix_engine.skills import (
     skill_name,
 )
 
+from .fences import defuse, fence
+
 MAX_DOCUMENTS = 4
 DOCUMENT_CHARS = 6_000
 SUMMARY_CHARS = 3_000  # of each earlier turn's summary, in a follow-up's brief
@@ -60,11 +62,11 @@ async def build_brief(
     """The brief for a run. A follow-up (`earlier`: the session's previous turns and what each
     did) works on the session's branch, and `note` is what to do in this turn."""
     parts = [
-        f"# Coding task: {issue.key} {issue.title}",
+        f"# Coding task: {issue.key} {defuse(' '.join(issue.title.split()))}",
         f"Project: {project.name} ({project.key}). Issue type: {issue.type.value}, priority: {issue.priority.value}.",
         "",
         "## The issue",
-        f'<data source="issue {issue.key}">\n{issue.description.strip() or "(no description)"}\n</data>',
+        fence(f"issue {issue.key}", issue.description.strip() or "(no description)"),
     ]
     if issue.parent_key:
         parts.append(f"\nIt's part of {issue.parent_key}.")
@@ -75,16 +77,16 @@ async def build_brief(
                   "You're continuing on the branch these turns produced; their changes are already in the code."]
         for turn, summary in earlier:
             clipped = summary if len(summary) <= SUMMARY_CHARS else summary[:SUMMARY_CHARS] + "…"
-            parts.append(f'<data source="turn {turn}">\n{clipped.strip()}\n</data>')
+            parts.append(fence(f"turn {turn}", clipped.strip()))
     if note and note.strip():
         heading = "## What to do in this turn" if earlier else "## From the person who asked"
-        parts += ["", heading, f'<data source="request">\n{note.strip()}\n</data>']
+        parts += ["", heading, fence("request", note.strip())]
     documents = await _documents(session, project, issue.key)
     if documents:
         parts += ["", "## Related documents (from the project's knowledge)"]
         for path, content in documents:
             clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
-            parts.append(f'<data source="{path}">\n{clipped.strip()}\n</data>')
+            parts.append(fence(path, clipped.strip()))
     wiki = await RepoKnowledgeService(session, None).relevant(project, f"{issue.title}\n{issue.description}")
     if wiki:
         parts += ["", "## How this repository works (from its wiki)",
@@ -93,7 +95,7 @@ async def build_brief(
         for path, content, stale in wiki:
             clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
             note = f" (stale: {', '.join(stale[:5])})" if stale else ""
-            parts.append(f'<data source="{path}{note}">\n{clipped.strip()}\n</data>')
+            parts.append(fence(f"{path}{note}", clipped.strip()))
     kai = (await AgentDefinitionRepository(session).coding_configuration(project.workspace_id, project.id)).spec
     if user_id:
         kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
@@ -129,7 +131,7 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
     rules = []
     default = default_rules(project.name).get("agent-rules/coding.md", "").strip()
     if (own := live.get("agent-rules/coding.md", "").strip()) and own != default:
-        rules.append(f'<data source="agent-rules/coding.md">\n{own}\n</data>')
+        rules.append(fence("agent-rules/coding.md", own))
     out: list[str] = []
     budget = STANDARDS_CHARS
     if rules:
@@ -145,7 +147,7 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
             if len(text) > budget:
                 out.append(f"- {name}: (left out: the brief is full)")
                 continue
-            out.append(f'<data source="skill {name}">\n{text.strip()}\n</data>')
+            out.append(fence(f"skill {name}", text.strip()))
             budget -= len(text)
     if others:
         # A line each, so the work can name one it turned out to need (a "refund bug" in payment code).
