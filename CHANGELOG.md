@@ -9,10 +9,6 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
-### Fixed
-
-- After you approve an agent's change in Chat or a coding turn in Codes, the board, the lists and the open task show the new status and assignee at once.
-
 ### Changed
 
 - Approve and Reject work in place in the agents panel and the corner notices for everything that waits on you: Kai's turns waiting to start or with checked changes to push, and all of an agent's waiting changes, not only a single board change. A plan to steer still opens, since it needs your choice.
@@ -31,6 +27,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- After you approve an agent's change in Chat or a coding turn in Codes, the board, the lists and the open task show the new status and assignee at once.
 - Dependency versions are now read correctly from requirements files with hashes (pip-compile), so known vulnerabilities in them are found; and a dependency file with an unexpected format is listed as unread and no longer breaks a project's dependencies view.
 - A follow-up you queued while an agent was answering now survives a worker restart and stops when you press Stop, like any other message.
 - A reply cut off by a worker restart and retried no longer repeats a change that had already gone through: the retried step asks for approval first, as a recovered run does.
