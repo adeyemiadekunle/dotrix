@@ -31,10 +31,30 @@ the audit nor the other plans.
 | [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | TODO |
 | [017](017-console-usage-by-model-and-chat-cost.md) | The console shows what chat costs and how each model is doing | P2 | M | — | TODO |
 | [018](018-console-failures-and-audit-cleanup.md) | The console's failure report can't show what people wrote, and the audit log can be filtered | P2 | S–M | — | TODO |
+| [019](019-one-coding-turn-at-a-time-per-issue.md) | Two requests can't start coding on the same issue or session at once | P1 | S | — | TODO |
+| [020](020-approvals-refresh-the-board.md) | Approving in Chat or Codes refreshes the task lists straight away | P1 | S | — | TODO |
+| [021](021-isolation-test-covers-every-id.md) | The cross-workspace test tries every kind of ID, not eight of them | P1 | S | — | TODO |
+| [022](022-unit-tests-for-the-web-list-engine.md) | The web's list engine, routes and permissions have unit tests | P1 | M | — | TODO |
+| [023](023-grouped-lists-show-every-task.md) | Grouped and sorted task lists show every task, in the right order, with its comment count | P1 | S | 022 | TODO |
+| [024](024-task-descriptions-survive-the-editor.md) | Opening a task doesn't rewrite its description, and the editor keeps links and headings | P1 | M | 022 | TODO |
+| [025](025-changes-to-a-task-being-created-are-kept.md) | Changes made to a task while it is still being created are kept | P1 | M | — | TODO |
+| [026](026-overlapping-changes-dont-undo-each-other.md) | Two quick changes to the same list don't undo each other | P1 | S–M | 025 (shares its test file) | TODO |
+| [027](027-a-network-blip-doesnt-eject-you.md) | A brief network failure doesn't replace the workspace with an error or sign you out | P1 | S | — | TODO |
+| [028](028-a-new-reply-never-shows-the-last-one.md) | A new reply never starts by showing the previous reply's text | P2 | S | — | TODO |
+| [029](029-local-turns-send-exact-patches-and-all-events.md) | A turn coded on your computer sends its patch byte for byte and all of its steps | P1 | M | — | TODO |
+| [030](030-dependency-reader-handles-real-requirements-files.md) | The dependency reader gets versions right in hash-pinned requirements files, and one bad manifest doesn't break the view | P1 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
 ## Dependency notes
+
+Plans 019–030 (written 2026-11-11 at `78f46c1`): the second batch from the audit's confirmed findings.
+
+- 022 (tests only) lands before 023 and 024: it pins today's behaviour and marks the known bugs with `it.fails`, which those two plans then turn into passing tests.
+- 025 and 026 both edit `apps/web/src/data/live.ts` and share `live.test.ts`: run 025 first, then 026.
+- 020, 027 and 028 each edit files under `apps/web/lib`; 020 and 028 both touch `lib/agent.ts`, so run them one after the other.
+- 021 only changes a test, but it may expose a real cross-workspace leak. If it does, its executor stops and reports; the fix is then a new, urgent plan.
+- 019, 029 and 030 are independent of the rest and of each other.
 
 Plans 011–018 (written 2026-11-11 at `78f46c1`, for the admin console):
 
@@ -49,25 +69,13 @@ Plans 011–018 (written 2026-11-11 at `78f46c1`, for the admin console):
 - 005 changes a behaviour an existing test asserts on purpose (a password set before verification keeps working after GitHub sign-in). It needs the maintainer's confirmation before execution; the plan says so in its STOP conditions.
 - Every plan branches from `stage` and targets `stage` (the repo's release flow refuses pull requests into `main` from any other branch), and every plan that changes behaviour adds a line under Unreleased in `CHANGELOG.md`.
 
-## Not planned in this batch (confirmed findings, by suggested order)
+## Confirmed findings not planned yet (by suggested order)
 
-These were verified in the code during the audit and are candidates for the next batch.
+These were verified in the code during the audit. Twelve others from this list became plans 019–030.
 
 | Finding | Category | Effort | Evidence |
 |---|---|---|---|
-| Two coding turns can start on one issue (the busy check takes no lock; no unique constraint) | bug | S–M | `modules/coding/service.py:397-401` |
-| Board stays stale after approvals in Chat or Codes (the wrong query key is invalidated) | bug | S | `apps/web/lib/agent.ts:168`, `apps/web/lib/coding.ts:84` |
-| The cross-workspace ID test never substitutes coding, runner, automation or approval IDs | tests | S | `apps/backend/tests/integration/test_isolation.py:351-360` |
 | The documented `pipx` install cannot resolve `dotrix-engine`; the name was reported unclaimed on PyPI | deps | S | `README.md:217`, `apps/cli/pyproject.toml:7,18` |
-| The description editor re-saves on every blur when the text has a quote, and drops links and headings | bug | M | `apps/web/src/data/markdown.ts:5,45-52`, `src/overlays/Drawer.tsx:390` |
-| Edits, stars and deletes on a task still being created are silently dropped | bug | M | `apps/web/src/data/live.ts:322` |
-| Overlapping optimistic writes can undo each other | bug | S–M | `apps/web/src/data/live.ts:79-103` |
-| No unit tests for the web data layer, list engine, routes or the Markdown round trip (do before the three above) | tests | M | `apps/web/src/data/live.ts`, `lib/store-slots.ts`, `src/shell/viewEngine.tsx`, `src/core/nav.ts` |
-| Lists grouped by assignee hide tasks assigned to an agent | bug | S | `apps/web/src/shell/viewEngine.tsx:140-144` |
-| A brief network failure shows the full error screen, or signs the person out | bug | S | `apps/web/src/shell/StoreBridge.tsx:80`, `apps/web/lib/api.ts:29-30` |
-| A new run briefly shows the previous run's reply | bug | S | `apps/web/lib/agent.ts:265-275` |
-| The local runner corrupts non-UTF-8 patches and sends only the first 50 pending events with a turn's result | bug | S–M | `apps/cli/src/dotrix_cli/runner.py:254`, `:433-434` |
-| Hash-pinned requirements get a wrong version, so advisories are missed | bug | S | `packages/engine/src/dotrix_engine/dependencies.py:198-201,229-230` |
 | Notification emails are sent before they are marked sent | bug | S | `modules/notifications/emails.py:111-119` |
 | Juno's "posting" claim can stick, so a review is never posted | bug | S | `modules/coding/github_reviews.py:179-201` |
 | A warm sandbox leaks if its reuse check fails | bug | S | `modules/coding/runner.py:497-519` |
