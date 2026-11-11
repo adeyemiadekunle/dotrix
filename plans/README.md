@@ -20,7 +20,7 @@ the audit nor the other plans.
 | [005](005-claiming-an-unverified-account-resets-its-credentials.md) | Proving an inbox on an unverified account removes the credentials set before that | P1 | S–M | — (needs a product decision) | TODO |
 | [006](006-data-fences-cannot-be-closed-by-their-content.md) | Text in a `<data>` fence in Kai's brief or Juno's CI prompt cannot close the fence | P1 | S | — | DONE |
 | [007](007-app-and-admin-security-headers.md) | The web app and admin console are served with anti-framing headers | P1 | S | — (after 001) | DONE (nginx -t and headers checked locally) |
-| [008](008-runner-commit-ids-are-validated.md) | A commit ID reported by a local runner must be 40-character hex | P2 | S | — | TODO |
+| [008](008-runner-commit-ids-are-validated.md) | A commit ID reported by a local runner must be 40-character hex | P2 | S | — | DONE |
 | [009](009-env-example-has-the-jwt-secret.md) | `.env.example` documents the required `DOTRIX_JWT_SECRET` | P2 | S | — | DONE |
 | [010](010-ci-enforces-uv-lock.md) | CI fails when `uv.lock` is out of date | P2 | S | — | DONE (CI proof pending on the PR) |
 
