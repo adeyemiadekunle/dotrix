@@ -16,7 +16,7 @@ the audit nor the other plans.
 | [001](001-admin-bootstrap-token.md) | The first admin account can only be created with a deployment secret | P1 | S | — | DONE |
 | [002](002-reconciler-current-dispatch-only.md) | The coding reconciler only judges a run by its current dispatch | P1 | S | — | DONE |
 | [003](003-queue-retry-is-a-recovered-attempt.md) | A chat step retried by the queue runs as a recovered attempt | P1 | S | — | DONE |
-| [004](004-queued-follow-ups-use-the-outbox.md) | Follow-ups delivered inside the worker go through the durable outbox | P1 | S | — (after 003) | TODO |
+| [004](004-queued-follow-ups-use-the-outbox.md) | Follow-ups delivered inside the worker go through the durable outbox | P1 | S | — (after 003) | DONE |
 | [005](005-claiming-an-unverified-account-resets-its-credentials.md) | Proving an inbox on an unverified account removes the credentials set before that | P1 | S–M | — (needs a product decision) | TODO |
 | [006](006-data-fences-cannot-be-closed-by-their-content.md) | Text in a `<data>` fence in Kai's brief or Juno's CI prompt cannot close the fence | P1 | S | — | DONE |
 | [007](007-app-and-admin-security-headers.md) | The web app and admin console are served with anti-framing headers | P1 | S | — (after 001) | DONE (nginx -t and headers checked locally) |
