@@ -140,7 +140,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dotrix/api-client build
-      - run: pnpm --filter @dotrix/web exec playwright install --with-deps chromium
+      - name: Install the browser
+        # --with-deps adds fonts with apt; when Ubuntu's mirror can't be reached that fails the job before any
+        # test runs, though the runner image already has the libraries Chromium needs. So: try it for 3 minutes,
+        # then install the browser alone.
+        run: |
+          timeout 180 pnpm --filter @dotrix/web exec playwright install --with-deps chromium \
+            || pnpm --filter @dotrix/web exec playwright install chromium
       - run: pnpm --filter @dotrix/web e2e
       - uses: actions/upload-artifact@v4
         if: failure()
