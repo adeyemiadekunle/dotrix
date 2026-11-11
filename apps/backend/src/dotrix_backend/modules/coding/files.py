@@ -9,6 +9,7 @@ never shown (it lives on the platform, not in the repo).
 from __future__ import annotations
 
 import hashlib
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -29,7 +30,7 @@ from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstal
 from dotrix_backend.modules.projects.deps import ProjectAccess
 
 from .models import CodingRun
-from .schemas import CodingDiff, CodingFile, CodingTree, CodingTreeEntry
+from .schemas import COMMIT_SHA, CodingDiff, CodingFile, CodingTree, CodingTreeEntry
 
 MAX_ENTRIES = 20_000  # paths listed in a tree
 MAX_FILE_BYTES = 1_000_000  # of a file shown (each side)
@@ -101,6 +102,9 @@ class TurnFiles:
             raise TurnFilesUnavailable("Reading code isn't set up on this server")
         if not run.base_sha:
             raise TurnFilesUnavailable("The turn hasn't started on a commit yet")
+        if not re.fullmatch(COMMIT_SHA, run.base_sha):
+            # Never hand git something that isn't a commit ID (a run recorded before this was checked).
+            raise TurnFilesUnavailable("The turn's base commit isn't a valid commit ID")
         checkout = await CodeService(self.session, self.checkouts).ensure(run.workspace_id, run.project_id)
         if checkout is None:
             raise TurnFilesUnavailable("The project's repository isn't checked out here (is it connected?)")

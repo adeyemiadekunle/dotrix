@@ -337,6 +337,8 @@ class RunDispatcher:
                 RunDispatch.queue_name == self.queue.queue_name,
                 RunDispatch.coding_run_id.is_not(None), RunDispatch.accepted_at <= cutoff,
                 CodingRun.status == CodingRunStatus.RUNNING,
+                RunDispatch.generation == CodingRun.dispatch_generation,
+                RunDispatch.discarded_at.is_(None),
             ).order_by(RunDispatch.accepted_at).limit(limit))).all())
         started, classified = time.monotonic(), 0
         for workspace_id, dispatch_id, run_id, delivery_generation in candidates:
@@ -369,6 +371,8 @@ class RunDispatcher:
                 operation = await session.scalar(select(RunDispatch).where(
                     RunDispatch.workspace_id == workspace_id, RunDispatch.id == dispatch_id,
                     RunDispatch.coding_run_id == run_id, RunDispatch.accepted_at.is_not(None),
+                    RunDispatch.generation == run.dispatch_generation,
+                    RunDispatch.discarded_at.is_(None),
                 ).with_for_update(skip_locked=True))
                 if operation is None or operation.delivery_generation != delivery_generation:
                     continue

@@ -1,4 +1,4 @@
-"""Admin app payloads: sign-up (proving workspace ownership once), sign-in, the account."""
+"""Admin app payloads: sign-up (with the bootstrap token), sign-in, the account."""
 from __future__ import annotations
 
 import uuid
@@ -11,12 +11,14 @@ from dotrix_backend.modules.observe.schemas import ObservedRun
 
 
 class AdminSignup(BaseModel):
-    """Create an admin account by proving you own the workspace: your app account's email and
-    password. The admin gets its own credentials from then on — separate from your sign-in."""
+    """Create the first admin account. On a deployed server this needs the deployment's
+    bootstrap token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN). The admin has its own credentials,
+    separate from any app account."""
 
     email: str = Field(min_length=3, max_length=320)
     name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=8, max_length=200)
+    bootstrap_token: str | None = Field(default=None, max_length=200)
 
 
 class AdminLogin(BaseModel):
@@ -40,9 +42,11 @@ class AdminRead(BaseModel):
 
 
 class AdminBootstrap(BaseModel):
-    """Whether the sign-up form is open: true only while no admin account exists."""
+    """Whether the sign-up form is open (no admin account exists, and on a deployed server the
+    bootstrap token is configured), and whether it asks for that token."""
 
     enabled: bool
+    token_required: bool = False
 
 
 # Platform administration payloads.

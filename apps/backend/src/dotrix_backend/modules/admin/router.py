@@ -72,14 +72,16 @@ Service = Annotated[AdminService, Depends(get_admin_service)]
 
 @router.get("/bootstrap")
 async def admin_bootstrap(svc: Service) -> AdminBootstrap:
-    """Whether admin sign-up is open: true only while no admin account exists."""
-    return AdminBootstrap(enabled=await svc.bootstrap_available())
+    """Whether admin sign-up is open (no admin account exists and, on a deployed server, the
+    bootstrap token is configured), and whether the form must ask for that token."""
+    return AdminBootstrap(enabled=await svc.bootstrap_available(), token_required=svc.token_required())
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED, responses=errors(403, 422, 429))
 async def admin_signup(data: AdminSignup, svc: Service, response: Response, throttle: ThrottleDep) -> None:
-    """Bootstrap the first admin account. The console is for whoever operates the deployment,
-    not app users — sign-up closes once the first account exists. Rate-limited per IP."""
+    """Bootstrap the first admin account with the deployment's bootstrap token. The console is
+    for whoever operates the deployment, not app users — sign-up closes once the first account
+    exists. Rate-limited per IP."""
     await throttle(LOGIN, data.email)
     access, refresh = await svc.signup(data)
     _set_session(response, access, refresh, svc.settings)

@@ -231,6 +231,7 @@ class AgentRunner:
         inline: bool = False,
         queue: RunQueue | None = None,
         stop_reasons: RunQueue | None = None,
+        outbox: RunQueue | None = None,
         streams: Streams | None = None,
         summarize_after_tokens: int | None = None,
         embedder: Any = None,
@@ -266,6 +267,9 @@ class AgentRunner:
         self.queue = queue
         # The worker: why a job was aborted (Stop). Also means a cut-off run gets retried.
         self.stop_reasons = stop_reasons
+        # The worker: the queue the runs it starts itself (a delivered follow-up) are dispatched
+        # through, as the API's are. None: they start in this process.
+        self.outbox = outbox
         # The PM's reply as it's written, for clients that stream it.
         self.streams: Streams = streams or RunStreams()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -409,15 +413,22 @@ class AgentRunner:
 
     # -- dispatching -----------------------------------------------------------------
 
+    @property
+    def _outbox(self) -> RunQueue | None:
+        """The queue runs are dispatched through: the API's in worker mode, and the worker's own
+        (`outbox`) in the worker. None: runs start in this process."""
+        return self.queue or self.outbox
+
     def prepare_dispatch(
         self, session: AsyncSession, run: AgentRun, payload: dict[str, Any],
     ) -> RunDispatch | None:
         """Record worker dispatch in the caller's transaction; local/inline stay immediate."""
-        if self.queue is None:
+        outbox = self._outbox
+        if outbox is None:
             if run.dispatch_generation:
                 raise Conflict("Continue this run with worker execution enabled")
             return None
-        return record_dispatch(session, run, payload, queue_name=self.queue.queue_name)
+        return record_dispatch(session, run, payload, queue_name=outbox.queue_name)
 
     async def start(
         self, run_id: uuid.UUID, message: str, *, dispatch: RunDispatch | None = None,
@@ -456,10 +467,11 @@ class AgentRunner:
     async def _dispatch(
         self, run_id: uuid.UUID, payload: dict[str, Any], dispatch: RunDispatch | None = None,
     ) -> None:
-        if self.queue is not None:
+        outbox = self._outbox
+        if outbox is not None:
             if dispatch is None or dispatch.agent_run_id != run_id:
                 raise ValueError("Worker runs require dispatch intent committed with their state")
-            await RunDispatcher(self.session_factory, self.queue).kick(dispatch.workspace_id, dispatch.id)
+            await RunDispatcher(self.session_factory, outbox).kick(dispatch.workspace_id, dispatch.id)
             return
         if self.inline:
             await self.execute(run_id, payload)
@@ -538,6 +550,11 @@ class AgentRunner:
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
                 admitted = True
+                if retry_operation and run.status is RunStatus.RUNNING:
+                    # The queue is retrying a step its worker was cut off in (a deploy, a shutdown):
+                    # the same as a lapsed lease. It runs in Manual, and unanswered tool calls
+                    # aren't run again unasked.
+                    payload = {**payload, "recovered": True}
                 # A previous attempt was cut off, or the person continues one that stopped at a limit.
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
@@ -969,6 +986,11 @@ class AgentRunner:
                     return
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
+                if retry_operation and run.status is RunStatus.RUNNING:
+                    # The queue is retrying a step its worker was cut off in (a deploy, a shutdown):
+                    # the same as a lapsed lease. It runs in Manual, and unanswered tool calls
+                    # aren't run again unasked.
+                    payload = {**payload, "recovered": True}
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
                     if run.requested_by_id else None

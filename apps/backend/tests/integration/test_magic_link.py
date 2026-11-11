@@ -25,9 +25,27 @@ async def test_sign_in_with_an_emailed_link(db_client: AsyncClient, signup, outb
     session = {"Authorization": f"Bearer {signed_in.json()['access_token']}"}
     me = (await db_client.get("/v1/me", headers=session)).json()
     assert me["id"] == ada.id and me["email_verified"] is True  # following the link proved the inbox
+    # The account was unverified: the password and session from before the link are gone.
+    login = await db_client.post("/v1/auth/login", json={"email": ada.email, "password": ada.password})
+    assert login.status_code == 401
+    assert (await db_client.get("/v1/me", headers=ada.headers)).status_code == 401
     # A link works once.
     again = await db_client.post("/v1/auth/magic-link/verify", json={"token": token})
     assert again.status_code == 400 and again.json()["type"].endswith("/invalid_link")
+
+
+async def test_claiming_an_unverified_account_revokes_its_api_tokens(
+    db_client: AsyncClient, signup, email_token
+) -> None:
+    ada = await signup()
+    created = await db_client.post("/v1/me/tokens", json={"name": "script"}, headers=ada.headers)
+    assert created.status_code == 201, created.text
+    api = {"Authorization": f"Bearer {created.json()['token']}"}
+    assert (await db_client.get("/v1/me", headers=api)).status_code == 200
+    await db_client.post("/v1/auth/magic-link/request", json={"email": ada.email})
+    signed_in = await db_client.post("/v1/auth/magic-link/verify", json={"token": email_token("/magic-link")})
+    assert signed_in.status_code == 200
+    assert (await db_client.get("/v1/me", headers=api)).status_code == 401
 
 
 async def test_a_new_address_gets_a_link_to_create_its_account(

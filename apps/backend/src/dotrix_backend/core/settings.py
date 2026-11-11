@@ -59,6 +59,9 @@ class Settings(DatabaseSettings):
     # Auth. The secret is required and never has a default.
     jwt_secret: SecretStr = Field(min_length=32)
     jwt_issuer: str = "dotrix"
+    # The secret that opens the admin console's first sign-up (apps/admin). Required to create
+    # that account on staging and production; unset there, admin sign-up stays closed.
+    admin_bootstrap_token: SecretStr | None = Field(default=None, min_length=24)
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
     email_verification_ttl_hours: int = 48

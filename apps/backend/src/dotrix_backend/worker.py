@@ -77,6 +77,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         sessionmaker, settings, build_email_sender(settings), storage, embedder, checkouts,
         runner=dispatcher, coding=build_coding_worker(settings, sessionmaker, dispatcher, storage),
     )
+    runs = RunQueue(redis)
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
         checkpointer=checkpointer,
@@ -89,7 +90,8 @@ async def startup(ctx: dict[str, Any]) -> None:
         secrets=Secrets.from_settings(settings),
         settings=settings,
         inline=True,  # this process executes the runs
-        stop_reasons=RunQueue(redis),
+        stop_reasons=runs,
+        outbox=runs,  # follow-ups it delivers are dispatched like the API's runs
         streams=RedisRunStreams(redis),
     )
     # A coding run asked for from a conversation that starts at once: dispatched like any other.

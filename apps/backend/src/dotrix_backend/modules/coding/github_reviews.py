@@ -31,6 +31,7 @@ from dotrix_backend.modules.auth.github import GitHubUnavailable
 from dotrix_backend.modules.connectors.github_app import GitHubApp, GitHubAppClient
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
 
+from .fences import fence
 from .models import CodingRun
 
 logger = logging.getLogger(__name__)
@@ -271,7 +272,7 @@ async def triage_ci(ctx: JobContext, *, coding_run_id: str, sha: str) -> None:
         try:
             token = await app.access_token(installation_id, repository_id=repo_id, actions=True)
             failed = await app.failed_job_logs(full_name, sha, token=token)
-            logs = "\n\n".join(f'<data source="CI job {job.name} ({job.html_url})">\n{job.log}\n</data>' for job in failed) \
+            logs = "\n\n".join(fence(f"CI job {job.name} ({job.html_url})", job.log) for job in failed) \
                 or "(GitHub Actions has no failed job for this commit: the failing check is another app's; open the PR's Checks)"
         except Forbidden:
             logs = "(the logs couldn't be read: the GitHub App needs the Actions (read) permission)"

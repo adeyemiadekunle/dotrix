@@ -81,3 +81,24 @@ def test_development_keeps_plain_docker_and_unlimited_runs_available() -> None:
     local = settings(coding_sandbox="docker", coding_max_runs=0)
     assert local.coding_docker_runtime is None
     assert local.coding_max_runs == 0
+
+
+def test_the_admin_bootstrap_token_must_be_long_enough() -> None:
+    with pytest.raises(ValidationError):
+        settings(admin_bootstrap_token="too-short")
+    assert settings(admin_bootstrap_token="x" * 24).admin_bootstrap_token is not None
+
+
+def test_every_required_setting_is_in_env_example() -> None:
+    """Whatever the server can't start without is in .env.example, uncommented, so the README's
+    `cp .env.example .env` gives a server that starts."""
+    from pathlib import Path
+
+    from dotrix_backend.core.settings import Settings
+
+    example = (Path(__file__).resolve().parents[4] / ".env.example").read_text(encoding="utf-8")
+    names = {
+        line.split("=", 1)[0].strip() for line in example.splitlines() if "=" in line and not line.lstrip().startswith("#")
+    }
+    required = {f"DOTRIX_{name.upper()}" for name, field in Settings.model_fields.items() if field.is_required()}
+    assert required <= names, f"missing from .env.example: {sorted(required - names)}"

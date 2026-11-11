@@ -388,7 +388,8 @@ export interface paths {
         };
         /**
          * Admin Bootstrap
-         * @description Whether admin sign-up is open: true only while no admin account exists.
+         * @description Whether admin sign-up is open (no admin account exists and, on a deployed server, the
+         *     bootstrap token is configured), and whether the form must ask for that token.
          */
         get: operations["admin_bootstrap"];
         put?: never;
@@ -410,8 +411,9 @@ export interface paths {
         put?: never;
         /**
          * Admin Signup
-         * @description Bootstrap the first admin account. The console is for whoever operates the deployment,
-         *     not app users — sign-up closes once the first account exists. Rate-limited per IP.
+         * @description Bootstrap the first admin account with the deployment's bootstrap token. The console is
+         *     for whoever operates the deployment, not app users — sign-up closes once the first account
+         *     exists. Rate-limited per IP.
          */
         post: operations["admin_signup"];
         delete?: never;
@@ -4979,11 +4981,17 @@ export interface components {
         ActivityKind: "issue.created" | "issue.updated" | "issue.commented" | "issue.claimed" | "document.changed" | "document.deleted" | "run.started" | "approval.decided";
         /**
          * AdminBootstrap
-         * @description Whether the sign-up form is open: true only while no admin account exists.
+         * @description Whether the sign-up form is open (no admin account exists, and on a deployed server the
+         *     bootstrap token is configured), and whether it asks for that token.
          */
         AdminBootstrap: {
             /** Enabled */
             enabled: boolean;
+            /**
+             * Token Required
+             * @default false
+             */
+            token_required: boolean;
         };
         /** AdminLogin */
         AdminLogin: {
@@ -5012,8 +5020,9 @@ export interface components {
         };
         /**
          * AdminSignup
-         * @description Create an admin account by proving you own the workspace: your app account's email and
-         *     password. The admin gets its own credentials from then on — separate from your sign-in.
+         * @description Create the first admin account. On a deployed server this needs the deployment's
+         *     bootstrap token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN). The admin has its own credentials,
+         *     separate from any app account.
          */
         AdminSignup: {
             /** Email */
@@ -5022,6 +5031,8 @@ export interface components {
             name: string;
             /** Password */
             password: string;
+            /** Bootstrap Token */
+            bootstrap_token?: string | null;
         };
         /** AdminWorkspace */
         AdminWorkspace: {

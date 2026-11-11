@@ -5,12 +5,14 @@ import json
 import sys
 import uuid
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, ValidationError
 
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.coding import guard
 from dotrix_backend.modules.coding.models import CodingAgent
 from dotrix_backend.modules.coding.sandbox import run_process, sandbox_policy
+from dotrix_backend.modules.coding.schemas import RunnerHeartbeat, RunnerResult
 from dotrix_backend.modules.coding.tools import (
     OPENCODE_PROVIDERS,
     TOOLS,
@@ -381,3 +383,17 @@ def test_claude_code_and_codex_take_the_model_as_their_engine_names_it() -> None
     assert ClaudeCode().command("anthropic:claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]
     assert ClaudeCode().command("claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]  # a server setting's bare name
     assert Codex().command("openai:gpt-5.5")[-3:] == ["-c", 'model="gpt-5.5"', "-"]
+
+
+@pytest.mark.parametrize("value", ["-" + "a" * 39, "A" * 40, "g" * 40, "a" * 39, "a" * 41, "--upload-pack=" + "x" * 26])
+def test_a_runner_base_commit_must_be_a_full_hex_id(value):
+    with pytest.raises(ValidationError):
+        RunnerHeartbeat(lease_token=1, base_sha=value)
+    with pytest.raises(ValidationError):
+        RunnerResult(lease_token=1, outcome="no_changes", base_sha=value)
+
+
+def test_a_runner_base_commit_accepts_a_real_id_or_none():
+    for value in ("0123456789abcdef0123456789abcdef01234567", None):
+        assert RunnerHeartbeat(lease_token=1, base_sha=value).base_sha == value
+        assert RunnerResult(lease_token=1, outcome="no_changes", base_sha=value).base_sha == value
