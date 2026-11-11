@@ -266,10 +266,13 @@ class CodingClaimed(BaseModel):
     run: CodingClaim | None = Field(description="None: nothing waits for this runner")
 
 
+COMMIT_SHA = r"^[0-9a-f]{40}$"  # a full commit ID, as `git rev-parse` prints it
+
+
 class RunnerHeartbeat(BaseModel):
     lease_token: int
     events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
-    base_sha: str | None = Field(default=None, min_length=40, max_length=40)
+    base_sha: str | None = Field(default=None, pattern=COMMIT_SHA)
     worktree: str | None = Field(default=None, max_length=1024, description="The turn's worktree on this computer")
 
 
@@ -281,7 +284,7 @@ class RunnerResult(BaseModel):
     lease_token: int
     outcome: Literal["changes", "no_changes", "failed", "stopped"]
     patch: str | None = Field(default=None, max_length=20_000_000, description="`git diff --cached --binary` against base_sha")
-    base_sha: str | None = Field(default=None, min_length=40, max_length=40)
+    base_sha: str | None = Field(default=None, pattern=COMMIT_SHA)
     summary: str | None = Field(default=None, max_length=20_000)
     error: str | None = Field(default=None, max_length=2_000)
     events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
