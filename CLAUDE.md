@@ -77,6 +77,7 @@ Shared coding outcomes (J05): a task's Coding section can show the latest publis
 
 ```bash
 uv sync                                   # install all Python packages
+uv lock                                   # after changing any pyproject.toml: CI installs with --locked and fails on a stale uv.lock
 uv run pytest                             # Python tests
 uv run ruff check apps packages --fix     # lint (rules pinned in root pyproject.toml)
 pnpm lint                                 # ESLint (TypeScript) + Ruff; `pnpm lint:fix` fixes what it can

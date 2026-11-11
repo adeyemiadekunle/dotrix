@@ -39,7 +39,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: uv sync
+      - name: Install Python packages (run `uv lock` if this fails)
+        run: uv sync --locked
       - name: Install the fx runtime's host
         run: npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host
       - run: uv run ruff check apps packages
@@ -130,7 +131,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync
+      - name: Install Python packages (run `uv lock` if this fails)
+        run: uv sync --locked
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
