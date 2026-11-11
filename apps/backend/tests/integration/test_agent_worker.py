@@ -45,6 +45,7 @@ def worker_mode(db_client: AsyncClient, redis, create_team, signup, agent_script
                 model_factory=model_factory,
                 inline=True,
                 stop_reasons=RunQueue(redis, queue_name=name),
+                outbox=RunQueue(redis, queue_name=name),
                 streams=streams,
             )
             return Worker(

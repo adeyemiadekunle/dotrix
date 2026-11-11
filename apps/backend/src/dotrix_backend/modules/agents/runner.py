@@ -231,6 +231,7 @@ class AgentRunner:
         inline: bool = False,
         queue: RunQueue | None = None,
         stop_reasons: RunQueue | None = None,
+        outbox: RunQueue | None = None,
         streams: Streams | None = None,
         summarize_after_tokens: int | None = None,
         embedder: Any = None,
@@ -266,6 +267,9 @@ class AgentRunner:
         self.queue = queue
         # The worker: why a job was aborted (Stop). Also means a cut-off run gets retried.
         self.stop_reasons = stop_reasons
+        # The worker: the queue the runs it starts itself (a delivered follow-up) are dispatched
+        # through, as the API's are. None: they start in this process.
+        self.outbox = outbox
         # The PM's reply as it's written, for clients that stream it.
         self.streams: Streams = streams or RunStreams()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -411,9 +415,9 @@ class AgentRunner:
 
     @property
     def _outbox(self) -> RunQueue | None:
-        """The queue runs are dispatched through: the API's in worker mode, and in the worker
-        itself the one it reads stop reasons from. None: runs start in this process."""
-        return self.queue or self.stop_reasons
+        """The queue runs are dispatched through: the API's in worker mode, and the worker's own
+        (`outbox`) in the worker. None: runs start in this process."""
+        return self.queue or self.outbox
 
     def prepare_dispatch(
         self, session: AsyncSession, run: AgentRun, payload: dict[str, Any],
