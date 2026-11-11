@@ -183,6 +183,8 @@ Then sign up, open Account → Your models and connect your own provider key: ag
 
 **Configuration** (all in `.env`, explained in [.env.example](.env.example)):
 - **Required:**
+  - `DOTRIX_JWT_SECRET`: signs sign-in tokens; at least 32 random characters
+    (`python -c "import secrets; print(secrets.token_urlsafe(48))"`).
   - `DOTRIX_ENCRYPTION_KEY`: a Fernet key that encrypts people's model keys and saved coding
     sessions.
   - The Postgres and storage passwords.
