@@ -26,6 +26,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - In a personal workspace every task is yours: My Tasks becomes Tasks and lists unassigned tasks too, and Home shows your open tasks due this week instead of who they're assigned to, with no Team column.
 
 ### Fixed
+
 - Dependency versions are now read correctly from requirements files with hashes (pip-compile), so known vulnerabilities in them are found; and a dependency file with an unexpected format is listed as unread and no longer breaks a project's dependencies view.
 - A follow-up you queued while an agent was answering now survives a worker restart and stops when you press Stop, like any other message.
 - A reply cut off by a worker restart and retried no longer repeats a change that had already gone through: the retried step asks for approval first, as a recovered run does.
