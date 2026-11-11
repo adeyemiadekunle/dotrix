@@ -101,7 +101,21 @@ async def test_links_an_existing_account_by_verified_email(db_client: AsyncClien
     assert res.status_code == 200
     user = await me(db_client, res)
     assert user["id"] == ada.id and user["email_verified"] is True
-    # The password still works too.
+    # The address was unverified until now: the password set before that is gone, and the
+    # session that sign-up created is signed out.
+    login = await db_client.post("/v1/auth/login", json={"email": ada.email, "password": ada.password})
+    assert login.status_code == 401
+    assert (await db_client.get("/v1/me", headers=ada.headers)).status_code == 401
+
+
+async def test_linking_a_verified_account_keeps_its_password(
+    db_client: AsyncClient, signup, github: FakeGitHub, email_token
+) -> None:
+    ada = await signup()
+    verified = await db_client.post("/v1/auth/verify-email", json={"token": email_token("/verify-email")})
+    assert verified.status_code == 204
+    res = await finish(db_client)
+    assert res.status_code == 200
     login = await db_client.post("/v1/auth/login", json={"email": ada.email, "password": ada.password})
     assert login.status_code == 200
 

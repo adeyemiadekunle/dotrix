@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import ApiToken, DeviceAuthorization, DeviceStatus
@@ -31,6 +31,12 @@ class ApiTokenRepository:
             .order_by(ApiToken.created_at.desc())
         )
         return list(result)
+
+    async def revoke_all_for_user(self, user_id: uuid.UUID, now: datetime) -> None:
+        """Revoke every API token of a user (their CLI and scripts must sign in again)."""
+        await self.session.execute(
+            update(ApiToken).where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None)).values(revoked_at=now)
+        )
 
 
 class DeviceAuthorizationRepository:

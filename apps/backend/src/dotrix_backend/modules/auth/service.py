@@ -13,6 +13,7 @@ from dotrix_backend.core.email import EmailSender
 from dotrix_backend.core.errors import Conflict, InvalidLink, Unauthorized
 from dotrix_backend.core.jobs import Jobs
 from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.api_tokens.repository import ApiTokenRepository
 from dotrix_backend.modules.workspaces.service import WorkspaceService
 
 from .github import GitHubProfile
@@ -223,7 +224,9 @@ class AuthService:
         user = await self.users.get(action.user_id)
         if user is None or not user.is_active:
             raise InvalidLink()
-        user.email_verified_at = user.email_verified_at or _now()
+        now = _now()
+        await self._claim_if_unverified(user, now)
+        user.email_verified_at = user.email_verified_at or now
         tokens = self._issue_tokens(user)
         await self.session.commit()
         return tokens
@@ -259,6 +262,9 @@ class AuthService:
                 await WorkspaceService(self.session).create_personal(user)
             elif not user.is_active:
                 raise Unauthorized("This account can't sign in")
+            if user.email_verified_at is None:
+                # Don't run for the account created just above (it is created verified).
+                await self._claim_if_unverified(user, now)
             # GitHub verified the address, which proves the inbox as a link would.
             user.email_verified_at = user.email_verified_at or now
             self.oauth_accounts.add(
@@ -280,6 +286,7 @@ class AuthService:
         if user is None or not user.is_active:
             raise InvalidLink()
         now = _now()
+        await self._claim_if_unverified(user, now)
         user.password_hash = security.hash_password(data.new_password)
         # Proving inbox access also verifies the email.
         user.email_verified_at = user.email_verified_at or now
@@ -288,6 +295,17 @@ class AuthService:
         await self.session.commit()
 
     # -- helpers -----------------------------------------------------------------
+
+    async def _claim_if_unverified(self, user: User, now: datetime) -> None:
+        """An account whose address was never verified is being claimed by whoever just proved
+        the inbox (GitHub's verified email, an emailed link). Whatever was set up before that
+        may be someone else's: the password goes, and every session and API token is revoked.
+        A verified account is left as it is."""
+        if user.email_verified_at is not None:
+            return
+        user.password_hash = None
+        await self.refresh_tokens.revoke_all_for_user(user.id, now)
+        await ApiTokenRepository(self.session).revoke_all_for_user(user.id, now)
 
     async def _touch_session(self, family_id: uuid.UUID, user: User, now: datetime) -> None:
         """A refresh: the session was just used (from where). One that signed in before sessions

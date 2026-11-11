@@ -183,3 +183,20 @@ async def test_password_reset(signup, db_client: AsyncClient, email_token) -> No
         "/v1/auth/password-reset/confirm", json={"token": token, "new_password": new_password}
     )
     assert again.status_code == 400
+
+
+async def test_resetting_an_unverified_accounts_password_revokes_its_api_tokens(
+    signup, db_client: AsyncClient, email_token
+) -> None:
+    ada = await signup()
+    created = await db_client.post("/v1/me/tokens", json={"name": "script"}, headers=ada.headers)
+    assert created.status_code == 201, created.text
+    api = {"Authorization": f"Bearer {created.json()['token']}"}
+    assert (await db_client.get("/v1/me", headers=api)).status_code == 200
+    await db_client.post("/v1/auth/password-reset/request", json={"email": ada.email})
+    res = await db_client.post(
+        "/v1/auth/password-reset/confirm",
+        json={"token": email_token("/reset-password"), "new_password": "a brand new passphrase"},
+    )
+    assert res.status_code == 204
+    assert (await db_client.get("/v1/me", headers=api)).status_code == 401

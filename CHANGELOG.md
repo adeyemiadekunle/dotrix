@@ -38,6 +38,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Security
 
+- If an account's email was never verified, signing in to it with GitHub or an emailed link (or resetting its password) now removes the password set before that and signs out every browser, app and API token, so nobody who registered the address earlier keeps access. Verified accounts are unchanged.
 - The app and the admin console can no longer be shown inside another website's frame, and they send stricter content-type and referrer headers.
 - Creating the admin console's first account now needs the deployment's setup token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN); without it, admin sign-up stays closed on a deployed server.
 - Text that reaches Kai's brief or Juno's look at a failed build (issue text, imported GitHub issues, documents, CI logs) can no longer break out of the part of the prompt marked as data.
