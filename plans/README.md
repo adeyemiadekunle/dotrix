@@ -22,7 +22,7 @@ the audit nor the other plans.
 | [007](007-app-and-admin-security-headers.md) | The web app and admin console are served with anti-framing headers | P1 | S | — (after 001) | TODO |
 | [008](008-runner-commit-ids-are-validated.md) | A commit ID reported by a local runner must be 40-character hex | P2 | S | — | TODO |
 | [009](009-env-example-has-the-jwt-secret.md) | `.env.example` documents the required `DOTRIX_JWT_SECRET` | P2 | S | — | TODO |
-| [010](010-ci-enforces-uv-lock.md) | CI fails when `uv.lock` is out of date | P2 | S | — | TODO |
+| [010](010-ci-enforces-uv-lock.md) | CI fails when `uv.lock` is out of date | P2 | S | — | DONE (CI proof pending on the PR) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
