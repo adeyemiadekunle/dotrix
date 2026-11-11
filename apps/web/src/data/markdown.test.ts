@@ -32,3 +32,29 @@ describe("htmlToMd", () => {
     expect(htmlToMd(mdToHtml(md))).toBe(md);
   });
 });
+
+describe("round trips", () => {
+  it.each([
+    ["a paragraph", "Just some text"],
+    ["bold", "Some **bold** text"],
+    ["code", "Run `pnpm test` now"],
+    ["a bulleted list", "- one\n- two"],
+    ["a numbered list", "1. one\n2. two"],
+  ])("keeps %s", (_name, md) => {
+    expect(htmlToMd(mdToHtml(md))).toBe(md);
+  });
+
+  it.fails("keeps a link's address (plan 024)", () => {
+    expect(htmlToMd('<p><a href="https://example.com">site</a></p>')).toContain("https://example.com");
+  });
+
+  it.fails("keeps a heading on its own line (plan 024)", () => {
+    expect(htmlToMd("<h4>Title</h4><p>Body</p>")).toMatch(/Title\n+Body/);
+  });
+
+  it.fails("survives the browser's innerHTML with a double quote (plan 024)", () => {
+    const el = document.createElement("div");
+    el.innerHTML = mdToHtml('say "hi"');
+    expect(el.innerHTML).toBe(mdToHtml('say "hi"'));
+  });
+});
