@@ -23,10 +23,24 @@ the audit nor the other plans.
 | [008](008-runner-commit-ids-are-validated.md) | A commit ID reported by a local runner must be 40-character hex | P2 | S | — | DONE |
 | [009](009-env-example-has-the-jwt-secret.md) | `.env.example` documents the required `DOTRIX_JWT_SECRET` | P2 | S | — | DONE |
 | [010](010-ci-enforces-uv-lock.md) | CI fails when `uv.lock` is out of date | P2 | S | — | DONE (CI proof pending on the PR) |
+| [011](011-admin-accounts-from-the-server.md) | Admin accounts can be created and rescued from the server's command line | P1 | S | — | TODO |
+| [012](012-several-admins-invites-and-roles.md) | Several people can be admins: invites, two roles, and a way to remove someone | P1 | L | 011 | TODO |
+| [013](013-admin-two-factor-sign-in.md) | Admins sign in with a second factor (TOTP) | P1 | M | 011, 012 | TODO |
+| [014](014-admin-trail.md) | What admins do in the console is recorded and shown | P2 | M | 012 (013 if landed) | TODO |
+| [015](015-console-health-covers-dependencies.md) | The console's health shows the services, workers, backlogs and capacity dotrix depends on | P1 | M | — | TODO |
+| [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | TODO |
+| [017](017-console-usage-by-model-and-chat-cost.md) | The console shows what chat costs and how each model is doing | P2 | M | — | TODO |
+| [018](018-console-failures-and-audit-cleanup.md) | The console's failure report can't show what people wrote, and the audit log can be filtered | P2 | S–M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
 ## Dependency notes
+
+Plans 011–018 (written 2026-11-11 at `78f46c1`, for the admin console):
+
+- Admin accounts run in order: 011 → 012 → 013 → 014. Each builds on the files the one before it changes in `modules/admin`.
+- The console plans are independent of the account plans and of each other, except 016, which alerts on the states 015 adds. 015, 017 and 018 all edit `modules/admin/platform.py`, `schemas.py` and `apps/admin/src/pages.tsx`: run them one after the other, and regenerate the API client (`pnpm openapi`) on whichever lands later.
+- Decisions taken as defaults in these plans, for the maintainer to overrule: single sign-on is out of scope; the console stays read-only (no actions on runs or workspaces); two-factor is required for every admin; alerts go by email only.
 
 - No plan strictly requires another, but three pairs touch the same file and should run one after the other, not in parallel:
   - 003 and 004 both edit `apps/backend/src/dotrix_backend/modules/agents/runner.py`.
