@@ -128,3 +128,38 @@ async def test_a_run_cut_off_mid_write_resumes_without_writing_twice_unasked(
     run = (await db_client.get(f"{base}/agent/runs/{run_id}", headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval", run  # Accept edits was asked; a recovered attempt asks
     assert [a["tool"] for a in run["approvals"]] == ["write_file"]
+
+
+async def test_a_queue_retry_of_a_cut_off_step_asks_before_repeating_a_change(
+    db_client: AsyncClient, signup, create_team, add_member, agent_script, monkeypatch
+) -> None:
+    ada, base = await _team(db_client, signup, create_team, add_member)
+    real = PlatformKnowledgeBackend.awrite
+
+    async def dies(self, file_path: str, content: str):
+        await real(self, file_path, content)  # the write landed, then the worker's process ended
+        raise WorkerDied
+
+    monkeypatch.setattr(PlatformKnowledgeBackend, "awrite", dies)
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# The plan"), "Written.")
+    with pytest.raises(WorkerDied):
+        await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+            "message": "Write the plan down", "approval_mode": "accept_edits",
+        })
+    monkeypatch.setattr(PlatformKnowledgeBackend, "awrite", real)
+    async with _factory(db_client)() as session:
+        run_id = await session.scalar(select(AgentRun.id).where(AgentRun.message == "Write the plan down"))
+        assert (await session.get(AgentRun, run_id)).status is RunStatus.RUNNING
+    await _lapse(db_client, str(run_id))
+
+    # The queue retries the same job (arq's next try): the step runs as a recovered attempt.
+    model = agent_script.say(
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# The plan"), "Waiting for approval.",
+    )
+    runner = db_client._transport.app.state.runner  # type: ignore[attr-defined]
+    await runner.execute(run_id, {"kind": "start", "message": "Write the plan down"}, retry_operation=True)
+    said = [m.content for m in model.received[0] if m.type == "tool"]
+    assert said and said[-1].startswith("Cut off:")
+    run = (await db_client.get(f"{base}/agent/runs/{run_id}", headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval", run
+    assert [a["tool"] for a in run["approvals"]] == ["write_file"]

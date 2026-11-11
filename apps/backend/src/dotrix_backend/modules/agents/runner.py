@@ -538,6 +538,11 @@ class AgentRunner:
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
                 admitted = True
+                if retry_operation and run.status is RunStatus.RUNNING:
+                    # The queue is retrying a step its worker was cut off in (a deploy, a shutdown):
+                    # the same as a lapsed lease. It runs in Manual, and unanswered tool calls
+                    # aren't run again unasked.
+                    payload = {**payload, "recovered": True}
                 # A previous attempt was cut off, or the person continues one that stopped at a limit.
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
@@ -969,6 +974,11 @@ class AgentRunner:
                     return
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
+                if retry_operation and run.status is RunStatus.RUNNING:
+                    # The queue is retrying a step its worker was cut off in (a deploy, a shutdown):
+                    # the same as a lapsed lease. It runs in Manual, and unanswered tool calls
+                    # aren't run again unasked.
+                    payload = {**payload, "recovered": True}
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
                     if run.requested_by_id else None
