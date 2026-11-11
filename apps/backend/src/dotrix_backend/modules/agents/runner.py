@@ -409,15 +409,22 @@ class AgentRunner:
 
     # -- dispatching -----------------------------------------------------------------
 
+    @property
+    def _outbox(self) -> RunQueue | None:
+        """The queue runs are dispatched through: the API's in worker mode, and in the worker
+        itself the one it reads stop reasons from. None: runs start in this process."""
+        return self.queue or self.stop_reasons
+
     def prepare_dispatch(
         self, session: AsyncSession, run: AgentRun, payload: dict[str, Any],
     ) -> RunDispatch | None:
         """Record worker dispatch in the caller's transaction; local/inline stay immediate."""
-        if self.queue is None:
+        outbox = self._outbox
+        if outbox is None:
             if run.dispatch_generation:
                 raise Conflict("Continue this run with worker execution enabled")
             return None
-        return record_dispatch(session, run, payload, queue_name=self.queue.queue_name)
+        return record_dispatch(session, run, payload, queue_name=outbox.queue_name)
 
     async def start(
         self, run_id: uuid.UUID, message: str, *, dispatch: RunDispatch | None = None,
@@ -456,10 +463,11 @@ class AgentRunner:
     async def _dispatch(
         self, run_id: uuid.UUID, payload: dict[str, Any], dispatch: RunDispatch | None = None,
     ) -> None:
-        if self.queue is not None:
+        outbox = self._outbox
+        if outbox is not None:
             if dispatch is None or dispatch.agent_run_id != run_id:
                 raise ValueError("Worker runs require dispatch intent committed with their state")
-            await RunDispatcher(self.session_factory, self.queue).kick(dispatch.workspace_id, dispatch.id)
+            await RunDispatcher(self.session_factory, outbox).kick(dispatch.workspace_id, dispatch.id)
             return
         if self.inline:
             await self.execute(run_id, payload)

@@ -27,6 +27,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A follow-up you queued while an agent was answering now survives a worker restart and stops when you press Stop, like any other message.
 - A reply cut off by a worker restart and retried no longer repeats a change that had already gone through: the retried step asks for approval first, as a recovered run does.
 - A coding turn that was queued more than once (accepting its changes, a recovery retry) is no longer marked as needing recovery while it is still working.
 - Approve on a coding session waiting in the agents panel or a corner notice no longer looks approved without starting it: it approves the turn on the server.
