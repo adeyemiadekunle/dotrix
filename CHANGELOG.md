@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Security
 
+- The app and the admin console can no longer be shown inside another website's frame, and they send stricter content-type and referrer headers.
 - Creating the admin console's first account now needs the deployment's setup token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN); without it, admin sign-up stays closed on a deployed server.
 
 ### Changed
