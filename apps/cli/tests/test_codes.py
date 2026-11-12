@@ -75,6 +75,44 @@ def test_show(platform: FakePlatform, linked_repo: Path) -> None:
     assert "+fixed" in out and "-broken" in out
 
 
+PLAN = {
+    "title": "Fix lookups", "summary": "Two small steps.", "acceptance_criteria": ["Lookups work"],
+    "tasks": [{"title": "Add the test", "detail": "Cover the empty postcode.", "depends_on": []},
+              {"title": "Fix the bug", "detail": "Trim the input.", "depends_on": [1]}],
+    "open_questions": ["Which postcode format?"],
+}
+
+
+def test_show_plan_turn(platform: FakePlatform, linked_repo: Path) -> None:
+    one_session(platform, coding_run("run-1", work_mode="plan", plan_result=PLAN))
+    out = codes(linked_repo, "show", "kun-7").output
+    assert "(a plan)" in out and "Fix lookups" in out and "Lookups work" in out
+    assert "1. Add the test" in out and "2. Fix the bug  (after 1)" in out
+    assert "Which postcode format?" in out and 'codes follow KUN-7 "…" --plan 1' in out
+    assert "Cover the empty postcode." not in out
+    assert "Cover the empty postcode." in codes(linked_repo, "show", "kun-7", "--steps").output
+
+
+def test_show_parallel_tasks(platform: FakePlatform, linked_repo: Path) -> None:
+    tasks = [{"key": "T1", "status": "completed", "attempt": 1, "checks": [{"command": "pytest", "exit_code": 0}]},
+             {"key": "T2", "status": "failed", "attempt": 2, "checks": [{"command": "pytest", "exit_code": 1}]}]
+    one_session(platform, coding_run("run-1", tasks=tasks))
+    out = codes(linked_repo, "show", "kun-7").output
+    assert "T1" in out and "completed" in out and "checks passed" in out
+    assert "T2" in out and "attempt 2" in out and "checks failed" in out
+
+
+def test_show_details(platform: FakePlatform, linked_repo: Path) -> None:
+    one_session(platform, coding_run(
+        "run-1", skills=[{"name": "plan-review", "missing_resources": ["ref.md"], "unavailable_tools": []}],
+        capabilities=[{"id": "browser", "label": "Browser", "available": False, "reason": "Not on this engine"},
+                      {"id": "shell", "label": "Shell", "available": True, "reason": None}]))
+    plain = codes(linked_repo, "show", "kun-7").output
+    assert "plan-review" not in plain and "Not on this engine" not in plain
+    out = codes(linked_repo, "show", "kun-7", "--details").output
+    assert "plan-review  missing: ref.md" in out and "Browser: Not on this engine" in out and "Shell" not in out
+
+
 def test_show_by_session_id_and_unknown(platform: FakePlatform, linked_repo: Path) -> None:
     one_session(platform, coding_run("run-1"))
     assert codes(linked_repo, "show", "0192abcd").exit_code == 0
