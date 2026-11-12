@@ -30050,6 +30050,40 @@
         "title": "CodingBreakdown",
         "description": "Coding turns for one engine in one place (cloud or local)."
       },
+      "CodingCapabilityRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "available"
+        ],
+        "title": "CodingCapabilityRead"
+      },
       "CodingClaim": {
         "properties": {
           "run_id": {
@@ -30576,6 +30610,20 @@
       },
       "CodingRunRead": {
         "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/CodingCapabilityRead"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/CodingSkillRead"
+            },
+            "type": "array",
+            "title": "Skills"
+          },
           "tasks": {
             "items": {
               "$ref": "#/components/schemas/CodingTaskRead"
@@ -31556,6 +31604,53 @@
         },
         "type": "object",
         "title": "CodingSessionUpdate"
+      },
+      "CodingSkillRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Resources"
+          },
+          "missing_resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Resources"
+          },
+          "unavailable_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unavailable Tools"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "sha256",
+          "resources",
+          "missing_resources",
+          "unavailable_tools"
+        ],
+        "title": "CodingSkillRead"
       },
       "CodingTaskRead": {
         "properties": {

@@ -2321,6 +2321,11 @@ async def test_codes_plan_saves_private_result_without_publication(db_client, co
     assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).status_code == 404
     stored = await db_session.get(CodingRun, uuid.UUID(run["id"]))
     assert stored.skill_snapshot and all("sha256" in item for item in stored.skill_snapshot.values())
+    skill = stored.skill_snapshot["write-an-executable-plan"]
+    assert skill["content"] not in run["brief"]
+    assert f"/{skill['sha256']}.md" in claude.briefs[-1]
+    assert "Read skills on demand" in claude.briefs[-1]
+
     bad = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", headers=ada.headers,
                               json={"message": "Build", "source_plan_id": str(uuid.uuid4())})
     assert bad.status_code == 422

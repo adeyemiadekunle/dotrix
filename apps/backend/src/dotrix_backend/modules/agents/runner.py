@@ -818,6 +818,8 @@ class AgentRunner:
                         project_id=project_id,
                         embedder=self.embedder,
                         skill_snapshot=for_role(skill_snapshot, run.agent or PM_ROLE),
+                        resource_snapshot={name: item.get("resources", {}) for name, item in (run.skill_snapshot or {}).items()
+                                           if name in for_role(skill_snapshot, run.agent or PM_ROLE)},
                     ),
                     *build_graph_tools(board_context),
                 ],

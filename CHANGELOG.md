@@ -19,6 +19,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Skills can declare pinned reference resources and required tools; Codes shows skill versions, available capabilities and missing dependencies.
+
+- Cloud coding turns and background workers receive skill descriptions and read pinned skill files on demand instead of receiving every procedure in their prompts. Local runners retain inline skills.
+
 - Codes shows expandable background tasks for every turn, including saved activity, command output, verification results and live status.
 
 - Codes supports private Plan turns and an explicit Build action; read-only planning refuses hosts that cannot enforce its filesystem boundary.

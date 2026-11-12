@@ -462,11 +462,12 @@ class CodingService:
             agent, model = selection or await self._selection(
                 project, member.user_id, location, agent=requested_agent, model=requested_model,
             )
-        from dotrix_backend.modules.agents.skill_snapshots import for_role, resolve, versioned
+        from dotrix_backend.modules.agents.skill_snapshots import for_role, resolve, with_resources
 
         from .fences import fence
 
-        pinned_skills = versioned(for_role(await resolve(self.session, project.workspace_id, project.id), "coding"))
+        pinned_skills = await with_resources(self.session, project.id,
+            for_role(await resolve(self.session, project.workspace_id, project.id), "coding"))
         repo = await self._repo(project)
         assert repo is not None
         run_id = uuid7()
@@ -475,16 +476,25 @@ class CodingService:
             workspace_id=project.workspace_id, project_id=project.id, issue_id=issue.id, issue_key=issue.key,
             turn=turn, origin=origin, agent=agent, model=model, location=location,
             status=CodingRunStatus.AWAITING_APPROVAL,
-            brief=await build_brief(self.session, project, issue, note, earlier, user_id=member.user_id),
+            brief=await build_brief(self.session, project, issue, note, earlier, user_id=member.user_id,
+                                    inline_skills=location is CodingLocation.LOCAL),
             note=note, repo_full_name=repo.full_name, base_branch=repo.default_branch,
             skill_snapshot=pinned_skills,
             requested_by_id=member.user_id, created_at=datetime.now(UTC),
             # The mode this turn was asked in, as far as the workspace and the person allow.
             approval_mode=effective(approval, member).value,
         )
-        run.brief += "\n\n## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
-        run.brief += "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])
-                                     for name, item in pinned_skills.items())
+        if location is CodingLocation.LOCAL:
+            run.brief += "\n\n## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
+            run.brief += "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])
+                                         for name, item in pinned_skills.items())
+            for name, item in pinned_skills.items():
+                for path, resource in item.get("resources", {}).items():
+                    run.brief += "\n\n" + fence(f"skill resource {name}/{path} sha256:{resource['sha256']}", resource["content"])
+        else:
+            from .skills import catalog_brief
+
+            run.brief += catalog_brief(pinned_skills)
         if carry is not None:  # the session's branch and PR: this turn builds on them
             run.branch, run.pr_number, run.pr_url, run.pr_state = carry.branch, carry.pr_number, carry.pr_url, carry.pr_state
         self.session.add(run)
@@ -869,6 +879,9 @@ class CodingService:
         return run.requested_by_id == access.member.user_id or can(access.member, Permission.MANAGE_PROJECTS)
 
     def _read(self, run: CodingRun, access: ProjectAccess) -> CodingRunRead:
+        from .capabilities import describe, skills
+
+        capabilities = describe(run, self.settings)
         usage = can(access.member, Permission.VIEW_USAGE)
         return CodingRunRead(
             id=run.id, project_id=run.project_id, issue_key=run.issue_key, agent=run.agent, model=run.model,
@@ -902,6 +915,7 @@ class CodingService:
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
             work_mode=run.work_mode, plan_result=run.plan_result,
+            capabilities=capabilities, skills=skills(run.skill_snapshot, capabilities),
             tasks=[{"key": key, "status": item.get("status", "queued"), "attempt": item.get("attempt", 0),
                     "owned_paths": item.get("owned_paths", []), "checks": item.get("checks", []),
                     "usage": item.get("usage", {}) if usage else {}}

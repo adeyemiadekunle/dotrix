@@ -33,7 +33,8 @@ async def project_rules(session, project_id, handles=None, workspace_id=None, sk
         rules = layered({h: t for h, t in workspace_rules.items() if h in names}, rules)
         skills = await WorkspaceSkills(session).texts(workspace_id)
     # The project's own skills win over the workspace's of the same name.
-    skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
+    skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")
+               and "/" not in p.removeprefix(SKILLS_FOLDER)}
     if skill_snapshot is not None:
         skills = skill_snapshot
     # Skills for every agent go with the base rules; a skill naming its agents, with theirs only.

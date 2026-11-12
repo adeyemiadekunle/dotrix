@@ -71,6 +71,9 @@ async def test_skill_snapshot_is_stable_across_recovery(monkeypatch):
 
     resolver = AsyncMock(return_value={"shared": "Description: Original instructions"})
     monkeypatch.setattr(skill_snapshots, "resolve", resolver)
+    async def with_resources(session, project, texts):
+        return skill_snapshots.versioned(texts)
+    monkeypatch.setattr(skill_snapshots, "with_resources", with_resources)
     session = SimpleNamespace(commit=AsyncMock())
     run = SimpleNamespace(skill_snapshot=None, workspace_id="workspace", project_id="project")
     first = await skill_snapshots.pin(session, run, None)
