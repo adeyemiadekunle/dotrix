@@ -9,6 +9,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_valida
 from dotrix_backend.modules.coding.models import CodingRunStatus
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_engine.catalog import action_for
+from dotrix_engine.planning import ExecutionSpec
 
 from .models import ApprovalStatus, ChatRuntime, RunEventKind, RunKind, RunStatus, WorkMode
 
@@ -44,7 +45,7 @@ class RunCreate(BaseModel):
         default=None,
         description="How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, "
         "`.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with "
-        "its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode "
+        "its evidence). Plan permits reads and private plan saves only; only `build` engages Kai. Omit for no mode "
         "(as before work modes: no plans or evidence tools)",
     )
     approval_mode: ApprovalMode | None = Field(
@@ -54,6 +55,7 @@ class RunCreate(BaseModel):
         "at once), `auto` (the same, and checkpoints don't pause). Never above the workspace's cap, and Manual for "
         "people who may not approve agent changes",
     )
+    plan_id: uuid.UUID | None = Field(default=None, description="Exact private plan version to build in this conversation")
     mentions: list[uuid.UUID] = Field(
         default_factory=list, max_length=20,
         description="People @mentioned (user ids). Each is told if \"@Their Name\" is in the text and they "
@@ -453,6 +455,7 @@ class PlanRead(BaseModel):
     acceptance_criteria: list[str]
     tasks: list[PlanTaskRead]
     open_questions: list[str]
+    execution: ExecutionSpec | None = None
     created_at: datetime
 
 

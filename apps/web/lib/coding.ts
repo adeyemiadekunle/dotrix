@@ -96,12 +96,13 @@ export function useStartCoding(
   location: CodingLocation = "cloud",
   agent: Schemas["CodingAgent"] | null = null,
   model: string | null = null,
+  workMode: "plan" | "build" = "build",
 ) {
   return useCodingMutation(scope, issueKey, (s, note: string | null) =>
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs", {
         params: { path: { ...path(s), key: issueKey } },
-        body: { note, approval_mode: approvalMode, location, agent, model },
+        body: { note, approval_mode: approvalMode, location, agent, model, work_mode: workMode },
       }),
     ),
   );
@@ -275,11 +276,11 @@ export function useCodingRun(scope: Scope | undefined, runId: string | null | un
 
 /** Another turn in a session: the same agent, on its branch and PR. */
 export function useFollowUp(scope: Scope | undefined, sessionId: string, issueKey: string, approvalMode: ApprovalMode | null = null) {
-  return useCodingMutation(scope, issueKey, (s, message: string) =>
+  return useCodingMutation(scope, issueKey, (s, request: string | { message: string; work_mode: "plan" | "build"; source_plan_id?: string }) =>
     unwrap(
       api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns", {
         params: { path: { ...path(s), session_id: sessionId } },
-        body: { message, approval_mode: approvalMode },
+        body: { ...(typeof request === "string" ? { message: request, work_mode: "build" as const } : request), approval_mode: approvalMode },
       }),
     ),
   );

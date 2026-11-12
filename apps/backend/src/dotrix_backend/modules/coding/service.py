@@ -1,6 +1,8 @@
 """Asking for, approving, and stopping coding runs; the work itself is `runner.py`."""
 from __future__ import annotations
 
+import html
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -245,6 +247,26 @@ class CodingService:
             return "Connect the project's GitHub repository first (project settings → Repository)"
         return None
 
+    async def _attach_plan(self, access: ProjectAccess, run: CodingRun, plan_id: uuid.UUID | None) -> None:
+        """Freeze the selected private plan into the brief shown for approval."""
+        if plan_id is None:
+            return
+        from dotrix_backend.modules.agents.models import AgentRun, ConversationPlan
+
+        plan = await self.session.scalar(select(ConversationPlan).join(AgentRun, AgentRun.id == ConversationPlan.run_id).where(
+            ConversationPlan.id == plan_id, ConversationPlan.workspace_id == access.project.workspace_id,
+            ConversationPlan.project_id == access.project.id, ConversationPlan.thread_id == run.thread_id,
+            AgentRun.requested_by_id == access.member.user_id,
+        ))
+        if plan is None:
+            raise NotFound("Plan not found")
+        snapshot = {"id": str(plan.id), "version": plan.version, "title": plan.title, "summary": plan.summary,
+                    "tasks": plan.tasks, "acceptance_criteria": plan.acceptance_criteria,
+                    "open_questions": plan.open_questions, "execution": plan.execution}
+        run.execution_plan = {"execution": plan.execution, "tasks": plan.tasks} if plan.execution else None
+        run.plan_id = plan.id
+        run.brief += "\n\n## Selected implementation plan\n" + html.escape(json.dumps(snapshot, ensure_ascii=False))
+
     async def start(
         self, access: ProjectAccess, key: str, data: CodingRunCreate, *,
         thread_id: uuid.UUID | None = None, plan_id: uuid.UUID | None = None,
@@ -253,6 +275,8 @@ class CodingService:
         """Ask for a coding run on an issue: a new session, waiting for an approval (or started at
         once, when the person's approval mode lets it go through). From a conversation in Build mode:
         that conversation, and the plan version it builds from."""
+        if data.work_mode == "plan" and data.location is CodingLocation.LOCAL:
+            raise Unprocessable("Plan mode requires a platform sandbox with read-only enforcement")
         if thread_id:
             await self.session.scalar(select(Project).where(Project.workspace_id == access.member.workspace_id,
                                                            Project.id == access.project.id).with_for_update())
@@ -266,8 +290,10 @@ class CodingService:
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START,
                                  approval=data.approval_mode, location=data.location,
                                  requested_agent=data.agent, requested_model=data.model)
+        run.work_mode = data.work_mode
         run.thread_id, run.plan_id = thread_id, plan_id
         run.origin_run_id = origin_run_id
+        await self._attach_plan(access, run, plan_id)
         return await self._settle(access, run)
 
     async def start_for_assignment(self, access: ProjectAccess, key: str) -> CodingRunRead | None:
@@ -286,7 +312,7 @@ class CodingService:
         return self._read(run, access)
 
     async def follow_up(self, access: ProjectAccess, session_id: uuid.UUID, data: CodingFollowUp, *,
-                        origin_run_id: uuid.UUID | None = None) -> CodingRunRead:
+                        origin_run_id: uuid.UUID | None = None, plan_id: uuid.UUID | None = None) -> CodingRunRead:
         """Another turn in a session: the same agent, on the session's branch, pushing to its PR
         (or opening one, if no turn has yet). It waits for an approval like the first."""
         # Where the session codes, unless told: its latest turn that coded (a revert codes nowhere).
@@ -294,6 +320,8 @@ class CodingService:
             (t.location for t in reversed(await self._turns(access, session_id)) if t.revert_of is None),
             CodingLocation.CLOUD,
         )
+        if data.work_mode == "plan" and location is CodingLocation.LOCAL:
+            raise Unprocessable("Plan mode requires a platform sandbox with read-only enforcement")
         turns, issue, with_branch, earlier = await self._next_turn(access, session_id, location=location)
         thread_id = turns[-1].thread_id
         if thread_id:
@@ -311,8 +339,19 @@ class CodingService:
             session_id=session_id, turn=turns[-1].turn + 1, earlier=earlier, carry=with_branch,
             approval=data.approval_mode, location=location, selection=selection,
         )
+        run.work_mode = data.work_mode
+        if data.source_plan_id:
+            selected = next((t for t in turns if t.id == data.source_plan_id and t.plan_result), None)
+            if selected is None or data.work_mode != "build":
+                raise Unprocessable("Select a completed plan from this coding session to build")
+            run.execution_plan = selected.plan_result if selected.plan_result.get("execution") else None
+            run.brief += "\n\n## Selected coding plan\n" + html.escape(json.dumps(selected.plan_result))
         run.thread_id, run.plan_id = thread_id, turns[-1].plan_id
         run.origin_run_id = origin_run_id or turns[-1].origin_run_id
+        if data.source_plan_id is None:
+            await self._attach_plan(access, run, plan_id or turns[-1].plan_id)
+        else:
+            run.plan_id = None  # This turn builds the explicitly selected Codes plan.
         return await self._settle(access, run)
 
     async def revert(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingRevert) -> CodingRunRead:
@@ -416,6 +455,11 @@ class CodingService:
             agent, model = selection or await self._selection(
                 project, member.user_id, location, agent=requested_agent, model=requested_model,
             )
+        from dotrix_backend.modules.agents.skill_snapshots import for_role, resolve, versioned
+
+        from .fences import fence
+
+        pinned_skills = versioned(for_role(await resolve(self.session, project.workspace_id, project.id), "coding"))
         repo = await self._repo(project)
         assert repo is not None
         run_id = uuid7()
@@ -426,10 +470,14 @@ class CodingService:
             status=CodingRunStatus.AWAITING_APPROVAL,
             brief=await build_brief(self.session, project, issue, note, earlier, user_id=member.user_id),
             note=note, repo_full_name=repo.full_name, base_branch=repo.default_branch,
+            skill_snapshot=pinned_skills,
             requested_by_id=member.user_id, created_at=datetime.now(UTC),
             # The mode this turn was asked in, as far as the workspace and the person allow.
             approval_mode=effective(approval, member).value,
         )
+        run.brief += "\n\n## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
+        run.brief += "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])
+                                     for name, item in pinned_skills.items())
         if carry is not None:  # the session's branch and PR: this turn builds on them
             run.branch, run.pr_number, run.pr_url, run.pr_state = carry.branch, carry.pr_number, carry.pr_url, carry.pr_state
         self.session.add(run)
@@ -844,6 +892,11 @@ class CodingService:
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
+            work_mode=run.work_mode, plan_result=run.plan_result,
+            tasks=[{"key": key, "status": item.get("status", "queued"), "attempt": item.get("attempt", 0),
+                    "owned_paths": item.get("owned_paths", []), "checks": item.get("checks", []),
+                    "usage": item.get("usage", {}) if usage else {}}
+                   for key, item in (run.task_records or {}).items()],
             thread_id=run.thread_id, plan_id=run.plan_id, approval_mode=run.approval_mode or "manual",
         )
 

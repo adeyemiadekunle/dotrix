@@ -53,6 +53,7 @@ _LOCATION = ("Where it codes: `cloud` (a sandbox on the platform) or `local` (yo
 
 
 class CodingRunCreate(BaseModel):
+    work_mode: Literal["plan", "build"] = "build"
     note: str | None = Field(default=None, max_length=5_000, description="Anything to add to the issue for the agent")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation = Field(default=CodingLocation.CLOUD, description=_LOCATION)
@@ -62,6 +63,8 @@ class CodingRunCreate(BaseModel):
 
 
 class CodingFollowUp(BaseModel):
+    work_mode: Literal["plan", "build"] = "build"
+    source_plan_id: uuid.UUID | None = None
     message: str = Field(min_length=1, max_length=5_000, description="What to do in this turn")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation | None = Field(default=None, description=_LOCATION)
@@ -111,7 +114,19 @@ class CodingScreenshot(BaseModel):
     content_type: str
 
 
+class CodingTaskRead(BaseModel):
+    key: str
+    status: str
+    attempt: int = 0
+    owned_paths: list[str] = Field(default_factory=list)
+    checks: list[dict[str, Any]] = Field(default_factory=list)
+    usage: dict[str, Any] = Field(default_factory=dict)
+
+
 class CodingRunRead(BaseModel):
+    tasks: list[CodingTaskRead] = Field(default_factory=list)
+    work_mode: Literal["plan", "build"] = "build"
+    plan_result: dict[str, Any] | None = None
     id: uuid.UUID
     project_id: uuid.UUID
     issue_key: str

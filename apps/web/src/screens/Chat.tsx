@@ -78,6 +78,7 @@ import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePanel";
+import { BackgroundTasks } from "../components/BackgroundTasks";
 import { SessionDetails, modeName, sessionModel } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { useAtPicker } from "../components/AtPicker";
@@ -626,6 +627,28 @@ function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean
             note: t.depends_on.length ? `after ${t.depends_on.join(", ")}` : undefined,
           }))}
         />
+        {plan.execution && (
+          <details>
+            <summary>
+              Implementation details · {plan.execution.repository} · {plan.execution.base_sha.slice(0, 8)}
+            </summary>
+            <TraceList title="Constraints" items={plan.execution.constraints ?? []} icon="question" />
+            <TraceList title="Out of scope" items={plan.execution.exclusions ?? []} icon="question" />
+            {plan.execution.tasks.map((task) => (
+              <div key={task.key}>
+                <p>
+                  <b>
+                    Task {task.task_number}: {task.key}
+                  </b>
+                </p>
+                <TraceList title="Owned paths" items={task.owned_paths} icon="file" />
+                <p>{task.instructions}</p>
+                <TraceList title="Verification" items={(task.checks ?? []).map((check) => `${check.command} — ${check.expected}`)} icon="check-square" />
+                <TraceList title="Stop conditions" items={task.stop_conditions} icon="question" />
+              </div>
+            ))}
+          </details>
+        )}
         <TraceList title="Acceptance criteria" items={plan.acceptance_criteria} icon="check-square" />
         <TraceList title="Open questions" items={plan.open_questions} icon="question" />
       </div>
@@ -1116,7 +1139,14 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   };
   const build = (plan: Plan) => {
     setMode("build");
-    say(`Build plan version ${plan.version}: ${plan.title}`, "build");
+    send.mutate({
+      message: `Build plan version ${plan.version}: ${plan.title}`,
+      threadId: id,
+      agent,
+      workMode: "build",
+      approvalMode: approval,
+      planId: plan.id,
+    });
   };
   const halt = () => working && (projectId ? stop.mutate(working.id) : stopCross.mutate(working.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
@@ -1390,6 +1420,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   // A real workspace's tasks are known by key; the sample's by id.
   const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
   const [note, setNote] = useState("");
+  const [codingMode, setCodingMode] = useState<"plan" | "build">("build");
   const [menu, setMenu] = useState<string | null>(null);
   const [menuBtn, setMenuBtn] = useState(false);
   const [hl, setHl] = useState(0);
@@ -1438,7 +1469,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   // How much goes through without waiting, as in Chat: your default to start, among the modes you may use.
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
-  const start = useStartCoding(scope, t?.key ?? "", approval, location, null, model);
+  const start = useStartCoding(scope, t?.key ?? "", approval, location, null, model, codingMode);
   // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
   const menuOpen = menu !== null || menuBtn;
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
@@ -1547,6 +1578,15 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
             >
               <Ic n="plus" s={18} />
             </button>
+            <label>
+              Mode{" "}
+              <select aria-label="Coding mode" value={codingMode} onChange={(e) => setCodingMode(e.target.value as "plan" | "build")}>
+                <option value="build">Build</option>
+                <option value="plan" disabled={location === "local"}>
+                  Plan (read only)
+                </option>
+              </select>
+            </label>
             <textarea
               ref={ref}
               rows={1}
@@ -1968,6 +2008,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
   const latest = turns.at(-1);
+  const [codingMode, setCodingMode] = useState<"plan" | "build">("build");
   // The open session is followed as it happens; its turns land in the query above.
   useCodingSessionStream(scope, cs.session_id, turns.some(isOpenTurn));
   const decide = useDecideCoding(scope, cs.issue_key);
@@ -2071,7 +2112,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   }, [cs.session_id]);
   const send = () => {
     if (busy || !ask.trim()) return;
-    follow.mutate(ask.trim());
+    follow.mutate({ message: ask.trim(), work_mode: codingMode });
     setAsk("");
   };
   const box = useRef<HTMLTextAreaElement>(null);
@@ -2224,18 +2265,57 @@ export function Session({ cs }: { cs: CodingSession }) {
         <div className="chat-scroll">
           <div className="chat-col kt-col">
             {turns.map((turn) => (
-              <KaiTurn
-                key={turn.id}
-                turn={turn}
-                issueTitle={cs.issue_title}
-                busy={busy}
-                revert={revert}
-                onPath={openPath}
-                onChanges={openChanges}
-                onShot={(src, name) => setShot({ src, name })}
-                shotSrc={shotSrc}
-              />
+              <Fragment key={turn.id}>
+                <KaiTurn
+                  turn={turn}
+                  issueTitle={cs.issue_title}
+                  busy={busy}
+                  revert={revert}
+                  onPath={openPath}
+                  onChanges={openChanges}
+                  onShot={(src, name) => setShot({ src, name })}
+                  shotSrc={shotSrc}
+                />
+                <BackgroundTasks scope={scope} run={turn} />
+              </Fragment>
             ))}
+            {latest?.plan_result && (
+              <div className="change" aria-label="Kai's saved plan">
+                <h3>{String(latest.plan_result.title ?? "Implementation plan")}</h3>
+                <p>{String(latest.plan_result.summary ?? "")}</p>
+                <ol>
+                  {(Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks : []).map((task, index) => (
+                    <li key={index}>
+                      <b>{String(task.title)}</b>
+                      <p>{String(task.detail ?? "")}</p>
+                    </li>
+                  ))}
+                </ol>
+                <TraceList
+                  title="Acceptance criteria"
+                  items={Array.isArray(latest.plan_result.acceptance_criteria) ? latest.plan_result.acceptance_criteria.map(String) : []}
+                  icon="check-square"
+                />
+                <TraceList
+                  title="Open questions"
+                  items={Array.isArray(latest.plan_result.open_questions) ? latest.plan_result.open_questions.map(String) : []}
+                  icon="question"
+                />
+                <button
+                  className="btn btn-primary"
+                  disabled={busy || follow.isPending}
+                  onClick={() =>
+                    follow.mutate({
+                      message: "Build the selected plan",
+                      work_mode: "build",
+                      source_plan_id: latest.id,
+                    })
+                  }
+                >
+                  Build this plan
+                </button>
+              </div>
+            )}
             {latest?.status === "awaiting_approval" && (
               <div className="change">
                 <div className="change-h">
@@ -2372,6 +2452,15 @@ export function Session({ cs }: { cs: CodingSession }) {
           </div>
         </div>
         <div className="chat-input kt-input">
+          <label>
+            Mode{" "}
+            <select aria-label="Follow-up mode" disabled={busy} value={codingMode} onChange={(e) => setCodingMode(e.target.value as "plan" | "build")}>
+              <option value="build">Build</option>
+              <option value="plan" disabled={latest?.location === "local"}>
+                Plan (read only)
+              </option>
+            </select>
+          </label>
           <div className={`kt-box ${busy ? "off" : ""}`}>
             <textarea
               ref={box}

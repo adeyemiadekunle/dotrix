@@ -107,8 +107,8 @@ async def test_workspace_skills_are_shared_and_a_project_s_own_wins(
     assert "- release-note: Write the release note." in system
     assert "- write-an-adr: Record an architecture decision" in system and "The workspace's way" not in system
     results = [m.content for m in model.received[-1] if getattr(m, "name", None) == "read_skill"]
-    assert results[0].startswith("Skill release-note (the workspace's)") and "List what changed" in results[0]
-    assert results[1].startswith("Skill write-an-adr (this project's)")
+    assert "List what changed" in results[0]
+    assert "Record an architecture decision" in results[1]
 
     gone = await db_client.put(f"{ws}/skills/release-note", json={"content": "", "base_version": 1}, headers=ada.headers)
     assert gone.status_code == 200

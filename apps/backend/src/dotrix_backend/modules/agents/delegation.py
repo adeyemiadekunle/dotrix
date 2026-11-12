@@ -118,6 +118,8 @@ class DelegationService:
             lead = specs["project-manager"]
             if not lead.can("delegate") or any("*" not in lead.can_call and task.agent not in lead.can_call for task in batch.tasks):
                 raise Forbidden("The coordinator's policy does not allow this delegation")
+            if parent.work_mode == "plan" and any(task.changes_project for task in batch.tasks):
+                raise Forbidden("Plan mode permits only read-only specialist tasks; switch to Build for changes")
             existing = list(await session.scalars(select(AgentRun).where(
                 AgentRun.workspace_id == workspace_id, AgentRun.parent_run_id == parent.id,
                 AgentRun.delegation_key == key).order_by(AgentRun.created_at, AgentRun.task_key)))
@@ -170,6 +172,7 @@ class DelegationService:
                     id=uuid7(), workspace_id=workspace_id, project_id=parent.project_id,
                     thread_id=uuid7(), parent_run_id=parent.id, delegation_key=key, task_key=task.key,
                     depends_on=task.depends_on, task_mutates=task.changes_project,
+                    skill_snapshot=parent.skill_snapshot,
                     source="specialist", orchestration=True, kind=parent.kind, status=RunStatus.WAITING_DEPENDENCY,
                     specialist_session_id=sessions.get(task.agent) if not task.changes_project else None,
                     message=f"{task.brief}\n\nExpected result: {task.expected_result}", agent=task.agent,

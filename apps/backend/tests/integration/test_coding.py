@@ -101,6 +101,9 @@ class ScriptedSession(LocalSession):
         self.agent = agent
 
     async def exec(self, argv, *, stdin=None, on_line=None, timeout, cancel=None) -> ExecResult:
+        # Simulate the runtime below the enforced wrapper; its syscall boundary has a separate test.
+        if argv[:2] == ["python3", "-c"] and "Landlock" in argv[2]:
+            argv = argv[3:]
         if isinstance(self.agent, ScriptedOpenCode) and argv[:2] == ["sh", "-c"] and "node -e" in argv[2]:
             return ExecResult(code=0, stdout=self.agent.totals(), stderr="")  # its totals after the turn
         if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv):
@@ -1182,6 +1185,11 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     thread = planned["thread_id"]
     plan = (await db_client.get(f"{base}/agent/threads/{thread}/plans", headers=ada.headers)).json()[0]
 
+    agent_script.say(tool_call("save_plan", title="Different plan", summary="New scope",
+                               acceptance_criteria=[], tasks=[{"title": "Do something else"}]), "Saved v2.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                        json={"message": "Another plan", "work_mode": "plan", "thread_id": thread})
+
     # Discussing can't start coding: the tool isn't there.
     model = agent_script.say("I'd add refund() to the payment provider.")
     await db_client.post(f"{base}/agent/runs", headers=ada.headers,
@@ -1191,11 +1199,12 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     model = agent_script.say(tool_call("start_coding", issue_key=issue["key"], note="Task 1 of the plan"),
                              "Asked Kai; it waits for an approval.")
     built = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
-                                  json={"message": "Build the plan", "work_mode": "build", "thread_id": thread})).json()
+                                  json={"message": "Build the plan", "work_mode": "build", "thread_id": thread, "plan_id": plan["id"]})).json()
     assert built["status"] == "completed", built
     [run] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval" and run["thread_id"] == thread and run["plan_id"] == plan["id"]
     assert run["requested_by_id"] == ada.id and "Task 1 of the plan" in run["brief"]
+    assert "Refund within a week." in run["brief"] and "New scope" not in run["brief"]
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
     assert any(e["action"] == "coding.requested_in_conversation" for e in audit)
 
@@ -2185,3 +2194,77 @@ async def test_a_session_streams_its_turns_as_they_change(db_client: AsyncClient
     # Someone else's session, and one that doesn't exist.
     assert (await db_client.get(stream, headers=cat.headers)).status_code == 404
     assert (await db_client.get(f"{base}/coding/sessions/{uuid.uuid4()}/stream", headers=ada.headers)).status_code == 404
+
+
+async def test_codes_plan_saves_private_result_without_publication(db_client, coding, github, claude, db_session):
+    from dotrix_backend.modules.coding.models import CodingRun
+
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Plan refunds"})).json()
+    plan = {"title": "Refunds", "summary": "Add refunds", "acceptance_criteria": ["Refunds work"],
+            "tasks": [{"title": "Add refund", "detail": "src/payments.py", "depends_on": []}],
+            "open_questions": [], "execution": None}
+    claude.result = json.dumps(plan)
+    requested = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers,
+                                    json={"work_mode": "plan"})
+    assert requested.status_code == 201, requested.text
+    run = await _approve(db_client, base, requested.json(), ada.headers)
+    assert run["status"] == "no_changes", run
+    assert run["work_mode"] == "plan" and run["plan_result"] == plan
+    assert not github.pulls and not run["files_changed"]
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).status_code == 404
+    stored = await db_session.get(CodingRun, uuid.UUID(run["id"]))
+    assert stored.skill_snapshot and all("sha256" in item for item in stored.skill_snapshot.values())
+    bad = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", headers=ada.headers,
+                              json={"message": "Build", "source_plan_id": str(uuid.uuid4())})
+    assert bad.status_code == 422
+
+
+async def test_parallel_tasks_integrate_into_one_approved_patch(db_client, coding, github, origin, db_session, monkeypatch):
+    from dotrix_backend.modules.coding.models import CodingRun
+
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Two independent additions"})).json()
+    requested = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})).json()
+    app = db_client._transport.app
+    worker = app.state.jobs.ctx.coding
+    worker.settings.coding_parallel = True
+    # The transactional HTTP fixture shares one DB connection; exercise one-slot admission here.
+    from dotrix_backend.modules.coding.slots import RunSlots
+    worker.slots = RunSlots(1)
+    tasks = [{"key": key, "task_number": i, "owned_paths": [f"src/{key}.py"], "instructions": "Add the module",
+              "checks": [{"command": "true", "expected": "passes"}], "stop_conditions": ["Unexpected API"]}
+             for i, key in enumerate(["one", "two"], 1)]
+    run = await db_session.get(CodingRun, uuid.UUID(requested["id"]))
+    run.execution_plan = {"execution": {"repository": "kunemi/api", "base_sha": _git(origin, "rev-parse", "HEAD"),
+                                       "tasks": tasks}, "tasks": [{"depends_on": []}, {"depends_on": []}]}
+    await db_session.commit()
+
+    async def code(run_id, box, tool, model, session_id, brief, extra, cost, **kw):
+        key = kw["task_key"]
+        result = await box.exec(["sh", "-c", f"echo '# {key}' > src/{key}.py"], timeout=10)
+        assert result.code == 0
+        return f"Added {key}", None
+
+    monkeypatch.setattr(worker, "_code", code)
+    async def not_stopped(*args):
+        return False
+    monkeypatch.setattr(worker, "stop_requested", not_stopped)
+    monkeypatch.setattr(worker, "reconciliation_required", not_stopped)
+    # No reviewer model is needed for this orchestration test.
+    worker.reviewer = None
+    response = await db_client.post(f"{base}/coding/runs/{requested['id']}/decision", headers=ada.headers,
+                                   json={"decision": "approve"})
+    assert response.status_code == 200, response.text
+    ready = (await db_client.get(f"{base}/coding/runs/{requested['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready", ready
+    assert {item["path"] for item in ready["files_changed"]} == {"src/one.py", "src/two.py"}
+    assert {item["status"] for item in ready["tasks"]} == {"completed"}
+    assert not github.pulls
+    finished = await _approve(db_client, base, ready, ada.headers)
+    assert finished["status"] == "pr_opened", finished
+    assert len(github.pulls) == 1

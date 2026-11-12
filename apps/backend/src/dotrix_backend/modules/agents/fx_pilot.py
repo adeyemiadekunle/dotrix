@@ -223,14 +223,17 @@ async def _turn(
             spec = read_only(spec)
         keys = (await run_keys(session, secrets, workspace_id, run.requested_by_id)).keys
         connection = _connection(run.model, keys)
+        from .skill_snapshots import for_role, pin
+
+        skill_snapshot = await pin(session, run, secrets)
         scope = RuntimeRunScope(workspace_id, run.project_id, run_id, run.requested_by_id,
-                                PM_HANDLE, token, session_id)
+                                PM_HANDLE, token, session_id, for_role(skill_snapshot, PM_HANDLE))
         guide = _DELEGATION_GUIDE if durable and not coding_outcome and spec.can("delegate") else _GUIDE
         if existing is not None and existing.encrypted_context:
             snapshot = json.loads(secrets.decrypt(existing.encrypted_context))
         else:  # a new run, or one bound before the context was pinned: today's context
             snapshot = {
-                "rules": await project_rules(session, project.id, [PM_HANDLE], workspace_id),
+                "rules": await project_rules(session, project.id, [PM_HANDLE], workspace_id, skill_snapshot),
                 "context": await build_context_pack(session, project, run, embedder),
                 "code_context": code_context,
             }

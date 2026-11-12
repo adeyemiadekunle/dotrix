@@ -198,3 +198,23 @@ def test_a_pause_says_which_agent_asked() -> None:
     gate = _gate(spec(tools=["knowledge.write", "issues.create"], issue_types=["bug"]), _toolbox([create_issue]))
     assert agent_of(gate["write_file"]["description"]) == agent_of(gate["create_issue"]["description"]) == "security"
     assert action_for("edit_file") == "knowledge.write" and action_for("checkpoint") is None
+
+
+def test_plan_mode_denies_document_writes_even_when_contract_allows_them():
+    from dotrix_engine.work_modes import planning_spec
+
+    original = builtin("project-manager")
+    planned = planning_spec(original)
+    assert planned.can("delegate") == original.can("delegate")
+    assert planned.can("code.read") == original.can("code.read")
+    assert not planned.can("knowledge.write")
+    assert not planned.can("issues.create")
+    assert not planned.can("graph.link")
+    assert original.can("knowledge.write")
+    model = ScriptedChatModel.of(
+        tool_call("write_file", file_path="/dotrix/notes/x.md", content="Changed"), "I will save a plan instead.",
+    )
+    graph = build_team("Demo", "Demo", model, _backend(), work_mode="plan", platform_delegation=True)
+    result = graph.invoke({"messages": [{"role": "user", "content": "Write a document while planning"}]})
+    response = next(message for message in result["messages"] if message.type == "tool")
+    assert "denied" in str(response.content).lower() or "not allowed" in str(response.content).lower()

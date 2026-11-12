@@ -39,6 +39,7 @@ from .pipelines import MODES, PIPELINES, checkpoint_tool
 from .pipelines import instructions as pipeline_instructions
 from .web import WEB_GUIDE
 from .work_modes import guide as work_mode_guide
+from .work_modes import planning_spec
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
@@ -454,6 +455,8 @@ def build_team(
         raise ValueError("Only the fixed built-in team is supported")
     if not any(spec.handle == PM_HANDLE for spec in specs):
         specs = [builtin_specs()[0], *specs]
+    if work_mode == "plan":
+        specs = [planning_spec(spec) for spec in specs]
     by_handle = {spec.handle: spec for spec in specs}
     if lead not in (None, *by_handle):
         raise ValueError(f"Unknown lead agent {lead!r}; use one of {', '.join(by_handle)}")

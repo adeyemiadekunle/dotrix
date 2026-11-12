@@ -48,6 +48,7 @@ def build_knowledge_tools(
     workspace_id: uuid.UUID,
     project_id: uuid.UUID,
     embedder: Embedder | None,
+    skill_snapshot: dict[str, str] | None = None,
 ) -> list[Callable]:
     async def _file(file_path: str) -> tuple[object | None, str]:
         path = _relative(file_path)
@@ -145,6 +146,8 @@ def build_knowledge_tools(
             skill: The skill's name as listed, e.g. "write-an-adr".
         """
         clean = skill.strip().removesuffix(".md").rsplit("/", 1)[-1]
+        if skill_snapshot is not None:
+            return skill_snapshot.get(clean, f"No skill called {clean!r} in this run's authorized catalog")
         async with session_factory() as session:
             file = await KnowledgeRepository(session).get_file(project_id, f"{SKILLS_FOLDER}{clean}.md")
             if file is not None and not file.deleted:
@@ -152,6 +155,10 @@ def build_knowledge_tools(
             shared = await WorkspaceSkills(session).get(workspace_id, clean)
         if shared:
             return f"Skill {clean} (the workspace's):\n\n{shared}"
-        return f"No skill called {clean!r}; the skills you have are listed in your instructions."
+        from .skill_snapshots import resolve
+
+        async with session_factory() as session:
+            texts = await resolve(session, workspace_id, project_id)
+        return texts.get(clean, f"No skill called {clean!r}; the skills you have are listed in your instructions.")
 
     return [search_knowledge, document_outline, read_section, read_skill]

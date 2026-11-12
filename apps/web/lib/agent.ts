@@ -182,6 +182,7 @@ export function useSendMessage(scope: Scope | undefined) {
         model,
         mentions = [],
         workMode = null,
+        planId = null,
         approvalMode = null,
         chatRuntime = null,
       }: {
@@ -191,6 +192,7 @@ export function useSendMessage(scope: Scope | undefined) {
         model?: string | null;
         mentions?: string[];
         workMode?: WorkMode | null;
+        planId?: string | null;
         approvalMode?: ApprovalMode | null;
         chatRuntime?: ChatRuntime | null;
       },
@@ -206,6 +208,7 @@ export function useSendMessage(scope: Scope | undefined) {
             model: threadId ? null : (model ?? null),
             mentions,
             work_mode: workMode,
+            plan_id: planId,
             approval_mode: approvalMode,
             chat_runtime: threadId ? null : chatRuntime,
           },

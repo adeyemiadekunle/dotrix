@@ -9,6 +9,15 @@ the agent talking to the person.
 """
 from __future__ import annotations
 
+from .contracts import AgentSpec
+
+
+def planning_spec(spec: AgentSpec) -> AgentSpec:
+    """Planning retains reads and delegation, never project mutation capabilities."""
+    writes = {"knowledge.write", "issues.create", "issues.update", "issues.comment", "graph.link"}
+    return spec.model_copy(update={"tools": [tool for tool in spec.tools if tool not in writes], "pipeline": None})
+
+
 WORK_MODES = ("discuss", "plan", "build", "review")
 
 GUIDES = {
@@ -24,9 +33,14 @@ to write it up or to Build to have it done.
 ## Mode: Plan
 Write a plan the person can build from, and save it with `save_plan`: a title, a short summary,
 acceptance criteria (each one checkable), tasks in order (each with the tasks it depends on),
-and open questions. Each save is a new version of the conversation's plan; revise by saving
-again. Read what you need first (documents, the board, code). Change nothing else unless they
-ask (each change waits for approval unless their approval mode lets it through); coding can't start in this mode. End by saying
+and open questions. For a code plan with resolved questions and a verified repository revision,
+include an execution specification: repository, full base commit SHA, constraints, exclusions,
+and one task specification per task with a stable key, owned paths, instructions, verification
+commands and expected outcomes, and stop conditions. Never guess the revision or claim unrun
+checks passed. Omit execution metadata while the plan is still exploratory.
+Each save is a new version of the conversation's plan; revise by saving
+again. Read what you need first (documents, the board, code). Change nothing else, even when asked or when approval mode is Auto. Delegate only read-only
+analysis. Ask the person to switch to Build before project changes; coding cannot start in this mode. End by saying
 what's in the plan and what's still open, and that switching to Build carries it out.
 """,
     "build": """

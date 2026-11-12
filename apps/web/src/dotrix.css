@@ -3726,3 +3726,62 @@ textarea.onb2-input {
   animation: none;
   opacity: 0.6;
 }
+
+/* Saved background worker activity, nested under its coding turn. */
+.background-tasks {
+  margin: 8px 0 20px;
+}
+.background-tasks-heading,
+.background-task-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.background-tasks-heading {
+  flex-wrap: wrap;
+}
+.background-task-list {
+  margin-left: 7px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+}
+.background-task-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.background-task-body {
+  padding: 0 0 16px 26px;
+  min-width: 0;
+}
+.background-task-paths {
+  overflow-wrap: anywhere;
+}
+.background-task-check {
+  margin-top: 10px;
+}
+.background-task-check summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.background-task-check pre {
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.background-tasks button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}

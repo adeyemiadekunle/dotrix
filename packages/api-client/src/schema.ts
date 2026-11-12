@@ -6458,6 +6458,14 @@ export interface components {
         /** CodingFollowUp */
         CodingFollowUp: {
             /**
+             * Work Mode
+             * @default build
+             * @enum {string}
+             */
+            work_mode: "plan" | "build";
+            /** Source Plan Id */
+            source_plan_id?: string | null;
+            /**
              * Message
              * @description What to do in this turn
              */
@@ -6496,6 +6504,12 @@ export interface components {
         /** CodingRunCreate */
         CodingRunCreate: {
             /**
+             * Work Mode
+             * @default build
+             * @enum {string}
+             */
+            work_mode: "plan" | "build";
+            /**
              * Note
              * @description Anything to add to the issue for the agent
              */
@@ -6517,6 +6531,18 @@ export interface components {
         };
         /** CodingRunRead */
         CodingRunRead: {
+            /** Tasks */
+            tasks?: components["schemas"]["CodingTaskRead"][];
+            /**
+             * Work Mode
+             * @default build
+             * @enum {string}
+             */
+            work_mode: "plan" | "build";
+            /** Plan Result */
+            plan_result?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Id
              * Format: uuid
@@ -6899,6 +6925,28 @@ export interface components {
             pinned?: boolean | null;
             /** Archived */
             archived?: boolean | null;
+        };
+        /** CodingTaskRead */
+        CodingTaskRead: {
+            /** Key */
+            key: string;
+            /** Status */
+            status: string;
+            /**
+             * Attempt
+             * @default 0
+             */
+            attempt: number;
+            /** Owned Paths */
+            owned_paths?: string[];
+            /** Checks */
+            checks?: {
+                [key: string]: unknown;
+            }[];
+            /** Usage */
+            usage?: {
+                [key: string]: unknown;
+            };
         };
         /** CodingToolOption */
         CodingToolOption: {
@@ -7322,6 +7370,37 @@ export interface components {
              * @description Children done, 0-100
              */
             percent: number;
+        };
+        /** ExecutionSpec */
+        ExecutionSpec: {
+            /** Repository */
+            repository: string;
+            /** Base Sha */
+            base_sha: string;
+            /** Constraints */
+            constraints?: string[];
+            /** Exclusions */
+            exclusions?: string[];
+            /** Tasks */
+            tasks: components["schemas"]["ExecutionTask"][];
+        };
+        /** ExecutionTask */
+        ExecutionTask: {
+            /** Key */
+            key: string;
+            /**
+             * Task Number
+             * @description The corresponding saved plan task, from 1
+             */
+            task_number: number;
+            /** Owned Paths */
+            owned_paths: string[];
+            /** Instructions */
+            instructions: string;
+            /** Checks */
+            checks: components["schemas"]["PlannedCheck"][];
+            /** Stop Conditions */
+            stop_conditions: string[];
         };
         /** FailureGroup */
         FailureGroup: {
@@ -8843,6 +8922,7 @@ export interface components {
             tasks: components["schemas"]["PlanTaskRead"][];
             /** Open Questions */
             open_questions: string[];
+            execution?: components["schemas"]["ExecutionSpec"] | null;
             /**
              * Created At
              * Format: date-time
@@ -8860,6 +8940,13 @@ export interface components {
              * @description The tasks (numbers, from 1) this one needs first
              */
             depends_on: number[];
+        };
+        /** PlannedCheck */
+        PlannedCheck: {
+            /** Command */
+            command: string;
+            /** Expected */
+            expected: string;
         };
         /**
          * PlatformAuditEvent
@@ -9737,10 +9824,15 @@ export interface components {
             model?: string | null;
             /** @description For a new project conversation: `deepagents` (default) or the opt-in read-only `fx` preview. A conversation keeps its runtime; omit on follow-up. */
             chat_runtime?: components["schemas"]["ChatRuntime"] | null;
-            /** @description How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools) */
+            /** @description How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Plan permits reads and private plan saves only; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools) */
             work_mode?: components["schemas"]["WorkMode"] | null;
             /** @description How much goes through without waiting: `manual` (every change waits for a yes; the default), `accept_edits` (what you ask for goes through, recorded as approved by you, and coding starts at once), `auto` (the same, and checkpoints don't pause). Never above the workspace's cap, and Manual for people who may not approve agent changes */
             approval_mode?: components["schemas"]["ApprovalMode"] | null;
+            /**
+             * Plan Id
+             * @description Exact private plan version to build in this conversation
+             */
+            plan_id?: string | null;
             /**
              * Mentions
              * @description People @mentioned (user ids). Each is told if "@Their Name" is in the text and they can see the project; others are ignored

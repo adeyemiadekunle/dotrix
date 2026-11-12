@@ -104,3 +104,52 @@ async def test_review_reads_the_conversation_s_coding(db_client: AsyncClient, si
     assert "coding_evidence" in model.tools_received[0] and "start_coding" not in model.tools_received[0]
     said = [m.content for m in model.received[1] if m.type == "tool"]
     assert any("No coding has been started" in str(c) for c in said)
+
+
+async def test_plan_does_not_offer_project_changes(db_client, signup, create_team, agent_script):
+    ada, base = await _project(db_client, signup, create_team)
+    model = agent_script.say("I can read and save a plan; switch to Build for changes.")
+    run = (await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Plan this feature", "work_mode": "plan",
+    })).json()
+    assert run["status"] == "completed", run
+    offered = set(model.tools_received[0])
+    assert "save_plan" in offered
+    assert not offered & {"create_issue", "update_issue", "comment_issue", "link_items", "start_coding"}
+
+
+async def test_build_plan_reference_must_belong_to_the_conversation(db_client, signup, create_team, agent_script):
+    ada, base = await _project(db_client, signup, create_team)
+    agent_script.say(tool_call("save_plan", title="Private", summary="Private plan", acceptance_criteria=[],
+                               tasks=[{"title": "Private task"}]), "Saved.")
+    first = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                 json={"message": "Plan", "work_mode": "plan"})).json()
+    [plan] = (await db_client.get(f"{base}/agent/threads/{first['thread_id']}/plans", headers=ada.headers)).json()
+    agent_script.say("Another conversation.")
+    second = (await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={"message": "Hello"})).json()
+    response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Build", "work_mode": "build", "thread_id": second["thread_id"], "plan_id": plan["id"],
+    })
+    assert response.status_code == 404
+    response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Discuss", "work_mode": "discuss", "thread_id": first["thread_id"], "plan_id": plan["id"],
+    })
+    assert response.status_code == 422
+
+
+async def test_saved_plan_retains_execution_contract(db_client, signup, create_team, agent_script):
+    ada, base = await _project(db_client, signup, create_team)
+    execution = {
+        "repository": "owner/repo", "base_sha": "a" * 40, "constraints": [], "exclusions": [],
+        "tasks": [{"key": "api", "task_number": 1, "owned_paths": ["src/api/"],
+                   "instructions": "Add the specified endpoint", "checks": [{"command": "pytest", "expected": "passes"}],
+                   "stop_conditions": ["The API contract differs"]}],
+    }
+    model = agent_script.say(tool_call("save_plan", title="API", summary="Add the API", acceptance_criteria=["API works"],
+                                      tasks=[{"title": "Implement API"}], execution=execution), "Saved.")
+    run = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                               json={"message": "Plan API", "work_mode": "plan"})).json()
+    assert run["status"] == "completed", run
+    assert "save_plan" in model.tools_received[0]
+    [plan] = (await db_client.get(f"{base}/agent/threads/{run['thread_id']}/plans", headers=ada.headers)).json()
+    assert plan["execution"] == execution

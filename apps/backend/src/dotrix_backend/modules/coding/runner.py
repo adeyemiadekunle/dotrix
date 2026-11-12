@@ -80,6 +80,7 @@ from .models import (
     PrState,
 )
 from .network import allowed_hosts, network_digest
+from .planning import parse_plan, planning_brief, readonly_command
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .slots import RunSlots, Stopped
 from .tools import BROWSER_RULE, CodingTool, Usage, run_key, tool_for
@@ -425,6 +426,8 @@ class CodingWorker:
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
+            execution_plan = run.execution_plan
+            plan_mode = run.work_mode == "plan"
             session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
             # Accepted changes (Manual) are pushed as they were checked; a revert undoes a pushed turn.
             # Neither runs the agent again.
@@ -479,6 +482,11 @@ class CodingWorker:
         await run_git(host, "checkout", "-q", "--detach", "FETCH_HEAD")
         base_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
 
+        if not publish_only and not plan_mode and execution_plan:
+            expected = execution_plan.get("execution") or {}
+            if expected.get("base_sha") != base_sha or expected.get("repository") != ref.full_name:
+                raise RunFailed("The repository changed since the selected plan; refresh the plan before building")
+
         await self._update(run_id, base_sha=base_sha, step=f"Checked out {session_branch}" if session_branch
                            else "Checked out the repository")
         if publish_only:
@@ -486,6 +494,22 @@ class CodingWorker:
                                      session_pr, publication, accepted=accepted, revert=revert)
             return
         assert tool is not None and key is not None and self.sandbox is not None
+
+        if not plan_mode and execution_plan and self.settings.coding_parallel:
+            from .parallel import execute as execute_tasks
+
+            dependencies = {i: task.get("depends_on", []) for i, task in enumerate(execution_plan["tasks"], 1)}
+            summary, patch = await execute_tasks(self, run_id, work, host, tool, key, model, brief, allow,
+                                                 execution_plan["execution"], dependencies)
+            if not patch.strip():
+                await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
+                return
+            paths, files = await _stage(work, host, patch)
+            if await self._hold_for_acceptance(run_id, patch, files, summary):
+                return
+            await self._publish(run_id, host, ref, push, token, summary, files, paths, patch,
+                                session_branch, session_pr, publication)
+            return
 
         # 2. The agent's sandbox: the session's warm one when its files still match the branch (nobody
         #    pushed in between), else a fresh one with the tracked files and a history of its own, and
@@ -521,10 +545,34 @@ class CodingWorker:
             where = ("woken from the last turn" if woken else "kept from the last turn") if warm else self.sandbox.kind
             await self._update(run_id, step=f"Sandbox ready ({where}); {CODING_AGENT_NAME} is "
                                + ("continuing the session" if resumed else "working"))
+            if plan_mode:
+                brief = planning_brief(brief, ref.full_name, base_sha)
+                resumed = False
+                claude_session = uuid.uuid4()
             extra = tool.session_args(claude_session, resumed)
             started = datetime.now(UTC)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
-                                                 cost_before if resumed else None)
+                                                 cost_before if resumed else None, plan_mode=plan_mode)
+            if plan_mode:
+                try:
+                    result_plan = parse_plan(summary)
+                except ValueError as exc:
+                    raise RunFailed("Kai did not return a valid plan; revise the request and try again") from exc
+                if result_plan.get("execution") and (
+                    result_plan["execution"]["base_sha"] != base_sha
+                    or result_plan["execution"]["repository"] != ref.full_name
+                ):
+                    raise RunFailed("Kai's plan names a different repository or revision; request a corrected plan")
+                async with self.session_factory() as session:
+                    planned_run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id).with_for_update())
+                    if planned_run is None or not self._holds(planned_run) or planned_run.status is not CodingRunStatus.RUNNING:
+                        raise _ReconciliationRequired()
+                    if planned_run.stop_requested:
+                        raise _Stopped("Stopped by a person")
+                    planned_run.plan_result = result_plan
+                    await session.commit()
+                await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=result_plan["summary"])
+                return
             await self._blocked(run_id, box, started)
             await self._screenshots(run_id, box)
             changes = await box.exec(
@@ -561,9 +609,9 @@ class CodingWorker:
                                 session_branch, session_pr, publication, after_push=sandbox_moves_on)
         finally:
             # The conversation moved on even when the turn didn't push: save it for the next turn.
-            if tool.resumes:
+            if tool.resumes and not plan_mode:
                 await self._save_transcript(box, tool, claude_session, session_id, workspace_id)
-            if reported is not None:
+            if reported is not None and not plan_mode:
                 await self._session(session_id, cost_reported=reported)
             # A scanner may have classified the run while the sandbox was
             # working. Never place that sandbox back in the warm session pool.
@@ -732,7 +780,7 @@ class CodingWorker:
 
     async def _code(
         self, run_id: uuid.UUID, box: SandboxSession, tool: CodingTool, model: str | None, tool_session: uuid.UUID,
-        brief: str, extra: list[str], cost_before: float | None,
+        brief: str, extra: list[str], cost_before: float | None, *, plan_mode: bool = False, task_key: str | None = None,
     ) -> tuple[str | None, float | None]:
         """Run the tool with the brief on the run's model (the tool's default when None), streaming its
         events into the run: its final message, and the cost it reported. A resumed session reports
@@ -748,7 +796,17 @@ class CodingWorker:
             nonlocal last_flush
             last_flush = time.monotonic()
             steps, pending[:] = list(pending), []
-            await self._update(run_id, events=steps, usage=usage)
+            if task_key:
+                from .parallel import report_usage
+
+                for step in steps:
+                    step["text"] = f"[{task_key}] {step['text']}"
+                    if step.get("ref"):
+                        step["ref"] = f"{task_key}:{step['ref']}"
+                await self._update(run_id, events=steps)
+                await report_usage(self, run_id, task_key, usage)
+            else:
+                await self._update(run_id, events=steps, usage=usage)
 
         async def on_line(line: str) -> None:
             nonlocal summary, failed
@@ -780,11 +838,12 @@ class CodingWorker:
                     cancel.set()
 
         # The browser comes with the coding image: the Docker and OpenShell sandboxes, not the local one.
-        browser = self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
+        browser = not plan_mode and self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
         watcher = asyncio.create_task(watch_stop())
         try:
             result = await box.exec(
-                tool.command(model, browser=browser) + extra,
+                readonly_command(tool.command(model, browser=False) + extra) if plan_mode
+                else tool.command(model, browser=browser) + extra,
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )
