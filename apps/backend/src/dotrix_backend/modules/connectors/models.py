@@ -62,8 +62,6 @@ class GitHubDelivery(Base):
     event: Mapped[str] = mapped_column(String(100))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     # The follow-up jobs ([name, kwargs] pairs) recorded with the delivery's changes and cleared once
-    # queued, so a failed queueing is finished by a redelivery or the hourly sweep.
-    pending: Mapped[list | None] = mapped_column(JSON)
-    # The follow-up jobs ([name, kwargs] pairs) recorded with the delivery's changes and cleared once
-    # queued, so a failed queueing is finished by a redelivery or the hourly sweep.
-    pending: Mapped[list | None] = mapped_column(JSON)
+    # queued, so a failed queueing is finished by a redelivery or the hourly sweep. Cleared is SQL NULL
+    # (none_as_null), not JSON null, so the sweep's `IS NOT NULL` skips deliveries already done.
+    pending: Mapped[list | None] = mapped_column(JSON(none_as_null=True))

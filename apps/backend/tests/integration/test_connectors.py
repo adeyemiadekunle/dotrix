@@ -183,7 +183,7 @@ async def test_the_sweep_queues_follow_ups_github_never_redelivers(
 ) -> None:
     from datetime import UTC, datetime, timedelta
 
-    from sqlalchemy import select
+    from sqlalchemy import select, text
 
     from dotrix_backend.jobs import JobContext, cleanup_expired
     from dotrix_backend.modules.connectors.models import GitHubDelivery
@@ -206,6 +206,11 @@ async def test_the_sweep_queues_follow_ups_github_never_redelivers(
     row = await db_session.scalar(select(GitHubDelivery).where(GitHubDelivery.delivery_id == "d-1"))
     await db_session.refresh(row)
     assert row.pending is None
+    # Cleared as SQL NULL, not JSON null: otherwise every later sweep would select it again.
+    stored = await db_session.scalar(text("select pending is null from github_deliveries where delivery_id = 'd-1'"))
+    assert stored is True
+    still = await db_session.scalar(select(GitHubDelivery.delivery_id).where(GitHubDelivery.pending.is_not(None)))
+    assert still is None
 
 
 async def test_a_malformed_delivery_id_is_refused(db_client: AsyncClient, github_world, deliver, github) -> None:
