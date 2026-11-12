@@ -28,7 +28,7 @@ the audit nor the other plans.
 | [013](013-admin-two-factor-sign-in.md) | Admins sign in with a second factor (TOTP) | P1 | M | 011, 012 | DONE |
 | [014](014-admin-trail.md) | What admins do in the console is recorded and shown | P2 | M | 012 (013 if landed) | DONE |
 | [015](015-console-health-covers-dependencies.md) | The console's health shows the services, workers, backlogs and capacity dotrix depends on | P1 | M | — | DONE |
-| [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | TODO |
+| [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | DONE |
 | [017](017-console-usage-by-model-and-chat-cost.md) | The console shows what chat costs and how each model is doing | P2 | M | — | DONE |
 | [018](018-console-failures-and-audit-cleanup.md) | The console's failure report can't show what people wrote, and the audit log can be filtered | P2 | S–M | — | DONE |
 | [019](019-one-coding-turn-at-a-time-per-issue.md) | Two requests can't start coding on the same issue or session at once | P1 | S | — | DONE |
@@ -116,7 +116,7 @@ Leads only: open the code before planning any of these.
 - Lease renew/release logic differs between chat runs, coding runs and local turns.
 - pytest runs serially in CI (about 9.5 minutes at the last observed run).
 - `CLAUDE.md`'s backend tree omits `modules/admin` and `modules/observe`; `.env.example` covers under half the settings.
-- A malformed manifest fails the whole dependencies view (`dotrix_engine/dependencies.py:181,215,243`); `dotrix runner` exits on a transient network error.
+- `dotrix runner` exits on a transient network error. (A malformed manifest failing the whole dependencies view was fixed by plan 030.)
 
 ## Findings considered and rejected
 
