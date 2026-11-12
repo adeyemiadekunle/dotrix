@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound
+from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.agents.models import (
     ACTIVE_STATUSES,
     AgentApproval,
@@ -37,6 +38,7 @@ from dotrix_backend.modules.search.models import KnowledgeChunk
 from dotrix_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
+from dotrix_backend.modules.workspaces.storage import ensure_room, project_bytes
 from dotrix_engine.layout import skeleton
 
 from .models import Project, ProjectAccessLevel, ProjectMember, ProjectStar
@@ -203,7 +205,13 @@ class ProjectService:
         await self.session.commit()
 
     async def move(
-        self, project: Project, actor: Membership, target_id: uuid.UUID, *, organisations: bool = True
+        self,
+        project: Project,
+        actor: Membership,
+        target_id: uuid.UUID,
+        *,
+        organisations: bool = True,
+        settings: Settings,
     ) -> ProjectRead:
         """Move a project, with everything in it, to another workspace where you can set up
         projects (owners and admins in both). Its key and repo must be free there, and no agent
@@ -227,6 +235,8 @@ class ProjectService:
         )
         if active is not None:
             raise Conflict("An agent run is still working or waiting for approval; stop it or decide it first")
+        # Its uploads must fit in the other workspace's storage limit.
+        await ensure_room(self.session, target_id, settings, await project_bytes(self.session, project.id))
 
         # Its repo was reached through this workspace's GitHub installation: connect it again there.
         await self.session.execute(delete(ConnectedRepo).where(ConnectedRepo.project_id == project.id))

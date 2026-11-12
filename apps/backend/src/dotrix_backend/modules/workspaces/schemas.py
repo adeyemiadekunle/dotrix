@@ -138,6 +138,13 @@ class WorkspaceWithRole(WorkspaceRead):
         )
 
 
+class StorageRead(BaseModel):
+    used_bytes: int = Field(description="Document originals plus task attachments")
+    limit_bytes: int | None = Field(description="Null: no limit")
+    documents_bytes: int = Field(description="Uploaded document originals")
+    attachments_bytes: int = Field(description="Task attachments")
+
+
 class MemberRead(BaseModel):
     user_id: uuid.UUID
     email: str

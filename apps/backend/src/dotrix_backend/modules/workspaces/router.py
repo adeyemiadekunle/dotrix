@@ -17,11 +17,13 @@ from .schemas import (
     MemberRead,
     MemberRoleUpdate,
     OwnershipTransfer,
+    StorageRead,
     WorkspaceCreate,
     WorkspaceUpdate,
     WorkspaceWithRole,
 )
 from .service import WorkspaceService
+from .storage import limit_bytes, usage
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"], responses=errors(401))
 
@@ -53,6 +55,20 @@ async def create_workspace(
 async def get_workspace(member: Viewer) -> WorkspaceWithRole:
     """A workspace you belong to."""
     return WorkspaceWithRole.of(member.workspace, member.role)
+
+
+@router.get("/{workspace_id}/storage", responses=errors(404))
+async def get_workspace_storage(member: Viewer, session: SessionDep, settings: SettingsDep) -> StorageRead:
+    """How much this workspace has stored in uploads (document originals and task attachments) and
+    the limit on it. Any member. Uploads that would pass the limit are refused (413 `storage_full`);
+    nothing is deleted, and reading, downloading and deleting always work."""
+    documents, attachments = await usage(session, member.workspace_id)
+    return StorageRead(
+        used_bytes=documents + attachments,
+        limit_bytes=limit_bytes(member.workspace, settings),
+        documents_bytes=documents,
+        attachments_bytes=attachments,
+    )
 
 
 @router.patch("/{workspace_id}", responses=errors(403, 404, 422))

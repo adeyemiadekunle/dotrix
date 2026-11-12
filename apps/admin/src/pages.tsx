@@ -11,12 +11,13 @@ import {
   WarningIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaginationState } from "@tanstack/react-table";
 import { useState, type ReactNode } from "react";
 
 import {
   call,
+  put,
   type AuditEvent,
   type CodingRow,
   type Counts,
@@ -530,6 +531,39 @@ const ENGINE: Record<string, string> = { "claude-code": "Claude Code", codex: "C
 
 // ---------------------------------------------------------------- Workspaces
 
+/** Decimal sizes, like the limit's megabytes. */
+const size = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.round(n / 1e3)} KB`);
+
+/** Used of the limit that applies, with a way to set this workspace's own: MB, 0 for none, blank for the deployment's default. */
+function StorageCell({ w }: { w: WorkspaceRow }) {
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: (mb: number | null) => put<void>("/admin/storage-limit", { workspace_id: w.id, storage_limit_mb: mb }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["workspaces"] }),
+    onError: (e: Error) => window.alert(e.message),
+  });
+  const edit = () => {
+    const now = w.storage_limit_mb === null ? "" : String(w.storage_limit_mb);
+    const answer = window.prompt(`Storage limit for ${w.name} in MB (0: unlimited, blank: the deployment's default)`, now);
+    if (answer === null) return;
+    const mb = answer.trim() === "" ? null : Number(answer);
+    if (mb !== null && (!Number.isInteger(mb) || mb < 0)) return window.alert("Enter a whole number of MB, 0 or blank.");
+    save.mutate(mb);
+  };
+  const limit = w.effective_limit_bytes;
+  return (
+    <span className="wsn">
+      <span className={limit !== null && w.used_bytes >= limit ? "bad-text" : undefined}>
+        {size(w.used_bytes)} / {limit === null ? "no limit" : size(limit)}
+      </span>
+      {w.storage_limit_mb !== null && <span className="tag">own limit</span>}
+      <button className="link" type="button" onClick={edit} disabled={save.isPending}>
+        Edit
+      </button>
+    </span>
+  );
+}
+
 const workspaceColumns = (now: number): Column<WorkspaceRow>[] => [
   {
     id: "name",
@@ -557,6 +591,7 @@ const workspaceColumns = (now: number): Column<WorkspaceRow>[] => [
   },
   { id: "tokens", accessorKey: "tokens", header: "Tokens", meta: { align: "right" }, cell: ({ row }) => compact(row.original.tokens) },
   { id: "cost", accessorKey: "cost_usd", header: "Cost", meta: { align: "right" }, cell: ({ row }) => usd(row.original.cost_usd) },
+  { id: "storage", accessorKey: "used_bytes", header: "Storage", meta: { align: "right" }, cell: ({ row }) => <StorageCell w={row.original} /> },
   {
     id: "last",
     accessorFn: (w) => w.last_run_at ?? "",

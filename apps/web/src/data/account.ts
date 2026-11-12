@@ -90,6 +90,9 @@ export const tokenRevoked = (id: string) => send(api.DELETE("/v1/me/tokens/{toke
 
 /* ---------- the workspace ---------- */
 
+/** What the workspace has stored in uploads, and its limit. */
+export const workspaceStorage = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/storage", wsPath()));
+
 /** Rename the workspace (the store shows the new name already). */
 export async function workspaceRenamed(name: string) {
   const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { name } }), ["workspaces", "audit"]);

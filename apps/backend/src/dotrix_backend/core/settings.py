@@ -195,6 +195,10 @@ class Settings(DatabaseSettings):
     s3_bucket: str = "dotrix-documents"
     s3_region: str = "us-east-1"
     max_upload_mb: int = Field(default=25, ge=1, le=200)
+    # What one workspace may store in uploads (document originals and task attachments), in MB;
+    # 0 is unlimited. Unset: 1024 on a deployed server, unlimited in development and tests.
+    # A workspace's own `storage_limit_mb` (set in the admin console) overrides it.
+    workspace_storage_mb: int | None = Field(default=None, ge=0)
 
     # Legacy configuration accepted during upgrades. Platform runs never use these keys:
     # every person connects their own encrypted credentials in Account → Your models.
@@ -313,6 +317,12 @@ class Settings(DatabaseSettings):
     @property
     def organisations_enabled(self) -> bool:
         return self.organisations if self.organisations is not None else not self.is_deployed
+
+    @property
+    def workspace_storage_limit_mb(self) -> int:
+        if self.workspace_storage_mb is not None:
+            return self.workspace_storage_mb
+        return 1024 if self.is_deployed else 0
 
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:

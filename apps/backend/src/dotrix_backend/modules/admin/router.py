@@ -20,6 +20,7 @@ from dotrix_backend.modules.admin.schemas import (
     PlatformCounts,
     PlatformHealth,
     RunPage,
+    StorageLimitUpdate,
     WorkspaceUsage,
 )
 from dotrix_backend.modules.auth.limits import LOGIN, ThrottleDep
@@ -182,6 +183,15 @@ async def observe_workspaces(
 ) -> list[WorkspaceUsage]:
     """Workspaces by their use in the window: runs, failures, tokens, coding cost, size, and the latest run."""
     return await platform.workspaces(days, limit)
+
+
+@router.put("/storage-limit", status_code=status.HTTP_204_NO_CONTENT, responses=errors(404, 422))
+async def set_workspace_storage_limit(data: StorageLimitUpdate, admin: AdminDep, svc: Service) -> None:
+    """Set one workspace's limit on uploads (document originals and task attachments), in MB:
+    0 is unlimited, null follows the deployment's `DOTRIX_WORKSPACE_STORAGE_MB`. Nothing is deleted
+    when it is lowered; the workspace just can't add more until it is under. Audited in the
+    workspace's log (`workspace.storage_limit_updated`)."""
+    await svc.set_storage_limit(admin, data.workspace_id, data.storage_limit_mb)
 
 
 @router.get("/observe/runs", responses=errors(403, 422))

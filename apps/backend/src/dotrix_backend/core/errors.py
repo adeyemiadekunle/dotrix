@@ -52,6 +52,13 @@ class Unprocessable(DomainError):
     code = "unprocessable"
 
 
+class StorageFull(DomainError):
+    """An upload would pass the workspace's storage limit (not the per-file limit, which is 422)."""
+
+    status_code = HTTPStatus(413)
+    code = "storage_full"
+
+
 class TooManyRequests(DomainError):
     """A rate limit was hit. The response says when to try again (Retry-After, in seconds)."""
 

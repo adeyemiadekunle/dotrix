@@ -264,7 +264,7 @@ async def unstar_issue(key: str, access: ProjectViewer, session: SessionDep) -> 
 Storage = Annotated[BlobStorage, Depends(get_storage)]
 
 
-@router.post("/{key}/attachments", status_code=status.HTTP_201_CREATED, responses=errors(403, 422, 503))
+@router.post("/{key}/attachments", status_code=status.HTTP_201_CREATED, responses=errors(403, 413, 422, 503))
 async def attach_file_to_issue(
     key: str,
     access: Editor,
@@ -274,11 +274,13 @@ async def attach_file_to_issue(
     file: Annotated[UploadFile, File(description="Any file: an image, a PDF, a log, a design")],
 ) -> IssueRead:
     """Add a file to the issue, listed under it (any type; it isn't converted for the agents,
-    unlike a project document). Anyone who may edit issues."""
+    unlike a project document). Anyone who may edit issues. 413 `storage_full` when the file
+    would pass the workspace's storage limit."""
     limit = settings.max_upload_mb * 1_000_000
     data = await file.read(limit + 1)  # one byte past the limit to notice an oversized file
     return await IssueService(session).attach(
-        access.project, key, _actor(access), storage, file.filename or "file", data, max_bytes=limit
+        access.project, key, _actor(access), storage, file.filename or "file", data, max_bytes=limit,
+        settings=settings,
     )
 
 

@@ -41,9 +41,11 @@ from dotrix_backend.modules.coding.models import (
 )
 from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
+from dotrix_backend.modules.issues.models import IssueAttachment
 from dotrix_backend.modules.observe.service import ObserveService
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.models import Membership, Workspace
+from dotrix_backend.modules.workspaces.storage import limit_bytes
 
 RUNNER_ONLINE = timedelta(minutes=2)
 # A literal, not a bound parameter: GROUP BY must repeat the SELECT's expression exactly.
@@ -394,6 +396,16 @@ class PlatformObserve:
         projects = (
             select(Project.workspace_id, func.count(Project.id).label("n")).group_by(Project.workspace_id).subquery()
         )
+        stored = {
+            wid: int(n)
+            for wid, n in await self.session.execute(
+                select(Document.workspace_id, func.sum(Document.size)).group_by(Document.workspace_id)
+            )
+        }
+        for wid, n in await self.session.execute(
+            select(IssueAttachment.workspace_id, func.sum(IssueAttachment.size)).group_by(IssueAttachment.workspace_id)
+        ):
+            stored[wid] = stored.get(wid, 0) + int(n)
         rows = await self.session.execute(
             select(Workspace, func.coalesce(members.c.n, 0), func.coalesce(projects.c.n, 0))
             .outerjoin(members, members.c.workspace_id == Workspace.id)
@@ -415,6 +427,9 @@ class PlatformObserve:
                 cost_usd=round(usage[ws.id]["cost"], 4) if ws.id in usage else 0.0,
                 last_run_at=usage[ws.id]["last"] if ws.id in usage else None,
                 paused=ws.unattended_paused,
+                used_bytes=stored.get(ws.id, 0),
+                storage_limit_mb=ws.storage_limit_mb,
+                effective_limit_bytes=limit_bytes(ws, self.settings),
             )
             for ws, m, p in rows
         ]

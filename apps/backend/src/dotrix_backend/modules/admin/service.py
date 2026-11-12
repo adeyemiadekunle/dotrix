@@ -15,9 +15,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.api.deps import SessionDep, SettingsDep
-from dotrix_backend.core.errors import Forbidden, Unauthorized
+from dotrix_backend.core.errors import Forbidden, NotFound, Unauthorized
 from dotrix_backend.core.security import generate_token, hash_password, hash_token, verify_password
 from dotrix_backend.core.settings import Settings
+from dotrix_backend.modules.audit.service import AuditLog
+from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.workspaces.models import Workspace
 
 from .models import AdminSession, AdminUser
@@ -63,6 +65,21 @@ class AdminService:
             self.session.add(session)
         await self.session.flush()  # the access token's sid is this row's id
         return _admin_token(admin.id, session.id, self.settings), refresh
+
+    async def set_storage_limit(self, admin: AdminUser, workspace_id: uuid.UUID, megabytes: int | None) -> None:
+        """Set (0: unlimited) or clear (null: the deployment's default) one workspace's upload
+        storage limit. Audited in the workspace's log with the old and new values."""
+        workspace = await self.session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise NotFound("Workspace not found")
+        if workspace.storage_limit_mb != megabytes:
+            AuditLog(self.session).record(
+                workspace_id=workspace.id, action="workspace.storage_limit_updated", actor_type=AuthorType.SYSTEM,
+                target=workspace.slug,
+                details={"from_mb": workspace.storage_limit_mb, "to_mb": megabytes, "admin_id": str(admin.id)},
+            )
+            workspace.storage_limit_mb = megabytes
+        await self.session.commit()
 
     def token_required(self) -> bool:
         return self.settings.admin_bootstrap_token is not None or self.settings.is_deployed

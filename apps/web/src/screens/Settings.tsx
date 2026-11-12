@@ -10,6 +10,7 @@ import { organisations, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
+import { storageLine } from "../core/storage";
 import { ago, dOff, fmtDate, uid } from "../core/utils";
 import { ApiError } from "@/lib/api";
 import { useBuiltinTeam } from "@/lib/team";
@@ -60,6 +61,7 @@ import {
   unlinkGitHub,
   useApi,
   workspaceRenamed,
+  workspaceStorage,
   type AgentFields,
   type NotifSettings,
 } from "../data/account";
@@ -280,6 +282,45 @@ function StrengthMeter({ pw }: { pw: string }) {
 
 /* ---------- sections ---------- */
 
+/** Uploaded documents and task attachments against the workspace's limit; the seeded workspace shows a sample figure. */
+function StorageUsage() {
+  const live_ = isLive();
+  const u = useApi(workspaceStorage);
+  if (live_ && u.error) return <div className="hint">Storage usage didn't load.</div>;
+  if (live_ && !u.data) return null;
+  const line = live_ ? storageLine(u.data!.used_bytes, u.data!.limit_bytes) : storageLine(312_000_000, 1_000_000_000);
+  return (
+    <div className="sblock">
+      <h2>Storage</h2>
+      <div className="col" style={{ gap: 8, maxWidth: 440 }}>
+        <div className="row" style={{ gap: 8 }}>
+          <span className="grow">{line.text}</span>
+          {!live_ && <span className="hint">Sample data</span>}
+        </div>
+        {line.ratio !== null && (
+          <div
+            className={`prog ${line.tone === "full" ? "red" : line.tone === "warn" ? "amber" : ""}`}
+            style={css({ "--p": line.ratio, flex: "none", width: "100%" })}
+            role="progressbar"
+            aria-label="Storage used"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(line.ratio * 100)}
+          >
+            <i />
+          </div>
+        )}
+        {line.note && (
+          <span className="hint" style={{ color: "var(--red)" }}>
+            {line.note}
+          </span>
+        )}
+        <span className="hint">Counts uploaded documents and task attachments.</span>
+      </div>
+    </div>
+  );
+}
+
 function Workspace() {
   const d = D();
   const [name, setName] = useState(d.ws.name);
@@ -371,6 +412,7 @@ function Workspace() {
           </div>
         </div>
       </form>
+      <StorageUsage />
       {d.ws.kind === "personal" && organisations() && (
         <div className="sblock">
           <h2>Work with a team</h2>
