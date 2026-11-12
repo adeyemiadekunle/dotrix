@@ -44,10 +44,28 @@ the audit nor the other plans.
 | [029](029-local-turns-send-exact-patches-and-all-events.md) | A turn coded on your computer sends its patch byte for byte and all of its steps | P1 | M | — | DONE (re-scoped: every step delivered, non-UTF-8 patches refused; exact bytes in 031) |
 | [030](030-dependency-reader-handles-real-requirements-files.md) | The dependency reader gets versions right in hash-pinned requirements files, and one bad manifest doesn't break the view | P1 | S | — | DONE |
 | [031](031-coding-patches-stored-as-exact-bytes.md) | A coding turn's patch is kept and pushed byte for byte, whatever its files' encoding | P1 | M | 029 | DONE |
+| [032](032-notification-emails-arent-sent-twice.md) | A crash while emailing notifications doesn't email everyone again | P1 | S | — | TODO |
+| [033](033-junos-review-claim-cant-stick.md) | Juno's review is still posted on the pull request after a failed or interrupted attempt | P1 | S | — | TODO |
+| [034](034-a-warm-sandbox-is-closed-when-its-check-fails.md) | A session's sandbox is closed when the check before reusing it fails | P2 | S | — | TODO |
+| [035](035-the-fx-journal-is-pruned-at-each-checkpoint.md) | A long fx conversation turn no longer stops at the journal's size limit | P1 | M | — | TODO |
+| [036](036-webhook-follow-ups-arent-lost.md) | A GitHub delivery's follow-up jobs are still scheduled when queueing them fails the first time | P2 | S | — | TODO |
+| [037](037-task-lists-show-more-than-5000-tasks.md) | A workspace with more than 5,000 tasks shows all of them | P2 | M | — | TODO |
+| [038](038-desktop-opens-only-web-links.md) | The desktop app opens only web links outside itself, and its window can't be sent to another site | P1 | S | — | TODO |
+| [039](039-ci-actions-pinned-and-least-privilege.md) | CI's third-party actions are pinned to commits, and pull-request builds can't write to the repository | P2 | S | — | TODO |
+| [040](040-small-housekeeping.md) | Housekeeping: the stray Redis dump, the seroval advisories, and the documented CLI install | P3 | S | — | TODO |
+| [041](041-workspace-storage-limit.md) | Each workspace has a storage limit for uploads, shown in Settings and enforced on upload | P1 | M | — (admin part follows 011–018's shape if they land first) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
 ## Dependency notes
+
+Plans 032–041 (written 2026-11-12 at `7fb2b01`): the third batch, the audit's remaining bugs, two security leads checked in the code, and the workspace storage limit.
+
+- 032–036 are backend bugs in different modules and can run in parallel. 033 and 034 both edit files under `modules/coding` (`github_reviews.py`, `runner.py`): different files, no overlap.
+- 036 and 041 each add a migration: land one, then rebase the other so the migration chain stays linear.
+- 037 (web) and 038 (desktop) are independent of everything else.
+- 039 needs network access to resolve action tags to commits.
+- 041 is a feature, not a fix. Its design decisions (what counts, the 1 GB default, computed usage) are stated at the top of the plan: review them before executing.
 
 Plans 019–030 (written 2026-11-11 at `78f46c1`): the second batch from the audit's confirmed findings.
 
@@ -72,26 +90,17 @@ Plans 011–018 (written 2026-11-11 at `78f46c1`, for the admin console):
 
 ## Confirmed findings not planned yet (by suggested order)
 
-These were verified in the code during the audit. Twelve others from this list became plans 019–030.
+These were verified in the code during the audit. Twelve others from this list became plans 019–030, and nine more plans 032–040.
 
 | Finding | Category | Effort | Evidence |
 |---|---|---|---|
-| The documented `pipx` install cannot resolve `dotrix-engine`; the name was reported unclaimed on PyPI | deps | S | `README.md:217`, `apps/cli/pyproject.toml:7,18` |
-| Notification emails are sent before they are marked sent | bug | S | `modules/notifications/emails.py:111-119` |
-| Juno's "posting" claim can stick, so a review is never posted | bug | S | `modules/coding/github_reviews.py:179-201` |
-| A warm sandbox leaks if its reuse check fails | bug | S | `modules/coding/runner.py:497-519` |
-| The fx journal is never pruned, so long turns hit the size cap | bug | S | `modules/agents/runtime_journal.py:131-142` |
 | Every issue edit refetches every issue list | perf | M | `apps/web/src/data/live.ts:49,98` |
 | Every graph read re-syncs the whole project | perf | M | `modules/graph/service.py:225-390` |
 | GitHub installation tokens are minted on every call | perf | S | `modules/connectors/github_app.py:416-430` |
 | Notification fan-out runs one query per member | perf | S | `modules/notifications/notify.py:184-189` |
 | Each open Codes stream polls the database every 0.5 s | perf | M | `modules/coding/stream.py:25` |
 | Python types are annotated (153 `type: ignore`) but never checked | dx | M–L | `pyproject.toml`, `.github/workflows/ci.yml` |
-| A tracked Redis dump (`dump.rdb`) at the repo root, not in `.gitignore` | hygiene | S | `dump.rdb` |
-| Two moderate `seroval` advisories through `@tanstack/react-router` | deps | S | `pnpm audit --prod` |
-| Issue lists are silently capped at 5,000 rows | bug | M | `apps/web/lib/issues.ts:54`, `modules/issues/router.py:346` |
 | ESLint runs without type information (no floating-promise rule) | dx | M | `eslint.config.mjs` |
-| A failed webhook follow-up re-applies the whole delivery | bug | S | `modules/connectors/router.py:178-187` |
 
 (Backend paths are under `apps/backend/src/dotrix_backend/`.)
 
@@ -103,8 +112,6 @@ Leads only: open the code before planning any of these.
 - A race in the issue dependency-cycle check (`modules/issues/service.py:1125-1159`).
 - The desktop app can hang on quit or leave the coding tool running (`apps/desktop/src/runner.ts:309-323`).
 - An approver sees a coding session's earlier turns while one turn waits (`modules/coding/service.py:791-843`) — may be intended.
-- Electron: `openExternal` with any scheme, no navigation guard, `worktree:open` on files (`apps/desktop/src/main.ts:39-42,73-76`).
-- Third-party GitHub Actions pinned by tag; `desktop.yml` grants `contents: write` to pull-request runs.
 - Raw provider error text in the admin console's failure report (`modules/admin/platform.py:280-299`).
 - Lease renew/release logic differs between chat runs, coding runs and local turns.
 - pytest runs serially in CI (about 9.5 minutes at the last observed run).
@@ -131,3 +138,4 @@ Leads only: open the code before planning any of these.
 ## Not audited
 
 Most of `Settings.tsx` and `Chat.tsx`; `agents/fx_pilot.py` and `specialist_sessions.py`; the Docker Cloud and OpenShell sandbox policies; `apps/site`; bundle size and runtime profiling. The test suites were not run during the audit.
+- Found while executing 031: the Files view of a pushed turn that changed a non-UTF-8 file is rebuilt from the lossy display diff and may not open (`modules/coding/files.py`, `_patch`). Display only.
