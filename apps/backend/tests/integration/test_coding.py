@@ -1176,13 +1176,18 @@ async def test_a_worker_that_lost_its_lease_is_fenced_off(db_client: AsyncClient
 
 
 async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidence(
-    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, origin, db_session
 ) -> None:
     ada, cat, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
     agent_script.say(tool_call("save_plan", title="Refunds", summary="Refund within a week.",
-                               acceptance_criteria=["refund() returns the amount"], tasks=[{"title": "Add refund()"}]),
+                               acceptance_criteria=["refund() returns the amount"], tasks=[{"title": "Add refund()"}], execution={
+                                   "repository": "kunemi/api", "base_sha": _git(origin, "rev-parse", "HEAD"),
+                                   "tasks": [{"key": "refund", "task_number": 1, "owned_paths": ["src/payments.py"],
+                                              "instructions": "Implement refunds", "checks": [{"command": "true", "expected": "passes"}],
+                                              "stop_conditions": ["API changed"]}],
+                               }),
                      "Saved the plan.")
     planned = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
                                     json={"message": "Plan refunds", "work_mode": "plan"})).json()
@@ -1226,6 +1231,13 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     turn = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", headers=ada.headers,
                                 json={"message": "Handle partial refunds"})
     assert turn.status_code == 201, turn.text
+    from dotrix_backend.modules.coding.models import CodingRun
+
+    follow_up = await db_session.get(CodingRun, uuid.UUID(turn.json()["id"]))
+    assert follow_up.plan_id == uuid.UUID(plan["id"])
+    assert "Refund within a week." in follow_up.brief
+    assert follow_up.execution_plan is None
+
     model = agent_script.say(tool_call("coding_evidence"), "Turn 2 waits for an approval.")
     await db_client.post(f"{base}/agent/runs", headers=ada.headers,
                          json={"message": "And now?", "work_mode": "review", "thread_id": thread})

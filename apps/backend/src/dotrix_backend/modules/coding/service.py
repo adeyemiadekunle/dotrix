@@ -350,6 +350,8 @@ class CodingService:
         run.origin_run_id = origin_run_id or turns[-1].origin_run_id
         if data.source_plan_id is None:
             await self._attach_plan(access, run, plan_id or turns[-1].plan_id)
+            if plan_id is None:
+                run.execution_plan = None  # Prior plans inform ordinary follow-ups without replaying their base.
         else:
             run.plan_id = None  # This turn builds the explicitly selected Codes plan.
         return await self._settle(access, run)
