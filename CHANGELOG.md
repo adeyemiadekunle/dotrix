@@ -35,6 +35,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - Dependency versions are now read correctly from requirements files with hashes (pip-compile), so known vulnerabilities in them are found; and a dependency file with an unexpected format is listed as unread and no longer breaks a project's dependencies view.
 - A brief loss of connection (waking a laptop, a server restart) no longer replaces the workspace with an error screen or sends you to sign in again.
 - Renaming, moving, starring, commenting on or deleting a task in the moment after you add it is no longer lost.
+- Asking Kai to start on the same task twice at the same moment (a double click, two tabs) now gives one coding turn, not two.
 - A follow-up you queued while an agent was answering now survives a worker restart and stops when you press Stop, like any other message.
 - A reply cut off by a worker restart and retried no longer repeats a change that had already gone through: the retried step asks for approval first, as a recovered run does.
 - A coding turn that was queued more than once (accepting its changes, a recovery retry) is no longer marked as needing recovery while it is still working.
