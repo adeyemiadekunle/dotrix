@@ -163,14 +163,22 @@ class RuntimeJournal:
             raise Unprocessable("Invalid runtime checkpoint size")
         async with self.sessions() as session:
             run, binding = await self._binding(session)
-            head, total, checkpoint = await self._state(session, binding)
+            head, _, checkpoint = await self._state(session, binding)
             if checkpoint and cursor <= checkpoint.through:
                 if (cursor == checkpoint.through and len(data) == checkpoint.byte_count
                         and hmac.compare_digest(_decrypt(self.secrets, checkpoint.encrypted, checkpoint.byte_count), data)):
                     self._lease(run)
                     return
                 raise JournalFenced("The runtime checkpoint has advanced")
-            if cursor > head or total + len(data) > MAX_JOURNAL_BYTES:
+            if cursor > head:
+                raise Unprocessable("Invalid runtime checkpoint cursor or size")
+            # What stays once this checkpoint replaces the records up to its cursor: the records after
+            # it, and the checkpoint itself. A journal near its limit is when a checkpoint is needed most.
+            kept = await session.scalar(select(func.coalesce(func.sum(AgentRuntimeJournal.byte_count), 0)).where(
+                AgentRuntimeJournal.workspace_id == self.workspace_id, AgentRuntimeJournal.binding_id == binding.id,
+                AgentRuntimeJournal.sequence > cursor,
+            ))
+            if kept + len(data) > MAX_JOURNAL_BYTES:
                 raise Unprocessable("Invalid runtime checkpoint cursor or size")
             encrypted = _encrypt(self.secrets, data)
             if checkpoint is None:

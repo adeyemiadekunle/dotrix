@@ -298,6 +298,22 @@ async def test_runtime_journal_size_limit_bounds_the_live_journal(journal_world,
         await journal.append(expected="9", idempotency_key="x2", data=b"12345")
 
 
+async def test_runtime_journal_checkpoint_fits_when_what_it_replaces_is_near_the_limit(journal_world, monkeypatch):
+    _, _, _, _, journal = journal_world
+    monkeypatch.setattr(runtime_journal, "MAX_JOURNAL_BYTES", 10)
+    one = await journal.append(expected=None, idempotency_key="a", data=b"1234")
+    two = await journal.append(expected=one, idempotency_key="b", data=b"5678")
+    # 8 bytes stored; a 4-byte checkpoint replacing both leaves 4, so it fits.
+    await journal.save_checkpoint(through=two, data=b"cpcp")
+    snapshot = await journal.load()
+    assert snapshot.checkpoint == (two, b"cpcp") and snapshot.records == ()
+    # One that would leave too much after the records it keeps is still refused.
+    three = await journal.append(expected=two, idempotency_key="c", data=b"123")
+    await journal.append(expected=three, idempotency_key="d", data=b"123")
+    with pytest.raises(Unprocessable):
+        await journal.save_checkpoint(through=three, data=b"12345678")
+
+
 async def test_runtime_journal_retry_of_a_pruned_append_is_fenced(journal_world):
     _, _, _, _, journal = journal_world
     await journal.append(expected=None, idempotency_key="one", data=b"a")
