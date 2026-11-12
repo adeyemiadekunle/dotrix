@@ -31,7 +31,7 @@ from dotrix_backend.modules.model_keys.service import run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
-from dotrix_backend.modules.projects.repository import visible_to
+from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
@@ -344,6 +344,8 @@ class CodingService:
     ) -> tuple[list[CodingRun], IssueRead, CodingRun | None, list[tuple[int, str]]]:
         """What a new turn in a session builds on: its turns, its issue, the branch and PR it carries
         on (None: a new one from the default branch), and what the earlier turns did."""
+        # Same lock as a first start, so the turns read next are current and the new turn's number is free.
+        await ProjectRepository(self.session).get(access.project.workspace_id, access.project.id, for_update=True)
         turns = await self._turns(access, session_id)
         if turns[0].requested_by_id != access.member.user_id:
             raise Forbidden("Only whoever started this session can continue it")
@@ -389,6 +391,9 @@ class CodingService:
             available = await self.availability(project, user_id)
             if not available.available or available.agent is None:
                 raise CodingUnavailable(available.reason or "Coding runs aren't available")
+        # One start at a time per project: the busy check below and the insert that follows it
+        # can't interleave with another request's.
+        await ProjectRepository(self.session).get(project.workspace_id, project.id, for_update=True)
         issue = await IssueService(self.session).get(project, key)
         if issue.type is IssueType.EPIC:
             raise Unprocessable("An epic is too big for one coding run: start one on each of its stories")
@@ -488,6 +493,7 @@ class CodingService:
             )
         if data.decision == "reject":
             run.status, run.finished_at, run.pending_patch = CodingRunStatus.REJECTED, now, None
+            run.pending_patch_bytes = None
             run.error = "Its changes were rejected" + (f": {data.reason}" if data.reason else "")
             self._audit(access.project, access, "coding.changes_rejected", run)
             await self.session.commit()
@@ -589,6 +595,7 @@ class CodingService:
         run.stop_requested = True  # a running one: the worker sees it within seconds and stops the agent
         if run.status is CodingRunStatus.CHANGES_READY:
             run.status, run.finished_at, run.pending_patch = CodingRunStatus.STOPPED, datetime.now(UTC), None
+            run.pending_patch_bytes = None
             run.error = "Stopped: its changes were discarded, never pushed"
         elif run.status is not CodingRunStatus.RUNNING:
             run.status, run.finished_at = CodingRunStatus.STOPPED, datetime.now(UTC)

@@ -284,6 +284,9 @@ class RunnerResult(BaseModel):
     lease_token: int
     outcome: Literal["changes", "no_changes", "failed", "stopped"]
     patch: str | None = Field(default=None, max_length=20_000_000, description="`git diff --cached --binary` against base_sha")
+    patch_b64: str | None = Field(
+        default=None, max_length=14_000_000,
+        description="The same patch, base64-encoded: exact for files that aren't UTF-8 text. Wins over `patch`")
     base_sha: str | None = Field(default=None, pattern=COMMIT_SHA)
     summary: str | None = Field(default=None, max_length=20_000)
     error: str | None = Field(default=None, max_length=2_000)

@@ -72,6 +72,8 @@ export function useTask(id: string | null | undefined): { task: Task | undefined
  * `state` is "loading" or "error" until a real workspace's issue has answered; `retry` asks again. */
 export function useTaskDetail(t: Task | undefined): {
   desc: string;
+  /** The description's original Markdown in a real workspace; undefined in the sample. */
+  md?: string;
   comments: Comment[];
   activity: Activity[];
   attachments: Attachment[];
@@ -93,6 +95,7 @@ export function useTaskDetail(t: Task | undefined): {
   const log = issue.data?.log ?? [];
   return {
     desc: mdToHtml(issue.data?.description ?? ""),
+    md: issue.data?.description ?? "",
     comments: log.filter((e) => e.kind === "commented" && e.body).map((e) => logComment(e, t.id)),
     activity: log
       .filter((e) => e.kind !== "commented")

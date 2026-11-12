@@ -6,6 +6,7 @@ is covered automatically. If a new route has a path parameter this file
 doesn't know, `test_every_scoped_route_is_covered` fails: add a value to `World.params`.
 """
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,14 +40,17 @@ class World:
 
 @pytest.fixture
 def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_script, db_session):
-    async def _build(email: str, name: str) -> World:
+    async def _build(email: str, name: str, project_key: str = "KUN") -> World:
         owner = await signup(email=email, name=name)
         h = owner.headers
         team = await create_team(h, name=f"{name}'s team")
         ws = f"/v1/workspaces/{team['id']}"
-        # Same project key and issue key in every world, so keys alone never identify one.
+        # Worlds may share a project key (the default) or differ; the mixed-ID test gives Ada
+        # her own, so her issue key does not exist in Mallory's project.
         project = (
-            await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "K"}, headers=h)
+            await db_client.post(
+                f"{ws}/projects", json={"key": project_key, "name": "K"}, headers=h
+            )
         ).json()
         base = f"{ws}/projects/{project['id']}"
         issue = await db_client.post(
@@ -229,6 +233,19 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
         "acknowledge_shared": True,
     },
     ("PATCH", "/v1/workspaces/{workspace_id}/members/{user_id}"): {"role": "admin"},
+    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/comments"): {
+        "body": "x"
+    },
+    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank"): {
+        "before": "KUN-1"
+    },
+    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/move"): {
+        "project_id": "01a0e000-0000-7000-8000-00000000dead"
+    },
+    (
+        "POST",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/recover",
+    ): {"action": "discard"},
     ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}/inputs"): {
         "client_id": "01a0e000-0000-7000-8000-000000000010", "kind": "queue", "message": "Compare alternatives afterward",
     },
@@ -277,6 +294,16 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
 }
 
 
+# Routes that need a query string or an uploaded file to get past validation.
+QUERIES: dict[tuple[str, str], dict[str, str]] = {
+    (
+        "GET",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs/{coding_run_id}/file",
+    ): {"path": "README.md"},
+}
+UPLOADS = {("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/attachments")}
+
+
 async def _call(
     client: AsyncClient,
     method: str,
@@ -285,8 +312,13 @@ async def _call(
     headers: dict[str, str],
     template: str = "",
 ) -> int:
-    json = BODIES.get((method, template), {}) if body else None
-    res = await client.request(method, url, json=json, headers=headers)
+    key = (method, template)
+    if key in UPLOADS:
+        files = {"file": ("a.txt", b"x", "text/plain")}
+        res = await client.request(method, url, files=files, headers=headers)
+        return res.status_code
+    json = BODIES.get(key, {}) if body else None
+    res = await client.request(method, url, json=json, params=QUERIES.get(key), headers=headers)
     return res.status_code
 
 
@@ -341,23 +373,40 @@ async def test_outsiders_get_404_from_every_route_with_real_ids(
     assert leaks == []
 
 
+# Routes that check a precondition of the whole project (here: coding is set up, which it is not
+# in tests) before they look the issue up, so the issue key is never reached.
+ANSWERED_BEFORE_THE_LOOKUP = {
+    ("POST", "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs", 409),
+}
+
+
 async def test_ids_from_another_workspace_dont_work_in_your_own(
     db_client: AsyncClient, build_world
 ) -> None:
     """Mallory owns her workspace, so she passes every permission check there; each of Ada's
     IDs, used under Mallory's workspace (and project), must still be not found."""
-    ada = await build_world("ada@example.com", "Ada")
+    ada = await build_world("ada@example.com", "Ada", "ADA")
     mallory = await build_world("mallory@example.com", "Mallory")
-    mixed_in = [
-        "project_id",
-        "document_id",
-        "run_id",
-        "thread_id",
-        "invite_id",
-        "user_id",
-        "attachment_id",
-        "comment_id",
-    ]
+    # Parameters whose value is not another tenant's resource.
+    NOT_AN_ID = {
+        "workspace_id",  # the caller's own workspace is the frame every route is tried in
+        "path",  # a file path inside the project's knowledge, not an identifier
+        "version",  # a version number
+        "handle",  # an agent's fixed built-in name
+        "index",  # a position in a list
+        "emoji",  # a reaction character
+        "name",  # a fixed skill/template name, the same everywhere
+        "provider",  # a model provider name
+    }
+    in_routes = {
+        name
+        for _, template, _ in _scoped_routes(db_client)
+        for name in re.findall(r"{(\w+)}", template)
+    }
+    unknown = in_routes - set(ada.params) - NOT_AN_ID
+    assert not unknown, f"routes take IDs the World doesn't build: {sorted(unknown)}"
+    mixed_in = sorted((in_routes & set(ada.params)) - NOT_AN_ID)
+    assert not mallory.params["key"].startswith("ADA")
     leaks = []
     for method, template, body in _scoped_routes(db_client):
         if "{workspace_id}" not in template:
@@ -369,6 +418,8 @@ async def test_ids_from_another_workspace_dont_work_in_your_own(
             status = await _call(
                 db_client, method, _fill(template, params), body, mallory.headers, template
             )
+            if (method, template, status) in ANSWERED_BEFORE_THE_LOOKUP:
+                continue
             if status != 404:
                 leaks.append(f"{method} {template} with Ada's {name} -> {status}")
     assert leaks == []

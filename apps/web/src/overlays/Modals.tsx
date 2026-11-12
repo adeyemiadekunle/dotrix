@@ -223,11 +223,14 @@ function TaskModal({ m }: { m: Modal }) {
     if (f.more) {
       Object.assign(f, { title: "", desc: "", subtasks: [], files: [] });
       render();
-      toast(`Created ${t!.key}`, { ms: 2000 });
+      toast(t!.key.startsWith("new-") ? `Created “${t!.title}”` : `Created ${t!.key}`, { ms: 2000 });
       return;
     }
     closeModal();
-    toast(`Created ${t!.key} in ${proj(t!.project)!.name}`, { action: "Open", onAction: () => openTask(t!.id) });
+    toast(`${t!.key.startsWith("new-") ? `Created “${t!.title}”` : `Created ${t!.key}`} in ${proj(t!.project)!.name}`, {
+      action: "Open",
+      onAction: () => openTask(t!.id),
+    });
   };
   const [sub, setSub] = useState("");
   return (

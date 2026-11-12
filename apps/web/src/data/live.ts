@@ -54,6 +54,11 @@ const KNOWLEDGE = ["knowledge", "graph", "search", "activity", "audit", "project
 const DOCUMENTS = ["documents", ...KNOWLEDGE];
 const AUTOMATIONS = ["automations", "audit"];
 const refresh = (kinds: readonly string[]) => void queryClient.invalidateQueries({ predicate: (q) => kinds.includes(q.queryKey[0] as string) });
+/** Writes in flight, by kind of query: a kind is refetched only when the last write touching it settles. */
+const inFlight = new Map<string, number>();
+/** Kinds a refused change left wrong on screen: refetched once no write to them is in flight. */
+const owed = new Set<string>();
+const flying = (kind: string) => inFlight.get(kind) ?? 0;
 
 type Req<T> = Promise<{ data?: T; error?: unknown; response: Response }>;
 interface Write<T> {
@@ -77,6 +82,9 @@ interface Write<T> {
  * puts the caches back as they were and says why. Resolves with the API's answer, or undefined if refused. */
 function write<T>(w: Write<T>): Promise<T | undefined> {
   let before: [QueryKey, unknown][] = [];
+  // Counted before anything async, so a write started later sees this one in flight.
+  const kinds = [...new Set([...w.refresh, ...w.touches.map((k) => String(k[0]))])];
+  for (const k of kinds) inFlight.set(k, flying(k) + 1);
   const m = new MutationObserver<T, unknown, void>(queryClient, {
     mutationKey: ["write", ...w.refresh.slice(0, 1)],
     onMutate: async () => {
@@ -88,14 +96,31 @@ function write<T>(w: Write<T>): Promise<T | undefined> {
     mutationFn: () => unwrap(w.request()),
     onSuccess: (r) => w.done?.(r),
     onError: (e) => {
-      for (const [k, d] of before) queryClient.setQueryData(k, d);
-      // A change the store made in place that never reached a cache goes too.
-      forgetSlots();
+      // Another change to the same caches is in flight: restoring the snapshot would wipe it too, so the
+      // refetch once they have all settled corrects this one instead.
+      const overlapped = w.touches.some((k) => flying(String(k[0])) > 1);
+      if (overlapped) for (const k of w.refresh) owed.add(k);
+      else {
+        for (const [k, d] of before) queryClient.setQueryData(k, d);
+        // A change the store made in place that never reached a cache goes too.
+        forgetSlots();
+      }
       if (w.what) failed(w.what, e);
       w.undone?.();
       render();
     },
-    onSettled: () => refresh(w.refresh),
+    onSettled: () => {
+      const due: string[] = [];
+      for (const k of kinds) {
+        const n = flying(k) - 1;
+        if (n > 0) inFlight.set(k, n);
+        else inFlight.delete(k);
+      }
+      for (const k of w.refresh) if (!flying(k)) due.push(k);
+      for (const k of owed) if (!flying(k)) due.push(k);
+      for (const k of due) owed.delete(k);
+      if (due.length) refresh(due);
+    },
   });
   return m.mutate().catch(() => undefined);
 }
@@ -319,7 +344,7 @@ function issueFields(t: Task, keys: (keyof Task)[]): Schemas["IssueUpdate"] {
 
 /** An issue changed in the store (applyPatch): show it in the issue's rows and detail, then send it. */
 export function taskPatched(t: Task, keys: (keyof Task)[]) {
-  if (!isLive() || t.key.startsWith("new-")) return;
+  if (!isLive()) return;
   const body = issueFields(t, keys);
   if (!Object.keys(body).length) return;
   const { archived, parent, ...rest } = body;
@@ -328,26 +353,34 @@ export function taskPatched(t: Task, keys: (keyof Task)[]) {
     ...(archived === undefined ? {} : { archived_at: archived ? new Date().toISOString() : null }),
     ...(parent === undefined ? {} : { parent_key: parent }),
   };
-  const at = { key: t.key, project: t.project };
-  void write({
-    what: `“${t.title}”`,
-    touches: [["issues"]],
-    show: () => {
-      patchIssueRows(t, () => fields);
-      queryClient.setQueryData<Issue>(detailKey(at), (i) => i && ({ ...i, ...fields } as Issue));
-    },
-    request: () =>
-      api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(at.project), key: at.key } }, body }),
-    refresh: ISSUES,
-    done: async (i) => {
-      // A repeating issue just finished: the API made the next one (the refetch lists it).
-      if (!i.repeated_as || D().tasks.some((x) => x.key === i.repeated_as)) return;
-      const next = await unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(at.project), key: i.repeated_as } } }),
-      ).catch(() => undefined);
-      if (next) toast(`Next “${next.title}” scheduled for ${next.due ? fmtDate(next.due) : "later"}`, { kind: "info" });
-    },
-  });
+  const send = (at: Pick<Task, "key" | "project">) => {
+    const rows = { ...at, title: t.title } as Task;
+    return write({
+      what: `“${t.title}”`,
+      touches: [["issues"]],
+      show: () => {
+        patchIssueRows(rows, () => fields);
+        queryClient.setQueryData<Issue>(detailKey(at), (i) => i && ({ ...i, ...fields } as Issue));
+      },
+      request: () =>
+        api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(at.project), key: at.key } }, body }),
+      refresh: ISSUES,
+      done: async (i) => {
+        // A repeating issue just finished: the API made the next one (the refetch lists it).
+        if (!i.repeated_as || D().tasks.some((x) => x.key === i.repeated_as)) return;
+        const next = await unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(at.project), key: i.repeated_as } } }),
+        ).catch(() => undefined);
+        if (next) toast(`Next “${next.title}” scheduled for ${next.due ? fmtDate(next.due) : "later"}`, { kind: "info" });
+      },
+    });
+  };
+  if (isProvisional(t)) {
+    // Shown on the provisional row now; sent under the real key once the issue exists.
+    patchIssueRows(t, () => fields);
+    render();
+  }
+  onceCreated(t, send);
 }
 
 /** A new issue in the store (createTask): shown in the lists under a provisional key, created, then given the API's key. */
@@ -407,14 +440,12 @@ export function taskCreated(t: Task): Promise<void> {
       const { description: _d, ...answer } = i;
       const it = isRow({ key: was, project: t.project });
       queryClient.setQueriesData<WIssue[]>(issuesCaches, (rows) => rows?.map((r) => (it(r) ? ({ ...r, ...answer } as WIssue) : r)));
-      const all = [...copies()];
-      const starred = all.some((x) => x.fav);
-      for (const x of all) x.id = x.key = i.key;
+      realKeys.set(was, i.key);
+      setTimeout(() => realKeys.delete(was), 60_000);
+      for (const x of copies()) x.id = x.key = i.key;
       if (S.ui.drawer === was) S.ui.drawer = i.key;
       D().activity.forEach((a) => a.task === was && (a.task = i.key));
       render();
-      // Starred while it was being created.
-      if (starred) taskStarred({ ...t, key: i.key, id: i.key, fav: true });
     },
     undone: () => {
       const gone = copies();
@@ -431,6 +462,36 @@ export function taskCreated(t: Task): Promise<void> {
 const creating = new Map<string, Promise<void>>();
 /** Settles once a new issue is on the API (or failed to be), e.g. before adding files to it. */
 const whenCreated = (t: Task) => creating.get(t.key) ?? Promise.resolve();
+/** The API's key for each issue made here, by its provisional key (dropped a minute after the create). */
+const realKeys = new Map<string, string>();
+/** The last change queued for each issue still being created, so changes to it are sent in the order they were made. */
+const chains = new Map<string, Promise<void>>();
+const isProvisional = (t: Pick<Task, "key">) => t.key.startsWith("new-");
+/** The API's key for a key that may be provisional (undefined if the create failed). */
+const realKey = (k: string) => (k.startsWith("new-") ? realKeys.get(k) : k);
+
+/** Run `send` once the task exists on the API, with the task as it is then (looked up again by its real key).
+ *  Changes to the same task are sent one after the other, in order. A failed create drops them. */
+function onceCreated(t: Task, send: (real: Task) => Promise<unknown> | void): void {
+  if (!isProvisional(t)) {
+    void send(t);
+    return;
+  }
+  const provisional = t.key;
+  const gate = chains.get(provisional) ?? whenCreated(t);
+  const next = gate.then(async () => {
+    const key = realKeys.get(provisional);
+    if (!key) return;
+    const real = D().tasks.find((x) => x.key === key && x.project === t.project) ?? { ...t, key, id: key };
+    try {
+      await send(real);
+    } catch {
+      /* write reports its own refusals */
+    }
+  });
+  chains.set(provisional, next);
+  void next.then(() => chains.get(provisional) === next && chains.delete(provisional));
+}
 
 const issueScope = (pid: string): Scope => ({ workspaceId: wsId(), projectId: pid });
 const detailKey = (t: Pick<Task, "key" | "project">) => issueKeys.issue(issueScope(t.project), t.key);
@@ -469,9 +530,16 @@ const patchLog = (t: Pick<Task, "key" | "project">, fn: (log: Event[]) => Event[
   queryClient.setQueryData<Issue>(detailKey(t), (i) => i && { ...i, log: fn(i.log ?? []) });
 
 export function commentPosted(t: Task, text: string, mentions: string[] = []) {
-  if (!isLive() || t.key.startsWith("new-")) return;
+  if (!isLive()) return;
+  if (isProvisional(t)) {
+    patchIssueRows(t, (r) => ({ comment_count: r.comment_count + 1 }));
+    render();
+  }
+  onceCreated(t, (real) => sendComment(real, text, mentions));
+}
+function sendComment(t: Task, text: string, mentions: string[]) {
   const at = { key: t.key, project: t.project };
-  void write({
+  return write({
     what: "Your comment",
     touches: [["issues"]],
     show: () => {
@@ -499,19 +567,30 @@ export function commentPosted(t: Task, text: string, mentions: string[] = []) {
 /** A rank change in a list or on the board: place it before the issue that now follows it. */
 export function taskRanked(t: Task, before: Task | undefined, after: Task | undefined, rank = t.order) {
   if (!isLive() || (!before && !after)) return;
-  const body = before ? { before: before.key } : { after: after!.key };
-  const at = { key: t.key, project: t.project };
-  void write({
-    what: "The new order",
-    touches: [["issues", "workspace"]],
-    // A project's lists sort by rank: show the new place now; the refetch brings the API's own number.
-    show: () => patchIssueRows(t, () => ({ rank })),
-    request: () =>
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank", {
-        params: { path: { ...projectPath(at.project), key: at.key } },
-        body: body as Schemas["RankRequest"],
-      }),
-    refresh: ISSUES,
+  // Neighbours may still be being created too: remember their keys now, and wait for them.
+  const near = before ? { side: "before" as const, task: before, key: before.key } : { side: "after" as const, task: after!, key: after!.key };
+  if (isProvisional(t)) {
+    patchIssueRows(t, () => ({ rank }));
+    render();
+  }
+  onceCreated(t, async (real) => {
+    await whenCreated(near.task);
+    const neighbour = realKey(near.key);
+    if (!neighbour) return;
+    const body = near.side === "before" ? { before: neighbour } : { after: neighbour };
+    const at = { key: real.key, project: real.project };
+    await write({
+      what: "The new order",
+      touches: [["issues", "workspace"]],
+      // A project's lists sort by rank: show the new place now; the refetch brings the API's own number.
+      show: () => patchIssueRows(real, () => ({ rank })),
+      request: () =>
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/rank", {
+          params: { path: { ...projectPath(at.project), key: at.key } },
+          body: body as Schemas["RankRequest"],
+        }),
+      refresh: ISSUES,
+    });
   });
 }
 
@@ -889,29 +968,37 @@ async function upload<T>(url: string, file: File, onProgress: (pct: number) => v
 
 /** An issue's star toggled in the store: shown in the starred set every screen's star reads, then sent. */
 export function taskStarred(t: Task) {
-  if (!isLive() || t.key.startsWith("new-")) return;
-  const path = { params: { path: { ...projectPath(t.project), key: t.key } } };
+  if (!isLive()) return;
   const on = t.fav;
-  const it = isRow(t);
   const key = ["issues", "workspace", wsId(), "starred-keys"];
-  void write({
-    what: "The star",
-    touches: [key],
-    show: () =>
-      queryClient.setQueryData<WIssue[]>(key, (rows) => {
-        if (!on) return rows?.filter((r) => !it(r));
-        if (!rows || rows.some(it)) return rows;
-        const row = queryClient
-          .getQueriesData<WIssue[]>({ queryKey: ["issues", "workspace", wsId()] })
-          .flatMap(([, rs]) => (Array.isArray(rs) ? rs : []))
-          .find(it);
-        return row ? [...rows, row] : rows;
-      }),
-    request: () =>
-      on
-        ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path)
-        : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path),
-    refresh: ISSUES,
+  const shown = (at: Pick<Task, "key" | "project">) => {
+    const it = isRow(at);
+    queryClient.setQueryData<WIssue[]>(key, (rows) => {
+      if (!on) return rows?.filter((r) => !it(r));
+      if (!rows || rows.some(it)) return rows;
+      const row = queryClient
+        .getQueriesData<WIssue[]>({ queryKey: ["issues", "workspace", wsId()] })
+        .flatMap(([, rs]) => (Array.isArray(rs) ? rs : []))
+        .find(it);
+      return row ? [...rows, row] : rows;
+    });
+  };
+  if (isProvisional(t)) {
+    shown(t);
+    render();
+  }
+  onceCreated(t, (real) => {
+    const path = { params: { path: { ...projectPath(real.project), key: real.key } } };
+    return write({
+      what: "The star",
+      touches: [key],
+      show: () => shown(real),
+      request: () =>
+        on
+          ? api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path)
+          : api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}/star", path),
+      refresh: ISSUES,
+    });
   });
 }
 
@@ -940,16 +1027,21 @@ export function attachmentRemoved(t: Task, attachmentId: string) {
 export function tasksDeleted(ts: Task[]) {
   if (!isLive()) return;
   for (const t of ts) {
-    if (t.key.startsWith("new-")) continue;
-    const at = { key: t.key, project: t.project };
-    void write({
-      what: `Deleting “${t.title}”`,
-      touches: [["issues", "workspace"]],
-      show: () => dropIssueRows(at),
-      request: () =>
-        api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(at.project), key: at.key } } }),
-      refresh: ISSUES,
-      done: () => queryClient.removeQueries({ queryKey: detailKey(at) }),
+    if (isProvisional(t)) {
+      dropIssueRows(t);
+      render();
+    }
+    onceCreated(t, (real) => {
+      const at = { key: real.key, project: real.project };
+      return write({
+        what: `Deleting “${t.title}”`,
+        touches: [["issues", "workspace"]],
+        show: () => dropIssueRows(at),
+        request: () =>
+          api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/issues/{key}", { params: { path: { ...projectPath(at.project), key: at.key } } }),
+        refresh: ISSUES,
+        done: () => queryClient.removeQueries({ queryKey: detailKey(at) }),
+      });
     });
   }
 }

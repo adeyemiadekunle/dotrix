@@ -27,6 +27,18 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Kai's changes to files that aren't UTF-8 text (older encodings such as Latin-1) are now pushed exactly as written, from cloud and local turns; before, cloud turns replaced those characters and local turns refused them.
+- A turn coded on your computer now delivers every step to the session, including the last ones, and a turn that changed a file that isn't UTF-8 text now fails with a clear reason instead of sending damaged changes.
+- A new reply in Chat no longer opens showing the previous reply's text, and a reply in a conversation across projects keeps streaming after a dropped connection.
+- A task list grouped by assignee now shows tasks assigned to an agent (such as one Kai is coding) and to people who have left; grouped by due date it keeps finished tasks whose date has passed; estimates sort as numbers; and lists show comment counts in every workspace.
+- Clicking into a task's description and out again no longer saves it when nothing changed, and the description editor keeps links, headings, italics and nested lists.
+- Clicking into a task's description and out again no longer saves it when nothing changed, and the description editor keeps links, headings, italics and nested lists. A description with a table or code block opens read-only instead of being flattened.
+- Making several changes in quick succession (dragging cards, ticking subtasks) no longer makes one of them jump back for a moment, and a change that can't be saved no longer undoes the others on screen.
+- After you approve an agent's change in Chat or a coding turn in Codes, the board, the lists and the open task show the new status and assignee at once.
+- Dependency versions are now read correctly from requirements files with hashes (pip-compile), so known vulnerabilities in them are found; and a dependency file with an unexpected format is listed as unread and no longer breaks a project's dependencies view.
+- A brief loss of connection (waking a laptop, a server restart) no longer replaces the workspace with an error screen or sends you to sign in again.
+- Renaming, moving, starring, commenting on or deleting a task in the moment after you add it is no longer lost.
+- Asking Kai to start on the same task twice at the same moment (a double click, two tabs) now gives one coding turn, not two.
 - A follow-up you queued while an agent was answering now survives a worker restart and stops when you press Stop, like any other message.
 - A reply cut off by a worker restart and retried no longer repeats a change that had already gone through: the retried step asks for approval first, as a recovered run does.
 - A coding turn that was queued more than once (accepting its changes, a recovery retry) is no longer marked as needing recovery while it is still working.

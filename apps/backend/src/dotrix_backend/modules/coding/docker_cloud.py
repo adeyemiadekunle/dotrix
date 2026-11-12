@@ -310,13 +310,13 @@ class DockerCloudSession:
                 return ExecResult(
                     code=None if timed_out else (int(code) if code is not None else None),
                     stdout=kept.decode(errors="replace"), stderr=err.decode(errors="replace"),
-                    timed_out=timed_out, cancelled=cancelled, truncated=truncated,
+                    timed_out=timed_out, cancelled=cancelled, truncated=truncated, raw=bytes(kept),
                 )
             now = time.monotonic()
             if killed_at is not None and now >= killed_at + KILL_WAIT:
                 logger.warning("docker cloud sandbox %s: process %s didn't report its exit", self.sandbox_id, pid)
                 return ExecResult(code=None, stdout=kept.decode(errors="replace"), stderr=err.decode(errors="replace"),
-                                  timed_out=timed_out, cancelled=cancelled, truncated=truncated)
+                                  timed_out=timed_out, cancelled=cancelled, truncated=truncated, raw=bytes(kept))
             if killed_at is None and not timed_out and now >= deadline:
                 timed_out, killed_at = True, now
                 await self._signal(pid, "kill")
