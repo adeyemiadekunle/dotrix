@@ -76,6 +76,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["jobs"] = JobContext(
         sessionmaker, settings, build_email_sender(settings), storage, embedder, checkouts,
         runner=dispatcher, coding=build_coding_worker(settings, sessionmaker, dispatcher, storage),
+        jobs=QueuedJobs(redis, session_factory=sessionmaker),
     )
     runs = RunQueue(redis)
     ctx["runner"] = AgentRunner(

@@ -280,3 +280,32 @@ async def test_the_api_never_returns_a_claim_as_a_link(
     _, _, row = await _post_again(db_client, github, db_session, run["id"], field, f"posting:{int(time.time())}")
     read = (await db_client.get(f"{ws}/projects/{kun['id']}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert read[field] is None and "posting" not in str(read)
+
+
+async def test_a_failed_ci_is_still_looked_at_when_the_queue_was_down_for_the_first_delivery(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script,  # noqa: F811
+) -> None:
+    from dotrix_backend.core.jobs import get_jobs
+
+    class Down:
+        async def enqueue(self, name: str, **kwargs: object) -> None:
+            raise ConnectionError("redis is down")
+
+    class Recording:
+        queued: list[str] = []
+
+        async def enqueue(self, name: str, **kwargs: object) -> None:
+            self.queued.append(name)
+
+    run = await _turn(db_client, coding, claude, agent_script, "Looks right.")
+    body = _suite(run["commit_sha"], "failure")
+    overrides = db_client._transport.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_jobs] = Down
+    try:
+        assert (await _deliver(db_client, "check_suite", body, delivery="ci-1")).status_code == 503
+        recording = Recording()
+        overrides[get_jobs] = lambda: recording
+        assert (await _deliver(db_client, "check_suite", body, delivery="ci-1")).status_code == 202
+        assert recording.queued == ["triage_ci"]
+    finally:
+        overrides.pop(get_jobs, None)

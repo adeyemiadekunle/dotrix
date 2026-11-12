@@ -122,15 +122,30 @@ async def test_a_delivery_is_applied_once(db_client: AsyncClient, github_world, 
     assert repo["last_push_sha"] == "b" * 40
 
 
-async def test_a_delivery_whose_syncs_fail_to_queue_can_be_retried(
-    db_client: AsyncClient, github_world, deliver, github
-) -> None:
+class Down:
+    async def enqueue(self, name: str, **kwargs: object) -> None:
+        raise ConnectionError("redis is down")
+
+
+class Recording:
+    def __init__(self) -> None:
+        self.queued: list[tuple[str, dict]] = []
+
+    async def enqueue(self, name: str, **kwargs: object) -> None:
+        self.queued.append((name, dict(kwargs)))
+
+
+def _jobs(db_client: AsyncClient, jobs: object | None):
     from dotrix_backend.core.jobs import get_jobs
 
-    class Down:
-        async def enqueue(self, name: str, **kwargs: object) -> None:
-            raise ConnectionError("redis is down")
+    overrides = db_client._transport.app.dependency_overrides  # type: ignore[attr-defined]
+    if jobs is None:
+        overrides.pop(get_jobs, None)
+    else:
+        overrides[get_jobs] = lambda: jobs
 
+
+async def _connected_push(db_client: AsyncClient, github_world) -> tuple[dict, str]:
     ada, _, ws, kun, _ = await github_world()
     installation = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},
                                           headers=ada.headers)).json()
@@ -138,13 +153,59 @@ async def test_a_delivery_whose_syncs_fail_to_queue_can_be_retried(
                         json={"installation_ref": installation["id"], "github_repo_id": 9001}, headers=ada.headers)
     push = {"ref": "refs/heads/main", "after": "a" * 40,
             "repository": {"id": 9001, "full_name": "kunemi/api", "default_branch": "main"}}
-    app = db_client._transport.app  # type: ignore[attr-defined]
-    app.dependency_overrides[get_jobs] = Down
+    return push, kun["id"]
+
+
+async def test_a_delivery_whose_syncs_fail_to_queue_is_still_followed_up_on_redelivery(
+    db_client: AsyncClient, github_world, deliver, github
+) -> None:
+    push, project_id = await _connected_push(db_client, github_world)
+    _jobs(db_client, Down())
     try:
-        assert (await deliver("push", push, delivery="d-1")).status_code == 500
+        assert (await deliver("push", push, delivery="d-1")).status_code == 503
     finally:
-        app.dependency_overrides.pop(get_jobs)
-    assert (await deliver("push", push, delivery="d-1")).json()["result"] != "duplicate"
+        _jobs(db_client, None)
+    recording = Recording()
+    _jobs(db_client, recording)
+    try:
+        resumed = await deliver("push", push, delivery="d-1")
+        assert resumed.status_code == 202 and resumed.json()["result"] == "resumed"
+        assert recording.queued == [("sync_repository", {"project_id": project_id})]
+        # Queued now, so a third delivery is a plain duplicate and queues nothing more.
+        assert (await deliver("push", push, delivery="d-1")).json()["result"] == "duplicate"
+        assert len(recording.queued) == 1
+    finally:
+        _jobs(db_client, None)
+
+
+async def test_the_sweep_queues_follow_ups_github_never_redelivers(
+    db_client: AsyncClient, github_world, deliver, github, db_session, outbox
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from dotrix_backend.jobs import JobContext, cleanup_expired
+    from dotrix_backend.modules.connectors.models import GitHubDelivery
+
+    push, project_id = await _connected_push(db_client, github_world)
+    _jobs(db_client, Down())
+    try:
+        assert (await deliver("push", push, delivery="d-1")).status_code == 503
+    finally:
+        _jobs(db_client, None)
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    recording = Recording()
+    ctx = JobContext(app.state.runner.session_factory, app.state.settings, outbox, jobs=recording)
+    await cleanup_expired(ctx)  # too soon: the delivery may still be retried by GitHub
+    assert recording.queued == []
+    later = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
+    await cleanup_expired(ctx, now=later)
+    await cleanup_expired(ctx, now=later)
+    assert recording.queued == [("sync_repository", {"project_id": project_id})]
+    row = await db_session.scalar(select(GitHubDelivery).where(GitHubDelivery.delivery_id == "d-1"))
+    await db_session.refresh(row)
+    assert row.pending is None
 
 
 async def test_a_malformed_delivery_id_is_refused(db_client: AsyncClient, github_world, deliver, github) -> None:
