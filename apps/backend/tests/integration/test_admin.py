@@ -329,3 +329,23 @@ async def test_models_and_chat_cost_by_model_never_guess_and_never_show_text(
     assert today["unpriced_chat_runs"] == 1
     assert today["chat_cost_usd"] == pytest.approx(expected, abs=1e-4)
     assert "SECRET" not in (await db_client.get("/v1/admin/observe/trends?days=1")).text
+
+
+async def test_a_specialists_tokens_count_under_the_model_it_ran_on(
+    db_client: AsyncClient, db_session: AsyncSession, signup
+) -> None:
+    owner = await signup()
+    await _admin(db_client)
+    ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
+    base = f"/v1/workspaces/{ws['id']}"
+    project = (await db_client.post(f"{base}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=owner.headers)).json()
+    nova, specialist = "anthropic:claude-opus-5-5", "anthropic:claude-haiku-5-5"
+    # Nova delegated: the child keeps the conversation's model but worked on the specialist's.
+    db_session.add(_chat_run(ws["id"], project["id"], owner, conversation_model=nova, model=specialist,
+                             input_tokens=2000, output_tokens=400))
+    await db_session.commit()
+    by = {m["model"]: m for m in (await db_client.get("/v1/admin/observe/models")).json()}
+    assert by[specialist]["chat_runs"] == 1 and nova not in by
+    expected = cost_of(specialist, input_tokens=2000, output_tokens=400, cached_input_tokens=0)
+    assert expected is not None
+    assert by[specialist]["cost_usd"] == pytest.approx(expected, abs=1e-4)

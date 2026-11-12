@@ -203,6 +203,52 @@ async def test_an_email_outage_keeps_the_alert_unnotified_and_the_job_alive(
     assert run.id
 
 
+async def test_an_alert_is_sent_again_until_every_recipient_has_it(
+    ctx_for, sent, db_client, db_session: AsyncSession, signup, outbox
+) -> None:
+    class OneDown:
+        def __init__(self) -> None:
+            self.down = True
+
+        async def send(self, message: EmailMessage) -> None:
+            if self.down and message.to == "b@example.com":
+                raise EmailSendError(503, "provider busy", retryable=True)
+            await outbox.send(message)
+
+    mail = OneDown()
+    await _stuck_run(db_client, db_session, signup)
+    ctx = ctx_for(["a@example.com", "b@example.com"], email=mail)
+    await evaluate(ctx)
+    await evaluate(ctx)  # a@ got it, b@ didn't
+    assert [m.to for m in sent()] == ["a@example.com"]
+    row = (await db_session.scalars(select(AdminAlert))).one()
+    await db_session.refresh(row)
+    assert row.notified_at is None
+    mail.down = False
+    await evaluate(ctx)  # the same message to both: the provider drops a@'s copy by its content
+    assert [m.to for m in sent()] == ["a@example.com", "a@example.com", "b@example.com"]
+    assert sent()[0].body == sent()[1].body
+    await db_session.refresh(row)
+    assert row.notified_at is not None
+
+
+async def test_the_same_outage_again_is_a_new_email(ctx_for, sent, db_client, db_session: AsyncSession, signup) -> None:
+    ctx = ctx_for()
+    run = await _stuck_run(db_client, db_session, signup)
+    await evaluate(ctx)
+    await evaluate(ctx)
+    run.lease_expires_at = datetime.now(UTC)
+    await db_session.commit()
+    await evaluate(ctx)  # cleared
+    run.lease_expires_at = datetime.now(UTC) - timedelta(minutes=30)
+    await db_session.commit()
+    await evaluate(ctx, now=datetime.now(UTC) + timedelta(minutes=1))
+    await evaluate(ctx, now=datetime.now(UTC) + timedelta(minutes=2))
+    opened = [m for m in sent() if "Needs attention" in m.body]
+    assert len(opened) == 2 and opened[0].subject == opened[1].subject
+    assert opened[0].body != opened[1].body  # each says when it started, so the provider sends both
+
+
 async def test_the_registered_job_runs_and_the_console_lists_alerts(
     ctx_for, sent, db_client: AsyncClient, db_session: AsyncSession, signup
 ) -> None:
@@ -224,6 +270,8 @@ async def test_the_registered_job_runs_and_the_console_lists_alerts(
 def test_alert_emails_accept_a_comma_list_or_json(monkeypatch: pytest.MonkeyPatch) -> None:
     from dotrix_backend.core.settings import Settings
 
+    # Settings read the whole environment: give it the one required value CI doesn't set.
+    monkeypatch.setenv("DOTRIX_JWT_SECRET", "test-secret-for-settings-parsing-only-0123456789")
     monkeypatch.setenv("DOTRIX_ALERT_EMAILS", "a@x.com, b@x.com")
     assert Settings().alert_emails == ["a@x.com", "b@x.com"]
     monkeypatch.setenv("DOTRIX_ALERT_EMAILS", '["c@x.com"]')

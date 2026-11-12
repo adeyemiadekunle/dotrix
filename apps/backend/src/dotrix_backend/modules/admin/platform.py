@@ -353,7 +353,8 @@ class PlatformObserve:
         }
 
         chat_day = cast(func.timezone(UTC_NAME, AgentRun.created_at), Date)
-        chat_model = func.coalesce(AgentRun.conversation_model, AgentRun.model)
+        # The model a run worked on (a specialist's own, when Nova delegated), else its conversation's.
+        chat_model = func.coalesce(AgentRun.model, AgentRun.conversation_model)
         for day, model, started, failed, tin, tout, cached in await self.session.execute(
             select(
                 chat_day,
@@ -418,7 +419,7 @@ class PlatformObserve:
         """Each model's use in the window, chat and coding together: runs, failures, limit stops, tokens
         and an estimated cost (chat from list prices, coding as recorded)."""
         since = datetime.now(UTC) - timedelta(days=days)
-        chat_model = func.coalesce(AgentRun.conversation_model, AgentRun.model)
+        chat_model = func.coalesce(AgentRun.model, AgentRun.conversation_model)
         rows: dict[str, dict[str, Any]] = {}
 
         def row(model: str | None) -> dict[str, Any]:
@@ -515,12 +516,12 @@ class PlatformObserve:
             FailureGroup(key=model or "(default)", count=int(count), last_at=last)
             for model, count, last in await self.session.execute(
                 select(
-                    func.coalesce(AgentRun.conversation_model, AgentRun.model),
+                    func.coalesce(AgentRun.model, AgentRun.conversation_model),
                     func.count(AgentRun.id),
                     func.max(AgentRun.finished_at),
                 )
                 .where(AgentRun.status == RunStatus.FAILED, AgentRun.finished_at >= since)
-                .group_by(func.coalesce(AgentRun.conversation_model, AgentRun.model))
+                .group_by(func.coalesce(AgentRun.model, AgentRun.conversation_model))
                 .order_by(func.count(AgentRun.id).desc())
                 .limit(10)
             )

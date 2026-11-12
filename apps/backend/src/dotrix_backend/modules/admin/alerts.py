@@ -72,6 +72,12 @@ async def recipients(session: AsyncSession, settings: Settings) -> list[str]:
     return list(rows)
 
 
+def _at(when: datetime | None) -> str:
+    # Each occurrence's own times: the provider dedupes a message by its content, so a retry of this
+    # email stays identical while the same outage happening again reads (and is sent) as new.
+    return when.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC") if when else "now"
+
+
 def _message(to: str, opened: list[AdminAlert], cleared: list[AdminAlert], admin_url: str | None) -> EmailMessage:
     parts = []
     if opened:
@@ -80,9 +86,9 @@ def _message(to: str, opened: list[AdminAlert], cleared: list[AdminAlert], admin
         parts.append(f"{len(cleared)} cleared")
     lines = []
     if opened:
-        lines += ["Needs attention:", *(f"- {a.summary}" for a in opened), ""]
+        lines += ["Needs attention:", *(f"- {a.summary} (since {_at(a.opened_at)})" for a in opened), ""]
     if cleared:
-        lines += ["Cleared:", *(f"- {a.summary}" for a in cleared), ""]
+        lines += ["Cleared:", *(f"- {a.summary} (from {_at(a.opened_at)} to {_at(a.resolved_at)})" for a in cleared), ""]
     if admin_url:
         lines.append(f"Admin console: {admin_url.rstrip('/')}")
     return EmailMessage(to=to, subject=f"dotrix: {', '.join(parts)}", body="\n".join(lines).strip() + "\n")
@@ -122,15 +128,18 @@ async def evaluate(ctx: JobContext, redis: Any = None, now: datetime | None = No
                 .order_by(AdminAlert.opened_at)
             )
         )
-        sent = 0
+        sent = failed = 0
         if opened or cleared:
             for to in await recipients(session, ctx.settings):
                 try:
                     await ctx.email.send(_message(to, opened, cleared, ctx.settings.admin_url))
                     sent += 1
                 except Exception as exc:  # a provider outage must not fail the job in a loop
+                    failed += 1
                     logger.error("operator alert email not sent: %s", type(exc).__name__)
-            if sent or not await recipients(session, ctx.settings):
+            # Done only when everyone got it: otherwise the next check sends the same messages again
+            # (identical, so the provider drops the copies for those who already have it).
+            if not failed:
                 for alert in opened:
                     alert.notified_at = now
                 for alert in cleared:
