@@ -16,6 +16,7 @@ from sqlalchemy import Date, case, cast, func, literal_column, select, text, tru
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.jobs import QUEUE_NAME
+from dotrix_backend.core.model_prices import cost_of
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.admin.schemas import (
     AuditPage,
@@ -24,6 +25,7 @@ from dotrix_backend.modules.admin.schemas import (
     DependencyCheck,
     FailureGroup,
     FailureReport,
+    ModelUsage,
     PlatformAuditEvent,
     PlatformCounts,
     PlatformHealth,
@@ -296,22 +298,31 @@ class PlatformObserve:
         }
 
         chat_day = cast(func.timezone(UTC_NAME, AgentRun.created_at), Date)
-        for day, started, failed, tin, tout in await self.session.execute(
+        chat_model = func.coalesce(AgentRun.conversation_model, AgentRun.model)
+        for day, model, started, failed, tin, tout, cached in await self.session.execute(
             select(
                 chat_day,
+                chat_model,
                 func.count(AgentRun.id),
                 func.count(case((AgentRun.status == RunStatus.FAILED, 1))),
                 func.coalesce(func.sum(AgentRun.input_tokens), 0),
                 func.coalesce(func.sum(AgentRun.output_tokens), 0),
+                func.coalesce(func.sum(AgentRun.cached_input_tokens), 0),
             )
             .where(AgentRun.created_at >= since)
-            .group_by(chat_day)
+            .group_by(chat_day, chat_model)
         ):
             if day in out:
                 d = out[day]
-                d.chat_runs, d.chat_failed = int(started), int(failed)
+                d.chat_runs += int(started)
+                d.chat_failed += int(failed)
                 d.input_tokens += int(tin)
                 d.output_tokens += int(tout)
+                cost = self._chat_cost(model, int(tin), int(tout), int(cached))
+                if cost is None:
+                    d.unpriced_chat_runs += int(started)
+                else:
+                    d.chat_cost_usd = round(d.chat_cost_usd + cost, 4)
 
         coding_day = cast(func.timezone(UTC_NAME, CodingRun.created_at), Date)
         for day, started, failed, tin, tout, cost in await self.session.execute(
@@ -341,6 +352,94 @@ class PlatformObserve:
             if day in out:
                 out[day].signups = int(count)
         return list(out.values())
+
+    def _chat_cost(self, model: str | None, tin: int, tout: int, cached: int) -> float | None:
+        """A chat run group's cost from list prices; None when the model has no price (never a guess)."""
+        return cost_of(
+            model, input_tokens=tin, output_tokens=tout, cached_input_tokens=cached, overrides=self.settings.model_prices
+        )
+
+    async def models(self, days: int = 7) -> list[ModelUsage]:
+        """Each model's use in the window, chat and coding together: runs, failures, limit stops, tokens
+        and an estimated cost (chat from list prices, coding as recorded)."""
+        since = datetime.now(UTC) - timedelta(days=days)
+        chat_model = func.coalesce(AgentRun.conversation_model, AgentRun.model)
+        rows: dict[str, dict[str, Any]] = {}
+
+        def row(model: str | None) -> dict[str, Any]:
+            key = model or "(default)"
+            return rows.setdefault(
+                key,
+                {"chat": 0, "coding": 0, "failed": 0, "limit": 0, "tin": 0, "tout": 0, "chat_cost": 0.0,
+                 "chat_unpriced": False, "coding_cost": None},
+            )
+
+        for model, runs, failed, limit, tin, tout, cached in await self.session.execute(
+            select(
+                chat_model,
+                func.count(AgentRun.id),
+                func.count(case((AgentRun.status == RunStatus.FAILED, 1))),
+                func.count(case((AgentRun.error_kind == "model_limit", 1))),
+                func.coalesce(func.sum(AgentRun.input_tokens), 0),
+                func.coalesce(func.sum(AgentRun.output_tokens), 0),
+                func.coalesce(func.sum(AgentRun.cached_input_tokens), 0),
+            )
+            .where(AgentRun.created_at >= since)
+            .group_by(chat_model)
+        ):
+            r = row(model)
+            r["chat"], r["failed"], r["limit"] = int(runs), r["failed"] + int(failed), int(limit)
+            r["tin"] += int(tin)
+            r["tout"] += int(tout)
+            cost = self._chat_cost(model, int(tin), int(tout), int(cached))
+            if cost is None:
+                r["chat_unpriced"] = True
+            else:
+                r["chat_cost"] = cost
+
+        for model, runs, failed, tin, tout, cost in await self.session.execute(
+            select(
+                CodingRun.model,
+                func.count(CodingRun.id),
+                func.count(case((CodingRun.status.in_(CODING_FAILED), 1))),
+                func.coalesce(func.sum(CodingRun.input_tokens), 0),
+                func.coalesce(func.sum(CodingRun.output_tokens), 0),
+                func.sum(CodingRun.cost_usd),
+            )
+            .where(CodingRun.created_at >= since)
+            .group_by(CodingRun.model)
+        ):
+            r = row(model)
+            r["coding"] = int(runs)
+            r["failed"] += int(failed)
+            r["tin"] += int(tin)
+            r["tout"] += int(tout)
+            r["coding_cost"] = float(cost) if cost is not None else None
+
+        out: list[ModelUsage] = []
+        for key, r in rows.items():
+            coding_cost = r["coding_cost"]
+            if r["chat"] and r["chat_unpriced"]:
+                cost = coding_cost  # chat tokens with no price add nothing, never a guess
+            elif r["chat"] or coding_cost is not None:
+                cost = r["chat_cost"] + (coding_cost or 0.0)
+            else:
+                cost = None
+            out.append(
+                ModelUsage(
+                    model=key,
+                    provider=key.split(":", 1)[0] if ":" in key else "unknown",
+                    chat_runs=r["chat"],
+                    coding_runs=r["coding"],
+                    failed=r["failed"],
+                    limit_stops=r["limit"],
+                    input_tokens=r["tin"],
+                    output_tokens=r["tout"],
+                    cost_usd=round(cost, 4) if cost is not None else None,
+                )
+            )
+        out.sort(key=lambda m: (m.chat_runs + m.coding_runs, m.model), reverse=True)
+        return out[:50]
 
     async def failures(self, days: int = 7) -> FailureReport:
         """What went wrong lately: chat runs by the kind of error, coding turns by engine, and the

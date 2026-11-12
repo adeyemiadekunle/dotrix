@@ -5,6 +5,7 @@ import {
   ArrowUpRightIcon,
   ChartBarIcon,
   CodeIcon,
+  CpuIcon,
   EyeIcon,
   EyeSlashIcon,
   ListBulletsIcon,
@@ -27,6 +28,7 @@ const Overview = lazy(() => pages().then((m) => ({ default: m.Overview })));
 const Runs = lazy(() => pages().then((m) => ({ default: m.Runs })));
 const FailuresPage = lazy(() => pages().then((m) => ({ default: m.FailuresPage })));
 const CodingPage = lazy(() => pages().then((m) => ({ default: m.CodingPage })));
+const ModelsPage = lazy(() => pages().then((m) => ({ default: m.ModelsPage })));
 const WorkspacesPage = lazy(() => pages().then((m) => ({ default: m.WorkspacesPage })));
 const AuditPage = lazy(() => pages().then((m) => ({ default: m.AuditPage })));
 
@@ -38,6 +40,7 @@ const PAGES: { id: string; label: string; icon: Icon }[] = [
   { id: "runs", label: "Runs", icon: ListBulletsIcon },
   { id: "failures", label: "Failures", icon: WarningOctagonIcon },
   { id: "coding", label: "Coding", icon: CodeIcon },
+  { id: "models", label: "Models", icon: CpuIcon },
   { id: "workspaces", label: "Workspaces", icon: SquaresFourIcon },
   { id: "audit", label: "Audit log", icon: ScrollIcon },
 ];
@@ -232,6 +235,7 @@ export function App() {
           {page === "runs" && <Runs />}
           {page === "failures" && <FailuresPage />}
           {page === "coding" && <CodingPage />}
+          {page === "models" && <ModelsPage />}
           {page === "workspaces" && <WorkspacesPage />}
           {page === "audit" && <AuditPage />}
         </Suspense>

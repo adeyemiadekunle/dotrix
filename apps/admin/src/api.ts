@@ -120,6 +120,8 @@ export type Day = {
   input_tokens: number;
   output_tokens: number;
   coding_cost_usd: number;
+  chat_cost_usd: number;
+  unpriced_chat_runs: number;
   signups: number;
 };
 
@@ -190,3 +192,16 @@ export type AuditEvent = {
 };
 
 export type Page<T> = { items: T[]; total: number };
+
+export type ModelRow = {
+  model: string;
+  provider: string;
+  chat_runs: number;
+  coding_runs: number;
+  failed: number;
+  limit_stops: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  cost_is_estimate: boolean;
+};

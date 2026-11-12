@@ -137,7 +137,24 @@ class DayStats(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     coding_cost_usd: float = 0.0
+    chat_cost_usd: float = Field(default=0.0, description="Estimated from tokens and list prices; models without a price add nothing")
+    unpriced_chat_runs: int = Field(default=0, description="Chat runs on models with no listed price, so chat_cost_usd is partial")
     signups: int = 0
+
+
+class ModelUsage(BaseModel):
+    """One model's use in the window, chat and coding together."""
+
+    model: str = Field(description='"provider:model", or "(default)" when a run recorded none')
+    provider: str
+    chat_runs: int
+    coding_runs: int
+    failed: int
+    limit_stops: int = Field(description="Chat runs the provider stopped for its limits")
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float | None = Field(description="Estimated from tokens and list prices; None when the model has no price")
+    cost_is_estimate: bool = True
 
 
 class FailureGroup(BaseModel):

@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dotrix_backend.core.model_prices import cost_of
 from dotrix_backend.modules.agents.models import RunStatus
 from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
@@ -252,3 +253,45 @@ async def test_health_counts_old_unsent_notifications_and_mirrors_coding_slots(
 
     monkeypatch.setattr(settings, "coding_max_runs", 0)
     assert (await db_client.get("/v1/admin/observe/health")).json()["coding_slots"] is None
+
+
+async def test_models_and_chat_cost_by_model_never_guess_and_never_show_text(
+    db_client: AsyncClient, db_session: AsyncSession, signup
+) -> None:
+    owner = await signup()
+    await _admin(db_client)
+    ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
+    base = f"/v1/workspaces/{ws['id']}"
+    project = (await db_client.post(f"{base}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=owner.headers)).json()
+    issue = (await db_client.post(f"{base}/projects/{project['id']}/issues", json={"title": "Refunds"}, headers=owner.headers)).json()
+
+    priced, unpriced = "anthropic:claude-opus-5-5", "acme:mystery-1"
+    db_session.add_all(
+        [
+            _chat_run(ws["id"], project["id"], owner, model=priced, input_tokens=1000, output_tokens=200,
+                      cached_input_tokens=100, title="SECRET-TITLE", message="SECRET-MESSAGE"),
+            _chat_run(ws["id"], project["id"], owner, conversation_model=priced, input_tokens=3000, output_tokens=800,
+                      cached_input_tokens=0, status=RunStatus.FAILED, error_kind="model_limit"),
+            _chat_run(ws["id"], project["id"], owner, model=unpriced, input_tokens=500, output_tokens=50),
+            _coding_run(ws["id"], project["id"], issue["id"], owner, model="acme:coder-1", input_tokens=10,
+                        output_tokens=5, cost_usd=0.75),
+        ]
+    )
+    await db_session.commit()
+
+    r = await db_client.get("/v1/admin/observe/models")
+    assert r.status_code == 200
+    assert "SECRET" not in r.text
+    by = {m["model"]: m for m in r.json()}
+    expected = cost_of(priced, input_tokens=4000, output_tokens=1000, cached_input_tokens=100)
+    assert expected is not None
+    m = by[priced]
+    assert m["provider"] == "anthropic" and m["chat_runs"] == 2 and m["failed"] == 1 and m["limit_stops"] == 1
+    assert m["cost_usd"] == pytest.approx(expected, abs=1e-4) and m["cost_is_estimate"] is True
+    assert by[unpriced]["cost_usd"] is None and by[unpriced]["chat_runs"] == 1
+    assert by["acme:coder-1"]["coding_runs"] == 1 and by["acme:coder-1"]["cost_usd"] == 0.75
+
+    today = (await db_client.get("/v1/admin/observe/trends?days=1")).json()[-1]
+    assert today["unpriced_chat_runs"] == 1
+    assert today["chat_cost_usd"] == pytest.approx(expected, abs=1e-4)
+    assert "SECRET" not in (await db_client.get("/v1/admin/observe/trends?days=1")).text

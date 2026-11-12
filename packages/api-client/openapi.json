@@ -1507,6 +1507,84 @@
         }
       }
     },
+    "/v1/admin/observe/models": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Observe Models",
+        "description": "Each model's use in the window, chat and coding together: runs, failures, limit stops, tokens and estimated cost.",
+        "operationId": "observe_models",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "description": "How many days back",
+              "default": 7,
+              "title": "Days"
+            },
+            "description": "How many days back"
+          },
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelUsage"
+                  },
+                  "title": "Response Observe Models"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/observe/workspaces": {
       "get": {
         "tags": [
@@ -29852,6 +29930,18 @@
             "title": "Coding Cost Usd",
             "default": 0.0
           },
+          "chat_cost_usd": {
+            "type": "number",
+            "title": "Chat Cost Usd",
+            "description": "Estimated from tokens and list prices; models without a price add nothing",
+            "default": 0.0
+          },
+          "unpriced_chat_runs": {
+            "type": "integer",
+            "title": "Unpriced Chat Runs",
+            "description": "Chat runs on models with no listed price, so chat_cost_usd is partial",
+            "default": 0
+          },
           "signups": {
             "type": "integer",
             "title": "Signups",
@@ -33296,6 +33386,75 @@
           "name"
         ],
         "title": "ModelOption"
+      },
+      "ModelUsage": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "\"provider:model\", or \"(default)\" when a run recorded none"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "chat_runs": {
+            "type": "integer",
+            "title": "Chat Runs"
+          },
+          "coding_runs": {
+            "type": "integer",
+            "title": "Coding Runs"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "limit_stops": {
+            "type": "integer",
+            "title": "Limit Stops",
+            "description": "Chat runs the provider stopped for its limits"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd",
+            "description": "Estimated from tokens and list prices; None when the model has no price"
+          },
+          "cost_is_estimate": {
+            "type": "boolean",
+            "title": "Cost Is Estimate",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "provider",
+          "chat_runs",
+          "coding_runs",
+          "failed",
+          "limit_stops",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd"
+        ],
+        "title": "ModelUsage",
+        "description": "One model's use in the window, chat and coding together."
       },
       "NeighborsRead": {
         "properties": {

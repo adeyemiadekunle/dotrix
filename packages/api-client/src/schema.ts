@@ -607,6 +607,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/observe/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Models
+         * @description Each model's use in the window, chat and coding together: runs, failures, limit stops, tokens and estimated cost.
+         */
+        get: operations["observe_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/observe/workspaces": {
         parameters: {
             query?: never;
@@ -7157,6 +7177,18 @@ export interface components {
              */
             coding_cost_usd: number;
             /**
+             * Chat Cost Usd
+             * @description Estimated from tokens and list prices; models without a price add nothing
+             * @default 0
+             */
+            chat_cost_usd: number;
+            /**
+             * Unpriced Chat Runs
+             * @description Chat runs on models with no listed price, so chat_cost_usd is partial
+             * @default 0
+             */
+            unpriced_chat_runs: number;
+            /**
              * Signups
              * @default 0
              */
@@ -8543,6 +8575,44 @@ export interface components {
              * @enum {string}
              */
             source: "personal" | "test";
+        };
+        /**
+         * ModelUsage
+         * @description One model's use in the window, chat and coding together.
+         */
+        ModelUsage: {
+            /**
+             * Model
+             * @description "provider:model", or "(default)" when a run recorded none
+             */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Chat Runs */
+            chat_runs: number;
+            /** Coding Runs */
+            coding_runs: number;
+            /** Failed */
+            failed: number;
+            /**
+             * Limit Stops
+             * @description Chat runs the provider stopped for its limits
+             */
+            limit_stops: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /**
+             * Cost Usd
+             * @description Estimated from tokens and list prices; None when the model has no price
+             */
+            cost_usd: number | null;
+            /**
+             * Cost Is Estimate
+             * @default true
+             */
+            cost_is_estimate: boolean;
         };
         /** NeighborsRead */
         NeighborsRead: {
@@ -12549,6 +12619,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodingBreakdown"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_models: {
+        parameters: {
+            query?: {
+                /** @description How many days back */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelUsage"][];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

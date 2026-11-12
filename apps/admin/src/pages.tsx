@@ -26,6 +26,7 @@ import {
   type FailureGroup,
   type Failures,
   type Health,
+  type ModelRow,
   type Page,
   type Run,
   type WorkspaceRow,
@@ -194,7 +195,8 @@ export function Overview({ go }: { go: (page: string) => void }) {
   const t = trends.data ?? [];
   const week = t.slice(-7);
   const tokens7 = week.reduce((s, d) => s + d.input_tokens + d.output_tokens, 0);
-  const cost7 = week.reduce((s, d) => s + d.coding_cost_usd, 0);
+  const cost7 = week.reduce((s, d) => s + d.coding_cost_usd + d.chat_cost_usd, 0);
+  const unpriced7 = week.reduce((s, d) => s + d.unpriced_chat_runs, 0);
 
   return (
     <>
@@ -289,7 +291,11 @@ export function Overview({ go }: { go: (page: string) => void }) {
           foot={counts.data ? `of ${num(counts.data.workspaces)} · ${counts.data.workspaces_new} new` : undefined}
         />
         <Tile label="Tokens, 7d" value={trends.data ? compact(tokens7) : "—"} foot="on people's own keys" />
-        <Tile label="Coding cost, 7d" value={trends.data ? usd(cost7) : "—"} foot="as the engines report it" />
+        <Tile
+          label="Cost, 7d"
+          value={trends.data ? usd(cost7) : "—"}
+          foot={unpriced7 ? `partial: ${num(unpriced7)} chat runs on unpriced models` : "coding as reported, chat estimated"}
+        />
         <Tile
           label="Stored"
           value={counts.data ? bytes(counts.data.document_bytes) : "—"}
@@ -577,6 +583,106 @@ export function CodingPage() {
           </div>
         )}
       </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Models
+
+type ModelTotals = { runs: number; coding: number; failed: number; limits: number; tokens: number; cost: number | null };
+
+/** Sums per provider; a provider's cost is partial when any of its models has none, so it is shown only when all are priced. */
+function byProvider(rows: ModelRow[]): [string, ModelTotals][] {
+  const out = new Map<string, ModelTotals>();
+  for (const r of rows) {
+    const t = out.get(r.provider) ?? { runs: 0, coding: 0, failed: 0, limits: 0, tokens: 0, cost: 0 };
+    t.runs += r.chat_runs;
+    t.coding += r.coding_runs;
+    t.failed += r.failed;
+    t.limits += r.limit_stops;
+    t.tokens += r.input_tokens + r.output_tokens;
+    t.cost = t.cost === null || r.cost_usd === null ? null : t.cost + r.cost_usd;
+    out.set(r.provider, t);
+  }
+  return [...out.entries()].sort((a, b) => b[1].runs + b[1].coding - (a[1].runs + a[1].coding));
+}
+
+export function ModelsPage() {
+  const [days, setDays] = useState(7);
+  const q = useQuery({ queryKey: ["models", days], queryFn: () => call<ModelRow[]>(`/admin/observe/models?days=${days}`), refetchInterval: 60_000 });
+  const rows = q.data ?? [];
+  const providers = byProvider(rows);
+  const head = (first: string) => (
+    <thead>
+      <tr>
+        <th>{first}</th>
+        {first === "Model" && <th>Provider</th>}
+        <th className="r">Chat runs</th>
+        <th className="r">Coding turns</th>
+        <th className="r">Failed</th>
+        <th className="r">Limit stops</th>
+        <th className="r">Tokens</th>
+        <th className="r">Cost</th>
+      </tr>
+    </thead>
+  );
+  return (
+    <>
+      <PageHead title="Models" sub="Which providers and models people's own keys are used on: runs, failures, provider limits, tokens and estimated cost.">
+        <Segmented label="Window" value={days} options={DAYS} onChange={setDays} />
+      </PageHead>
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <Failed error={q.error} />
+      ) : !rows.length ? (
+        <Empty>No runs in the last {days} days.</Empty>
+      ) : (
+        <>
+          <Card title="By provider" flush>
+            <div className="table-wrap">
+              <table className="table">
+                {head("Provider")}
+                <tbody>
+                  {providers.map(([name, t]) => (
+                    <tr key={name}>
+                      <td className="strong">{name}</td>
+                      <td className="r num">{num(t.runs)}</td>
+                      <td className="r num">{num(t.coding)}</td>
+                      <td className={`r num${t.failed ? " bad-text" : ""}`}>{num(t.failed)}</td>
+                      <td className="r num">{num(t.limits)}</td>
+                      <td className="r num">{compact(t.tokens)}</td>
+                      <td className="r num">{usd(t.cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <Card title="By model" flush>
+            <div className="table-wrap">
+              <table className="table">
+                {head("Model")}
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.model}>
+                      <td className="strong">{r.model}</td>
+                      <td>{r.provider}</td>
+                      <td className="r num">{num(r.chat_runs)}</td>
+                      <td className="r num">{num(r.coding_runs)}</td>
+                      <td className={`r num${r.failed ? " bad-text" : ""}`}>{num(r.failed)}</td>
+                      <td className="r num">{num(r.limit_stops)}</td>
+                      <td className="r num">{compact(r.input_tokens + r.output_tokens)}</td>
+                      <td className="r num">{usd(r.cost_usd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <p className="muted">Cost is an estimate from tokens and list prices; models without a listed price show none.</p>
+        </>
+      )}
     </>
   );
 }

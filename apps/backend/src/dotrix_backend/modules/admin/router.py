@@ -17,6 +17,7 @@ from dotrix_backend.modules.admin.schemas import (
     CodingBreakdown,
     DayStats,
     FailureReport,
+    ModelUsage,
     PlatformCounts,
     PlatformHealth,
     RunPage,
@@ -176,6 +177,12 @@ async def observe_failures(admin: AdminDep, platform: Platform, days: Days = 7) 
 async def observe_coding(admin: AdminDep, platform: Platform, days: Days = 7) -> list[CodingBreakdown]:
     """Coding turns by engine and by where they ran: outcomes, PRs, time to finish (p50, p95), tokens and cost."""
     return await platform.coding(days)
+
+
+@router.get("/observe/models", responses=errors(422))
+async def observe_models(admin: AdminDep, platform: Platform, days: Days = 7) -> list[ModelUsage]:
+    """Each model's use in the window, chat and coding together: runs, failures, limit stops, tokens and estimated cost."""
+    return await platform.models(days)
 
 
 @router.get("/observe/workspaces", responses=errors(422))
