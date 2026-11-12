@@ -25,7 +25,7 @@ the audit nor the other plans.
 | [010](010-ci-enforces-uv-lock.md) | CI fails when `uv.lock` is out of date | P2 | S | — | DONE (CI proof pending on the PR) |
 | [011](011-admin-accounts-from-the-server.md) | Admin accounts can be created and rescued from the server's command line | P1 | S | — | DONE |
 | [012](012-several-admins-invites-and-roles.md) | Several people can be admins: invites, two roles, and a way to remove someone | P1 | L | 011 | DONE |
-| [013](013-admin-two-factor-sign-in.md) | Admins sign in with a second factor (TOTP) | P1 | M | 011, 012 | TODO |
+| [013](013-admin-two-factor-sign-in.md) | Admins sign in with a second factor (TOTP) | P1 | M | 011, 012 | DONE |
 | [014](014-admin-trail.md) | What admins do in the console is recorded and shown | P2 | M | 012 (013 if landed) | DONE |
 | [015](015-console-health-covers-dependencies.md) | The console's health shows the services, workers, backlogs and capacity dotrix depends on | P1 | M | — | DONE |
 | [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | TODO |
