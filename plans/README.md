@@ -23,7 +23,7 @@ the audit nor the other plans.
 | [008](008-runner-commit-ids-are-validated.md) | A commit ID reported by a local runner must be 40-character hex | P2 | S | — | DONE |
 | [009](009-env-example-has-the-jwt-secret.md) | `.env.example` documents the required `DOTRIX_JWT_SECRET` | P2 | S | — | DONE |
 | [010](010-ci-enforces-uv-lock.md) | CI fails when `uv.lock` is out of date | P2 | S | — | DONE (CI proof pending on the PR) |
-| [011](011-admin-accounts-from-the-server.md) | Admin accounts can be created and rescued from the server's command line | P1 | S | — | TODO |
+| [011](011-admin-accounts-from-the-server.md) | Admin accounts can be created and rescued from the server's command line | P1 | S | — | DONE |
 | [012](012-several-admins-invites-and-roles.md) | Several people can be admins: invites, two roles, and a way to remove someone | P1 | L | 011 | TODO |
 | [013](013-admin-two-factor-sign-in.md) | Admins sign in with a second factor (TOTP) | P1 | M | 011, 012 | TODO |
 | [014](014-admin-trail.md) | What admins do in the console is recorded and shown | P2 | M | 012 (013 if landed) | TODO |
