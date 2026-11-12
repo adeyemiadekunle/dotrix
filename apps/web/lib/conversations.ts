@@ -1,11 +1,11 @@
 // Conversations across projects (or about none): read-only, private to whoever started them.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { isActive, type Run, type RunStreamState } from "@/lib/agent";
-import { api, ensureSession, errorMessage, unwrap } from "@/lib/api";
+import { api, errorMessage, unwrap } from "@/lib/api";
+import { useEventStream } from "@/lib/runStream";
 
 const POLL_MS = 1500;
 const keys = {
@@ -66,39 +66,10 @@ export function useStopCross(workspaceId: string | undefined) {
 /** The reply as it's written (the same events as a project's runs). */
 export function useCrossStream(workspaceId: string | undefined, runId: string, active: boolean): RunStreamState {
   const queryClient = useQueryClient();
-  const [text, setText] = useState("");
-  const [activity, setActivity] = useState<string | null>(null);
-  const [thinking, setThinking] = useState("");
-  useEffect(() => {
-    if (!workspaceId || !active) return;
-    let source: EventSource | undefined;
-    let closed = false;
-    // An EventSource can't refresh an expired session itself: check it's current first.
-    void ensureSession().then(() => {
-      if (closed) return;
-      source = new EventSource(`/v1/workspaces/${workspaceId}/conversations/runs/${runId}/stream`);
-      const stream = source;
-      const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
-      // Each connection (and each new step) starts with the text so far, then the thinking so far.
-      stream.addEventListener("text", (e) => {
-        setText(read(e as MessageEvent));
-        setThinking("");
-      });
-      stream.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
-      stream.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
-      stream.addEventListener("thinking_text", (e) => setThinking(read(e as MessageEvent)));
-      stream.addEventListener("thinking", (e) => setThinking((t) => t + read(e as MessageEvent)));
-      stream.addEventListener("end", () => {
-        stream.close();
-        setActivity(null);
-        void queryClient.invalidateQueries({ queryKey: ["conversations", workspaceId] });
-      });
-      stream.onerror = () => stream.close();
-    });
-    return () => {
-      closed = true;
-      source?.close();
-    };
-  }, [workspaceId, runId, active, queryClient]);
-  return { text, activity, thinking };
+  return useEventStream({
+    url: workspaceId ? `/v1/workspaces/${workspaceId}/conversations/runs/${runId}/stream` : undefined,
+    key: runId,
+    active,
+    onEnd: () => void queryClient.invalidateQueries({ queryKey: ["conversations", workspaceId] }),
+  });
 }
