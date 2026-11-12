@@ -50,7 +50,7 @@ the audit nor the other plans.
 | [035](035-the-fx-journal-is-pruned-at-each-checkpoint.md) | A long fx conversation turn no longer stops at the journal's size limit | P1 | M | — | TODO |
 | [036](036-webhook-follow-ups-arent-lost.md) | A GitHub delivery's follow-up jobs are still scheduled when queueing them fails the first time | P2 | S | — | TODO |
 | [037](037-task-lists-show-more-than-5000-tasks.md) | A workspace with more than 5,000 tasks shows all of them | P2 | M | — | TODO |
-| [038](038-desktop-opens-only-web-links.md) | The desktop app opens only web links outside itself, and its window can't be sent to another site | P1 | S | — | TODO |
+| [038](038-desktop-opens-only-web-links.md) | The desktop app opens only web links outside itself, and its window can't be sent to another site | P1 | S | — | DONE |
 | [039](039-ci-actions-pinned-and-least-privilege.md) | CI's third-party actions are pinned to commits, and pull-request builds can't write to the repository | P2 | S | — | TODO |
 | [040](040-small-housekeeping.md) | Housekeeping: the stray Redis dump, the seroval advisories, and the documented CLI install | P3 | S | — | TODO |
 | [041](041-workspace-storage-limit.md) | Each workspace has a storage limit for uploads, shown in Settings and enforced on upload | P1 | M | — (admin part follows 011–018's shape if they land first) | TODO |
