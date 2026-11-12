@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin
@@ -84,3 +84,22 @@ class AdminEvent(UUIDPrimaryKeyMixin, Base):
     workspace: Mapped[str | None] = mapped_column(String(100))
     ip: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AdminAlert(UUIDPrimaryKeyMixin, Base):
+    """A condition that needs an operator, from the first check that found it to the one that found it gone.
+    The summary holds counts only: never a name, an error message, or anything people wrote."""
+
+    __tablename__ = "admin_alerts"
+    __table_args__ = (
+        Index("uq_admin_alerts_open_key", "key", unique=True, postgresql_where=text("resolved_at IS NULL")),
+    )
+
+    key: Mapped[str] = mapped_column(String(64))
+    summary: Mapped[str] = mapped_column(String(300))
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # When the operators were told it started, and (once it cleared) that it did.
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    clear_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

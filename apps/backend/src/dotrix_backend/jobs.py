@@ -189,6 +189,19 @@ async def email_notifications(ctx: JobContext) -> dict[str, int]:
     return done
 
 
+async def check_operator_alerts(ctx: JobContext) -> dict[str, int]:
+    """Email the operators when the deployment needs attention, and when it clears (modules/admin/alerts.py).
+    Runs in the worker every `alert_interval_minutes`, or a loop in the API in local mode."""
+    from .modules.admin.alerts import (
+        evaluate,  # imported here: the admin console's reads pull in most models
+    )
+
+    done = await evaluate(ctx, getattr(ctx.jobs, "redis", None))
+    if done["opened"] or done["cleared"]:
+        logger.info("operator alerts: %s", done)
+    return done
+
+
 async def convert_document(ctx: JobContext, *, document_id: str) -> None:
     """An uploaded document's markdown, made outside the request (big PDFs take a while)."""
     if ctx.storage is None:
@@ -243,4 +256,5 @@ JOBS: dict[str, JobFunction] = {
     "post_coding_review": post_coding_review,
     "triage_ci": triage_ci,
     "email_notifications": email_notifications,
+    "check_operator_alerts": check_operator_alerts,
 }

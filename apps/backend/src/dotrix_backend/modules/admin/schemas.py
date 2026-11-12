@@ -342,3 +342,18 @@ class AdminTrailEvent(BaseModel):
 class AdminTrailPage(BaseModel):
     items: list[AdminTrailEvent]
     total: int
+
+
+class AdminAlertRead(BaseModel):
+    """A condition that needs an operator. The summary has counts only, never names or messages."""
+
+    key: str
+    summary: str
+    opened_at: datetime
+    resolved_at: datetime | None = None
+    notified: bool = Field(description="Whether the operators have been emailed about it")
+
+
+class AdminAlerts(BaseModel):
+    open: list[AdminAlertRead]
+    resolved: list[AdminAlertRead] = Field(description="Cleared in the last 24 hours, newest first")

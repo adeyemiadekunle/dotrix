@@ -2414,6 +2414,66 @@
         }
       }
     },
+    "/v1/admin/observe/alerts": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Observe Alerts",
+        "description": "What needs an operator now, and what cleared in the last 24 hours. The same conditions are\nemailed to the operators (DOTRIX_ALERT_EMAILS); a condition shows here from the first check that finds it.",
+        "operationId": "observe_alerts",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAlerts"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/observe/counts": {
       "get": {
         "tags": [
@@ -26411,6 +26471,74 @@
           "approval.decided"
         ],
         "title": "ActivityKind"
+      },
+      "AdminAlertRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "opened_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opened At"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "notified": {
+            "type": "boolean",
+            "title": "Notified",
+            "description": "Whether the operators have been emailed about it"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "summary",
+          "opened_at",
+          "notified"
+        ],
+        "title": "AdminAlertRead",
+        "description": "A condition that needs an operator. The summary has counts only, never names or messages."
+      },
+      "AdminAlerts": {
+        "properties": {
+          "open": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAlertRead"
+            },
+            "type": "array",
+            "title": "Open"
+          },
+          "resolved": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAlertRead"
+            },
+            "type": "array",
+            "title": "Resolved",
+            "description": "Cleared in the last 24 hours, newest first"
+          }
+        },
+        "type": "object",
+        "required": [
+          "open",
+          "resolved"
+        ],
+        "title": "AdminAlerts"
       },
       "AdminBootstrap": {
         "properties": {

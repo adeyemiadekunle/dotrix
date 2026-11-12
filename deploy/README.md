@@ -56,6 +56,23 @@ enforcement are removed; a person can still choose a limit for their project or 
    address before cutting a release. Each release then carries the Windows installer and CLI, built
    for that address, and installed apps update themselves from it.
 
+## Alerts
+
+The worker checks the deployment's health every five minutes (`DOTRIX_ALERT_INTERVAL_MINUTES`) and emails the
+operators when something needs attention and again when it clears. Set `DOTRIX_ALERT_EMAILS` to a comma-separated
+list; empty, the admin console's active owners are emailed. A condition is emailed once it holds on two checks in
+a row, and only once until it clears. The conditions, which the Overview also lists:
+
+- Redis, file storage, or another dependency is down.
+- No worker has checked in recently.
+- A run's lease lapsed more than 10 minutes ago and the sweep hasn't recovered it.
+- The run queue's oldest dispatch has waited more than 10 minutes.
+- Coding turns are waiting to be recovered.
+- At least 10 runs finished in 24 hours and more than half failed.
+- Notification emails have been unsent for over an hour.
+
+The emails give counts only, never a workspace's name or what people wrote.
+
 ## Storage limit per workspace
 
 `DOTRIX_WORKSPACE_STORAGE_MB` (default `1024`, i.e. 1 GB; `0` is unlimited) caps what one workspace

@@ -138,6 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     asyncio.create_task(_every(local_jobs, "index_knowledge", INDEX_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "run_automations", AUTOMATIONS_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "email_notifications", EMAIL_INTERVAL_SECONDS)),
+                    asyncio.create_task(_every(local_jobs, "check_operator_alerts", settings.alert_interval_minutes * 60)),
                 ]
             yield
             for loop in loops:

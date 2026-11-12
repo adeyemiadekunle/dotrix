@@ -26,6 +26,7 @@ import {
   type CodingRow,
   type Counts,
   type Day,
+  type AdminAlerts,
   type DependencyCheck,
   type FailureGroup,
   type Failures,
@@ -192,6 +193,7 @@ export function Overview({ go }: { go: (page: string) => void }) {
   const now = useTick();
   const [days, setDays] = useState(14);
   const health = useQuery({ queryKey: ["health"], queryFn: () => call<Health>("/admin/observe/health"), refetchInterval: REFRESH });
+  const alerts = useQuery({ queryKey: ["alerts"], queryFn: () => call<AdminAlerts>("/admin/observe/alerts"), refetchInterval: 60_000 });
   const counts = useQuery({ queryKey: ["counts"], queryFn: () => call<Counts>("/admin/observe/counts?days=7"), refetchInterval: 60_000 });
   const trends = useQuery({ queryKey: ["trends", days], queryFn: () => call<Day[]>(`/admin/observe/trends?days=${days}`), refetchInterval: 60_000 });
 
@@ -224,6 +226,15 @@ export function Overview({ go }: { go: (page: string) => void }) {
         <Loading what="Checking the deployment" />
       ) : (
         <>
+          {(alerts.data?.open ?? []).map((a) => (
+            <div key={a.key} className="banner bad" role="alert">
+              {TONE_ICON.bad}
+              <b>{a.summary}</b>
+              <span>
+                {a.notified ? "Operators emailed" : "Not emailed yet"} · since {ago(a.opened_at, now)}
+              </span>
+            </div>
+          ))}
           <div className={`banner ${worst}`}>
             {TONE_ICON[worst]}
             <b>{worst === "good" ? "Everything is working" : worst === "warn" ? "Working, with something to watch" : "Something needs attention"}</b>

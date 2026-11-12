@@ -32,7 +32,9 @@ from dotrix_backend.modules.knowledge.models import AuthorType
 
 from . import trail
 from .accounts import AdminAccounts
+from .alerts import listing as alert_listing
 from .schemas import (
+    AdminAlerts,
     AdminBootstrap,
     AdminInviteAccept,
     AdminInviteCreate,
@@ -340,6 +342,13 @@ async def observe_health(admin: AdminDep, request: Request, platform: Platform) 
     took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners, plus Redis, workers,
     file storage, email and the GitHub App, waiting emails and automation events, and coding capacity."""
     return await platform.health(request.app.version, request.app.state)
+
+
+@router.get("/observe/alerts", responses=errors(422))
+async def observe_alerts(admin: AdminDep, session: SessionDep) -> AdminAlerts:
+    """What needs an operator now, and what cleared in the last 24 hours. The same conditions are
+    emailed to the operators (DOTRIX_ALERT_EMAILS); a condition shows here from the first check that finds it."""
+    return await alert_listing(session)
 
 
 @router.get("/observe/counts", responses=errors(422))

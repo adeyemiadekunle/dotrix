@@ -803,6 +803,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/observe/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Alerts
+         * @description What needs an operator now, and what cleared in the last 24 hours. The same conditions are
+         *     emailed to the operators (DOTRIX_ALERT_EMAILS); a condition shows here from the first check that finds it.
+         */
+        get: operations["observe_alerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/observe/counts": {
         parameters: {
             query?: never;
@@ -5348,6 +5369,38 @@ export interface components {
          * @enum {string}
          */
         ActivityKind: "issue.created" | "issue.updated" | "issue.commented" | "issue.claimed" | "document.changed" | "document.deleted" | "run.started" | "approval.decided";
+        /**
+         * AdminAlertRead
+         * @description A condition that needs an operator. The summary has counts only, never names or messages.
+         */
+        AdminAlertRead: {
+            /** Key */
+            key: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Resolved At */
+            resolved_at?: string | null;
+            /**
+             * Notified
+             * @description Whether the operators have been emailed about it
+             */
+            notified: boolean;
+        };
+        /** AdminAlerts */
+        AdminAlerts: {
+            /** Open */
+            open: components["schemas"]["AdminAlertRead"][];
+            /**
+             * Resolved
+             * @description Cleared in the last 24 hours, newest first
+             */
+            resolved: components["schemas"]["AdminAlertRead"][];
+        };
         /**
          * AdminBootstrap
          * @description Whether the sign-up form is open (no admin account exists, and on a deployed server the
@@ -13844,6 +13897,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlatformHealth"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_alerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAlerts"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

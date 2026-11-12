@@ -106,6 +106,10 @@ export type DependencyCheck = {
   latency_ms: number | null;
 };
 
+export type AdminAlert = { key: string; summary: string; opened_at: string; resolved_at: string | null; notified: boolean };
+
+export type AdminAlerts = { open: AdminAlert[]; resolved: AdminAlert[] };
+
 export type Health = {
   generated_at: string;
   version: string;

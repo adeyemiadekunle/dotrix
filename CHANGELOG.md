@@ -87,6 +87,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Operators can be emailed when dotrix needs attention (a service down, no worker, stuck or failing runs) and again when it clears; the admin console's Overview lists what is open.
 - The admin console keeps a record of admin sign-ins and changes to admin accounts, shown to owners.
 - The admin console's audit log can be filtered by workspace, by who acted and by date.
 - The admin console has a Models page (runs, failures, limit stops, tokens and estimated cost per model and provider), and its cost figures include chat.
