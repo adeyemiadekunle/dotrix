@@ -608,6 +608,50 @@ h2 .serif {
 
 /* Split rows */
 
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.step {
+  display: flex;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+}
+.step-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  color: var(--acc-2);
+  font-size: 13px;
+}
+.step h3 {
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+.step p {
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.step b {
+  color: var(--fg);
+  font-weight: 600;
+}
+#start .facts {
+  margin-top: 24px;
+}
 .split {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
@@ -1052,7 +1096,8 @@ html.js .reveal.in {
   .nav-links {
     display: none;
   }
-  .team {
+  .team,
+  .steps {
     grid-template-columns: repeat(2, 1fr);
   }
   .agent:first-child {
@@ -1088,8 +1133,12 @@ html.js .reveal.in {
   .nav-cta .btn-ghost {
     display: none;
   }
-  .team {
+  .team,
+  .steps {
     grid-template-columns: 1fr;
+  }
+  .step {
+    padding: 18px;
   }
   .agent:first-child {
     grid-column: auto;

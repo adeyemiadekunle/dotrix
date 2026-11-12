@@ -85,6 +85,7 @@ function Nav() {
           <a href="#team">Team</a>
           <a href="#approvals">Approvals</a>
           <a href="#keys">Your keys</a>
+          <a href="#start">Getting started</a>
           <a href="#download">Download</a>
         </nav>
         <div className="nav-cta">
@@ -421,6 +422,97 @@ function Terminal() {
   );
 }
 
+const STEPS: { title: string; text: ReactNode }[] = [
+  {
+    title: "Create your account",
+    text: (
+      <>
+        Sign up with your email (you'll get a link to verify it) or with GitHub. You land in your own private workspace, and onboarding walks you through the
+        rest.
+      </>
+    ),
+  },
+  {
+    title: "Connect your model key",
+    text: (
+      <>
+        In <b>Account → Your models</b>, add a key from Anthropic, OpenAI or Google. It's encrypted, it's only ever used for your own runs, and your agents
+        can't run without one. Projects and tasks work without a key.
+      </>
+    ),
+  },
+  {
+    title: "Start a project",
+    text: (
+      <>
+        Explore an idea, start a new codebase, or connect a repository you have. To work on code, install the dotrix GitHub App when onboarding asks, and pick
+        the repository.
+      </>
+    ),
+  },
+  {
+    title: "Decide what needs you",
+    text: (
+      <>
+        <b>Manual</b> asks you before every change, with the diff. <b>Accept edits</b> lets through what you asked for, and <b>Auto</b> goes further. Changes to
+        files your CI runs always wait for you, and you merge every pull request yourself.
+      </>
+    ),
+  },
+  {
+    title: "Stop anything",
+    text: (
+      <>
+        <b>Stop</b> ends a reply in Chat or a coding turn in Codes. A stopped, rejected or interrupted run shows exactly that, never a success or a pull request
+        it didn't make.
+      </>
+    ),
+  },
+  {
+    title: "Tell us what broke",
+    text: (
+      <>
+        <b>Help &amp; resources → Report a problem</b> opens an issue on GitHub. Issues are public, so describe what happened without keys, private code or
+        anything you wrote in dotrix.
+      </>
+    ),
+  },
+];
+
+function GettingStarted() {
+  return (
+    <Section id="start">
+      <div className="head">
+        <h2>
+          Getting started. <span className="serif dim">Six steps, a few minutes.</span>
+        </h2>
+        <p className="sub">The private beta is for solo developers: one personal workspace, your own key, and your own GitHub.</p>
+      </div>
+      <ol className="steps">
+        {STEPS.map((step, i) => (
+          <li key={step.title} className="step">
+            <span className="step-n mono">{i + 1}</span>
+            <div>
+              <h3>{step.title}</h3>
+              <p>{step.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="facts">
+        {["Chat on Anthropic, OpenAI or Google", "Kai codes in a sandbox or on your computer", "Desktop app for Windows", "No team workspaces yet"].map(
+          (fact) => (
+            <span key={fact}>
+              <CheckIcon size={14} weight="bold" />
+              {fact}
+            </span>
+          ),
+        )}
+      </div>
+    </Section>
+  );
+}
+
 function Download() {
   return (
     <Section id="download">
@@ -509,6 +601,7 @@ function Footer() {
         <nav aria-label="Footer">
           <a href={SIGN_IN}>Sign in</a>
           <a href={SIGN_UP}>Sign up</a>
+          <a href="#start">Getting started</a>
           <a href={DOWNLOADS_URL}>Download</a>
         </nav>
       </div>
@@ -529,6 +622,7 @@ export function App() {
         <Knowledge />
         <Board />
         <Terminal />
+        <GettingStarted />
         <Download />
         <Final />
       </main>
