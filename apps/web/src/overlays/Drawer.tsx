@@ -342,6 +342,7 @@ export function CommentBox({
 /* ---------- the rich-text description ---------- */
 function Rte({ t, desc }: { t: Task; desc: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const atFocus = useRef("");
   useEffect(() => {
     if (ref.current && document.activeElement !== ref.current && ref.current.innerHTML !== desc) ref.current.innerHTML = desc;
   }, [desc]);
@@ -385,9 +386,10 @@ function Rte({ t, desc }: { t: Task; desc: string }) {
           role="textbox"
           aria-multiline="true"
           aria-labelledby="d-desc-l"
+          onFocus={(e) => (atFocus.current = e.currentTarget.innerHTML)}
           onBlur={(e) => {
             const html = e.currentTarget.innerHTML;
-            if (html !== desc) mutate(() => applyPatch(t, { desc: html }));
+            if (html !== atFocus.current) mutate(() => applyPatch(t, { desc: html }));
           }}
         />
       </div>
