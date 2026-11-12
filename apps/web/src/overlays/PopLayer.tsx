@@ -18,7 +18,7 @@ import {
   toggleFavTask,
   updateTask,
 } from "../core/actions";
-import { ISSUES_URL, LABELS, PRIOS, PSTAT, STATUSES, TYPES, type ProjectStatusId } from "../core/constants";
+import { GUIDE_URL, ISSUES_URL, LABELS, PRIOS, PSTAT, STATUSES, TYPES, type ProjectStatusId } from "../core/constants";
 import { useCloseSession, useDeleteSandbox, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
 import { confirmDlg, promptDlg } from "../core/more";
 import { isLive, live, liveCommentById } from "../data/live";
@@ -568,6 +568,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <>
             <div className="mh">Help &amp; resources</div>
+            <Mi icon="book-open" label="Getting started" onClick={() => (closePop(), window.open(GUIDE_URL, "_blank", "noopener"))} />
             <Mi icon="keyboard" label="Keyboard shortcuts" onClick={shortcuts} r={<kbd>?</kbd>} />
             <Mi icon="command" label="Command menu" onClick={() => (closePop(), openPaletteSoon())} r={<kbd>{MOD}K</kbd>} />
             <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "sessions" }))} />

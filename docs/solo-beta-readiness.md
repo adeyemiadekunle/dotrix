@@ -12,7 +12,7 @@ list the beta is released against.
 | --- | --- | --- |
 | Workspace | One personal workspace per account | Organisations are off (`DOTRIX_ORGANISATIONS`, the default on staging and production). Existing organisations keep their data and return when the setting is turned on. |
 | Sign-in | Email and password, sign-in links, GitHub sign-in | Email verification, password reset and sign-in links need outgoing email (Sendly). |
-| Account recovery | Password reset and sign-in link by email; signing out other browsers and the desktop app from Settings → Sessions | No two-factor authentication yet. |
+| Account recovery | Password reset and sign-in link by email; signing out other browsers and the desktop app from Settings → Sessions | No two-factor authentication for people's accounts yet (the admin console has its own). |
 | Starting a project | Explore an idea, Start a new codebase, Connect an existing repository | Repository creation on GitHub needs the GitHub App installed on the account; personal GitHub accounts create the repository on GitHub, then connect it. |
 | GitHub | One GitHub App installation per account, one connected repository per project; PRs, checks, Juno's review on the PR, CI failures triaged | The App needs Contents, Pull requests, Checks (read), Actions (read), Issues (write) and the Check suite event. |
 | Chat models (personal keys) | Anthropic, OpenAI, Google | Personal BYOK only: every run uses the person's own encrypted key, and nothing runs without one. Google works for DeepAgents conversations; fx chat on Google is not supported (libfx rejects Gemini's stream endings). |
@@ -20,6 +20,8 @@ list the beta is released against.
 | Coding engines | Claude Code (Anthropic), Codex (OpenAI), OpenCode (Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA), fx (OpenAI-compatible providers) | A session picks a model; the engine follows it. Each engine is pinned in the coding image. |
 | Where coding runs | Cloud: Docker sandboxes on the worker with gVisor, or Docker Cloud sandboxes. Local: the desktop app or CLI runner in the person's own folder | Local turns run commands only when `sbx` (Docker Sandboxes) is installed; without it the tool only edits files. |
 | Approvals | Manual, Accept edits, Auto; Nova's first handoff to Kai starts at once only in Auto | Changes to files CI runs wait for a person in every mode. |
+| Storage | 1 GB of uploads per workspace by default (`DOTRIX_WORKSPACE_STORAGE_MB`), document originals and task attachments; Settings → Workspace shows the use | An upload that doesn't fit is refused; nothing is deleted. The operator sets a workspace's own limit in the admin console. |
+| Operating it | The admin console: health of the worker, Redis, storage, email and the GitHub App; runs, failures by kind, cost by model, workspaces, audit; operator alert emails; owner and viewer admins with two-factor sign-in and an activity record | `deploy/migrate.sh` checks, backs up and applies database migrations on the server. See [deploy/README.md](../deploy/README.md). |
 | Desktop app | Windows installer and self-updates | Unsigned (SmartScreen warns). macOS later. |
 | Deployment | One VPS with Dokploy, `deploy/README.md` | Coding on the VPS requires gVisor (`DOTRIX_CODING_DOCKER_RUNTIME=runsc`) and a positive `DOTRIX_CODING_MAX_RUNS`. |
 
@@ -36,7 +38,11 @@ evidence lives when a check passes.
 - [ ] `GET /health/ready` answers from the deployed API; a redeploy of the API while a chat run works loses nothing (the worker finishes it).
 - [ ] The GitHub App's callback and webhook URLs point at `DOTRIX_APP_URL`; a push to a connected repository reaches the webhook (the audit log records the sync).
 - [ ] Outgoing email delivers: a verification email, a password reset and a sign-in link each arrive from `DOTRIX_EMAIL_FROM`.
-- [ ] Backups: a snapshot of `pgdata` and `storagedata` taken and restored once.
+- [ ] Backups: a snapshot of `pgdata` and `storagedata` taken and restored once; `deploy/migrate.sh backup` taken and restored once into a scratch database.
+- [ ] Migrations: `deploy/migrate.sh check` passes after the deploy; one recovery rehearsed (a failed `migrate`, then `IMAGE=dotrix-backend:<version> deploy/migrate.sh`).
+- [ ] Storage: the usage query in `deploy/README.md` run before the first deploy with the limit; no workspace over it.
+- [ ] Admin console: the first owner created, two-factor set up, `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` removed; a second admin invited by email and signed in; the Overview shows every dependency OK.
+- [ ] Alerts: stopping the worker sends one alert email to `DOTRIX_ALERT_EMAILS` on the second check, and one "cleared" email after it's back.
 
 ### Sandbox isolation (production)
 
@@ -82,8 +88,8 @@ evidence lives when a check passes.
 ### Support paths
 
 - [x] A way to report a problem from the app: Help & resources → Report a problem opens a new issue on the repository (public), 2026-11-09.
-- [ ] The CHANGELOG's Unreleased section turned into a version before the beta (`python scripts/release.py bump`), and What's new showing it in the desktop app.
-- [ ] A short "Getting started" for beta participants: the supported configuration above, how to connect a key and GitHub, what Manual approval means, how to stop a run, and how to report a problem.
+- [ ] The CHANGELOG's Unreleased section turned into a version before the beta, and What's new showing it in the desktop app. 0.2.0 is cut (`python scripts/release.py bump 0.2.0`, 2026-11-12); left: merging it from `stage` into `main`, which tags and publishes the release, and checking What's new in an installed app.
+- [x] A short "Getting started" for beta participants: the supported configuration, connecting a key and GitHub, what Manual approval means, how to stop a run, and how to report a problem. On the public site at [dotrix.cc/#start](https://dotrix.cc/#start), linked from the app's Help & resources → Getting started, and in full at [getting-started.md](getting-started.md), 2026-11-12.
 
 ## Known limitations
 
@@ -91,12 +97,13 @@ What a beta participant should be told, with where each is tracked (CLAUDE.md's 
 
 - **Organisations and teams** are off: no invites, members, roles or shared workspaces.
 - **One person per key.** No retry on a provider's 429 beyond stopping the run with Continue; no per-workspace queue of runs.
-- **Codes polls** for a turn's output rather than streaming it; usage per session and nested subagent events are not shown.
+- **Codes** streams a turn's steps and command output as they're recorded, but not the reply's text token by token; usage per session and nested subagent events are not shown.
 - **Local coding** runs commands only with `sbx` installed (checked against a fake `sbx`, not a real one); a folder without a remote gets a branch and diff, no PR.
 - **Desktop app:** Windows only, unsigned; not yet run on a real Windows machine end to end.
 - **fx chat** has run live on Anthropic only; Google is not supported on fx; OpenCode and fx on providers other than Anthropic and OpenAI have been checked against fake APIs, not paid models.
 - **Chat across projects** has no steering, queued follow-ups, work modes or Continue after a model limit.
 - **Search** indexes with the instructing person's key only where it has one; otherwise keyword search.
 - **Repository knowledge** reads package.json, pyproject/requirements, Cargo and go.mod manifests; Gemfile, composer, Gradle and Maven are not read.
-- **Settings "not available yet":** two-factor authentication, push notifications, deleting a workspace, changing its address, billing.
-- **Not verified in production:** the Docker Cloud sandbox and the gVisor host, Juno's review posting against a real PR from the deployed host, the first fx turn through the platform's own sandbox, and every row above still unticked.
+- **Settings "not available yet":** two-factor authentication for people's accounts, push notifications, deleting a workspace, changing its address, billing.
+- **Storage:** 1 GB of uploads per workspace unless the operator raises it; two uploads at the same moment can pass the check together and go over by one file.
+- **Not verified in production:** the Docker Cloud sandbox and the gVisor host, Juno's review posting against a real PR from the deployed host, the first fx turn through the platform's own sandbox, the admin console's two-factor sign-in and alert emails, `deploy/migrate.sh` on the real server, and every row above still unticked.

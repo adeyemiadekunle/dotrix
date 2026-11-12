@@ -3,7 +3,7 @@
   "info": {
     "title": "dotrix API",
     "description": "\nThe dotrix platform API. The web app, desktop app, and `dotrix` CLI are all clients of it.\n\n## Authentication\n\nSend a bearer token in the `Authorization` header. Two kinds are accepted:\n\n| Token | How to get it | Lifetime |\n| --- | --- | --- |\n| **Access token** (JWT) | `POST /v1/auth/login` or `/v1/auth/signup`; renew with `/v1/auth/refresh` | 15 minutes |\n| **API token** (`dtx_\u2026`) | CLI device login (`/v1/auth/device/*`) or `POST /v1/me/tokens` | Up to 1 year |\n\nAPI tokens act as their user within that user's workspace roles, narrowed by scopes: a\n`read`-only token can only make `GET` requests. API tokens can't create more credentials.\n\nTo try the API here: sign up or log in, copy `access_token`, click **Authorize**, and paste it.\n\n## Workspaces and permissions\n\nMost routes are scoped to a workspace (`/v1/workspaces/{workspace_id}/\u2026`). What you can do\ndepends on your role there (owner, admin, member, guest). If you're not a member, the\nworkspace is reported as **404 Not Found**, never 403, so IDs can't be probed.\n\n## Errors\n\nErrors use [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\nSwitch on `type` (for example `\u2026/problems/invalid_link`), not on `detail`, which is for humans.\nEvery response carries an `X-Request-ID` header; include it when reporting a problem.\n\n## Secrets in requests\n\nOne-time tokens (email links, invites, device codes) always travel in request **bodies**,\nnever in URL paths, so they don't end up in logs.\n",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/health": {
