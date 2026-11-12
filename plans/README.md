@@ -35,7 +35,7 @@ the audit nor the other plans.
 | [020](020-approvals-refresh-the-board.md) | Approving in Chat or Codes refreshes the task lists straight away | P1 | S | — | DONE |
 | [021](021-isolation-test-covers-every-id.md) | The cross-workspace test tries every kind of ID, not eight of them | P1 | S | — | DONE |
 | [022](022-unit-tests-for-the-web-list-engine.md) | The web's list engine, routes and permissions have unit tests | P1 | M | — | DONE |
-| [023](023-grouped-lists-show-every-task.md) | Grouped and sorted task lists show every task, in the right order, with its comment count | P1 | S | 022 | TODO |
+| [023](023-grouped-lists-show-every-task.md) | Grouped and sorted task lists show every task, in the right order, with its comment count | P1 | S | 022 | DONE |
 | [024](024-task-descriptions-survive-the-editor.md) | Opening a task doesn't rewrite its description, and the editor keeps links and headings | P1 | M | 022 | TODO |
 | [025](025-changes-to-a-task-being-created-are-kept.md) | Changes made to a task while it is still being created are kept | P1 | M | — | DONE |
 | [026](026-overlapping-changes-dont-undo-each-other.md) | Two quick changes to the same list don't undo each other | P1 | S–M | 025 (shares its test file) | TODO |
