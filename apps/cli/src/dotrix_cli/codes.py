@@ -134,10 +134,17 @@ class Codes:
     def recover(self, run_id: str, action: str) -> dict:
         return self.client.post(f"{self.project}/runs/{run_id}/recover", {"action": action})
 
-    def follow_up(self, session_id: str, message: str, approval_mode: str | None) -> dict:
+    def follow_up(self, session_id: str, message: str, approval_mode: str | None, *, work_mode: str | None = None,
+                  source_plan_id: str | None = None, location: str | None = None) -> dict:
         body: dict[str, Any] = {"message": message}
         if approval_mode:
             body["approval_mode"] = approval_mode
+        if work_mode:
+            body["work_mode"] = work_mode
+        if source_plan_id:
+            body["source_plan_id"] = source_plan_id
+        if location:
+            body["location"] = location
         return self.client.post(f"{self.project}/sessions/{session_id}/turns", body)
 
 
@@ -345,14 +352,34 @@ def codes_follow(
     target: str = typer.Argument(..., help="An issue key or the start of a session's id"),
     message: str = typer.Argument(..., help="What Kai should do in this turn"),
     approvals: str | None = ApprovalsOpt,
+    plan_only: bool = typer.Option(False, "--plan-only", help="Ask for a Plan turn: Kai reads the repository and returns a plan, changing nothing (runs in the cloud)"),
+    plan: str | None = typer.Option(None, "--plan", help="Build from a finished Plan turn of this session: its number (as `codes show` prints it) or the start of its run id"),
     wait: bool = typer.Option(False, "--wait", help="Wait here for the turn, printing its steps"),
     project: str = ProjectOpt,
 ):
-    """Ask Kai for another turn in a session."""
+    """Ask Kai for another turn in a session. A Plan turn (--plan-only) returns a plan without changing
+    anything; --plan TURN builds from one."""
     codes, cli = _ctx(project)
+    if plan_only and plan:
+        cli._fail("Use either --plan-only or --plan, not both.")
     mode = _approval(cli, approvals)
     session = cli._platform_call(lambda: codes.find(target))
-    run = cli._platform_call(lambda: codes.follow_up(session["session_id"], message, mode))
+    work_mode = source = location = None
+    if plan_only:
+        work_mode = "plan"
+        turns = cli._platform_call(lambda: codes.turns(session["session_id"]))
+        if turns and turns[-1].get("location") == "local":
+            location = "cloud"
+            typer.echo("A Plan turn runs in the platform's sandbox: asking for it in the cloud.")
+    elif plan:
+        turns = cli._platform_call(lambda: codes.turns(session["session_id"]))
+        chosen = next((t for t in turns if str(t["turn"]) == plan.strip()), None) or next(
+            (t for t in turns if str(t["id"]).startswith(plan.strip().lower())), None)
+        if chosen is None or chosen.get("work_mode") != "plan" or not chosen.get("plan_result"):
+            cli._fail(f"Turn {plan.strip()} isn't a finished plan.")
+        work_mode, source = "build", chosen["id"]
+    run = cli._platform_call(lambda: codes.follow_up(
+        session["session_id"], message, mode, work_mode=work_mode, source_plan_id=source, location=location))
     _started(cli, codes, run, wait)
 
 

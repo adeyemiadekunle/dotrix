@@ -603,12 +603,16 @@ def code_command(
     cloud: bool = typer.Option(False, "--cloud", help="Code in the platform's sandbox instead of on this computer"),
     approvals: str | None = typer.Option(None, "--approvals", help="Approval mode: manual, accept-edits or auto"),
     model: str | None = typer.Option(None, "--model", help="The provider:model to code on (default: your default model)"),
+    plan_only: bool = typer.Option(False, "--plan-only", help="Ask for a Plan turn: Kai reads the repository and returns a plan, changing nothing (needs --cloud)"),
     wait: bool = typer.Option(False, "--wait", help="Wait here for the turn, printing its steps"),
     project: str = ProjectOpt,
 ):
     """Ask Kai to code an issue: on this computer (run `dotrix runner` here), or with --cloud on the
-    platform. It waits for an approval unless your approval mode lets it start at once. Then
-    `dotrix codes show KEY` shows the session."""
+    platform. It waits for an approval unless your approval mode lets it start at once. With
+    --plan-only Kai makes a plan first, without changing anything; build from it later with
+    `dotrix codes follow KEY "..." --plan TURN`. Then `dotrix codes show KEY` shows the session."""
+    if plan_only and not cloud:
+        _fail("A Plan turn runs in the platform's sandbox: add --cloud")
     approval_mode = _approval_mode(approvals) if approvals else None
     if approvals and approval_mode is None:
         raise typer.BadParameter("use manual, accept-edits or auto", param_hint="--approvals")
@@ -619,10 +623,12 @@ def code_command(
         body["approval_mode"] = approval_mode
     if model:
         body["model"] = model
+    if plan_only:
+        body["work_mode"] = "plan"
     run = _platform_call(lambda: client.post(f"{base}/issues/{key.strip().upper()}/runs", body))
     where = "the platform" if cloud else "your computer"
     waiting = "waits for an approval" if run["status"] == "awaiting_approval" else "is queued"
-    typer.echo(f"{run['issue_key']}: Kai's turn on {where} {waiting} (run {run['id']})")
+    typer.echo(f"{run['issue_key']}: Kai's {'Plan ' if plan_only else ''}turn on {where} {waiting} (run {run['id']})")
     if wait and run["status"] != "awaiting_approval":
         from . import codes
 
