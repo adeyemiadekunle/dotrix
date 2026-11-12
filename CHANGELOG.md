@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Join the planning and delivery migration histories so database upgrades and test setup work after their stage merge.
+
 - Building a saved plan pins its version and includes its tasks and acceptance criteria in Kai's approval brief.
 - Kai receives custom skills intended for every agent as well as coding-specific skills.
 - Plan mode restricts agents to read-only project work and saved plans, rejects mutating specialist delegation, and detects cyclic plan dependencies.
