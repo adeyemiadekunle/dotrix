@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Repo-root .env, so settings load the same from any working directory
 # (uvicorn at the root, alembic in apps/backend). Real env vars take precedence.
@@ -41,6 +42,16 @@ class Settings(DatabaseSettings):
             return {k: v for k, v in data.items() if v != "" or k in EMPTY_MEANS_SOMETHING}
         return data
 
+    @field_validator("alert_emails", mode="before")
+    @classmethod
+    def _alert_emails(cls, value: Any) -> Any:
+        """Comma-separated (`a@x.com, b@x.com`) or a JSON list."""
+        if isinstance(value, str):
+            text = value.strip()
+            items = json.loads(text) if text.startswith("[") else text.split(",")
+            return [str(item).strip() for item in items if str(item).strip()]
+        return value
+
     # "staging" and "production" are deployed: secure cookies, and the checks in _safe_for_production.
     env: Literal["development", "test", "staging", "production"] = "development"
     log_level: str = "INFO"
@@ -62,6 +73,15 @@ class Settings(DatabaseSettings):
     # The secret that opens the admin console's first sign-up (apps/admin). Required to create
     # that account on staging and production; unset there, admin sign-up stays closed.
     admin_bootstrap_token: SecretStr | None = Field(default=None, min_length=24)
+    # The admin console's own address, used for links in admin emails (invites). Unset: invites
+    # can't be emailed, and the API returns the link's path for the owner to pass on.
+    admin_url: str | None = None
+    # Who is emailed when the deployment needs attention (comma-separated or a JSON list). Empty: the
+    # admin console's active owners.
+    alert_emails: Annotated[list[str], NoDecode] = []
+    # How often the worker checks for conditions worth an email (a condition is emailed once it
+    # holds on two checks in a row).
+    alert_interval_minutes: int = Field(default=5, ge=1, le=60)
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
     email_verification_ttl_hours: int = 48

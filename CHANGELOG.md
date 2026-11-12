@@ -75,6 +75,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Security
 
+- Admin console sign-in needs a code from an authenticator app, with recovery codes for a lost device.
+- The admin console's failure report shows a kind of failure (for example "HTTP 429" or "timed out") in place of the raw error text, which could repeat part of what someone asked.
 - Updated a routing dependency for two moderate advisories.
 - If an account's email was never verified, signing in to it with GitHub or an emailed link (or resetting its password) now removes the password set before that and signs out every browser, app and API token, so nobody who registered the address earlier keeps access. Verified accounts are unchanged.
 - The app and the admin console can no longer be shown inside another website's frame, and they send stricter content-type and referrer headers.
@@ -87,6 +89,13 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Operators can be emailed when dotrix needs attention (a service down, no worker, stuck or failing runs) and again when it clears; the admin console's Overview lists what is open.
+- The admin console keeps a record of admin sign-ins and changes to admin accounts, shown to owners.
+- The admin console's audit log can be filtered by workspace, by who acted and by date.
+- The admin console has a Models page (runs, failures, limit stops, tokens and estimated cost per model and provider), and its cost figures include chat.
+- The admin console supports several admins: an owner invites others by email, each sets their own password, owners and viewers have different rights, and an owner can disable or remove an admin.
+- Operators can list admin console accounts, create one and reset one's password from the server's command line (python -m dotrix_backend.admin_cli).
+- The admin console's health now covers Redis, workers, file storage, email, the GitHub App, waiting emails and automation events, and coding capacity.
 - Each workspace has a storage limit for uploaded documents and task attachments (1 GB by default; the operator can change it per workspace). Settings shows how much is used, and an upload that doesn't fit is refused with the reason.
 - NVIDIA as a model provider: connect your build.nvidia.com key (`nvapi-…`) in Account → Your models to use NVIDIA's hosted models, which are free to try with rate limits, for chat and for Kai (on OpenCode or fx). Six are offered, each checked live for fast, working tool calls: Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Bolt, Mistral Large 4, Gemma 4 31B and Laguna XS 2.1.
 - A private solo beta readiness page (`docs/solo-beta-readiness.md`): the supported configuration, the checks to run where, and the known limitations to tell participants.
