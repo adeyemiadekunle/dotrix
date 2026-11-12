@@ -44,7 +44,7 @@ the audit nor the other plans.
 | [029](029-local-turns-send-exact-patches-and-all-events.md) | A turn coded on your computer sends its patch byte for byte and all of its steps | P1 | M | — | DONE (re-scoped: every step delivered, non-UTF-8 patches refused; exact bytes in 031) |
 | [030](030-dependency-reader-handles-real-requirements-files.md) | The dependency reader gets versions right in hash-pinned requirements files, and one bad manifest doesn't break the view | P1 | S | — | DONE |
 | [031](031-coding-patches-stored-as-exact-bytes.md) | A coding turn's patch is kept and pushed byte for byte, whatever its files' encoding | P1 | M | 029 | DONE |
-| [032](032-notification-emails-arent-sent-twice.md) | A crash while emailing notifications doesn't email everyone again | P1 | S | — | TODO |
+| [032](032-notification-emails-arent-sent-twice.md) | A crash while emailing notifications doesn't email everyone again | P1 | S | — | DONE |
 | [033](033-junos-review-claim-cant-stick.md) | Juno's review is still posted on the pull request after a failed or interrupted attempt | P1 | S | — | TODO |
 | [034](034-a-warm-sandbox-is-closed-when-its-check-fails.md) | A session's sandbox is closed when the check before reusing it fails | P2 | S | — | TODO |
 | [035](035-the-fx-journal-is-pruned-at-each-checkpoint.md) | A long fx conversation turn no longer stops at the journal's size limit | P1 | M | — | TODO |
