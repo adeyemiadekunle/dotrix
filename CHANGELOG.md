@@ -56,6 +56,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - Text that reaches Kai's brief or Juno's look at a failed build (issue text, imported GitHub issues, documents, CI logs) can no longer break out of the part of the prompt marked as data.
 - Staging and production Docker coding require gVisor and a finite worker run limit. Both coding and egress containers verify their configured runtime before repository upload, with no fallback; swap is disabled and egress CPU is capped.
 - A computer coding a turn locally can only report a full commit ID as the turn's starting point; anything else is refused.
+- The desktop app opens only web and email links in your browser, and its window stays on dotrix (and GitHub's sign-in pages).
 
 ### Added
 
