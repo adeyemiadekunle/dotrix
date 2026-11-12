@@ -802,6 +802,17 @@ class CodingWorker:
         """Run the tool with the brief on the run's model (the tool's default when None), streaming its
         events into the run: its final message, and the cost it reported. A resumed session reports
         its running total, so the turn's own cost is what it adds to `cost_before`."""
+        from .capabilities import describe, instructions
+        from .skills import materialize
+
+        async with self.session_factory() as session:
+            skill_run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id))
+            if skill_run is None or not self._holds(skill_run) or skill_run.status is not CodingRunStatus.RUNNING:
+                raise _ReconciliationRequired()
+            skill_snapshot = skill_run.skill_snapshot or {}
+            tool_capabilities = describe(skill_run, self.settings)
+        brief += instructions(tool_capabilities, skill_snapshot)
+        brief += await materialize(box, skill_snapshot)
         usage, summary, failed = Usage(), None, None
         reported: list[float] = []
         pending: list[dict[str, Any]] = []

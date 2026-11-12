@@ -6334,6 +6334,17 @@ export interface components {
             /** Cost Usd */
             cost_usd: number;
         };
+        /** CodingCapabilityRead */
+        CodingCapabilityRead: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
         /**
          * CodingClaim
          * @description A local turn this runner now holds: code it in a worktree, then report the result.
@@ -6580,6 +6591,10 @@ export interface components {
         };
         /** CodingRunRead */
         CodingRunRead: {
+            /** Capabilities */
+            capabilities?: components["schemas"]["CodingCapabilityRead"][];
+            /** Skills */
+            skills?: components["schemas"]["CodingSkillRead"][];
             /** Tasks */
             tasks?: components["schemas"]["CodingTaskRead"][];
             /**
@@ -6974,6 +6989,21 @@ export interface components {
             pinned?: boolean | null;
             /** Archived */
             archived?: boolean | null;
+        };
+        /** CodingSkillRead */
+        CodingSkillRead: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Sha256 */
+            sha256: string;
+            /** Resources */
+            resources: string[];
+            /** Missing Resources */
+            missing_resources: string[];
+            /** Unavailable Tools */
+            unavailable_tools: string[];
         };
         /** CodingTaskRead */
         CodingTaskRead: {

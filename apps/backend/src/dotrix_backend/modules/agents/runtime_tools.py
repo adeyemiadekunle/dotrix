@@ -41,6 +41,7 @@ class RuntimeRunScope:
     lease_token: int
     session_id: str
     skill_snapshot: dict[str, str] | None = field(default=None, compare=False)
+    resource_snapshot: dict | None = field(default=None, compare=False)
 
 
 async def _authorize_read(
@@ -88,7 +89,7 @@ def scoped_knowledge_tools(
     tools = []
     for fn in build_knowledge_tools(
         sessions, workspace_id=scope.workspace_id, project_id=scope.project_id, embedder=embedder,
-        skill_snapshot=scope.skill_snapshot,
+        skill_snapshot=scope.skill_snapshot, resource_snapshot=scope.resource_snapshot,
     ):
         tool = StructuredTool.from_function(coroutine=fn)
         capability = tool_id(tool)

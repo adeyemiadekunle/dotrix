@@ -4,7 +4,6 @@ Each runs only when its provider's key is given (DOTRIX_LIVE_ANTHROPIC_API_KEY, 
 and the coding image is built (docker build -t dotrix-coding:latest infra/coding); each makes paid calls."""
 import dataclasses
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -88,8 +87,7 @@ async def test_live_kai_turn_in_docker_opens_a_pr(
 async def test_live_skills_follow_what_kai_changed(
     db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
 ) -> None:
-    """An issue that names no skill's area gets none, the rest listed; Juno's review and the next turn pick
-    them from what Kai changed (a .py file in the payments code)."""
+    """Cloud briefs list pinned skills for lazy loading; Juno still selects review guidance from the diff."""
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
@@ -108,7 +106,7 @@ async def test_live_skills_follow_what_kai_changed(
     asked = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
                                   json={"agent": agent, "model": model})).json()
     assert "## Skills for this work" not in asked["brief"], "the issue names no skill's area"
-    assert "## Other skills (not included)" in asked["brief"] and "- security-review:" in asked["brief"]
+    assert "## Pinned skills" in asked["brief"] and "- security-review:" in asked["brief"]
     first = await _approve(db_client, base, asked, ada.headers)
     assert first["status"] == "pr_opened", (first["status"], first["error"], first["summary"])
     assert "src/payments.py" in {f["path"] for f in first["files_changed"]}
@@ -120,9 +118,9 @@ async def test_live_skills_follow_what_kai_changed(
                                   json={"message": "Also add a test for it."})
     assert follow.status_code == 201, follow.text
     brief = follow.json()["brief"]
-    picked = sorted(set(re.findall(r'<data source="skill ([a-z-]+)">', brief)))
+    picked = [skill["name"] for skill in follow.json()["skills"]]
     assert "review-a-backend-change" in picked and "security-review" in picked, picked
-    assert not {"build-a-ui-change", "review-a-frontend-change", "plan-a-schema-change"} & set(picked), picked
+    assert "## Pinned skills" in brief and '<data source="skill ' not in brief
     second = await _approve(db_client, base, follow.json(), ada.headers)
     assert second["status"] in ("pr_opened", "no_changes"), (second["status"], second["error"])  # a test may be there already
     print(f"LIVE {agent}/{model}: review told {told[0]!r}; follow-up picked {picked}; "
@@ -161,3 +159,44 @@ async def test_live_an_unclear_issue_never_reaches_main_unreviewed(
         assert github.pulls == []
     else:
         assert run["status"] == "pr_opened" and run["branch"] != "main" and run["review_run_id"], run
+
+
+@pytest.mark.parametrize(("agent", "model"), list(_cases()))
+async def test_live_kai_loads_a_pinned_skill_resource(
+    db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
+) -> None:
+    """The expected marker exists only in a pinned resource, never in the task or catalog description."""
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    settings = app.state.settings
+    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
+    worker = app.state.jobs.ctx.coding
+    app.state.jobs.ctx = dataclasses.replace(app.state.jobs.ctx,
+        coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+    provider = model.partition(":")[0]
+    await _save_key(db_client, ada.headers, provider, os.environ[KEYS[provider]])
+    base = f"{ws}/projects/{kun['id']}"
+    marker = "refund-policy-resource-verification-2026"
+    entries = {
+        "agent-rules/skills/team-refund.md": "Description: Read the team's refund policy before implementing refunds.\n"
+            "Agents: coding\nResources: references/policy.md\nRequires: repository.read, repository.write\n\n"
+            "Read the pinned references/policy.md resource. Its marker must be used verbatim as REFUND_POLICY in src/payments.py.",
+        "agent-rules/skills/team-refund/references/policy.md": f"The refund policy marker is `{marker}`.\n",
+    }
+    for path, content in entries.items():
+        response = await db_client.put(f"{base}/knowledge/files/{path}", headers=ada.headers, json={"content": content})
+        assert response.status_code in (200, 201), response.text
+    task = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
+        "type": "task", "title": "Apply the team refund policy",
+        "description": "Read the pinned team-refund skill and its policy reference, then add REFUND_POLICY "
+                       "to src/payments.py using the exact marker from that reference. Change nothing else.",
+    })).json()
+    agent_script.say("The policy marker matches the requested resource.")
+    asked = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
+                                  json={"agent": agent, "model": model})).json()
+    assert marker not in asked["brief"]
+    skill = next(item for item in asked["skills"] if item["name"] == "team-refund")
+    assert skill["resources"] == ["references/policy.md"] and not skill["missing_resources"]
+    run = await _approve(db_client, base, asked, ada.headers)
+    assert run["status"] == "pr_opened", (run["status"], run["error"], run["summary"])
+    assert marker in _git(origin, "show", f"{run['branch']}:src/payments.py")

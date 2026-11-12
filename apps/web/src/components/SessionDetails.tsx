@@ -63,6 +63,29 @@ export function SessionDetails({
 
   return (
     <div className="sd">
+      {Boolean(latest?.capabilities?.length) && (
+        <Section title="Tools and skills">
+          {(latest?.capabilities ?? []).map((capability) => (
+            <div key={capability.id}>
+              <div className="sd-row">
+                <span className="grow">{capability.label}</span>
+                <span className="faint">{capability.available ? "Available" : "Unavailable"}</span>
+              </div>
+              {capability.reason && <p className="faint">{capability.reason}</p>}
+            </div>
+          ))}
+          {(latest?.skills ?? []).map((skill) => (
+            <details key={skill.name}>
+              <summary>{skill.name}</summary>
+              <p>{skill.description}</p>
+              <p className="mono">Version {skill.sha256.slice(0, 12)}</p>
+              {Boolean(skill.resources.length) && <p>Resources: {skill.resources.join(", ")}</p>}
+              {Boolean(skill.missing_resources.length) && <p>Missing resources: {skill.missing_resources.join(", ")}</p>}
+              {Boolean(skill.unavailable_tools.length) && <p>Unavailable required tools: {skill.unavailable_tools.join(", ")}</p>}
+            </details>
+          ))}
+        </Section>
+      )}
       <Section title="Environment">
         <div className="sd-row">
           <Ic n={local ? "monitor" : "cloud"} s={15} />

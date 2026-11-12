@@ -123,7 +123,25 @@ class CodingTaskRead(BaseModel):
     usage: dict[str, Any] = Field(default_factory=dict)
 
 
+class CodingCapabilityRead(BaseModel):
+    id: str
+    label: str
+    available: bool
+    reason: str | None = None
+
+
+class CodingSkillRead(BaseModel):
+    name: str
+    description: str
+    sha256: str
+    resources: list[str]
+    missing_resources: list[str]
+    unavailable_tools: list[str]
+
+
 class CodingRunRead(BaseModel):
+    capabilities: list[CodingCapabilityRead] = Field(default_factory=list)
+    skills: list[CodingSkillRead] = Field(default_factory=list)
     tasks: list[CodingTaskRead] = Field(default_factory=list)
     work_mode: Literal["plan", "build"] = "build"
     plan_result: dict[str, Any] | None = None

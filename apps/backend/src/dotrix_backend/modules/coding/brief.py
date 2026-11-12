@@ -57,7 +57,7 @@ RULES = """\
 async def build_brief(
     session: AsyncSession, project: Project, issue: IssueRead, note: str | None,
     earlier: list[tuple[int, str]] | None = None,
-    *, user_id: uuid.UUID | None = None,
+    *, user_id: uuid.UUID | None = None, inline_skills: bool = True,
 ) -> str:
     """The brief for a run. A follow-up (`earlier`: the session's previous turns and what each
     did) works on the session's branch, and `note` is what to do in this turn."""
@@ -104,14 +104,14 @@ async def build_brief(
     # (their "(changed: …)" line; not their prose, which repeats the definition of done's words).
     touched = [line for _, summary in earlier or [] for line in summary.splitlines() if line.startswith("(changed: ")]
     work = "\n".join((issue.title, issue.description, note or "", *touched))
-    parts += await _standards(session, project, work)
+    parts += await _standards(session, project, work, inline_skills=inline_skills)
     return "\n".join(parts)
 
 
 STANDARDS_CHARS = 16_000  # the skills and the team's coding rules, together
 
 
-async def _standards(session: AsyncSession, project: Project, work: str) -> list[str]:
+async def _standards(session: AsyncSession, project: Project, work: str, *, inline_skills: bool = True) -> list[str]:
     """What the team asks of code here: the project's agent-rules/coding.md when a person changed it
     (the engine's default describes the platform's job, said above already; the workspace's and project's
     guidance for Kai is its contract's, in `role_instructions`), and the skills meant for Kai that `work`
@@ -123,7 +123,8 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
     ever = {f.path for f in files}
     skills = await WorkspaceSkills(session).texts(project.workspace_id)
     skills |= {skill_name(path): text for path, text in default_skills().items() if path not in ever}
-    skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
+    skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")
+               and "/" not in p.removeprefix(SKILLS_FOLDER)}
     kais = {name: text for name, text in sorted(skills_for(skills, "coding").items())
             if name != "definition-of-done"}
     mine = {name: text for name, text in kais.items() if skill_matches(text, work)}
@@ -140,7 +141,7 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
         for rule in rules:
             out.append(rule[:budget])
             budget -= min(len(rule), budget)
-    if mine and budget > 0:
+    if mine and budget > 0 and inline_skills:
         out += ["", "## Skills for this work",
                 "Picked for what this issue touches; follow their steps where they apply:"]
         for name, text in mine.items():
@@ -149,6 +150,8 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
                 continue
             out.append(fence(f"skill {name}", text.strip()))
             budget -= len(text)
+    if not inline_skills:
+        return out
     if others:
         # A line each, so the work can name one it turned out to need (a "refund bug" in payment code).
         out += ["", "## Other skills (not included)",

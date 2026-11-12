@@ -421,3 +421,26 @@ def skills_guide(skills: dict[str, str], heading: str = "## Skills") -> str:
     for name, content in sorted(skills.items()):
         lines.append(f"- {name}: {describe_skill(content)}")
     return "\n".join(lines)
+
+
+def skill_resources(content: str) -> list[str]:
+    """Explicit relative resource paths; importing a skill never executes its resources."""
+    from pathlib import PurePosixPath
+
+    paths = []
+    for line in content.splitlines():
+        if line.lower().startswith("resources:"):
+            paths.extend(path.strip() for path in line.partition(":")[2].split(",") if path.strip())
+    if len(paths) > 20:
+        raise ValueError("A skill may reference at most 20 resources")
+    for path in paths:
+        if (len(path) > 200 or PurePosixPath(path).is_absolute() or any(part in {"", ".", ".."} for part in path.split("/"))
+                or any(char in path for char in "\\:\x00\r\n") or any(part in {".git", ".dotrix"} for part in path.split("/"))):
+            raise ValueError("Skill resources must be literal relative paths")
+    return list(dict.fromkeys(paths))
+
+
+def skill_requires(content: str) -> list[str]:
+    """Advisory requirements, never permission grants; unknown capabilities remain unavailable."""
+    return list(dict.fromkeys(word.strip() for line in content.splitlines() if line.lower().startswith("requires:")
+                              for word in line.partition(":")[2].split(",") if word.strip()))[:20]

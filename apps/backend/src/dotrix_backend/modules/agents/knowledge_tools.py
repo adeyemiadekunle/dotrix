@@ -49,6 +49,7 @@ def build_knowledge_tools(
     project_id: uuid.UUID,
     embedder: Embedder | None,
     skill_snapshot: dict[str, str] | None = None,
+    resource_snapshot: dict | None = None,
 ) -> list[Callable]:
     async def _file(file_path: str) -> tuple[object | None, str]:
         path = _relative(file_path)
@@ -138,16 +139,28 @@ def build_knowledge_tools(
             lines.append(f"{number}. {where}\n   {snippet}")
         return "\n".join(lines)
 
-    async def read_skill(skill: str) -> str:
+    async def read_skill(skill: str, resource: str | None = None) -> str:
         """Read one of the skills listed under "Skills" in your instructions: the steps to
         follow for that kind of work. The project's own skill wins over the workspace's.
 
         Args:
             skill: The skill's name as listed, e.g. "write-an-adr".
+            resource: Optional relative resource path declared by the skill.
         """
         clean = skill.strip().removesuffix(".md").rsplit("/", 1)[-1]
         if skill_snapshot is not None:
-            return skill_snapshot.get(clean, f"No skill called {clean!r} in this run's authorized catalog")
+            if clean not in skill_snapshot:
+                return f"No skill called {clean!r} in this run's authorized catalog"
+            resources = (resource_snapshot or {}).get(clean, {})
+            if resource is not None:
+                item = resources.get(resource)
+                return item["content"] if item else f"No pinned resource {resource!r} for skill {clean!r}"
+            text = skill_snapshot[clean]
+            if resources:
+                text += "\n\nPinned resources (load with read_skill resource=path): " + ", ".join(resources)
+            return text
+        if resource is not None:
+            return "Resources require a pinned run catalog"
         async with session_factory() as session:
             file = await KnowledgeRepository(session).get_file(project_id, f"{SKILLS_FOLDER}{clean}.md")
             if file is not None and not file.deleted:

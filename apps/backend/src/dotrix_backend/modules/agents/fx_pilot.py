@@ -227,7 +227,9 @@ async def _turn(
 
         skill_snapshot = await pin(session, run, secrets)
         scope = RuntimeRunScope(workspace_id, run.project_id, run_id, run.requested_by_id,
-                                PM_HANDLE, token, session_id, for_role(skill_snapshot, PM_HANDLE))
+                                PM_HANDLE, token, session_id, for_role(skill_snapshot, PM_HANDLE),
+                                {name: item.get("resources", {}) for name, item in (run.skill_snapshot or {}).items()
+                                 if name in for_role(skill_snapshot, PM_HANDLE)})
         guide = _DELEGATION_GUIDE if durable and not coding_outcome and spec.can("delegate") else _GUIDE
         if existing is not None and existing.encrypted_context:
             snapshot = json.loads(secrets.decrypt(existing.encrypted_context))

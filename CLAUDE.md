@@ -481,12 +481,15 @@ review flow. Human merge is unchanged. Recovery reuses saved verified patches on
 same plan base and rebuilds the combined checkout, avoiding duplicate external publication.
 
 Skill catalogs are pinned with content hashes per run; specialist children inherit the parent's
-catalog. Chat role filters apply to `read_skill`; coding briefs include their pinned role catalog
-in full so all four coding runtimes and their workers receive the same content. Catalogs are
+catalog. Chat role filters apply to `read_skill`; cloud coding briefs list descriptions, and
+the runner materializes pinned skill files outside the repository before each runtime call.
+All four coding runtimes and workers read relevant skills on demand; local-computer turns
+retain inline skill text for compatibility. Catalogs are
 bounded to 256 KB and do not grant tools. Defaults are virtual during guidance reads, which no
 longer write template/skill files into a project. Existing project skill customizations win.
 
 Deployment validation still required: all four paid coding engines under the read-only wrapper,
 distributed crash/recovery and cancellation under load, and actual gVisor/OpenShell compatibility.
-The feature flag must stay off until these checks pass. Skills currently embed their procedures;
-external skill-package imports and separately downloadable skill resources are not implemented.
+The feature flag must stay off until these checks pass. Skills support pinned project reference
+resources and advisory tool requirements; see docs/agent-skills.md. External skill-package
+imports are not implemented.
