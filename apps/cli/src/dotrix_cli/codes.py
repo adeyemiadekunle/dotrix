@@ -440,8 +440,14 @@ def codes_follow(
             typer.echo("A Plan turn runs in the platform's sandbox: asking for it in the cloud.")
     elif plan:
         turns = cli._platform_call(lambda: codes.turns(session["session_id"]))
-        chosen = next((t for t in turns if str(t["turn"]) == plan.strip()), None) or next(
-            (t for t in turns if str(t["id"]).startswith(plan.strip().lower())), None)
+        want = plan.strip()
+        chosen = next((t for t in turns if str(t["turn"]) == want), None)
+        if chosen is None:
+            # Run ids are UUIDv7, so turns made close together share their leading characters.
+            matches = [t for t in turns if str(t["id"]).startswith(want.lower())]
+            if len(matches) > 1:
+                cli._fail(f"More than one turn's id starts with {want}: use more of it, or the turn's number.")
+            chosen = matches[0] if matches else None
         if chosen is None or chosen.get("work_mode") != "plan" or not chosen.get("plan_result"):
             cli._fail(f"Turn {plan.strip()} isn't a finished plan.")
         work_mode, source = "build", chosen["id"]

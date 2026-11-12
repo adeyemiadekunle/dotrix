@@ -238,6 +238,20 @@ def test_follow_plan_must_be_a_finished_plan(platform: FakePlatform, linked_repo
     assert result.exit_code != 0 and not platform.bodies(f"/sessions/{SID}/turns")
 
 
+def test_follow_plan_id_prefix_must_be_unique(platform: FakePlatform, linked_repo: Path) -> None:
+    plan = {"title": "P", "tasks": []}
+    one_session(
+        platform,
+        coding_run("0192ffff-aaaa-7000-8000-000000000001", work_mode="plan", plan_result=plan),
+        coding_run("0192ffff-bbbb-7000-8000-000000000002", turn=2, work_mode="plan", plan_result=plan),
+    )
+    result = codes(linked_repo, "follow", "kun-7", "go", "--plan", "0192ffff")
+    assert result.exit_code != 0 and "use more of it" in result.output
+    assert not platform.bodies(f"/sessions/{SID}/turns")
+    assert codes(linked_repo, "follow", "kun-7", "go", "--plan", "0192ffff-bb").exit_code == 0
+    assert platform.bodies(f"/sessions/{SID}/turns")[0]["source_plan_id"] == "0192ffff-bbbb-7000-8000-000000000002"
+
+
 def test_steps_summary() -> None:
     assert codes_module.steps_summary([]) == "Worked on it"
     assert codes_module.steps_summary([{"kind": "tool", "text": "Searched"}]) == "Used 1 other tool"
