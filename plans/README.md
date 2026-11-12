@@ -45,9 +45,9 @@ the audit nor the other plans.
 | [030](030-dependency-reader-handles-real-requirements-files.md) | The dependency reader gets versions right in hash-pinned requirements files, and one bad manifest doesn't break the view | P1 | S | — | DONE |
 | [031](031-coding-patches-stored-as-exact-bytes.md) | A coding turn's patch is kept and pushed byte for byte, whatever its files' encoding | P1 | M | 029 | DONE |
 | [032](032-notification-emails-arent-sent-twice.md) | A crash while emailing notifications doesn't email everyone again | P1 | S | — | DONE |
-| [033](033-junos-review-claim-cant-stick.md) | Juno's review is still posted on the pull request after a failed or interrupted attempt | P1 | S | — | TODO |
+| [033](033-junos-review-claim-cant-stick.md) | Juno's review is still posted on the pull request after a failed or interrupted attempt | P1 | S | — | DONE |
 | [034](034-a-warm-sandbox-is-closed-when-its-check-fails.md) | A session's sandbox is closed when the check before reusing it fails | P2 | S | — | TODO |
-| [035](035-the-fx-journal-is-pruned-at-each-checkpoint.md) | A long fx conversation turn no longer stops at the journal's size limit | P1 | M | — | TODO |
+| [035](035-the-fx-journal-is-pruned-at-each-checkpoint.md) | A long fx conversation turn no longer stops at the journal's size limit | P1 | M | — | DONE |
 | [036](036-webhook-follow-ups-arent-lost.md) | A GitHub delivery's follow-up jobs are still scheduled when queueing them fails the first time | P2 | S | — | TODO |
 | [037](037-task-lists-show-more-than-5000-tasks.md) | A workspace with more than 5,000 tasks shows all of them | P2 | M | — | TODO |
 | [038](038-desktop-opens-only-web-links.md) | The desktop app opens only web links outside itself, and its window can't be sent to another site | P1 | S | — | DONE |
