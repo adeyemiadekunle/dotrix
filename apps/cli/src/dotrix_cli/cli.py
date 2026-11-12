@@ -603,12 +603,16 @@ def code_command(
     cloud: bool = typer.Option(False, "--cloud", help="Code in the platform's sandbox instead of on this computer"),
     approvals: str | None = typer.Option(None, "--approvals", help="Approval mode: manual, accept-edits or auto"),
     model: str | None = typer.Option(None, "--model", help="The provider:model to code on (default: your default model)"),
+    plan_only: bool = typer.Option(False, "--plan-only", help="Ask for a Plan turn: Kai reads the repository and returns a plan, changing nothing (needs --cloud)"),
     wait: bool = typer.Option(False, "--wait", help="Wait here for the turn, printing its steps"),
     project: str = ProjectOpt,
 ):
     """Ask Kai to code an issue: on this computer (run `dotrix runner` here), or with --cloud on the
-    platform. It waits for an approval unless your approval mode lets it start at once. Then
-    `dotrix codes show KEY` shows the session."""
+    platform. It waits for an approval unless your approval mode lets it start at once. With
+    --plan-only Kai makes a plan first, without changing anything; build from it later with
+    `dotrix codes follow KEY "..." --plan TURN`. Then `dotrix codes show KEY` shows the session."""
+    if plan_only and not cloud:
+        _fail("A Plan turn runs in the platform's sandbox: add --cloud")
     approval_mode = _approval_mode(approvals) if approvals else None
     if approvals and approval_mode is None:
         raise typer.BadParameter("use manual, accept-edits or auto", param_hint="--approvals")
@@ -619,10 +623,12 @@ def code_command(
         body["approval_mode"] = approval_mode
     if model:
         body["model"] = model
+    if plan_only:
+        body["work_mode"] = "plan"
     run = _platform_call(lambda: client.post(f"{base}/issues/{key.strip().upper()}/runs", body))
     where = "the platform" if cloud else "your computer"
     waiting = "waits for an approval" if run["status"] == "awaiting_approval" else "is queued"
-    typer.echo(f"{run['issue_key']}: Kai's turn on {where} {waiting} (run {run['id']})")
+    typer.echo(f"{run['issue_key']}: Kai's {'Plan ' if plan_only else ''}turn on {where} {waiting} (run {run['id']})")
     if wait and run["status"] != "awaiting_approval":
         from . import codes
 
@@ -1137,14 +1143,51 @@ class _ChatSession:
                 typer.echo(f"Approvals: {APPROVAL_NAMES[mode]} (the workspace's cap and your own still apply).")
         elif name == "/continue":
             self.continue_run(later=arg.lower() in ("later", "when-reset", "reset"))
+        elif name == "/plans":
+            self.list_plans()
+        elif name == "/build":
+            self.build_plan(arg)
         else:
             typer.secho(
-                "Commands: /mode NAME, /approvals NAME, /agent NAME, /continue [later], /new, /quit",
+                "Commands: /mode NAME, /approvals NAME, /agent NAME, /plans, /build [VERSION], /continue [later], /new, /quit",
                 fg=typer.colors.RED,
             )
         return True
 
-    def send(self, message: str) -> None:
+    def _plans(self) -> list[dict]:
+        """The conversation's saved plans, newest first (none before it has a thread)."""
+        if not self.thread:
+            return []
+        return sorted(self.client.plans(self.thread), key=lambda p: p["version"], reverse=True)
+
+    def list_plans(self) -> None:
+        plans = self._plans()
+        if not plans:
+            typer.secho("No saved plans yet. Plan mode saves one: /mode plan.", dim=True)
+            return
+        for i, plan in enumerate(plans):
+            tasks = len(plan.get("tasks") or [])
+            saved = _ago(plan.get("created_at"))
+            latest = "  (newest)" if i == 0 else ""
+            typer.echo(f"v{plan['version']}  {plan['title']}  {tasks} task{'' if tasks == 1 else 's'}  {saved}{latest}")
+
+    def build_plan(self, arg: str) -> None:
+        plans = self._plans()
+        if not plans:
+            typer.secho("No saved plans yet. Plan mode saves one: /mode plan.", dim=True)
+            return
+        chosen = plans[0]
+        if arg:
+            chosen = next((p for p in plans if arg.lstrip("vV") == str(p["version"])), None)
+            if chosen is None:
+                versions = ", ".join(f"v{p['version']}" for p in plans)
+                typer.secho(f"No plan version {arg}. Saved versions: {versions}.", fg=typer.colors.RED)
+                return
+        self.work_mode = "build"
+        typer.echo(f"Build mode. Building plan v{chosen['version']}: {chosen['title']}")
+        self.send("Build this plan", plan_id=chosen["id"])
+
+    def send(self, message: str, *, plan_id: str | None = None) -> None:
         if self.work_mode == "build":
             self.sessions |= self._kai_sessions().keys()
         run = self.client.start(
@@ -1155,6 +1198,7 @@ class _ChatSession:
             work_mode=self.work_mode,
             approval_mode=self.approval_mode,
             runtime=self.runtime,
+            plan_id=plan_id,
         )
         self.thread = run["thread_id"]
         self.follow(run)
@@ -1238,6 +1282,7 @@ def _platform_chat(
     typer.echo(
         f"Talking to {who} ({state.project_name}) on the platform{extra}. Changes wait for your approval "
         "unless your approval mode lets them through. /mode, /approvals and /agent change who answers and how; "
+        "/plans lists the conversation's saved plans and /build [version] builds one; "
         "/continue goes on after a model limit; /new starts a new conversation; Ctrl+C stops a reply; /quit exits.\n"
     )
     while True:

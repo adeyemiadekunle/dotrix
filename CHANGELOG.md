@@ -9,6 +9,16 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Added
+
+- dotrix chat: /plans lists the conversation's saved plans, and /build [version] builds the one you pick.
+- dotrix code --plan-only and dotrix codes follow --plan-only ask Kai for a plan first; --plan TURN builds from that plan.
+- dotrix codes show prints a Plan turn's plan and a turn's parallel tasks; --details adds its skills and unavailable capabilities.
+
+### Fixed
+
+- dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added
