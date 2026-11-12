@@ -112,7 +112,6 @@ Leads only: open the code before planning any of these.
 - A race in the issue dependency-cycle check (`modules/issues/service.py:1125-1159`).
 - The desktop app can hang on quit or leave the coding tool running (`apps/desktop/src/runner.ts:309-323`).
 - An approver sees a coding session's earlier turns while one turn waits (`modules/coding/service.py:791-843`) — may be intended.
-- Raw provider error text in the admin console's failure report (`modules/admin/platform.py:280-299`).
 - Lease renew/release logic differs between chat runs, coding runs and local turns.
 - pytest runs serially in CI (about 9.5 minutes at the last observed run).
 - `CLAUDE.md`'s backend tree omits `modules/admin` and `modules/observe`; `.env.example` covers under half the settings.
