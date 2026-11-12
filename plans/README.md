@@ -33,7 +33,7 @@ the audit nor the other plans.
 | [018](018-console-failures-and-audit-cleanup.md) | The console's failure report can't show what people wrote, and the audit log can be filtered | P2 | S–M | — | TODO |
 | [019](019-one-coding-turn-at-a-time-per-issue.md) | Two requests can't start coding on the same issue or session at once | P1 | S | — | TODO |
 | [020](020-approvals-refresh-the-board.md) | Approving in Chat or Codes refreshes the task lists straight away | P1 | S | — | DONE |
-| [021](021-isolation-test-covers-every-id.md) | The cross-workspace test tries every kind of ID, not eight of them | P1 | S | — | TODO |
+| [021](021-isolation-test-covers-every-id.md) | The cross-workspace test tries every kind of ID, not eight of them | P1 | S | — | DONE |
 | [022](022-unit-tests-for-the-web-list-engine.md) | The web's list engine, routes and permissions have unit tests | P1 | M | — | DONE |
 | [023](023-grouped-lists-show-every-task.md) | Grouped and sorted task lists show every task, in the right order, with its comment count | P1 | S | 022 | TODO |
 | [024](024-task-descriptions-survive-the-editor.md) | Opening a task doesn't rewrite its description, and the editor keeps links and headings | P1 | M | 022 | TODO |
