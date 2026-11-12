@@ -112,6 +112,7 @@ deploy/migrate.sh backup    # a pg_dump into ./backups (BACKUP_DIR), with the co
 deploy/migrate.sh upgrade   # apply what's waiting (refuses when the code has two migration heads)
 deploy/migrate.sh check     # exit 0 only when the database is at the code's head
 deploy/migrate.sh           # all of it: status, backup, upgrade once you confirm (YES=1 skips asking), check
+IMAGE=dotrix-backend:0.2.0 deploy/migrate.sh check   # against a given release's migrations
 ```
 
 It finds the running `api` and `postgres` containers by their compose labels, so it needs neither the
@@ -120,10 +121,15 @@ database URL. If more than one dotrix runs on the machine, name the one you mean
 `COMPOSE_PROJECT=<name>` (Dokploy's project name for the service), or pass `API_CONTAINER` and
 `PG_CONTAINER`.
 
-When a deploy fails at `migrate`, the API and worker keep running the previous version. Read the migrate
-container's log in Dokploy, fix the cause, and deploy again (or run `deploy/migrate.sh upgrade` once the new
-image is up). A backup restores with the `pg_restore` command `backup` prints. Restore only into the version
-that made it, since a newer version's code expects its own migrations.
+When a deploy fails at `migrate`, the API and worker keep running the previous version, and the previous
+version's code knows only the previous migrations. So name the release you're deploying: with
+`IMAGE=dotrix-backend:<version>` (the backend image the deploy built; `docker images dotrix-backend` lists
+them), the script runs the migrations from that image in a one-off container on Postgres's network, with the
+running API's database URL (or `DOTRIX_DATABASE_URL` when no API is running). Read the migrate container's log
+in Dokploy, fix the cause, then `IMAGE=dotrix-backend:<version> deploy/migrate.sh` and deploy again. `check`
+with the same `IMAGE` confirms the database is at that release's head. A backup restores with the
+`pg_restore` command `backup` prints. Restore only into the version that made it, since a newer version's
+code expects its own migrations.
 
 Keep backups off the VPS too: copy the `.dump` files somewhere else, or back up the `pgdata` volume with
 your host's snapshots.

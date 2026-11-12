@@ -13,9 +13,15 @@
 #   deploy/migrate.sh           all of it: status, backup, upgrade (after you confirm), check
 #
 # Options (environment variables):
+#   IMAGE             run the migrations from this backend image (the release being deployed, e.g.
+#                     dotrix-backend:0.2.0) in a one-off container, instead of in the running API.
+#                     Use it when a deploy failed at `migrate`: the API still running then is the
+#                     previous release, whose code knows only the previous migrations.
 #   COMPOSE_PROJECT   the compose project's name, when more than one dotrix runs on this host
 #   API_CONTAINER     the API container, instead of finding it by its compose labels
 #   PG_CONTAINER      the Postgres container, likewise
+#   PG_NETWORK        with IMAGE: the Docker network Postgres is on (default: its first)
+#   DOTRIX_DATABASE_URL  with IMAGE and no API running: the database URL (otherwise the API's is used)
 #   BACKUP_DIR        where backups go (default ./backups)
 #   YES=1             upgrade without asking
 #
@@ -47,19 +53,48 @@ find_container() {
 api() { API_CONTAINER=${API_CONTAINER:-$(find_container api)}; printf '%s' "$API_CONTAINER"; }
 pg() { PG_CONTAINER=${PG_CONTAINER:-$(find_container postgres)}; printf '%s' "$PG_CONTAINER"; }
 
-alembic() { docker exec -w /app/apps/backend "$(api)" alembic "$@"; }
+pg_network() {
+  PG_NETWORK=${PG_NETWORK:-$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{"\n"}}{{end}}' "$(pg)" | head -1)}
+  printf '%s' "$PG_NETWORK"
+}
+
+alembic() {
+  if [[ -n ${IMAGE:-} ]]; then
+    local url=${DOTRIX_DATABASE_URL:-} network
+    [[ -n $url ]] || url=$(docker exec "$(api)" printenv DOTRIX_DATABASE_URL 2>/dev/null) || true
+    [[ -n $url ]] || die "with IMAGE and no running API, set DOTRIX_DATABASE_URL"
+    network=$(pg_network)
+    [[ -n $network ]] || die "couldn't find Postgres's Docker network: set PG_NETWORK"
+    # The URL goes to the container by name (-e NAME), so it never appears in the process list.
+    DOTRIX_DATABASE_URL=$url docker run --rm -e DOTRIX_DATABASE_URL --network "$network" -w /app/apps/backend \
+      "$IMAGE" alembic "$@"
+  else
+    docker exec -w /app/apps/backend "$(api)" alembic "$@"
+  fi
+}
+
+code_source() { if [[ -n ${IMAGE:-} ]]; then printf 'image %s' "$IMAGE"; else printf 'the running API (%s)' "$(api)"; fi; }
 
 # The revision ids alone, one per line (alembic prints "<id> (head)" and similar).
 revisions() { awk '/^[0-9a-f]{6,}/ {print $1}'; }
 
-current() { alembic current 2>/dev/null | revisions; }
-heads() { alembic heads 2>/dev/null | revisions; }
+# Alembic's own chatter (its INFO lines) is dropped; a failure is shown, then stops the script.
+quiet() {
+  local out
+  if ! out=$(alembic "$@" 2>&1); then
+    printf '%s\n' "$out" | grep -v '^INFO ' >&2
+    die "alembic $1 failed"
+  fi
+  printf '%s\n' "$out"
+}
+current() { quiet current | revisions; }
+heads() { quiet heads | revisions; }
 
 status() {
   local now head
   now=$(current); head=$(heads)
   say "Database:  ${now:-(empty: no migration applied yet)}"
-  say "Code head: $(tr '\n' ' ' <<<"$head")"
+  say "Code head: $(tr '\n' ' ' <<<"$head")(from $(code_source))"
   if [[ $(wc -l <<<"$head") -gt 1 ]]; then
     say "The code has more than one head: join them with a merge migration before deploying."
     return 2
@@ -118,6 +153,6 @@ case ${1:-all} in
     upgrade
     check
     ;;
-  -h | --help | help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h | --help | help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) die "unknown command '$1' (status, backup, upgrade, check, or none for all of them)" ;;
 esac
