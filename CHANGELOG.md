@@ -27,6 +27,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Kai's changes to files that aren't UTF-8 text (older encodings such as Latin-1) are now pushed exactly as written, from cloud and local turns; before, cloud turns replaced those characters and local turns refused them.
 - A turn coded on your computer now delivers every step to the session, including the last ones, and a turn that changed a file that isn't UTF-8 text now fails with a clear reason instead of sending damaged changes.
 - A new reply in Chat no longer opens showing the previous reply's text, and a reply in a conversation across projects keeps streaming after a dropped connection.
 - A task list grouped by assignee now shows tasks assigned to an agent (such as one Kai is coding) and to people who have left; grouped by due date it keeps finished tasks whose date has passed; estimates sort as numbers; and lists show comment counts in every workspace.

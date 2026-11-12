@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -144,6 +145,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # The turn's changes while they wait to be accepted (`changes_ready`), as a binary patch on the
     # session's branch; cleared once pushed or rejected. Who accepted them, and when.
     pending_patch: Mapped[str | None] = mapped_column(Text, deferred=True)
+    # The same patch, byte for byte (files that aren't UTF-8 text survive). `pending_patch` (text) is
+    # read only for turns that were already waiting before this column existed.
+    pending_patch_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     # The turn's changes as a patch against `base_sha`, kept after it's pushed or discarded: the
     # session's Changes and Files show it (pending_patch is only the copy waiting to be pushed).
     diff: Mapped[str | None] = mapped_column(Text, deferred=True)
@@ -257,3 +261,11 @@ class CodingRunner(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+def waiting_patch(bytes_value: bytes | None, text_value: str | None) -> bytes | None:
+    """The patch waiting to be pushed: the exact bytes, or (a turn that waited before they were kept)
+    the old text column's value."""
+    if bytes_value is not None:
+        return bytes(bytes_value)
+    return text_value.encode() if text_value is not None else None

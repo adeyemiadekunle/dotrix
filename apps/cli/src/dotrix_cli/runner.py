@@ -21,6 +21,7 @@ each turn.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -577,18 +578,7 @@ class LocalRunner:
         raw_patch = await git_bytes(tree, "diff", "--cached", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",
                           "--no-renames", base_sha)
         usage = {k: v for k, v in out.usage.items() if v is not None}
-        try:
-            patch = raw_patch.decode("utf-8")
-        except UnicodeDecodeError:
-            # The API takes the patch as text: sending it decoded with replacements would change the
-            # files it writes, so the turn ends here instead.
-            reason = ("A changed file isn't UTF-8 text, so the changes can't be sent exactly yet; "
-                      "nothing was sent. The worktree keeps them.")
-            pending.append({"kind": "error", "text": reason})
-            await report("failed", base_sha=base_sha, summary=out.summary, error=reason, **usage)
-            self.echo(f"  Failed: {reason}")
-            return
-        if not patch.strip():
+        if not raw_patch.strip():
             if code != 0:
                 error = (stderr or f"{tool.name} exited with {code}")[-2000:]
                 if isolated and _sign_in_failed(error):
@@ -600,7 +590,14 @@ class LocalRunner:
                 await report("no_changes", base_sha=base_sha, summary=out.summary, **usage)
                 self.echo("  No changes")
             return
-        await report("changes", base_sha=base_sha, patch=patch, summary=out.summary or _tail(stderr), **usage)
+        # The exact bytes, base64-encoded; also as text when it is UTF-8, for a platform that predates `patch_b64`
+        # (it would see no changes at all otherwise).
+        try:
+            as_text: dict[str, str] = {"patch": raw_patch.decode("utf-8")}
+        except UnicodeDecodeError:
+            as_text = {}
+        await report("changes", base_sha=base_sha, patch_b64=base64.b64encode(raw_patch).decode(), **as_text,
+                     summary=out.summary or _tail(stderr), **usage)
         self.echo(f"  Changes reported; the worktree stays at {tree}")
 
 

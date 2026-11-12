@@ -2,6 +2,7 @@
 The whole loop runs against the real API in the backend's tests (test_coding.py, local turns)."""
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -432,7 +433,7 @@ async def test_when_the_platform_stays_away_the_result_says_steps_are_missing(tm
     assert body["events"][-2]["text"] == "step 179"
 
 
-async def test_a_change_that_is_not_utf8_text_is_not_sent_as_a_patch(tmp_path: Path) -> None:
+async def test_a_change_that_is_not_utf8_text_is_sent_as_exact_bytes(tmp_path: Path) -> None:
     results: list[dict] = []
 
     class Api:
@@ -442,10 +443,10 @@ async def test_a_change_that_is_not_utf8_text_is_not_sent_as_a_patch(tmp_path: P
             return {"stop": False}
 
     script = "open('a.txt', 'wb').write('caf\\xe9\\n'.encode('latin-1'))"
-    said = await _turn(tmp_path, script, Api(), {"a.txt": b"a\n"})
+    await _turn(tmp_path, script, Api(), {"a.txt": b"a\n"})
     [result] = results
-    assert result["outcome"] == "failed" and "patch" not in result and "UTF-8" in result["error"]
-    assert any("UTF-8" in e["text"] for e in result["events"]) and "UTF-8" in said[-1]
+    assert result["outcome"] == "changes" and "patch" not in result
+    assert b"+caf\xe9\n" in base64.b64decode(result["patch_b64"], validate=True)
 
 
 async def test_a_utf8_change_is_still_sent_as_a_patch(tmp_path: Path) -> None:
@@ -460,3 +461,4 @@ async def test_a_utf8_change_is_still_sent_as_a_patch(tmp_path: Path) -> None:
     await _turn(tmp_path, "open('a.txt', 'wb').write('caf\\xe9\\n'.encode('utf-8'))", Api())
     [result] = results
     assert result["outcome"] == "changes" and "+café" in result["patch"]
+    assert base64.b64decode(result["patch_b64"]).decode() == result["patch"]

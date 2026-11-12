@@ -68,6 +68,7 @@ class ExecResult:
     timed_out: bool = False
     cancelled: bool = False
     truncated: bool = False
+    raw: bytes = b""  # stdout exactly as the command wrote it (stdout is decoded with replacements)
 
 
 LineHandler = Callable[[str], Awaitable[None]]
@@ -186,6 +187,7 @@ async def _run_async(
     return ExecResult(
         code=process.returncode, stdout=b"".join(kept).decode(errors="replace"),
         stderr=err.decode(errors="replace"), timed_out=timed_out, cancelled=cancelled, truncated=truncated,
+        raw=b"".join(kept),
     )
 
 
@@ -261,7 +263,7 @@ async def _run_threaded(
     with lock:
         stderr = err.decode(errors="replace")
     return ExecResult(code=process.returncode, stdout=b"".join(kept).decode(errors="replace"), stderr=stderr,
-                      timed_out=timed_out, cancelled=cancelled, truncated=truncated)
+                      timed_out=timed_out, cancelled=cancelled, truncated=truncated, raw=b"".join(kept))
 
 
 def _kill(process: asyncio.subprocess.Process) -> None:

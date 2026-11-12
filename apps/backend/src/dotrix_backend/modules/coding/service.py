@@ -493,6 +493,7 @@ class CodingService:
             )
         if data.decision == "reject":
             run.status, run.finished_at, run.pending_patch = CodingRunStatus.REJECTED, now, None
+            run.pending_patch_bytes = None
             run.error = "Its changes were rejected" + (f": {data.reason}" if data.reason else "")
             self._audit(access.project, access, "coding.changes_rejected", run)
             await self.session.commit()
@@ -594,6 +595,7 @@ class CodingService:
         run.stop_requested = True  # a running one: the worker sees it within seconds and stops the agent
         if run.status is CodingRunStatus.CHANGES_READY:
             run.status, run.finished_at, run.pending_patch = CodingRunStatus.STOPPED, datetime.now(UTC), None
+            run.pending_patch_bytes = None
             run.error = "Stopped: its changes were discarded, never pushed"
         elif run.status is not CodingRunStatus.RUNNING:
             run.status, run.finished_at = CodingRunStatus.STOPPED, datetime.now(UTC)

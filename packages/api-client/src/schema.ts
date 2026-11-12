@@ -9982,6 +9982,11 @@ export interface components {
              * @description `git diff --cached --binary` against base_sha
              */
             patch?: string | null;
+            /**
+             * Patch B64
+             * @description The same patch, base64-encoded: exact for files that aren't UTF-8 text. Wins over `patch`
+             */
+            patch_b64?: string | null;
             /** Base Sha */
             base_sha?: string | null;
             /** Summary */

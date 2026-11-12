@@ -29,7 +29,7 @@ from dotrix_backend.modules.code.service import CodeService
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
 from dotrix_backend.modules.projects.deps import ProjectAccess
 
-from .models import CodingRun
+from .models import CodingRun, waiting_patch
 from .schemas import COMMIT_SHA, CodingDiff, CodingFile, CodingTree, CodingTreeEntry
 
 MAX_ENTRIES = 20_000  # paths listed in a tree
@@ -90,11 +90,20 @@ class TurnFiles:
 
     # -- the turn's tree -------------------------------------------------------------------
 
-    async def _diff(self, run: CodingRun) -> str | None:
-        row = (await self.session.execute(select(CodingRun.diff, CodingRun.pending_patch).where(
+    async def _patch(self, run: CodingRun) -> tuple[str | None, bytes]:
+        """The diff to show (text, lossy for non-UTF-8 files) and the patch to apply: the exact bytes
+        while the turn's changes wait, else the shown text."""
+        row = (await self.session.execute(select(CodingRun.diff, CodingRun.pending_patch, CodingRun.pending_patch_bytes).where(
             CodingRun.workspace_id == run.workspace_id, CodingRun.id == run.id,
         ))).first()
-        return (row[0] or row[1]) if row else None
+        if row is None:
+            return None, b""
+        waiting = waiting_patch(row[2], row[1])
+        shown = row[0] or (waiting.decode("utf-8", errors="replace") if waiting is not None else None)
+        return shown, waiting if waiting is not None else (row[0] or "").encode()
+
+    async def _diff(self, run: CodingRun) -> str | None:
+        return (await self._patch(run))[0]
 
     async def _prepared(self, run: CodingRun) -> tuple[Path, str, str]:
         """The checkout, the turn's base commit (in it), and the tree the turn leaves."""
@@ -108,8 +117,8 @@ class TurnFiles:
         checkout = await CodeService(self.session, self.checkouts).ensure(run.workspace_id, run.project_id)
         if checkout is None:
             raise TurnFilesUnavailable("The project's repository isn't checked out here (is it connected?)")
-        diff = await self._diff(run) or ""
-        key = (run.project_id, run.base_sha, hashlib.sha256(diff.encode()).hexdigest())
+        diff = (await self._patch(run))[1]
+        key = (run.project_id, run.base_sha, hashlib.sha256(diff).hexdigest())
         async with self.checkouts.held(run.project_id):
             root = checkout.root
             try:
@@ -163,7 +172,7 @@ async def _exists(root: Path, rev: str) -> bool:
         return False
 
 
-async def _apply(root: Path, base: str, diff: str) -> str:
+async def _apply(root: Path, base: str, diff: bytes) -> str:
     """The tree `base` becomes with `diff` applied, written as a tree object (no working copy)."""
     with tempfile.TemporaryDirectory(prefix="dotrix-turn-") as tmp:
         index = Path(tmp) / "index"
@@ -171,7 +180,7 @@ async def _apply(root: Path, base: str, diff: str) -> str:
         await run_git(root, "read-tree", base, env=env)
         if diff.strip():
             patch = Path(tmp) / "turn.patch"
-            patch.write_bytes(diff.encode())
+            patch.write_bytes(diff)
             await run_git(root, "apply", "--cached", "--binary", "--whitespace=nowarn", str(patch), env=env)
         return (await run_git(root, "write-tree", env=env)).strip()
 
