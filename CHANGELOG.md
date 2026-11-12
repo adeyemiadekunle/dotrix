@@ -9,10 +9,6 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
-### Fixed
-
-- A turn coded on your computer now delivers every step to the session, including the last ones, and a turn that changed a file that isn't UTF-8 text now fails with a clear reason instead of sending damaged changes.
-
 ### Changed
 
 - Approve and Reject work in place in the agents panel and the corner notices for everything that waits on you: Kai's turns waiting to start or with checked changes to push, and all of an agent's waiting changes, not only a single board change. A plan to steer still opens, since it needs your choice.
@@ -31,6 +27,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A turn coded on your computer now delivers every step to the session, including the last ones, and a turn that changed a file that isn't UTF-8 text now fails with a clear reason instead of sending damaged changes.
 - A new reply in Chat no longer opens showing the previous reply's text, and a reply in a conversation across projects keeps streaming after a dropped connection.
 - A task list grouped by assignee now shows tasks assigned to an agent (such as one Kai is coding) and to people who have left; grouped by due date it keeps finished tasks whose date has passed; estimates sort as numbers; and lists show comment counts in every workspace.
 - Clicking into a task's description and out again no longer saves it when nothing changed, and the description editor keeps links, headings, italics and nested lists.
