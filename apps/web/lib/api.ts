@@ -22,21 +22,33 @@ const REFRESHED_AT = "dotrix.refreshedAt";
  * out if an old one comes back, so only one refresh runs at a time in this browser (a Web Lock
  * shared by its tabs), and a request that started before another tab refreshed just retries.
  */
-async function refreshSession(sentAt: number): Promise<boolean> {
-  const run = async () => {
+type Refresh = "ok" | "refused" | "unavailable";
+
+async function runRefresh(sentAt: number): Promise<Refresh> {
+  const run = async (): Promise<Refresh> => {
     const last = Number(localStorage.getItem(REFRESHED_AT) ?? 0);
-    if (last > sentAt) return true; // refreshed meanwhile: the cookies are already new
-    const response = await fetch("/api/auth/refresh", { method: "POST", headers: WEB_HEADER });
-    if (!response.ok) return false;
+    if (last > sentAt) return "ok"; // refreshed meanwhile: the cookies are already new
+    let response: Response;
+    try {
+      response = await fetch("/api/auth/refresh", { method: "POST", headers: WEB_HEADER });
+    } catch {
+      return "unavailable"; // offline or the connection dropped: the session may be fine
+    }
+    if (response.status === 401 || response.status === 403) return "refused";
+    if (!response.ok) return "unavailable";
     try {
       localStorage.setItem(REFRESHED_AT, String(Date.now()));
     } catch {
       // only an optimisation
     }
-    return true;
+    return "ok";
   };
   return navigator.locks ? navigator.locks.request("dotrix-session-refresh", run) : run();
 }
+
+// One refresh at a time in this tab, with or without Web Locks (which serialise across tabs).
+let pending: Promise<Refresh> | null = null;
+const refreshSession = (sentAt: number): Promise<Refresh> => (pending ??= runRefresh(sentAt).finally(() => (pending = null)));
 
 function toSignIn() {
   if (location.pathname.startsWith("/login")) return;
@@ -56,7 +68,9 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   const sentAt = Date.now();
   const response = await fetch(request);
   if (response.status !== 401) return response;
-  if (!(await refreshSession(sentAt))) {
+  const refreshed = await refreshSession(sentAt);
+  if (refreshed === "unavailable") return response; // a passing failure: stay signed in, the next request tries again
+  if (refreshed === "refused") {
     toSignIn();
     return response;
   }

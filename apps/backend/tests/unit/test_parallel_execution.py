@@ -65,7 +65,7 @@ async def test_task_graph_integrates_dependencies_and_rejects_scope(tmp_path, mo
     summary, patch = await parallel.execute(runner, uuid.uuid4(), tmp_path / "work", host, tool, "test", None,
                                              "Task", [], spec, {1: [], 2: [1] if dependent else []})
     assert calls == ["first", "second"]
-    assert "first.txt" in patch and "second.txt" in patch
+    assert b"first.txt" in patch and b"second.txt" in patch
     assert "Combined verification passed" in summary
     assert git("rev-parse", "HEAD") == sha
     assert all(item["status"] == "completed" for item in run.task_records.values())

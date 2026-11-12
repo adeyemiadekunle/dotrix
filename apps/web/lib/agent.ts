@@ -4,11 +4,12 @@
 // when it starts. Runs work in the background, so active ones are polled until they finish or pause.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 
-import { ApiError, api, ensureSession, errorMessage, unwrap } from "./api";
-import type { Scope } from "./issues";
+import { ApiError, api, errorMessage, unwrap } from "./api";
+import { useEventStream } from "./runStream";
+import { issueQueriesOf, type Scope } from "./issues";
 
 export type Run = Schemas["AgentRunRead"];
 export type Approval = Schemas["ApprovalRead"];
@@ -165,7 +166,7 @@ function useAgentMutation<Vars, Result>(scope: Scope | undefined, fn: (scope: Sc
       await queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
       await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
       // Approved actions may have changed issues or files.
-      await queryClient.invalidateQueries({ queryKey: ["issues", scope.projectId] });
+      for (const queryKey of issueQueriesOf(scope)) await queryClient.invalidateQueries({ queryKey });
     },
   });
 }
@@ -267,57 +268,19 @@ export interface RunStreamState {
 
 export function useRunStream(scope: Scope | undefined, runId: string, active: boolean): RunStreamState {
   const queryClient = useQueryClient();
-  const [text, setText] = useState("");
-  const [activity, setActivity] = useState<string | null>(null);
-  const [thinking, setThinking] = useState("");
-  // A dropped connection reconnects (the server sends the text so far again, from the run's kept
-  // events if its live stream is gone), a little later each time.
-  const [attempt, setAttempt] = useState(0);
-  const failures = useRef(0);
-  useEffect(() => {
-    if (!scope || !active) return;
-    let source: EventSource | undefined;
-    let closed = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    // An EventSource can't refresh an expired session itself: check it's current first.
-    void ensureSession().then(() => {
-      if (closed) return;
-      source = new EventSource(`/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream`);
-      const stream = source;
-      const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
-      // Each connection (and each new step) starts with the text so far, then the thinking so far.
-      stream.addEventListener("text", (e) => {
-        setText(read(e as MessageEvent));
-        setThinking("");
-      });
-      stream.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
-      stream.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
-      stream.addEventListener("thinking_text", (e) => setThinking(read(e as MessageEvent)));
-      stream.addEventListener("thinking", (e) => setThinking((t) => t + read(e as MessageEvent)));
-      // The stream ends when the run does (or wasn't running): don't let EventSource reconnect,
-      // and fetch the finished run right away rather than at the next poll (which also pauses
-      // while the tab is in the background).
-      stream.addEventListener("end", () => {
-        stream.close();
-        setActivity(null);
-        void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
-        void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
-        void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
-        void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
-      });
-      stream.addEventListener("open", () => (failures.current = 0));
-      stream.onerror = () => {
-        stream.close();
-        if (!closed) retry = setTimeout(() => setAttempt((a) => a + 1), Math.min(1000 * 2 ** failures.current++, 15_000));
-      };
-    });
-    return () => {
-      closed = true;
-      clearTimeout(retry);
-      source?.close();
-    };
-  }, [scope, runId, active, queryClient, attempt]);
-  return { text, activity, thinking };
+  return useEventStream({
+    url: scope ? `/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream` : undefined,
+    key: runId,
+    active,
+    onEnd: () => {
+      if (!scope) return;
+      void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
+      void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
+      for (const queryKey of issueQueriesOf(scope)) void queryClient.invalidateQueries({ queryKey });
+    },
+  });
 }
 
 /** What a run did, kept after it: its steps (what the agents were doing), in order, and what Nova thought. */

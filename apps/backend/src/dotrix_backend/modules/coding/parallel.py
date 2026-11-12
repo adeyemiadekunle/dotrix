@@ -6,13 +6,14 @@ only the parent hands the final combined patch to the existing acceptance/public
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import uuid
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import select
 
-from dotrix_backend.modules.code.checkouts import run_git
+from dotrix_backend.modules.code.checkouts import run_git, run_git_bytes
 from dotrix_engine.planning import ExecutionSpec
 
 from .models import CodingRun, CodingRunStatus
@@ -65,7 +66,7 @@ def check_scope(paths, owned):
 
 
 async def execute(runner, run_id, work: Path, host: Path, tool, key, model, brief, allow, execution: dict,
-                  dependencies: dict[int, list[int]]) -> tuple[str, str]:
+                  dependencies: dict[int, list[int]]) -> tuple[str, bytes]:
     from .runner import BOT_EMAIL, RunFailed, _baseline, _export, _stage, _Stopped
     from .warm import close_quietly
 
@@ -110,8 +111,8 @@ async def execute(runner, run_id, work: Path, host: Path, tool, key, model, brie
     async def worker(number):
         task = by_number[number]
         existing = saved.get(task.key, {})
-        if existing.get("status") in {"verified", "completed"} and existing.get("base_sha") == initial:
-            return number, existing.get("patch", ""), existing.get("summary", "")
+        if existing.get("status") in {"verified", "completed"} and existing.get("base_sha") == initial and "patch_base64" in existing:
+            return number, base64.b64decode(existing["patch_base64"]), existing.get("summary", "")
         task_dir = work / "tasks" / task.key
         task_dir.mkdir(parents=True, exist_ok=True)
         checkout = task_dir / "host"
@@ -144,16 +145,16 @@ async def execute(runner, run_id, work: Path, host: Path, tool, key, model, brie
                     raise RunFailed(f"Task {task.key} failed verification: {check.command}")
             result = await box.exec(["sh", "-c", "git add -A && git diff --cached --binary --no-ext-diff --no-textconv "
                                      f"--no-renames {baseline}"], timeout=300)
-            if result.code != 0 or result.truncated or len(result.stdout.encode()) > 8_000_000:
+            patch = result.raw or result.stdout.encode()
+            if result.code != 0 or result.truncated or len(patch) > 8_000_000:
                 raise RunFailed(f"Task {task.key} returned an unreadable or oversized patch")
-            patch = result.stdout
             if patch.strip():
                 paths, _ = await _stage(task_dir, checkout, patch)
                 check_scope(paths, task.owned_paths)
                 raw = await run_git(checkout, "diff", "--cached", "--raw", "--no-renames")
                 if "120000" in raw:
                     raise RunFailed(f"Task {task.key} changed a symlink; refine the plan for explicit review")
-            await record(runner, run_id, task.key, status="verified", patch=patch, summary=summary or "",
+            await record(runner, run_id, task.key, status="verified", patch_base64=base64.b64encode(patch).decode("ascii"), summary=summary or "",
                          checks=evidence, base_sha=initial)
             return number, patch, summary or ""
         except BaseException:
@@ -210,8 +211,8 @@ async def execute(runner, run_id, work: Path, host: Path, tool, key, model, brie
                 raise RunFailed("Combined verification changed tracked files; refine the plan before publishing")
         finally:
             await close_quietly(box)
-        patch = await run_git(host, "diff", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", initial, "HEAD")
-        if len(patch.encode()) > 8_000_000:
+        patch = await run_git_bytes(host, "diff", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", initial, "HEAD")
+        if len(patch) > 8_000_000:
             raise RunFailed("The combined patch exceeds the coding size limit")
         await run_git(host, "reset", "--hard", initial)
         return "\n\n".join(summaries) + "\n\nCombined verification passed.", patch

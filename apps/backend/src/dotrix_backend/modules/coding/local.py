@@ -13,6 +13,7 @@ beyond the rights of the person it acts for, and on their machine, only for them
 from __future__ import annotations
 
 import asyncio
+import base64
 import subprocess
 import tempfile
 import uuid
@@ -197,11 +198,17 @@ class LocalRunners:
         elif data.outcome == "failed":
             finish_run(self.session, run, CodingRunStatus.FAILED, error=data.error or "The coding tool failed",
                        summary=summary)
-        elif data.outcome == "no_changes" or not (data.patch or "").strip():
+        elif data.outcome == "no_changes" or not (data.patch_b64 or data.patch or "").strip():
             finish_run(self.session, run, CodingRunStatus.NO_CHANGES, summary=summary)
         else:
-            patch = data.patch or ""
-            if len(patch.encode()) > guard.MAX_PATCH_BYTES:
+            if data.patch_b64:
+                try:
+                    patch = base64.b64decode(data.patch_b64, validate=True)
+                except ValueError as exc:
+                    raise Unprocessable("patch_b64 isn't valid base64") from exc
+            else:
+                patch = (data.patch or "").encode()
+            if len(patch) > guard.MAX_PATCH_BYTES:
                 raise Unprocessable(f"The changes are larger than {guard.MAX_PATCH_BYTES // 1_000_000} MB")
             if not run.base_sha:
                 raise Unprocessable("Report the commit the changes are on (base_sha)")
@@ -217,7 +224,8 @@ class LocalRunners:
                 await ready_for_acceptance(self.session, run, patch, files, summary, ci_sensitive=held[1])
             else:
                 # Accept edits and Auto: their instruction is the acceptance, as for a cloud turn.
-                run.pending_patch, run.files_changed, run.summary = patch, files, summary or run.summary
+                run.pending_patch, run.pending_patch_bytes = None, patch
+                run.files_changed, run.summary = files, summary or run.summary
                 run.accepted_by_id, run.accepted_at = run.requested_by_id, datetime.now(UTC)
                 run.status = CodingRunStatus.QUEUED
                 add_events(run, self.session, step="Pushing the changes from the platform")
@@ -273,13 +281,13 @@ def _events(events: list[RunnerEvent]) -> list[dict[str, str]]:
     return [{"at": at, "kind": e.kind, "text": e.text, **({"ref": e.ref} if e.ref else {})} for e in events]
 
 
-async def patch_files(patch: str) -> tuple[list[str], list[dict[str, object]]]:
+async def patch_files(patch: bytes) -> tuple[list[str], list[dict[str, object]]]:
     """The paths a patch touches and their line counts, read by git from the patch itself (never
     from what the runner says about it)."""
     def numstat() -> str:
         with tempfile.TemporaryDirectory(prefix="dotrix-patch-") as tmp:
             done = subprocess.run(
-                ["git", "apply", "--numstat", "-z", "-"], input=patch.encode(), cwd=Path(tmp),
+                ["git", "apply", "--numstat", "-z", "-"], input=patch, cwd=Path(tmp),
                 capture_output=True, timeout=60, check=False,
             )
         return done.stdout.decode(errors="replace") if done.returncode == 0 else ""

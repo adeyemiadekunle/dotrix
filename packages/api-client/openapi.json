@@ -36697,6 +36697,19 @@
             "title": "Patch",
             "description": "`git diff --cached --binary` against base_sha"
           },
+          "patch_b64": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 14000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patch B64",
+            "description": "The same patch, base64-encoded: exact for files that aren't UTF-8 text. Wins over `patch`"
+          },
           "base_sha": {
             "anyOf": [
               {

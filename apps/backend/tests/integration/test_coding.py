@@ -23,7 +23,7 @@ from apps.backend.tests.integration.test_runtime_tools import (
     nova_pilot_world,  # noqa: F401 (fixture)
 )
 from dotrix_backend.core.crypto import Secrets
-from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
+from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus, PrState
 from dotrix_backend.modules.coding.recovery import recover_uncertain_runs
 from dotrix_backend.modules.coding.runner import (
     _LEASE,
@@ -38,6 +38,10 @@ from dotrix_backend.modules.execution.service import expire_coding_leases
 from dotrix_engine.testing import tool_call
 
 
+def _git_bytes(root: Path, *args: str) -> bytes:
+    return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True).stdout
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout.strip()
 
@@ -46,7 +50,7 @@ class ScriptedClaude:
     """Stands in for `claude -p`: makes `edits` in the repo and prints stream-json events."""
 
     def __init__(self) -> None:
-        self.edits: dict[str, str] = {}
+        self.edits: dict[str, str | bytes] = {}
         self.result = "Added refunds to the payment provider and a test; pytest passes."
         self.briefs: list[str] = []
         self.argv: list[str] = []
@@ -113,7 +117,7 @@ class ScriptedSession(LocalSession):
         for path, text in self.agent.edits.items():
             target = self.root / "repo" / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
+            target.write_bytes(text) if isinstance(text, bytes) else target.write_text(text)  # bytes: not UTF-8 text
         for index, command in enumerate(self.agent.checks):
             checked = await super().exec(command, timeout=timeout, cancel=cancel)
             ref = f"check-{index}"
@@ -1590,7 +1594,7 @@ class _RunnerApi:
         return res.json() if res.content else None
 
 
-def _tool(edits: dict[str, str], *, sleep: float = 0, result: str = "Added refunds; tests pass.") -> str:
+def _tool(edits: dict[str, str | bytes], *, sleep: float = 0, result: str = "Added refunds; tests pass.") -> str:
     """A command standing in for Claude Code: reads the brief, edits files, prints stream-json."""
     import shlex
     import sys
@@ -1599,7 +1603,7 @@ def _tool(edits: dict[str, str], *, sleep: float = 0, result: str = "Added refun
         "import json, sys, time, pathlib\n"
         "brief = sys.stdin.read()\n"
         f"for path, text in {edits!r}.items():\n"
-        "    p = pathlib.Path(path); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text)\n"
+        "    p = pathlib.Path(path); p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(text) if isinstance(text, bytes) else p.write_text(text)\n"
         "    print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'name': 'Edit', 'input': {'file_path': path}}]}}), flush=True)\n"
         f"time.sleep({sleep})\n"
         f"print(json.dumps({{'type': 'result', 'subtype': 'success', 'result': {result!r}, 'total_cost_usd': 0.02, 'usage': {{'input_tokens': 10, 'output_tokens': 5}}}}), flush=True)\n"
@@ -2268,3 +2272,252 @@ async def test_parallel_tasks_integrate_into_one_approved_patch(db_client, codin
     finished = await _approve(db_client, base, ready, ada.headers)
     assert finished["status"] == "pr_opened", finished
     assert len(github.pulls) == 1
+
+
+@pytest.fixture
+async def race_world(engine, monkeypatch):
+    """Committed rows (one issue) so two services on two real connections can really race."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from uuid_utils.compat import uuid7
+
+    from apps.backend.tests.conftest import make_settings
+    from dotrix_backend.modules.auth.models import User
+    from dotrix_backend.modules.coding.models import CodingAgent
+    from dotrix_backend.modules.coding.service import CodingService
+    from dotrix_backend.modules.issues.models import Issue, IssueStatus, IssueType, Priority
+    from dotrix_backend.modules.projects.models import Project, ProjectSource
+    from dotrix_backend.modules.workspaces.models import Membership, Role, Workspace, WorkspaceKind
+
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    user_id, workspace_id, project_id = uuid7(), uuid7(), uuid7()
+
+    async def available(self, project, user_id):  # not under test: keys, tools and sandboxes
+        return SimpleNamespace(available=True, reason=None, agent=CodingAgent.CLAUDE_CODE)
+
+    monkeypatch.setattr(CodingService, "availability", available)
+    async with sessions() as session:
+        session.add(User(id=user_id, email=f"{user_id}@example.com", display_name="Ada"))
+        await session.flush()
+        session.add(Workspace(id=workspace_id, name="Race", slug=f"race-{workspace_id}",
+                              kind=WorkspaceKind.ORGANIZATION, created_by_id=user_id))
+        await session.flush()
+        session.add_all([
+            Membership(workspace_id=workspace_id, user_id=user_id, role=Role.OWNER),
+            Project(id=project_id, workspace_id=workspace_id, key="RACE", name="Race",
+                    source=ProjectSource.DOCS_ONLY, created_by_id=user_id),
+        ])
+        await session.flush()
+        issue = Issue(workspace_id=workspace_id, project_id=project_id, number=1, key="RACE-1",
+                      type=IssueType.TASK, title="Race", status=IssueStatus.TODO, priority=Priority.MEDIUM,
+                      rank=1.0, created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
+        session.add(issue)
+        await session.commit()
+    settings = make_settings()
+
+    def service(session):
+        return CodingService(session, settings, SimpleNamespace())
+
+    try:
+        yield sessions, service, workspace_id, project_id, user_id, issue
+    finally:
+        async with sessions() as session:
+            await session.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+
+
+def _race_run(workspace_id, project_id, issue, user_id, status, *, session_id=None, turn=1):
+    from dotrix_backend.modules.coding.models import CodingAgent, CodingLocation
+
+    run_id = uuid.uuid4()
+    return CodingRun(
+        id=run_id, session_id=session_id or run_id, turn=turn, workspace_id=workspace_id, project_id=project_id,
+        issue_id=issue.id, issue_key=issue.key, agent=CodingAgent.CLAUDE_CODE, status=status, brief="Do it",
+        repo_full_name="kunemi/api", base_branch="main", location=CodingLocation.CLOUD,
+        requested_by_id=user_id, created_at=datetime.now(UTC),
+    )
+
+
+async def test_two_starts_on_one_issue_are_serialised(race_world) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation
+    from dotrix_backend.modules.coding.service import CodingBusy
+    from dotrix_backend.modules.projects.models import Project
+
+    sessions, service, workspace_id, project_id, user_id, issue = race_world
+    async with sessions() as a, sessions() as b:
+        project_a, project_b = await a.get(Project, project_id), await b.get(Project, project_id)
+        await service(a)._codable(project_a, user_id, "RACE-1", location=CodingLocation.CLOUD)
+        a.add(_race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.AWAITING_APPROVAL))
+        await a.flush()  # A's turn exists, but isn't committed yet
+        other = asyncio.create_task(service(b)._codable(project_b, user_id, "RACE-1", location=CodingLocation.CLOUD))
+        await asyncio.sleep(0.3)
+        assert not other.done(), "B went ahead while A was still starting its turn"
+        await a.commit()
+        with pytest.raises(CodingBusy):
+            await asyncio.wait_for(other, 10)
+
+
+async def test_two_follow_ups_on_one_session_are_serialised(race_world) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation
+    from dotrix_backend.modules.coding.service import CodingBusy
+    from dotrix_backend.modules.projects.deps import ProjectAccess
+    from dotrix_backend.modules.projects.models import Project
+    from dotrix_backend.modules.workspaces.models import Membership
+
+    sessions, service, workspace_id, project_id, user_id, issue = race_world
+    first = _race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.PR_OPENED)
+    first.branch, first.pr_number, first.pr_state = "kai/race-1", 1, PrState.OPEN  # a PR: nothing to fetch from GitHub
+    async with sessions() as session:
+        session.add(first)
+        await session.commit()
+
+    async def access(session):
+        member = await session.scalar(select(Membership).where(
+            Membership.workspace_id == workspace_id, Membership.user_id == user_id))
+        return ProjectAccess(await session.get(Project, project_id), member)
+
+    async with sessions() as a, sessions() as b:
+        access_a, access_b = await access(a), await access(b)
+        await service(a)._next_turn(access_a, first.session_id, location=CodingLocation.CLOUD)
+        a.add(_race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.AWAITING_APPROVAL,
+                        session_id=first.session_id, turn=2))
+        await a.flush()
+        other = asyncio.create_task(service(b)._next_turn(access_b, first.session_id, location=CodingLocation.CLOUD))
+        await asyncio.sleep(0.3)
+        assert not other.done(), "B went ahead while A was still adding turn 2"
+        await a.commit()
+        with pytest.raises(CodingBusy):
+            await asyncio.wait_for(other, 10)
+
+
+# -- Plan 031: a turn's patch is kept and pushed byte for byte, whatever its files' encoding -------------
+
+LATIN1 = b"caf\xe9\n"  # "café" in Latin-1: not UTF-8 text
+
+
+async def _stored_patch(db_client: AsyncClient, run_id: str) -> tuple[bytes | None, str | None]:
+    factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    async with factory() as session:
+        row = (await session.execute(select(CodingRun.pending_patch_bytes, CodingRun.pending_patch).where(
+            CodingRun.id == uuid.UUID(run_id)))).one()
+        return (bytes(row[0]) if row[0] is not None else None), row[1]
+
+
+async def test_a_cloud_turn_changing_a_latin1_file_is_pushed_exactly(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "auto"}, headers=ada.headers)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    agent_script.say("Fine.")
+    claude.edits = {"src/legacy.properties": LATIN1}
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"approval_mode": "auto"},
+                                headers=ada.headers)).json()
+    done = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert done["status"] == "pr_opened", done
+    assert _git_bytes(origin, "show", f"{done['branch']}:src/legacy.properties") == LATIN1
+    shown = (await db_client.get(f"{base}/coding/runs/{run['id']}/diff", headers=ada.headers)).json()
+    assert "caf\ufffd" in shown["diff"]  # what people see is decoded for display only
+
+
+async def test_manual_latin1_changes_wait_as_bytes_and_are_pushed_exactly(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, *_ = coding
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/legacy.properties": LATIN1}
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "changes_ready"
+    kept, text = await _stored_patch(db_client, run["id"])
+    assert kept is not None and b"caf\xe9" in kept and text is None
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, run, ada.headers)
+    assert done["status"] == "pr_opened", done
+    assert _git_bytes(origin, "show", f"{done['branch']}:src/legacy.properties") == LATIN1
+
+
+async def test_a_patch_that_waited_as_text_before_the_migration_is_still_pushed(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, *_ = coding
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    kept, _ = await _stored_patch(db_client, run["id"])
+    assert kept is not None
+    await _set_run(db_client, run["id"], pending_patch=kept.decode(), pending_patch_bytes=None)  # as an older row
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, run, ada.headers)
+    assert done["status"] == "pr_opened", done
+    assert _git(origin, "show", f"{done['branch']}:src/refunds.py") == "def refund(amount):\n    return amount"
+
+
+async def test_a_local_result_with_patch_b64_is_stored_byte_for_byte(
+    db_client: AsyncClient, coding, github, origin: Path, checkout: Path, tmp_path: Path, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({"src/legacy.properties": LATIN1}))
+    await runner.register()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                headers=ada.headers)).json()
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert await runner.once() is True
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready", ready
+    assert [(f["path"], f["added"]) for f in ready["files_changed"]] == [("src/legacy.properties", 1)]
+    kept, _ = await _stored_patch(db_client, run["id"])
+    assert kept is not None and b"+caf\xe9\n" in kept
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, ready, ada.headers)
+    assert done["status"] == "pr_opened", done
+    assert _git_bytes(origin, "show", f"{done['branch']}:src/legacy.properties") == LATIN1
+
+
+async def test_a_local_result_with_invalid_patch_b64_is_refused(
+    db_client: AsyncClient, coding, checkout: Path, tmp_path: Path
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({"src/a.txt": "a\n"}))
+    registered = await runner.register()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                headers=ada.headers)).json()
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    claimed = (await db_client.post(f"{ws}/coding/runners/{registered['id']}/claim", headers=ada.headers)).json()
+    assert claimed["run"], claimed
+    token = claimed["run"]["lease_token"]
+    bad = await db_client.post(
+        f"{ws}/coding/runners/{registered['id']}/runs/{run['id']}/result", headers=ada.headers,
+        json={"lease_token": token, "outcome": "changes", "base_sha": _git(checkout, "rev-parse", "HEAD"),
+              "patch_b64": "not base64 !!"})
+    assert bad.status_code == 422, bad.text
+
+
+async def test_reverting_a_latin1_turn_restores_the_original_bytes(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine.", "Fine.")
+    claude.edits = {"src/legacy.properties": LATIN1}
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    claude.edits = {"src/legacy.properties": b"na\xefve\n"}
+    second = (await db_client.post(f"{base}/coding/sessions/{first['session_id']}/turns", json={"message": "Rename"},
+                                   headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "pr_opened", second
+    branch = first["branch"]
+    assert _git_bytes(origin, "show", f"{branch}:src/legacy.properties") == b"na\xefve\n"
+    revert = (await db_client.post(f"{base}/coding/runs/{second['id']}/revert", json={}, headers=ada.headers)).json()
+    revert = await _approve(db_client, base, revert, ada.headers)
+    assert revert["status"] == "pr_opened", revert
+    assert _git_bytes(origin, "show", f"{branch}:src/legacy.properties") == LATIN1

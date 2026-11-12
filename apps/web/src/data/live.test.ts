@@ -1,0 +1,244 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { queryClient } from "@/lib/queryClient";
+
+// The API, as spies: a create stays pending until the test settles it.
+const h = vi.hoisted(() => {
+  const calls: { method: string; path: string; params: Record<string, string>; body?: unknown }[] = [];
+  const creates: { resolve: (key: string | null) => void }[] = [];
+  const reply = (data: unknown) => Promise.resolve({ data, error: undefined, response: new Response() });
+  const spy = (method: string) => (path: string, init?: { params?: { path?: Record<string, string> }; body?: unknown }) => {
+    calls.push({ method, path, params: init?.params?.path ?? {}, body: init?.body });
+    if (method === "POST" && path.endsWith("/issues")) {
+      return new Promise((resolve) =>
+        creates.push({
+          resolve: (key) =>
+            resolve(
+              key
+                ? { data: { key, title: "made", description: "" }, error: undefined, response: new Response() }
+                : { data: undefined, error: { detail: "no" }, response: new Response(null, { status: 500 }) },
+            ),
+        }),
+      );
+    }
+    return reply({ key: init?.params?.path?.key ?? "", description: "" });
+  };
+  return { calls, creates, api: { GET: spy("GET"), POST: spy("POST"), PATCH: spy("PATCH"), PUT: spy("PUT"), DELETE: spy("DELETE") } };
+});
+
+vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api: h.api }));
+
+import * as toasts from "../ui/toast";
+import type { Task } from "./types";
+import { live, taskCreated, taskPatched, taskRanked, taskStarred, tasksDeleted } from "./live";
+
+const PROJECT = "01900000-0000-7000-8000-000000000001";
+const sends = () => h.calls.filter((c) => !(c.method === "POST" && c.path.endsWith("/issues")));
+const flush = async () => {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 0));
+};
+const rowsOf = () => queryClient.getQueryData<{ key: string; title: string }[]>(["issues", "workspace", "ws", {}]) ?? [];
+
+function newTask(title = "Fix it"): Task {
+  const t = {
+    id: "local",
+    key: "local",
+    project: PROJECT,
+    title,
+    status: "todo",
+    assignee: null,
+    priority: "none",
+    due: null,
+    start: null,
+    labels: [],
+    subtasks: [],
+    attachments: [],
+    deps: [],
+    desc: "",
+    estimate: null,
+    created: 0,
+    updated: 0,
+    order: 1,
+    fav: false,
+    recur: null,
+    type: "task",
+  } as unknown as Task;
+  void taskCreated(t);
+  return t;
+}
+
+beforeEach(() => {
+  h.calls.length = 0;
+  h.creates.length = 0;
+  queryClient.clear();
+  queryClient.setQueryData(["issues", "workspace", "ws", {}], []);
+  Object.assign(live, { mode: "live", ws: { id: "ws" } });
+});
+
+describe("changes to a task that is still being created", () => {
+  it("sends a rename under the real key once the task exists", async () => {
+    const t = newTask();
+    await flush();
+    expect(t.key.startsWith("new-")).toBe(true);
+    const was = t.key;
+    t.title = "Renamed";
+    taskPatched(t, ["title"]);
+    await flush();
+    expect(sends()).toHaveLength(0);
+    expect(rowsOf().find((r) => r.key === was)?.title).toBe("Renamed");
+    h.creates[0]!.resolve("KUN-1");
+    await flush();
+    expect(sends().map((c) => [c.method, c.params.key, (c.body as { title?: string }).title])).toEqual([["PATCH", "KUN-1", "Renamed"]]);
+  });
+
+  it("sends a star under the real key", async () => {
+    const t = newTask();
+    await flush();
+    taskStarred({ ...t, fav: true });
+    await flush();
+    expect(sends()).toHaveLength(0);
+    h.creates[0]!.resolve("KUN-2");
+    await flush();
+    expect(sends().map((c) => [c.method, c.params.key])).toEqual([["PUT", "KUN-2"]]);
+  });
+
+  it("removes a deleted task at once and deletes the real issue afterwards", async () => {
+    const t = newTask();
+    await flush();
+    const was = t.key;
+    tasksDeleted([t]);
+    await flush();
+    expect(rowsOf().some((r) => r.key === was)).toBe(false);
+    expect(sends()).toHaveLength(0);
+    h.creates[0]!.resolve("KUN-3");
+    await flush();
+    expect(sends().map((c) => [c.method, c.params.key])).toEqual([["DELETE", "KUN-3"]]);
+  });
+
+  it("sends two changes in the order they were made", async () => {
+    const t = newTask();
+    await flush();
+    t.title = "One";
+    taskPatched(t, ["title"]);
+    t.title = "Two";
+    taskPatched(t, ["title"]);
+    h.creates[0]!.resolve("KUN-4");
+    await flush();
+    expect(sends().map((c) => [c.method, c.params.key, (c.body as { title?: string }).title])).toEqual([
+      ["PATCH", "KUN-4", "One"],
+      ["PATCH", "KUN-4", "Two"],
+    ]);
+  });
+
+  it("sends nothing, and throws nothing, when the create fails", async () => {
+    const t = newTask();
+    await flush();
+    t.title = "Lost";
+    taskPatched(t, ["title"]);
+    taskStarred({ ...t, fav: true });
+    h.creates[0]!.resolve(null);
+    await flush();
+    expect(sends()).toHaveLength(0);
+  });
+
+  it("never names a provisional key when ranking", async () => {
+    const t = newTask();
+    const other = newTask("Other");
+    await flush();
+    taskRanked(t, undefined, other, 5);
+    h.creates[0]!.resolve("KUN-5");
+    h.creates[1]!.resolve("KUN-6");
+    await flush();
+    expect(sends().length).toBeGreaterThan(0);
+    for (const c of h.calls) {
+      expect(JSON.stringify([c.params, c.body])).not.toContain("new-");
+    }
+    expect(sends().map((c) => [c.params.key, c.body])).toEqual([["KUN-5", { after: "KUN-6" }]]);
+  });
+});
+
+describe("overlapping writes to the same list", () => {
+  // Patches stay pending until the test settles them.
+  const pending: { resolve: () => void; reject: () => void }[] = [];
+  const rows = () => queryClient.getQueryData<{ key: string; title: string }[]>(["issues", "workspace", "ws", {}]) ?? [];
+  const patch = (key: string, title: string) => {
+    h.api.PATCH = (() =>
+      new Promise((resolve) =>
+        pending.push({
+          resolve: () => resolve({ data: { key, description: "" }, error: undefined, response: new Response() }),
+          reject: () => resolve({ data: undefined, error: { detail: "no" }, response: new Response(null, { status: 500 }) }),
+        }),
+      )) as unknown as typeof h.api.PATCH;
+    const t = { id: key, key, project: PROJECT, title: "x" } as unknown as Task;
+    t.title = title;
+    taskPatched(t, ["title"]);
+  };
+  const issuesInvalidations = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.filter(([f]: unknown[]) => (f as { predicate?: (q: unknown) => boolean }).predicate?.({ queryKey: ["issues"] })).length;
+
+  beforeEach(() => {
+    pending.length = 0;
+    queryClient.setQueryData(
+      ["issues", "workspace", "ws", {}],
+      [
+        { key: "A-1", project_id: PROJECT, title: "a" },
+        { key: "A-2", project_id: PROJECT, title: "b" },
+      ],
+    );
+  });
+
+  it("refetches once, when the last of two overlapping writes settles", async () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    patch("A-1", "one");
+    await flush();
+    patch("A-2", "two");
+    await flush();
+    pending[0]!.resolve();
+    await flush();
+    expect(issuesInvalidations(spy)).toBe(0);
+    pending[1]!.resolve();
+    await flush();
+    expect(issuesInvalidations(spy)).toBe(1);
+    spy.mockRestore();
+  });
+
+  it("a refusal keeps the other change on screen and the refetch follows", async () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    patch("A-1", "one");
+    await flush();
+    patch("A-2", "two");
+    await flush();
+    const toastSpy = vi.spyOn(toasts, "toast");
+    pending[0]!.reject();
+    await flush();
+    expect(toastSpy).toHaveBeenCalledTimes(1);
+    toastSpy.mockRestore();
+    expect(rows().find((r) => r.key === "A-2")?.title).toBe("two");
+    expect(issuesInvalidations(spy)).toBe(0);
+    pending[1]!.resolve();
+    await flush();
+    expect(issuesInvalidations(spy)).toBe(1);
+    spy.mockRestore();
+  });
+
+  it("a lone refusal puts the cache back, and a lone success refetches, twice in a row", async () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    for (let i = 1; i <= 2; i++) {
+      const before = JSON.stringify(rows());
+      patch("A-1", "nope");
+      await flush();
+      expect(rows()[0]!.title).toBe("nope");
+      pending.at(-1)!.reject();
+      await flush();
+      expect(JSON.stringify(rows())).toBe(before);
+      patch("A-1", "yes");
+      await flush();
+      pending.at(-1)!.resolve();
+      await flush();
+      expect(issuesInvalidations(spy)).toBe(i * 2);
+    }
+    spy.mockRestore();
+  });
+});

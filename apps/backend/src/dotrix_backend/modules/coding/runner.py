@@ -48,6 +48,7 @@ from dotrix_backend.modules.code.checkouts import (
     auth_env,
     remove_tree,
     run_git,
+    run_git_bytes,
 )
 from dotrix_backend.modules.connectors.github_app import GitHubApp, PullRequest
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
@@ -78,6 +79,7 @@ from .models import (
     CodingSession,
     CodingSessionState,
     PrState,
+    waiting_patch,
 )
 from .network import allowed_hosts, network_digest
 from .planning import parse_plan, planning_brief, readonly_command
@@ -431,8 +433,9 @@ class CodingWorker:
             session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
             # Accepted changes (Manual) are pushed as they were checked; a revert undoes a pushed turn.
             # Neither runs the agent again.
-            accepted = await session.scalar(select(CodingRun.pending_patch).where(CodingRun.id == run.id)) \
-                if run.accepted_at is not None else None
+            waiting = (await session.execute(select(CodingRun.pending_patch_bytes, CodingRun.pending_patch).where(
+                CodingRun.id == run.id))).first() if run.accepted_at is not None else None
+            accepted = waiting_patch(waiting[0], waiting[1]) if waiting is not None else None
             reverting = await session.get(CodingRun, run.revert_of) if run.revert_of else None
             revert = (reverting.turn, reverting.commit_sha) if reverting is not None and reverting.commit_sha else None
             if run.revert_of and revert is None:
@@ -582,15 +585,16 @@ class CodingWorker:
             )
             if changes.code != 0:
                 raise RunFailed("Couldn't read the agent's changes (did it remove the repository's git folder?)")
-            if changes.truncated or len(changes.stdout.encode()) > guard.MAX_PATCH_BYTES:
+            patch = changes.raw or changes.stdout.encode()  # the bytes git wrote (fakes may give only text)
+            if changes.truncated or len(patch) > guard.MAX_PATCH_BYTES:
                 raise RunFailed(f"The changes are larger than {guard.MAX_PATCH_BYTES // 1_000_000} MB")
-            if not changes.stdout.strip():
+            if not patch.strip():
                 await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
                 keep = True
                 return
 
             # 3. Apply to our checkout and check, before anything leaves this machine.
-            paths, files = await _stage(work, host, changes.stdout)
+            paths, files = await _stage(work, host, patch)
 
             async def sandbox_moves_on(heading: str) -> None:
                 # The sandbox's own history moves on with the branch: the next turn's changes are its own.
@@ -600,12 +604,12 @@ class CodingWorker:
                 keep = committed.code == 0
 
             # Manual: the checked changes wait for a person to accept them; nothing is pushed yet.
-            if await self._hold_for_acceptance(run_id, changes.stdout, files, summary):
+            if await self._hold_for_acceptance(run_id, patch, files, summary):
                 await sandbox_moves_on("Changes waiting to be accepted")
                 return
 
             # 4. Commit, push a new branch, open the PR.
-            await self._publish(run_id, host, ref, push, token, summary, files, paths, changes.stdout,
+            await self._publish(run_id, host, ref, push, token, summary, files, paths, patch,
                                 session_branch, session_pr, publication, after_push=sandbox_moves_on)
         finally:
             # The conversation moved on even when the turn didn't push: save it for the next turn.
@@ -647,7 +651,7 @@ class CodingWorker:
                                             "Settings → Network")
 
     async def _hold_for_acceptance(
-        self, run_id: uuid.UUID, diff: str, files: list[dict[str, Any]], summary: str | None,
+        self, run_id: uuid.UUID, diff: bytes, files: list[dict[str, Any]], summary: str | None,
     ) -> bool:
         """In Manual, or when they change files CI runs (`guard.needs_a_person`), a turn's checked changes
         wait for a person (`changes_ready`) instead of being pushed: kept as the patch, its files listed,
@@ -687,7 +691,7 @@ class CodingWorker:
                 await run_git(host, "revert", "--no-commit", sha)
             except CheckoutError as exc:
                 raise RunFailed(f"Turn {turn} doesn't revert cleanly: later turns changed the same lines") from exc
-            diff = await run_git(host, "diff", "--cached", "--binary", "--no-color", "--no-renames")
+            diff = await run_git_bytes(host, "diff", "--cached", "--binary", "--no-color", "--no-renames")
             paths, files = await _checked(host)
             summary = f"Reverted turn {turn} ({sha[:7]})."
         else:
@@ -703,7 +707,7 @@ class CodingWorker:
 
     async def _publish(
         self, run_id: uuid.UUID, host: Path, ref: RepoRef, push: _PushTarget, token: str,
-        summary: str | None, files: list[dict[str, Any]], paths: list[str], diff: str,
+        summary: str | None, files: list[dict[str, Any]], paths: list[str], diff: bytes,
         session_branch: str | None, session_pr: tuple[int, str | None] | None, publication: _Publication, *,
         after_push: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
@@ -755,7 +759,8 @@ class CodingWorker:
             assert run is not None
             if not self._holds(run):
                 raise _ReconciliationRequired()  # a newer attempt finds the PR on GitHub
-            run.branch, run.commit_sha, run.files_changed, run.diff = branch, commit_sha, files, diff
+            run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
+            run.diff = diff.decode("utf-8", errors="replace")  # display only; the bytes were applied
             run.pr_number, run.pr_url = pr.number, pr.html_url
             run.pr_state = run.pr_state or PrState.OPEN
             if run.status is CodingRunStatus.RECOVERY_REQUIRED:
@@ -765,7 +770,7 @@ class CodingWorker:
                 raise _ReconciliationRequired()
             await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
             await issue_to_review(session, run, title, opened=session_pr is None)
-        await self._review(run_id, title, files, diff)
+        await self._review(run_id, title, files, diff.decode("utf-8", errors="replace"))
 
     async def _fork(self, ref: RepoRef, owner: str) -> _PushTarget:
         """The app's fork of the repo in `owner` (made the first time), with a token to push there."""
@@ -1189,12 +1194,14 @@ def add_events(run: CodingRun, session: AsyncSession, *, events: list[dict[str, 
 
 
 async def ready_for_acceptance(
-    session: AsyncSession, run: CodingRun, diff: str, files: list[dict[str, Any]], summary: str | None,
+    session: AsyncSession, run: CodingRun, diff: bytes, files: list[dict[str, Any]], summary: str | None,
     *, ci_sensitive: list[str] | None = None,
 ) -> None:
     """A turn's checked changes wait for a person (`changes_ready`): in Manual, or because they change
     files CI runs (`ci_sensitive`, in any mode); its approvers are told. Not committed."""
-    run.status, run.pending_patch, run.diff, run.files_changed = CodingRunStatus.CHANGES_READY, diff, diff, files
+    run.status, run.files_changed = CodingRunStatus.CHANGES_READY, files
+    run.pending_patch, run.pending_patch_bytes = None, diff
+    run.diff = diff.decode("utf-8", errors="replace")  # display only
     run.summary = summary or run.summary
     run.lease_expires_at = None
     project = await session.get(Project, run.project_id)
@@ -1226,7 +1233,7 @@ def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *
     """End a run (the caller holds it and checked it may): its outcome, audited. Not committed."""
     run.status, run.finished_at = status, datetime.now(UTC)
     run.error = error[:1000] if error else None
-    run.pending_patch = None  # accepted changes are on the branch now, or never will be
+    run.pending_patch = run.pending_patch_bytes = None  # accepted changes are on the branch now, or never will be
     if summary:
         run.summary = summary
     AuditLog(session).record(
@@ -1238,10 +1245,10 @@ def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *
     )
 
 
-async def _stage(work: Path, host: Path, diff: str) -> tuple[list[str], list[dict[str, Any]]]:
+async def _stage(work: Path, host: Path, diff: bytes) -> tuple[list[str], list[dict[str, Any]]]:
     """Apply the agent's changes to our checkout's index and check them: the paths and their counts."""
     patch = work / "changes.patch"
-    patch.write_bytes(diff.encode())  # bytes: text mode would add \r before each \n on Windows
+    patch.write_bytes(diff)  # bytes: text mode would add \r before each \n on Windows
     try:
         await run_git(host, "apply", "--index", "--binary", "--whitespace=nowarn", str(patch))
     except CheckoutError as exc:

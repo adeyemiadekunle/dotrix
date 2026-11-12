@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
 import { api, ensureSession, errorMessage, unwrap } from "@/lib/api";
-import type { Scope } from "@/lib/issues";
+import { issueQueriesOf, type Scope } from "@/lib/issues";
 import { desktop } from "@/src/core/desktop";
 
 export type CodingRun = Schemas["CodingRunRead"];
@@ -81,7 +81,7 @@ function useCodingMutation<T, R = CodingRun>(scope: Scope | undefined, issueKey:
       void queryClient.invalidateQueries({ queryKey: ["coding-run", scope?.projectId] });
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       // Approving assigns the issue to the coding tool and moves it to in progress.
-      void queryClient.invalidateQueries({ queryKey: ["issues", scope?.projectId] });
+      if (scope) for (const queryKey of issueQueriesOf(scope)) void queryClient.invalidateQueries({ queryKey });
     },
   });
 }

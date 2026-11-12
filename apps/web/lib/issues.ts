@@ -31,6 +31,9 @@ export const issueKeys = {
   issue: (s: Scope, key: string) => ["issues", s.projectId, "issue", key] as const,
 };
 
+/** Every issues query a change in this project can show up in: the project's own and the workspace-wide lists. */
+export const issueQueriesOf = (s: Scope) => [issueKeys.all(s), ["issues", "workspace", s.workspaceId] as const] as const;
+
 /** Filters for issues across the workspace's projects; `me` stands for you. */
 export interface WorkspaceIssueFilters {
   type?: IssueType[];
