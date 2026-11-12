@@ -316,7 +316,7 @@ class ConversationPlan(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
 
 
 class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
-    """A run's structured result (docs/agents-v2.md §4.6): the items the leading agent recorded
+    """A run's structured result (docs/architecture.md): the items the leading agent recorded
     with `submit_result`, in its contract's output schema, each with what people did with it."""
 
     __tablename__ = "agent_run_outputs"

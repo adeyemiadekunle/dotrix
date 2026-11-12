@@ -1,4 +1,4 @@
-"""Research on the platform (docs/agents-v2.md §6.2, §6.3): a run's sources saved with stable
+"""Research on the platform (docs/architecture.md): a run's sources saved with stable
 ids, pages cached per workspace, web limits and Tavily credits, and report claims checked
 against what was read."""
 from collections.abc import Iterator

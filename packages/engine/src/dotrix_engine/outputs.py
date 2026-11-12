@@ -1,4 +1,4 @@
-"""What an agent returns besides its reply (docs/agents-v2.md §4.6, §4.7).
+"""What an agent returns besides its reply (docs/architecture.md).
 
 An agent whose contract names an `output` ends its work by calling `submit_result` with items
 of that schema, so the app can show each item with actions (create an issue from a finding,

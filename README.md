@@ -34,9 +34,9 @@ through without asking, and every change is in the audit log.
   agents follow), folder templates, and lessons proposed from rejected changes and dismissed
   results.
 
-Product spec: [docs/prd.md](docs/prd.md). The team: [docs/nova-team.md](docs/nova-team.md).
-Coding: [docs/coding-agent.md](docs/coding-agent.md). What's built, item by item, and what's
-left: [CLAUDE.md](CLAUDE.md).
+Product, onboarding and beta gates: [Product and release readiness](docs/product.md).
+System design, planning, parallel work and skills: [Architecture and agents](docs/architecture.md).
+Contributor rules and the detailed engineering queue: [CLAUDE.md](CLAUDE.md).
 
 ## What you can do today
 
@@ -116,9 +116,9 @@ The full list, most urgent first, is in [CLAUDE.md](CLAUDE.md) under "Remaining 
   - A domain with HTTPS on Dokploy ([deploy/README.md](deploy/README.md)).
   - Docker Cloud sandboxes on a real account.
   - The engines on their other providers' paid models.
-  - Hardening the cloud sandbox (gVisor, per-workspace limits).
+  - Verifying required gVisor isolation on the deployed host, and distributed per-workspace limits.
   - Retries and a queue when several people share a key.
-- **Codes:** live text instead of polling, usage per session, and subagents' events nested.
+- **Codes:** token-by-token reply text, usage per session, and deeper nesting of runtime subagent events; background task states, checks and command output are already visible.
 - **Chat:**
   - fx tested on real models before it becomes a default.
   - Specialist memory controls.
@@ -151,7 +151,7 @@ packages/
 infra/          Local Postgres (with pgvector), Redis and RustFS; dotrix in Docker; the coding
                 sandbox's image and egress proxy (infra/coding)
 deploy/         Production on one VPS with Dokploy
-docs/           The PRD, the engine, the team, the coding agent, and the proposed direction
+docs/           Product/release readiness and architecture/agent contracts (two maintained guides)
 ```
 
 Python is a [uv](https://docs.astral.sh/uv/) workspace; TypeScript is a

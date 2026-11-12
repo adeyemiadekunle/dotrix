@@ -1,4 +1,4 @@
-"""Web search for agents (docs/agents-v2.md §6.1, D3): one provider interface, Tavily behind
+"""Web search for agents (docs/architecture.md): one provider interface, Tavily behind
 it, and a fake for tests. Results carry what a source record needs; pages are read with
 `fetch.PageFetcher`, not taken from the provider.
 """

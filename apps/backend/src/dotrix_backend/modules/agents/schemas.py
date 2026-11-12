@@ -221,7 +221,7 @@ class QuoteCheck(BaseModel):
 
 
 class ClaimCheck(BaseModel):
-    """A report item checked against its sources (docs/agents-v2.md §6.3)."""
+    """A report item checked against its sources (docs/architecture.md)."""
 
     status: Literal["supported", "weak", "unsupported"] = Field(
         description="supported: quoted from a primary or reputable page read in full; weak: only from snippets, "

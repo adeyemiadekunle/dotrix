@@ -302,7 +302,7 @@ class Settings(DatabaseSettings):
     # unrelated query are still "nearest"). Depends on the model: measured on
     # gemini-embedding-001, the right passage scored 0.68-0.72 and unrelated queries at most 0.56.
     embedding_min_similarity: float = Field(default=0.6, ge=0, le=1)
-    # Research on the web (docs/agents-v2.md §6). Search: "tavily" (needs the key), "native"
+    # Research on the web (docs/architecture.md). Search: "tavily" (needs the key), "native"
     # (the model's built-in search), or "auto" (Tavily when the key is set). Agents read pages
     # themselves either way. "fake": a canned search and site, for end-to-end tests only.
     tavily_api_key: SecretStr | None = Field(

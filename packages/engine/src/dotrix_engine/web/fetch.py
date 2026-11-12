@@ -1,4 +1,4 @@
-"""Reading web pages safely (docs/agents-v2.md §6.1).
+"""Reading web pages safely (docs/architecture.md).
 
 An agent can ask for any URL, so the fetcher treats every one as hostile: http(s) on the
 standard ports only, and only public addresses. A hostname is resolved and every address it

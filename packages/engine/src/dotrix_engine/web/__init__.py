@@ -1,5 +1,5 @@
 """The agents' web: search through a provider (Tavily), safe page reads, sources with ids,
-and web text kept as data (docs/agents-v2.md §6)."""
+and web text kept as data (docs/architecture.md)."""
 from .fetch import BlockedAddress, FetchError, Page, PageFetcher, PublicOnlyTransport, is_public
 from .search import FakeSearch, SearchHit, SearchProvider, SearchUnavailable, TavilySearch
 from .tiers import tier

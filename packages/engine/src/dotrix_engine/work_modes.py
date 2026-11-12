@@ -1,4 +1,4 @@
-"""Work modes: how a person is working with the team in a conversation (docs/dotrix-durable-agent-harness.md §2.1).
+"""Work modes: how a person is working with the team in a conversation (docs/architecture.md).
 
 One conversation moves between them as work evolves: Discuss (understand and advise), Plan (a
 proposal with acceptance criteria and tasks), Build (do what was asked), Review (what changed,

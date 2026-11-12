@@ -1,5 +1,5 @@
 """Project access: a project is open to every member of its workspace, or restricted to its
-owners, admins, and the people added to it (docs/agents-v2.md §0)."""
+owners, admins, and the people added to it (docs/architecture.md)."""
 from httpx import AsyncClient
 
 from dotrix_backend.modules.workspaces.models import Role

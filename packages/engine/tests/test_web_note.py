@@ -1,4 +1,4 @@
-"""A research note rendered from a report and its sources (docs/agents-v2.md §6.4)."""
+"""A research note rendered from a report and its sources (docs/architecture.md)."""
 from datetime import UTC, date, datetime
 
 from dotrix_engine.web.note import note_path, render_note

@@ -1,4 +1,4 @@
-"""Research on the web for agent runs (docs/agents-v2.md §6).
+"""Research on the web for agent runs (docs/architecture.md).
 
 `WebResearch` (one per process, from settings) gives each step of a run its web tools
 (`dotrix_engine.web`): sources saved to `research_sources` after every call, so their ids stay

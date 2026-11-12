@@ -1,4 +1,4 @@
-"""The tools an agent can be given (agent contracts, docs/agents-v2.md §4.3).
+"""The tools an agent can be given (agent contracts, docs/architecture.md).
 
 A contract lists tool ids from here. The platform (or the local CLI) supplies the actual
 tools; `tool_id` says which id a supplied tool belongs to, by its name. Each id also names

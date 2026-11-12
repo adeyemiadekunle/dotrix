@@ -1,4 +1,4 @@
-"""Research on the web (docs/agents-v2.md §6.2): the sources a run's agents found or read, and
+"""Research on the web (docs/architecture.md): the sources a run's agents found or read, and
 the pages read, cached per workspace."""
 from __future__ import annotations
 
