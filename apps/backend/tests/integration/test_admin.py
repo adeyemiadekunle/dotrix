@@ -192,3 +192,63 @@ async def test_admin_cookie_writes_require_csrf_header(db_client: AsyncClient) -
     await _admin(db_client)
     res = await db_client.post("/v1/admin/logout", headers={"X-Requested-With": ""})
     assert res.status_code == 403
+
+
+async def test_health_covers_each_dependency_and_survives_a_failing_one(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dotrix_backend.core.storage import MemoryBlobStorage
+
+    await _admin(db_client)
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    monkeypatch.setattr(app.state, "storage", MemoryBlobStorage())
+    health = (await db_client.get("/v1/admin/observe/health")).json()
+    checks = {d["id"]: d for d in health["dependencies"]}
+    assert set(checks) == {"redis", "workers", "storage", "email", "github"}
+    assert checks["storage"]["state"] == "ok"
+    assert checks["redis"]["state"] in ("ok", "off")
+    assert checks["workers"]["state"] in ("ok", "off", "down", "degraded")
+
+    async def broken(self) -> None:
+        raise RuntimeError("secret-host.internal:9000 password=hunter2")
+
+    monkeypatch.setattr(MemoryBlobStorage, "ping", broken)
+    res = await db_client.get("/v1/admin/observe/health")
+    assert res.status_code == 200
+    storage = next(d for d in res.json()["dependencies"] if d["id"] == "storage")
+    assert storage["state"] == "down"
+    assert "RuntimeError" in storage["detail"]
+    assert "hunter2" not in res.text and "secret-host" not in res.text
+
+
+async def test_health_counts_old_unsent_notifications_and_mirrors_coding_slots(
+    signup, db_client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dotrix_backend.modules.notifications.models import Notification, NotificationKind
+
+    owner = await signup()
+    await _admin(db_client)
+    ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
+    project = (
+        await db_client.post(f"/v1/workspaces/{ws['id']}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=owner.headers)
+    ).json()
+    now = datetime.now(UTC)
+
+    def note(created: datetime, emailed: datetime | None = None) -> Notification:
+        return Notification(
+            workspace_id=uuid.UUID(ws["id"]), user_id=uuid.UUID(owner.id), project_id=uuid.UUID(project["id"]),
+            kind=NotificationKind.ASSIGNED, title="x", created_at=created, emailed_at=emailed,
+        )
+
+    db_session.add_all([note(now - timedelta(minutes=30)), note(now), note(now - timedelta(hours=2), now)])
+    await db_session.commit()
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings, "coding_max_runs", 3)
+
+    health = (await db_client.get("/v1/admin/observe/health")).json()
+    assert health["notification_emails_waiting"] == 1
+    assert health["notification_email_oldest_seconds"] >= 29 * 60
+    assert health["coding_slots"] == 3 and health["coding_running_cloud"] == 0
+
+    monkeypatch.setattr(settings, "coding_max_runs", 0)
+    assert (await db_client.get("/v1/admin/observe/health")).json()["coding_slots"] is None

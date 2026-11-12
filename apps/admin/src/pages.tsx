@@ -22,6 +22,7 @@ import {
   type CodingRow,
   type Counts,
   type Day,
+  type DependencyCheck,
   type FailureGroup,
   type Failures,
   type Health,
@@ -67,7 +68,60 @@ function checks(h: Health, now: number): Check[] {
   const workerIdle = h.worker_last_took_at ? (now - new Date(h.worker_last_took_at).getTime()) / 1000 : null;
   // A queue with work in it and no worker taking from it is the outage to catch.
   const workerTone: Tone = h.jobs !== "worker" ? "muted" : h.queue_pending > 0 && (workerIdle == null || workerIdle > 120) ? "bad" : "good";
+  const dependencyTone: Record<DependencyCheck["state"], Tone> = { ok: "good", degraded: "warn", down: "bad", off: "good" };
+  const dependencyLabel: Record<string, string> = {
+    redis: "Redis",
+    workers: "Worker check-in",
+    storage: "File storage",
+    email: "Email",
+    github: "GitHub App",
+  };
+  const dependencyCards: Check[] = h.dependencies.map((d) => ({
+    id: `dep-${d.id}`,
+    label: dependencyLabel[d.id] ?? d.id,
+    icon: <GearSixIcon size={18} />,
+    tone: dependencyTone[d.state],
+    value: d.state === "off" ? "Off" : d.state === "ok" ? "OK" : d.state === "degraded" ? "Degraded" : "Down",
+    detail: d.state === "off" ? "not configured" : d.detail,
+  }));
+  const emailAge = h.notification_email_oldest_seconds;
+  const emailTone: Tone = !h.notification_emails_waiting
+    ? "good"
+    : emailAge != null && emailAge > 3600
+      ? "bad"
+      : emailAge != null && emailAge > 900
+        ? "warn"
+        : "good";
+  const slotsFull = h.coding_slots != null && h.coding_running_cloud >= h.coding_slots;
+  const extra: Check[] = [
+    {
+      id: "emails-waiting",
+      label: "Emails waiting",
+      icon: <QueueIcon size={18} />,
+      tone: emailTone,
+      value: h.notification_emails_waiting || "None",
+      detail: emailAge != null ? `oldest for ${duration(emailAge)}` : "notifications not yet emailed",
+    },
+    {
+      id: "automation-events",
+      label: "Automation events waiting",
+      icon: <QueueIcon size={18} />,
+      tone: h.automation_events_waiting > 100 ? "warn" : "good",
+      value: h.automation_events_waiting || "None",
+      detail: "written, not yet handled",
+    },
+    {
+      id: "coding-slots",
+      label: "Coding slots",
+      icon: <DesktopTowerIcon size={18} />,
+      tone: slotsFull ? "warn" : "good",
+      value: h.coding_slots == null ? `${h.coding_running_cloud} running` : `${h.coding_running_cloud} of ${h.coding_slots}`,
+      detail: h.coding_slots == null ? "no limit set" : "cloud turns at once, per worker",
+    },
+  ];
   return [
+    ...dependencyCards,
+    ...extra,
     {
       id: "db",
       label: "Database",

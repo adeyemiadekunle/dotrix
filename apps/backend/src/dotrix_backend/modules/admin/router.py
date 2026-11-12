@@ -148,8 +148,9 @@ Days = Annotated[int, Query(ge=1, le=90, description="How many days back")]
 @router.get("/observe/health", responses=errors(422))
 async def observe_health(admin: AdminDep, request: Request, platform: Platform) -> PlatformHealth:
     """Is the deployment working: the database's answer time, the run queue and when a worker last
-    took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners."""
-    return await platform.health(request.app.version)
+    took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners, plus Redis, workers,
+    file storage, email and the GitHub App, waiting emails and automation events, and coding capacity."""
+    return await platform.health(request.app.version, request.app.state)
 
 
 @router.get("/observe/counts", responses=errors(422))

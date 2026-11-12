@@ -63,6 +63,15 @@ class StuckRun(BaseModel):
     lease_expired_at: datetime | None
 
 
+class DependencyCheck(BaseModel):
+    """One thing dotrix depends on, as the console shows it."""
+
+    id: str = Field(description="redis, workers, storage, email, github")
+    state: Literal["ok", "degraded", "down", "off"] = Field(description="off: not configured here, which is allowed")
+    detail: str = Field(description="One short line for an operator: never a secret, never text people wrote")
+    latency_ms: float | None = None
+
+
 class PlatformHealth(BaseModel):
     """Is the deployment working, in one read: the database, the run queue, workers, leases and sandboxes."""
 
@@ -87,6 +96,21 @@ class PlatformHealth(BaseModel):
     runners: int
     failed_24h: int
     finished_24h: int
+    dependencies: list[DependencyCheck] = []
+    workers_alive: int | None = Field(
+        default=None,
+        description="1 when a worker has checked in (arq keeps one check-in per queue, so workers aren't counted), "
+        "0 when none has; null outside worker mode",
+    )
+    notification_emails_waiting: int = Field(
+        default=0, description="Notifications the minute job should have handled (older than 5 minutes) and hasn't"
+    )
+    notification_email_oldest_seconds: float | None = None
+    automation_events_waiting: int = Field(
+        default=0, description="Automation events written and not yet handled (they are deleted once handled)"
+    )
+    coding_slots: int | None = Field(default=None, description="Cloud coding turns each worker runs at once; null: no limit")
+    coding_running_cloud: int = 0
 
 
 class PlatformCounts(BaseModel):

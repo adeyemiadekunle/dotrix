@@ -86,6 +86,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Added
 
 - Operators can list admin console accounts, create one and reset one's password from the server's command line (python -m dotrix_backend.admin_cli).
+- The admin console's health now covers Redis, workers, file storage, email, the GitHub App, waiting emails and automation events, and coding capacity.
 - Each workspace has a storage limit for uploaded documents and task attachments (1 GB by default; the operator can change it per workspace). Settings shows how much is used, and an upload that doesn't fit is refused with the reason.
 - NVIDIA as a model provider: connect your build.nvidia.com key (`nvapi-…`) in Account → Your models to use NVIDIA's hosted models, which are free to try with rate limits, for chat and for Kai (on OpenCode or fx). Six are offered, each checked live for fast, working tool calls: Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Bolt, Mistral Large 4, Gemma 4 31B and Laguna XS 2.1.
 - A private solo beta readiness page (`docs/solo-beta-readiness.md`): the supported configuration, the checks to run where, and the known limitations to tell participants.

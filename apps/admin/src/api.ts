@@ -60,6 +60,13 @@ export type Me = { email: string; name: string };
 
 type StuckRun = { kind: "chat" | "coding"; id: string; status: string; workspace: string; label: string | null; lease_expired_at: string | null };
 
+export type DependencyCheck = {
+  id: string;
+  state: "ok" | "degraded" | "down" | "off";
+  detail: string;
+  latency_ms: number | null;
+};
+
 export type Health = {
   generated_at: string;
   version: string;
@@ -82,6 +89,13 @@ export type Health = {
   runners: number;
   failed_24h: number;
   finished_24h: number;
+  dependencies: DependencyCheck[];
+  workers_alive: number | null;
+  notification_emails_waiting: number;
+  notification_email_oldest_seconds: number | null;
+  automation_events_waiting: number;
+  coding_slots: number | null;
+  coding_running_cloud: number;
 };
 
 export type Counts = {

@@ -6,6 +6,7 @@ but never what people wrote: no conversation titles or messages, briefs, diffs, 
 are named by their workspace, project and issue key; failures by the error the platform recorded."""
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
@@ -14,11 +15,13 @@ from typing import Any, Literal
 from sqlalchemy import Date, case, cast, func, literal_column, select, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dotrix_backend.core.jobs import QUEUE_NAME
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.admin.schemas import (
     AuditPage,
     CodingBreakdown,
     DayStats,
+    DependencyCheck,
     FailureGroup,
     FailureReport,
     PlatformAuditEvent,
@@ -31,8 +34,10 @@ from dotrix_backend.modules.admin.schemas import (
 from dotrix_backend.modules.agents.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from dotrix_backend.modules.audit.models import AuditEvent
 from dotrix_backend.modules.auth.models import User
+from dotrix_backend.modules.automations.models import AutomationEventRow
 from dotrix_backend.modules.coding.models import ACTIVE as CODING_ACTIVE
 from dotrix_backend.modules.coding.models import (
+    CodingLocation,
     CodingRun,
     CodingRunner,
     CodingRunStatus,
@@ -42,12 +47,16 @@ from dotrix_backend.modules.coding.models import (
 from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.issues.models import IssueAttachment
+from dotrix_backend.modules.notifications.models import Notification
 from dotrix_backend.modules.observe.service import ObserveService
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.models import Membership, Workspace
 from dotrix_backend.modules.workspaces.storage import limit_bytes
 
 RUNNER_ONLINE = timedelta(minutes=2)
+ARQ_HEALTH_SUFFIX = ":health-check"  # arq's key for a queue; worker.py keeps arq's default interval
+ARQ_HEALTH_INTERVAL = 3600
+EMAIL_GRACE = timedelta(minutes=5)
 # A literal, not a bound parameter: GROUP BY must repeat the SELECT's expression exactly.
 UTC_NAME = literal_column("'UTC'")
 CODING_FAILED = (CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)
@@ -69,8 +78,74 @@ class PlatformObserve:
     async def _scalar(self, stmt) -> Any:
         return (await self.session.execute(stmt)).scalar() or 0
 
-    async def health(self, version: str) -> PlatformHealth:
-        """Is the deployment working: the database, the run queue, workers, leases, sandboxes."""
+    async def dependencies(self, state: Any) -> list[DependencyCheck]:
+        """Redis, workers, file storage, email and the GitHub App, each checked on its own: one that
+        fails reports `down` (by its exception's class, never its message) and never fails the read."""
+        s = self.settings
+        redis = getattr(state, "redis", None)
+        storage = getattr(state, "storage", None)
+
+        async def guarded(check_id: str, run: Any) -> DependencyCheck:
+            try:
+                return await asyncio.wait_for(run(), timeout=2)
+            except TimeoutError:
+                return DependencyCheck(id=check_id, state="down", detail="No answer within 2 seconds")
+            except Exception as exc:
+                return DependencyCheck(id=check_id, state="down", detail=f"Check failed: {type(exc).__name__}")
+
+        async def redis_check() -> DependencyCheck:
+            if redis is None:
+                return DependencyCheck(id="redis", state="off", detail="Not configured here")
+            started = time.perf_counter()
+            await redis.ping()
+            ms = round((time.perf_counter() - started) * 1000, 1)
+            return DependencyCheck(id="redis", state="ok", detail=f"Answered in {ms} ms", latency_ms=ms)
+
+        async def workers_check() -> DependencyCheck:
+            if s.jobs != "worker":
+                return DependencyCheck(id="workers", state="off", detail=f"Background work runs in {s.jobs} mode")
+            if redis is None:
+                return DependencyCheck(id="workers", state="degraded", detail="Can't confirm a worker is alive")
+            # arq's worker sets "<queue>:health-check" with a TTL of its interval + 1 s (3600 by default).
+            ttl_ms = await redis.pttl(QUEUE_NAME + ARQ_HEALTH_SUFFIX)
+            if ttl_ms is None or ttl_ms < 0:
+                return DependencyCheck(id="workers", state="down", detail="No worker has checked in recently")
+            age = max(0, ARQ_HEALTH_INTERVAL + 1 - ttl_ms / 1000)
+            return DependencyCheck(id="workers", state="ok", detail=f"A worker checked in {round(age)} s ago")
+
+        async def storage_check() -> DependencyCheck:
+            if storage is None:
+                return DependencyCheck(id="storage", state="off", detail="Not configured here")
+            started = time.perf_counter()
+            await storage.ping()
+            ms = round((time.perf_counter() - started) * 1000, 1)
+            return DependencyCheck(id="storage", state="ok", detail=f"Answered in {ms} ms", latency_ms=ms)
+
+        async def email_check() -> DependencyCheck:
+            if s.email_backend == "sendly":
+                return DependencyCheck(id="email", state="ok", detail="Sendly")
+            return DependencyCheck(id="email", state="degraded", detail="Console (emails are only logged)")
+
+        async def github_check() -> DependencyCheck:
+            if not s.github_app_id:
+                return DependencyCheck(id="github", state="off", detail="Not configured here")
+            if s.github_webhook_secret is None:
+                return DependencyCheck(id="github", state="degraded", detail="Webhooks can't be verified")
+            return DependencyCheck(id="github", state="ok", detail="App configured")
+
+        return list(
+            await asyncio.gather(
+                guarded("redis", redis_check),
+                guarded("workers", workers_check),
+                guarded("storage", storage_check),
+                guarded("email", email_check),
+                guarded("github", github_check),
+            )
+        )
+
+    async def health(self, version: str, state: Any = None) -> PlatformHealth:
+        """Is the deployment working: the database, the run queue, workers, leases, sandboxes, and
+        what dotrix depends on."""
         now = datetime.now(UTC)
         day = now - timedelta(days=1)
         started = time.perf_counter()
@@ -117,8 +192,26 @@ class PlatformObserve:
         )
         runners = await self._scalar(select(func.count(CodingRunner.id)).where(CodingRunner.revoked_at.is_(None)))
 
+        dependencies = await self.dependencies(state)
+        # What the minute job hands out: everything unemailed older than its one-minute batch wait
+        # (send_due marks digest and no-email people's rows handled too).
+        unsent = (Notification.emailed_at.is_(None), Notification.created_at <= now - EMAIL_GRACE)
+        oldest_unsent = await self.session.scalar(select(func.min(Notification.created_at)).where(*unsent))
+        workers = next((d for d in dependencies if d.id == "workers"), None)
+
         return PlatformHealth(
             generated_at=now,
+            dependencies=dependencies,
+            workers_alive=None if workers is None or workers.state in ("off", "degraded") else int(workers.state == "ok"),
+            notification_emails_waiting=await self._scalar(select(func.count(Notification.id)).where(*unsent)),
+            notification_email_oldest_seconds=(now - oldest_unsent).total_seconds() if oldest_unsent is not None else None,
+            automation_events_waiting=await self._scalar(select(func.count(AutomationEventRow.id))),
+            coding_slots=self.settings.coding_max_runs or None,
+            coding_running_cloud=await self._scalar(
+                select(func.count(CodingRun.id)).where(
+                    CodingRun.status == CodingRunStatus.RUNNING, CodingRun.location == CodingLocation.CLOUD
+                )
+            ),
             version=version,
             environment=self.settings.env,
             jobs=self.settings.jobs,

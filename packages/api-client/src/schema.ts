@@ -514,7 +514,8 @@ export interface paths {
         /**
          * Observe Health
          * @description Is the deployment working: the database's answer time, the run queue and when a worker last
-         *     took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners.
+         *     took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners, plus Redis, workers,
+         *     file storage, email and the GitHub App, waiting emails and automation events, and coding capacity.
          */
         get: operations["observe_health"];
         put?: never;
@@ -7201,6 +7202,30 @@ export interface components {
              */
             default_model?: string | null;
         };
+        /**
+         * DependencyCheck
+         * @description One thing dotrix depends on, as the console shows it.
+         */
+        DependencyCheck: {
+            /**
+             * Id
+             * @description redis, workers, storage, email, github
+             */
+            id: string;
+            /**
+             * State
+             * @description off: not configured here, which is allowed
+             * @enum {string}
+             */
+            state: "ok" | "degraded" | "down" | "off";
+            /**
+             * Detail
+             * @description One short line for an operator: never a secret, never text people wrote
+             */
+            detail: string;
+            /** Latency Ms */
+            latency_ms?: number | null;
+        };
         /** DependencyRead */
         DependencyRead: {
             /**
@@ -9130,6 +9155,40 @@ export interface components {
             failed_24h: number;
             /** Finished 24H */
             finished_24h: number;
+            /**
+             * Dependencies
+             * @default []
+             */
+            dependencies: components["schemas"]["DependencyCheck"][];
+            /**
+             * Workers Alive
+             * @description 1 when a worker has checked in (arq keeps one check-in per queue, so workers aren't counted), 0 when none has; null outside worker mode
+             */
+            workers_alive?: number | null;
+            /**
+             * Notification Emails Waiting
+             * @description Notifications the minute job should have handled (older than 5 minutes) and hasn't
+             * @default 0
+             */
+            notification_emails_waiting: number;
+            /** Notification Email Oldest Seconds */
+            notification_email_oldest_seconds?: number | null;
+            /**
+             * Automation Events Waiting
+             * @description Automation events written and not yet handled (they are deleted once handled)
+             * @default 0
+             */
+            automation_events_waiting: number;
+            /**
+             * Coding Slots
+             * @description Cloud coding turns each worker runs at once; null: no limit
+             */
+            coding_slots?: number | null;
+            /**
+             * Coding Running Cloud
+             * @default 0
+             */
+            coding_running_cloud: number;
         };
         /**
          * PrState

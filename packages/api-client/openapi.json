@@ -1149,7 +1149,7 @@
           "admin"
         ],
         "summary": "Observe Health",
-        "description": "Is the deployment working: the database's answer time, the run queue and when a worker last\ntook from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners.",
+        "description": "Is the deployment working: the database's answer time, the run queue and when a worker last\ntook from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners, plus Redis, workers,\nfile storage, email and the GitHub App, waiting emails and automation events, and coding capacity.",
         "operationId": "observe_health",
         "parameters": [
           {
@@ -29963,6 +29963,50 @@
         "type": "object",
         "title": "DefaultModelSave"
       },
+      "DependencyCheck": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "redis, workers, storage, email, github"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "down",
+              "off"
+            ],
+            "title": "State",
+            "description": "off: not configured here, which is allowed"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "description": "One short line for an operator: never a secret, never text people wrote"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "state",
+          "detail"
+        ],
+        "title": "DependencyCheck",
+        "description": "One thing dotrix depends on, as the console shows it."
+      },
       "DependencyRead": {
         "properties": {
           "ecosystem": {
@@ -34550,6 +34594,66 @@
           "finished_24h": {
             "type": "integer",
             "title": "Finished 24H"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/DependencyCheck"
+            },
+            "type": "array",
+            "title": "Dependencies",
+            "default": []
+          },
+          "workers_alive": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workers Alive",
+            "description": "1 when a worker has checked in (arq keeps one check-in per queue, so workers aren't counted), 0 when none has; null outside worker mode"
+          },
+          "notification_emails_waiting": {
+            "type": "integer",
+            "title": "Notification Emails Waiting",
+            "description": "Notifications the minute job should have handled (older than 5 minutes) and hasn't",
+            "default": 0
+          },
+          "notification_email_oldest_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notification Email Oldest Seconds"
+          },
+          "automation_events_waiting": {
+            "type": "integer",
+            "title": "Automation Events Waiting",
+            "description": "Automation events written and not yet handled (they are deleted once handled)",
+            "default": 0
+          },
+          "coding_slots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coding Slots",
+            "description": "Cloud coding turns each worker runs at once; null: no limit"
+          },
+          "coding_running_cloud": {
+            "type": "integer",
+            "title": "Coding Running Cloud",
+            "default": 0
           }
         },
         "type": "object",

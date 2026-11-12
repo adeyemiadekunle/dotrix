@@ -30,6 +30,7 @@ class BlobStorage(Protocol):
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
     async def get(self, key: str) -> bytes: ...
     async def delete(self, key: str) -> None: ...
+    async def ping(self) -> None: ...
 
 
 class S3BlobStorage:
@@ -58,6 +59,11 @@ class S3BlobStorage:
             await s3.create_bucket(Bucket=self.bucket)
             logger.info("created storage bucket %s", self.bucket)
         self._bucket_ready = True
+
+    async def ping(self) -> None:
+        """Can the configured bucket be reached (a read-only head request; raises when it can't)."""
+        async with self._client() as s3:
+            await s3.head_bucket(Bucket=self.bucket)
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         try:
@@ -94,6 +100,9 @@ class S3BlobStorage:
 class MemoryBlobStorage:
     def __init__(self) -> None:
         self.objects: dict[str, tuple[bytes, str]] = {}
+
+    async def ping(self) -> None:
+        return None
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         self.objects[key] = (data, content_type)
