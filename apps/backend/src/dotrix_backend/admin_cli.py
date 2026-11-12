@@ -67,7 +67,7 @@ async def _list(session: AsyncSession) -> list[str]:
 
 
 async def _create(session: AsyncSession, args: argparse.Namespace, password: Callable[[], str]) -> list[str]:
-    admin = await accounts.create_admin(session, email=args.email, name=args.name, password=password())
+    admin = await accounts.create_admin(session, email=args.email, name=args.name, password=password(), actor_email="command line")
     return [f"Created admin {admin.email}"]
 
 

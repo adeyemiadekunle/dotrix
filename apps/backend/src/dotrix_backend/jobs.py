@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from .core.email import EmailMessage, EmailSendError
 from .core.jobs import JobContext, JobFunction
+from .modules.admin.trail import delete_older
 from .modules.agents.service import continue_due_runs
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
 from .modules.auth.repository import (
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 # How long finished rows are kept before cleanup deletes them.
 TOKEN_RETENTION = timedelta(days=7)  # refresh tokens after expiry; email links after use or expiry; device logins
+ADMIN_TRAIL_RETENTION = timedelta(days=400)  # the admin console's trail
 INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
 FOLLOW_UP_GRACE = timedelta(minutes=1)  # a GitHub delivery's jobs unqueued this long are queued by the sweep
 CLEANUP_INTERVAL_SECONDS = 3600
@@ -93,6 +95,7 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
             if ctx.settings.jobs != "worker" else 0,
             "github_deliveries": await delete_stale_deliveries(session, token_cutoff),
             "github_import_previews": await cleanup_import_previews(session, at),
+            "admin_events": await delete_older(session, at - ADMIN_TRAIL_RETENTION),
         }
         await session.commit()
         if ctx.checkouts is not None:

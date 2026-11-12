@@ -54,3 +54,18 @@ class AdminSession(UUIDPrimaryKeyMixin, Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AdminEvent(UUIDPrimaryKeyMixin, Base):
+    """The admin console's append-only trail: who signed in, failed to, or changed an admin account.
+    No free text and no secrets; the emails are kept so a row still reads after its account is gone."""
+
+    __tablename__ = "admin_events"
+
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    admin_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="SET NULL"))
+    actor_email: Mapped[str | None] = mapped_column(String(320))
+    target_email: Mapped[str | None] = mapped_column(String(320))
+    workspace: Mapped[str | None] = mapped_column(String(100))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

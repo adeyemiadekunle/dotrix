@@ -22,6 +22,7 @@ from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.workspaces.models import Workspace
 
+from . import trail
 from .models import AdminSession, AdminUser
 from .schemas import AdminLogin, AdminRead, AdminSignup
 
@@ -66,7 +67,9 @@ class AdminService:
         await self.session.flush()  # the access token's sid is this row's id
         return _admin_token(admin.id, session.id, self.settings), refresh
 
-    async def set_storage_limit(self, admin: AdminUser, workspace_id: uuid.UUID, megabytes: int | None) -> None:
+    async def set_storage_limit(
+        self, admin: AdminUser, workspace_id: uuid.UUID, megabytes: int | None, ip: str | None = None
+    ) -> None:
         """Set (0: unlimited) or clear (null: the deployment's default) one workspace's upload
         storage limit. Audited in the workspace's log with the old and new values."""
         workspace = await self.session.get(Workspace, workspace_id)
@@ -79,6 +82,7 @@ class AdminService:
                 details={"from_mb": workspace.storage_limit_mb, "to_mb": megabytes, "admin_id": str(admin.id)},
             )
             workspace.storage_limit_mb = megabytes
+            trail.record(self.session, "admin.storage_limit_changed", admin=admin, workspace=workspace.slug, ip=ip)
         await self.session.commit()
 
     def token_required(self) -> bool:
@@ -92,7 +96,7 @@ class AdminService:
             return False
         return not await self.session.scalar(select(func.count(AdminUser.id)))
 
-    async def signup(self, data: AdminSignup) -> tuple[str, str]:
+    async def signup(self, data: AdminSignup, ip: str | None = None) -> tuple[str, str]:
         # One sign-up at a time, so two requests can't both find "no admin yet".
         await self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended("admin:bootstrap", 0))))
         if not await self.bootstrap_available():
@@ -111,14 +115,19 @@ class AdminService:
         )
         self.session.add(admin)
         await self.session.flush()
+        trail.record(self.session, "admin.created", admin=admin, ip=ip)
         pair = await self._tokens(admin)
         await self.session.commit()
         return pair
 
-    async def login(self, data: AdminLogin) -> tuple[str, str]:
+    async def login(self, data: AdminLogin, ip: str | None = None) -> tuple[str, str]:
         admin = await self.session.scalar(select(AdminUser).where(AdminUser.email == data.email.lower()))
         if admin is None or admin.disabled_at is not None or not verify_password(admin.password_hash, data.password):
+            # The failure is kept even though the request fails: its row commits before the error.
+            trail.record(self.session, "admin.sign_in_failed", actor_email=data.email.strip().lower()[:320], ip=ip)
+            await self.session.commit()
             raise Unauthorized("Wrong email or password")
+        trail.record(self.session, "admin.signed_in", admin=admin, ip=ip)
         pair = await self._tokens(admin)
         await self.session.commit()
         return pair
@@ -140,7 +149,7 @@ class AdminService:
         await self.session.commit()
         return pair
 
-    async def logout(self, admin: AdminUser, access_token: str) -> None:
+    async def logout(self, admin: AdminUser, access_token: str, ip: str | None = None) -> None:
         """Revoke the access token's session, even if its refresh cookie was lost."""
         claims = jwt.decode(
             access_token,
@@ -152,6 +161,7 @@ class AdminService:
         admin_session = await self.session.get(AdminSession, session_id, with_for_update=True)
         if admin_session is not None and admin_session.admin_user_id == admin.id and admin_session.revoked_at is None:
             admin_session.revoked_at = datetime.now(UTC)
+            trail.record(self.session, "admin.signed_out", admin=admin, ip=ip)
             await self.session.commit()
 
     async def read(self, admin: AdminUser) -> AdminRead:

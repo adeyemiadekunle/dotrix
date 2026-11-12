@@ -292,3 +292,20 @@ class RunPage(BaseModel):
 class AuditPage(BaseModel):
     items: list[PlatformAuditEvent]
     total: int
+
+
+class AdminTrailEvent(BaseModel):
+    """One admin sign-in or change. Never carries a password, token or anything people wrote."""
+
+    id: uuid.UUID
+    action: str
+    actor_email: str | None = Field(description="Who did it; the email tried, for a failed sign-in; `command line` from the server")
+    target_email: str | None = Field(description="The admin account it was done to, if any")
+    workspace: str | None = Field(description="The workspace's slug, for a storage limit change")
+    ip: str | None
+    created_at: datetime
+
+
+class AdminTrailPage(BaseModel):
+    items: list[AdminTrailEvent]
+    total: int

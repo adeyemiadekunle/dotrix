@@ -10,6 +10,7 @@ import {
   EyeSlashIcon,
   ListBulletsIcon,
   LockKeyIcon,
+  FingerprintIcon,
   ScrollIcon,
   SignOutIcon,
   SquaresFourIcon,
@@ -32,6 +33,7 @@ const CodingPage = lazy(() => pages().then((m) => ({ default: m.CodingPage })));
 const ModelsPage = lazy(() => pages().then((m) => ({ default: m.ModelsPage })));
 const WorkspacesPage = lazy(() => pages().then((m) => ({ default: m.WorkspacesPage })));
 const AuditPage = lazy(() => pages().then((m) => ({ default: m.AuditPage })));
+const TrailPage = lazy(() => pages().then((m) => ({ default: m.TrailPage })));
 const AdminsPage = lazy(() => pages().then((m) => ({ default: m.AdminsPage })));
 
 /** Where people who use dotrix sign in: the web app (`VITE_APP_URL`, set at build time). */
@@ -46,6 +48,7 @@ const PAGES: { id: string; label: string; icon: Icon; owner?: boolean }[] = [
   { id: "workspaces", label: "Workspaces", icon: SquaresFourIcon },
   { id: "audit", label: "Audit log", icon: ScrollIcon },
   { id: "admins", label: "Admins", icon: UsersThreeIcon, owner: true },
+  { id: "trail", label: "Admin activity", icon: FingerprintIcon, owner: true },
 ];
 
 function Mark({ size = 20 }: { size?: number }) {
@@ -441,6 +444,7 @@ export function App() {
           {page === "models" && <ModelsPage />}
           {page === "workspaces" && <WorkspacesPage />}
           {page === "audit" && <AuditPage />}
+          {page === "trail" && me.data.role === "owner" && <TrailPage />}
           {page === "admins" && me.data.role === "owner" && <AdminsPage meId={me.data.id} />}
         </Suspense>
       </main>

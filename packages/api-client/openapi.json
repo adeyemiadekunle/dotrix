@@ -2879,6 +2879,121 @@
         }
       }
     },
+    "/v1/admin/trail": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Trail",
+        "description": "A page of what admins did in the console, newest first, with the total: sign-ins and failed\nsign-ins, invites, role changes, disabling, removal, password changes, storage limit changes.\nNever a password, token or anything people wrote. Owners only.",
+        "operationId": "admin_trail",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Actions starting with this, e.g. `admin.sign_in`",
+              "title": "Action"
+            },
+            "description": "Actions starting with this, e.g. `admin.sign_in`"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 0,
+              "description": "Skip this many events: the page times its size",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Skip this many events: the page times its size"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTrailPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/device/code": {
       "post": {
         "tags": [
@@ -26265,6 +26380,104 @@
         ],
         "title": "AdminSignup",
         "description": "Create the first admin account. On a deployed server this needs the deployment's\nbootstrap token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN). The admin has its own credentials,\nseparate from any app account."
+      },
+      "AdminTrailEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "actor_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Email",
+            "description": "Who did it; the email tried, for a failed sign-in; `command line` from the server"
+          },
+          "target_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Email",
+            "description": "The admin account it was done to, if any"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace",
+            "description": "The workspace's slug, for a storage limit change"
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "actor_email",
+          "target_email",
+          "workspace",
+          "ip",
+          "created_at"
+        ],
+        "title": "AdminTrailEvent",
+        "description": "One admin sign-in or change. Never carries a password, token or anything people wrote."
+      },
+      "AdminTrailPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminTrailEvent"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AdminTrailPage"
       },
       "AdminUpdate": {
         "properties": {

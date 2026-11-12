@@ -883,6 +883,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/trail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Trail
+         * @description A page of what admins did in the console, newest first, with the total: sign-ins and failed
+         *     sign-ins, invites, role changes, disabling, removal, password changes, storage limit changes.
+         *     Never a password, token or anything people wrote. Owners only.
+         */
+        get: operations["admin_trail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/device/code": {
         parameters: {
             query?: never;
@@ -5390,6 +5412,48 @@ export interface components {
             password: string;
             /** Bootstrap Token */
             bootstrap_token?: string | null;
+        };
+        /**
+         * AdminTrailEvent
+         * @description One admin sign-in or change. Never carries a password, token or anything people wrote.
+         */
+        AdminTrailEvent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Action */
+            action: string;
+            /**
+             * Actor Email
+             * @description Who did it; the email tried, for a failed sign-in; `command line` from the server
+             */
+            actor_email: string | null;
+            /**
+             * Target Email
+             * @description The admin account it was done to, if any
+             */
+            target_email: string | null;
+            /**
+             * Workspace
+             * @description The workspace's slug, for a storage limit change
+             */
+            workspace: string | null;
+            /** Ip */
+            ip: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AdminTrailPage */
+        AdminTrailPage: {
+            /** Items */
+            items: components["schemas"]["AdminTrailEvent"][];
+            /** Total */
+            total: number;
         };
         /** AdminUpdate */
         AdminUpdate: {
@@ -13739,6 +13803,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_trail: {
+        parameters: {
+            query?: {
+                /** @description Actions starting with this, e.g. `admin.sign_in` */
+                action?: string | null;
+                /** @description Skip this many events: the page times its size */
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTrailPage"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

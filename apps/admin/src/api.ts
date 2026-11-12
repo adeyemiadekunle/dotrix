@@ -226,6 +226,16 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type TrailEvent = {
+  id: string;
+  action: string;
+  actor_email: string | null;
+  target_email: string | null;
+  workspace: string | null;
+  ip: string | null;
+  created_at: string;
+};
+
 export type Page<T> = { items: T[]; total: number };
 
 export type ModelRow = {

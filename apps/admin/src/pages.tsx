@@ -34,6 +34,7 @@ import {
   type ModelRow,
   type Page,
   type Run,
+  type TrailEvent,
   type WorkspaceRow,
 } from "./api";
 import { RunsChart, SignupsChart, TokensChart } from "./charts";
@@ -1104,6 +1105,122 @@ export function AdminsPage({ meId }: { meId: string }) {
               ))}
             </tbody>
           </table>
+        )}
+      </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Admin activity
+
+const TRAIL_LABEL: Record<string, string> = {
+  "admin.created": "Admin account created",
+  "admin.signed_in": "Signed in",
+  "admin.sign_in_failed": "Sign-in failed",
+  "admin.signed_out": "Signed out",
+  "admin.invited": "Invited an admin",
+  "admin.invite_revoked": "Revoked an invite",
+  "admin.role_changed": "Changed a role",
+  "admin.disabled": "Disabled an admin",
+  "admin.enabled": "Re-enabled an admin",
+  "admin.removed": "Removed an admin",
+  "admin.password_changed": "Changed their password",
+  "admin.password_reset": "Reset a password",
+  "admin.sessions_revoked": "Signed out their other sessions",
+  "admin.storage_limit_changed": "Changed a storage limit",
+};
+
+const TRAIL_FILTERS: [string, string][] = [
+  ["", "Everything"],
+  ["admin.sign_in", "Failed sign-ins"],
+  ["admin.signed", "Sign-ins and sign-outs"],
+  ["admin.invite", "Invites"],
+  ["admin.role", "Roles"],
+  ["admin.password", "Passwords"],
+];
+
+const trailColumns = (now: number): Column<TrailEvent>[] => [
+  {
+    id: "action",
+    header: "Action",
+    cell: ({ row: { original: e } }) => (
+      <span className="strong" title={e.action}>
+        {TRAIL_LABEL[e.action] ?? e.action}
+      </span>
+    ),
+  },
+  { id: "who", header: "Who", cell: ({ row }) => <span className="mono">{row.original.actor_email ?? "—"}</span> },
+  {
+    id: "target",
+    header: "Target",
+    cell: ({ row: { original: e } }) => <span className="mono">{e.target_email ?? e.workspace ?? "—"}</span>,
+  },
+  { id: "ip", header: "IP", cell: ({ row }) => <span className="mono dim">{row.original.ip ?? "—"}</span> },
+  {
+    id: "when",
+    header: "When",
+    meta: { align: "right" },
+    cell: ({ row }) => <span title={when(row.original.created_at)}>{ago(row.original.created_at, now)}</span>,
+  },
+];
+
+/** Owners only: admin sign-ins, failed sign-ins and changes to admin accounts. */
+export function TrailPage() {
+  const now = useTick();
+  const [action, setAction] = useState("");
+  const [page, setPage] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZES[0] });
+  const q = useQuery({
+    queryKey: ["trail", action, page.pageIndex, page.pageSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: String(page.pageSize), offset: String(page.pageIndex * page.pageSize) });
+      if (action) params.set("action", action);
+      return call<Page<TrailEvent>>(`/admin/trail?${params}`);
+    },
+    placeholderData: keepPreviousData,
+  });
+  return (
+    <>
+      <PageHead title="Admin activity" sub="Who signed in to this console, who failed to, and what changed on admin accounts. Never passwords or links.">
+        <input
+          className="input mono"
+          placeholder="Action starts with…"
+          value={action}
+          onChange={(e) => {
+            setAction(e.target.value.trim());
+            setPage((p) => ({ ...p, pageIndex: 0 }));
+          }}
+          aria-label="Filter by action"
+        />
+      </PageHead>
+      <div className="fchips">
+        {TRAIL_FILTERS.map(([f, label]) => (
+          <button
+            key={f}
+            type="button"
+            className={action === f ? "fchip on" : "fchip"}
+            onClick={() => {
+              setAction(f);
+              setPage((p) => ({ ...p, pageIndex: 0 }));
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <Card flush>
+        {q.isError ? (
+          <Failed error={q.error} />
+        ) : (
+          <DataTable
+            columns={trailColumns(now)}
+            data={q.data?.items ?? []}
+            total={q.data?.total ?? 0}
+            pagination={page}
+            onPagination={setPage}
+            loading={q.isFetching && !q.data}
+            empty="Nothing recorded."
+            rowKey={(e) => e.id}
+          />
         )}
       </Card>
     </>

@@ -86,6 +86,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- The admin console keeps a record of admin sign-ins and changes to admin accounts, shown to owners.
 - The admin console's audit log can be filtered by workspace, by who acted and by date.
 - The admin console has a Models page (runs, failures, limit stops, tokens and estimated cost per model and provider), and its cost figures include chat.
 - The admin console supports several admins: an owner invites others by email, each sets their own password, owners and viewers have different rights, and an owner can disable or remove an admin.
