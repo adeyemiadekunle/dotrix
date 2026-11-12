@@ -1,7 +1,7 @@
 """admin invites and roles
 
 Revision ID: 417a17a33e37
-Revises: 2b601902daec
+Revises: d38ea0f47651
 Create Date: 2026-11-12 13:21:48.171108
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "417a17a33e37"
-down_revision: str | None = "2b601902daec"
+down_revision: str | None = "d38ea0f47651"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
