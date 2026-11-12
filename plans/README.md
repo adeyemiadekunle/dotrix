@@ -29,7 +29,7 @@ the audit nor the other plans.
 | [014](014-admin-trail.md) | What admins do in the console is recorded and shown | P2 | M | 012 (013 if landed) | TODO |
 | [015](015-console-health-covers-dependencies.md) | The console's health shows the services, workers, backlogs and capacity dotrix depends on | P1 | M | — | DONE |
 | [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | TODO |
-| [017](017-console-usage-by-model-and-chat-cost.md) | The console shows what chat costs and how each model is doing | P2 | M | — | TODO |
+| [017](017-console-usage-by-model-and-chat-cost.md) | The console shows what chat costs and how each model is doing | P2 | M | — | DONE |
 | [018](018-console-failures-and-audit-cleanup.md) | The console's failure report can't show what people wrote, and the audit log can be filtered | P2 | S–M | — | TODO |
 | [019](019-one-coding-turn-at-a-time-per-issue.md) | Two requests can't start coding on the same issue or session at once | P1 | S | — | DONE |
 | [020](020-approvals-refresh-the-board.md) | Approving in Chat or Codes refreshes the task lists straight away | P1 | S | — | DONE |
