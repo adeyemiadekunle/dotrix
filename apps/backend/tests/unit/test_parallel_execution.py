@@ -64,7 +64,8 @@ async def test_task_graph_integrates_dependencies_and_rejects_scope(tmp_path, mo
 
     summary, patch = await parallel.execute(runner, uuid.uuid4(), tmp_path / "work", host, tool, "test", None,
                                              "Task", [], spec, {1: [], 2: [1] if dependent else []})
-    assert calls == ["first", "second"]
+    # A dependent task waits for the first; independent ones run at once on two slots, in either order.
+    assert calls == ["first", "second"] if dependent else sorted(calls) == ["first", "second"]
     assert b"first.txt" in patch and b"second.txt" in patch
     assert "Combined verification passed" in summary
     assert git("rev-parse", "HEAD") == sha

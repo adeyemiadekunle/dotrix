@@ -18,15 +18,24 @@ import { useState, type ReactNode } from "react";
 import {
   call,
   put,
+  send,
+  type AdminAccount,
+  type AdminInvite,
+  type AdminRole,
   type AuditEvent,
   type CodingRow,
   type Counts,
   type Day,
+  type AdminAlerts,
+  type DependencyCheck,
   type FailureGroup,
   type Failures,
   type Health,
+  type Me,
+  type ModelRow,
   type Page,
   type Run,
+  type TrailEvent,
   type WorkspaceRow,
 } from "./api";
 import { RunsChart, SignupsChart, TokensChart } from "./charts";
@@ -67,7 +76,60 @@ function checks(h: Health, now: number): Check[] {
   const workerIdle = h.worker_last_took_at ? (now - new Date(h.worker_last_took_at).getTime()) / 1000 : null;
   // A queue with work in it and no worker taking from it is the outage to catch.
   const workerTone: Tone = h.jobs !== "worker" ? "muted" : h.queue_pending > 0 && (workerIdle == null || workerIdle > 120) ? "bad" : "good";
+  const dependencyTone: Record<DependencyCheck["state"], Tone> = { ok: "good", degraded: "warn", down: "bad", off: "good" };
+  const dependencyLabel: Record<string, string> = {
+    redis: "Redis",
+    workers: "Worker check-in",
+    storage: "File storage",
+    email: "Email",
+    github: "GitHub App",
+  };
+  const dependencyCards: Check[] = h.dependencies.map((d) => ({
+    id: `dep-${d.id}`,
+    label: dependencyLabel[d.id] ?? d.id,
+    icon: <GearSixIcon size={18} />,
+    tone: dependencyTone[d.state],
+    value: d.state === "off" ? "Off" : d.state === "ok" ? "OK" : d.state === "degraded" ? "Degraded" : "Down",
+    detail: d.state === "off" ? "not configured" : d.detail,
+  }));
+  const emailAge = h.notification_email_oldest_seconds;
+  const emailTone: Tone = !h.notification_emails_waiting
+    ? "good"
+    : emailAge != null && emailAge > 3600
+      ? "bad"
+      : emailAge != null && emailAge > 900
+        ? "warn"
+        : "good";
+  const slotsFull = h.coding_slots != null && h.coding_running_cloud >= h.coding_slots;
+  const extra: Check[] = [
+    {
+      id: "emails-waiting",
+      label: "Emails waiting",
+      icon: <QueueIcon size={18} />,
+      tone: emailTone,
+      value: h.notification_emails_waiting || "None",
+      detail: emailAge != null ? `oldest for ${duration(emailAge)}` : "notifications not yet emailed",
+    },
+    {
+      id: "automation-events",
+      label: "Automation events waiting",
+      icon: <QueueIcon size={18} />,
+      tone: h.automation_events_waiting > 100 ? "warn" : "good",
+      value: h.automation_events_waiting || "None",
+      detail: "written, not yet handled",
+    },
+    {
+      id: "coding-slots",
+      label: "Coding slots",
+      icon: <DesktopTowerIcon size={18} />,
+      tone: slotsFull ? "warn" : "good",
+      value: h.coding_slots == null ? `${h.coding_running_cloud} running` : `${h.coding_running_cloud} of ${h.coding_slots}`,
+      detail: h.coding_slots == null ? "no limit set" : "cloud turns at once, per worker",
+    },
+  ];
   return [
+    ...dependencyCards,
+    ...extra,
     {
       id: "db",
       label: "Database",
@@ -131,6 +193,7 @@ export function Overview({ go }: { go: (page: string) => void }) {
   const now = useTick();
   const [days, setDays] = useState(14);
   const health = useQuery({ queryKey: ["health"], queryFn: () => call<Health>("/admin/observe/health"), refetchInterval: REFRESH });
+  const alerts = useQuery({ queryKey: ["alerts"], queryFn: () => call<AdminAlerts>("/admin/observe/alerts"), refetchInterval: 60_000 });
   const counts = useQuery({ queryKey: ["counts"], queryFn: () => call<Counts>("/admin/observe/counts?days=7"), refetchInterval: 60_000 });
   const trends = useQuery({ queryKey: ["trends", days], queryFn: () => call<Day[]>(`/admin/observe/trends?days=${days}`), refetchInterval: 60_000 });
 
@@ -140,7 +203,8 @@ export function Overview({ go }: { go: (page: string) => void }) {
   const t = trends.data ?? [];
   const week = t.slice(-7);
   const tokens7 = week.reduce((s, d) => s + d.input_tokens + d.output_tokens, 0);
-  const cost7 = week.reduce((s, d) => s + d.coding_cost_usd, 0);
+  const cost7 = week.reduce((s, d) => s + d.coding_cost_usd + d.chat_cost_usd, 0);
+  const unpriced7 = week.reduce((s, d) => s + d.unpriced_chat_runs, 0);
 
   return (
     <>
@@ -162,6 +226,15 @@ export function Overview({ go }: { go: (page: string) => void }) {
         <Loading what="Checking the deployment" />
       ) : (
         <>
+          {(alerts.data?.open ?? []).map((a) => (
+            <div key={a.key} className="banner bad" role="alert">
+              {TONE_ICON.bad}
+              <b>{a.summary}</b>
+              <span>
+                {a.notified ? "Operators emailed" : "Not emailed yet"} · since {ago(a.opened_at, now)}
+              </span>
+            </div>
+          ))}
           <div className={`banner ${worst}`}>
             {TONE_ICON[worst]}
             <b>{worst === "good" ? "Everything is working" : worst === "warn" ? "Working, with something to watch" : "Something needs attention"}</b>
@@ -235,7 +308,11 @@ export function Overview({ go }: { go: (page: string) => void }) {
           foot={counts.data ? `of ${num(counts.data.workspaces)} · ${counts.data.workspaces_new} new` : undefined}
         />
         <Tile label="Tokens, 7d" value={trends.data ? compact(tokens7) : "—"} foot="on people's own keys" />
-        <Tile label="Coding cost, 7d" value={trends.data ? usd(cost7) : "—"} foot="as the engines report it" />
+        <Tile
+          label="Cost, 7d"
+          value={trends.data ? usd(cost7) : "—"}
+          foot={unpriced7 ? `partial: ${num(unpriced7)} chat runs on unpriced models` : "coding as reported, chat estimated"}
+        />
         <Tile
           label="Stored"
           value={counts.data ? bytes(counts.data.document_bytes) : "—"}
@@ -388,7 +465,13 @@ const failureColumns = (now: number): Column<FailureGroup>[] => [
       </>
     ),
   },
-  { id: "error", accessorKey: "key", header: "Error", enableSorting: false, cell: ({ row }) => <span className="mono wrap">{row.original.key}</span> },
+  {
+    id: "error",
+    accessorKey: "key",
+    header: "Kind of failure",
+    enableSorting: false,
+    cell: ({ row }) => <span className="mono wrap">{row.original.key}</span>,
+  },
   {
     id: "last",
     accessorFn: (g) => g.last_at ?? "",
@@ -527,6 +610,106 @@ export function CodingPage() {
   );
 }
 
+// ---------------------------------------------------------------- Models
+
+type ModelTotals = { runs: number; coding: number; failed: number; limits: number; tokens: number; cost: number | null };
+
+/** Sums per provider; a provider's cost is partial when any of its models has none, so it is shown only when all are priced. */
+function byProvider(rows: ModelRow[]): [string, ModelTotals][] {
+  const out = new Map<string, ModelTotals>();
+  for (const r of rows) {
+    const t = out.get(r.provider) ?? { runs: 0, coding: 0, failed: 0, limits: 0, tokens: 0, cost: 0 };
+    t.runs += r.chat_runs;
+    t.coding += r.coding_runs;
+    t.failed += r.failed;
+    t.limits += r.limit_stops;
+    t.tokens += r.input_tokens + r.output_tokens;
+    t.cost = t.cost === null || r.cost_usd === null ? null : t.cost + r.cost_usd;
+    out.set(r.provider, t);
+  }
+  return [...out.entries()].sort((a, b) => b[1].runs + b[1].coding - (a[1].runs + a[1].coding));
+}
+
+export function ModelsPage() {
+  const [days, setDays] = useState(7);
+  const q = useQuery({ queryKey: ["models", days], queryFn: () => call<ModelRow[]>(`/admin/observe/models?days=${days}`), refetchInterval: 60_000 });
+  const rows = q.data ?? [];
+  const providers = byProvider(rows);
+  const head = (first: string) => (
+    <thead>
+      <tr>
+        <th>{first}</th>
+        {first === "Model" && <th>Provider</th>}
+        <th className="r">Chat runs</th>
+        <th className="r">Coding turns</th>
+        <th className="r">Failed</th>
+        <th className="r">Limit stops</th>
+        <th className="r">Tokens</th>
+        <th className="r">Cost</th>
+      </tr>
+    </thead>
+  );
+  return (
+    <>
+      <PageHead title="Models" sub="Which providers and models people's own keys are used on: runs, failures, provider limits, tokens and estimated cost.">
+        <Segmented label="Window" value={days} options={DAYS} onChange={setDays} />
+      </PageHead>
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <Failed error={q.error} />
+      ) : !rows.length ? (
+        <Empty>No runs in the last {days} days.</Empty>
+      ) : (
+        <>
+          <Card title="By provider" flush>
+            <div className="table-wrap">
+              <table className="table">
+                {head("Provider")}
+                <tbody>
+                  {providers.map(([name, t]) => (
+                    <tr key={name}>
+                      <td className="strong">{name}</td>
+                      <td className="r num">{num(t.runs)}</td>
+                      <td className="r num">{num(t.coding)}</td>
+                      <td className={`r num${t.failed ? " bad-text" : ""}`}>{num(t.failed)}</td>
+                      <td className="r num">{num(t.limits)}</td>
+                      <td className="r num">{compact(t.tokens)}</td>
+                      <td className="r num">{usd(t.cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <Card title="By model" flush>
+            <div className="table-wrap">
+              <table className="table">
+                {head("Model")}
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.model}>
+                      <td className="strong">{r.model}</td>
+                      <td>{r.provider}</td>
+                      <td className="r num">{num(r.chat_runs)}</td>
+                      <td className="r num">{num(r.coding_runs)}</td>
+                      <td className={`r num${r.failed ? " bad-text" : ""}`}>{num(r.failed)}</td>
+                      <td className="r num">{num(r.limit_stops)}</td>
+                      <td className="r num">{compact(r.input_tokens + r.output_tokens)}</td>
+                      <td className="r num">{usd(r.cost_usd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <p className="muted">Cost is an estimate from tokens and list prices; models without a listed price show none.</p>
+        </>
+      )}
+    </>
+  );
+}
+
 const ENGINE: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", fx: "fx" };
 
 // ---------------------------------------------------------------- Workspaces
@@ -537,6 +720,7 @@ const size = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 
 /** Used of the limit that applies, with a way to set this workspace's own: MB, 0 for none, blank for the deployment's default. */
 function StorageCell({ w }: { w: WorkspaceRow }) {
   const qc = useQueryClient();
+  const owner = qc.getQueryData<Me>(["me"])?.role === "owner";
   const save = useMutation({
     mutationFn: (mb: number | null) => put<void>("/admin/storage-limit", { workspace_id: w.id, storage_limit_mb: mb }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workspaces"] }),
@@ -557,9 +741,11 @@ function StorageCell({ w }: { w: WorkspaceRow }) {
         {size(w.used_bytes)} / {limit === null ? "no limit" : size(limit)}
       </span>
       {w.storage_limit_mb !== null && <span className="tag">own limit</span>}
-      <button className="link" type="button" onClick={edit} disabled={save.isPending}>
-        Edit
-      </button>
+      {owner && (
+        <button className="link" type="button" onClick={edit} disabled={save.isPending}>
+          Edit
+        </button>
+      )}
     </span>
   );
 }
@@ -647,9 +833,20 @@ export function WorkspacesPage() {
 
 const AUDIT_FILTERS = ["", "coding.", "agent_run.", "project.", "github.", "member.", "sandbox_network."];
 
-const auditColumns = (now: number): Column<AuditEvent>[] => [
+const auditColumns = (now: number, onWorkspace: (slug: string) => void): Column<AuditEvent>[] => [
   { id: "action", header: "Action", cell: ({ row }) => <span className="mono strong">{row.original.action}</span> },
-  { id: "workspace", header: "Workspace", cell: ({ row }) => <span className="mono">{row.original.workspace ?? "—"}</span> },
+  {
+    id: "workspace",
+    header: "Workspace",
+    cell: ({ row }) =>
+      row.original.workspace ? (
+        <button type="button" className="mono link" title="Only this workspace" onClick={() => onWorkspace(row.original.workspace!)}>
+          {row.original.workspace}
+        </button>
+      ) : (
+        <span className="mono">—</span>
+      ),
+  },
   {
     id: "by",
     header: "By",
@@ -667,17 +864,22 @@ const auditColumns = (now: number): Column<AuditEvent>[] => [
 export function AuditPage() {
   const now = useTick();
   const [action, setAction] = useState("");
+  const [workspace, setWorkspace] = useState("");
+  const [actor, setActor] = useState("");
+  const [since, setSince] = useState("");
+  const [until, setUntil] = useState("");
   const [page, setPage] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZES[0] });
   const q = useQuery({
-    queryKey: ["audit", action, page.pageIndex, page.pageSize],
-    queryFn: () =>
-      call<Page<AuditEvent>>(
-        `/admin/audit?limit=${page.pageSize}&offset=${page.pageIndex * page.pageSize}${action ? `&action=${encodeURIComponent(action)}` : ""}`,
-      ),
+    queryKey: ["audit", action, workspace, actor, since, until, page.pageIndex, page.pageSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: String(page.pageSize), offset: String(page.pageIndex * page.pageSize) });
+      for (const [key, value] of Object.entries({ action, workspace, actor_type: actor, since, until })) if (value) params.set(key, value);
+      return call<Page<AuditEvent>>(`/admin/audit?${params}`);
+    },
     placeholderData: keepPreviousData,
   });
-  const filter = (v: string) => {
-    setAction(v);
+  const filter = (set: (v: string) => void) => (v: string) => {
+    set(v);
     setPage((p) => ({ ...p, pageIndex: 0 }));
   };
   return (
@@ -687,13 +889,35 @@ export function AuditPage() {
           className="input mono"
           placeholder="Action starts with…"
           value={action}
-          onChange={(e) => filter(e.target.value.trim())}
+          onChange={(e) => filter(setAction)(e.target.value.trim())}
           aria-label="Filter by action"
+        />
+        <input
+          className="input mono"
+          placeholder="Workspace slug"
+          value={workspace}
+          onChange={(e) => filter(setWorkspace)(e.target.value.trim())}
+          aria-label="Filter by workspace"
+        />
+        <select className="input" value={actor} onChange={(e) => filter(setActor)(e.target.value)} aria-label="Filter by who acted">
+          <option value="">Anyone</option>
+          <option value="user">People</option>
+          <option value="agent">Agents</option>
+          <option value="system">System</option>
+        </select>
+        <input className="input" type="date" value={since} max={until || undefined} onChange={(e) => filter(setSince)(e.target.value)} aria-label="From date" />
+        <input
+          className="input"
+          type="date"
+          value={until}
+          min={since || undefined}
+          onChange={(e) => filter(setUntil)(e.target.value)}
+          aria-label="Up to date"
         />
       </PageHead>
       <div className="fchips">
         {AUDIT_FILTERS.map((f) => (
-          <button key={f} type="button" className={action === f ? "fchip on" : "fchip"} onClick={() => filter(f)}>
+          <button key={f} type="button" className={action === f ? "fchip on" : "fchip"} onClick={() => filter(setAction)(f)}>
             {f || "Everything"}
           </button>
         ))}
@@ -703,7 +927,328 @@ export function AuditPage() {
           <Failed error={q.error} />
         ) : (
           <DataTable
-            columns={auditColumns(now)}
+            columns={auditColumns(now, filter(setWorkspace))}
+            data={q.data?.items ?? []}
+            total={q.data?.total ?? 0}
+            pagination={page}
+            onPagination={setPage}
+            loading={q.isFetching && !q.data}
+            empty="Nothing recorded."
+            rowKey={(e) => e.id}
+          />
+        )}
+      </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Admins
+
+const ROLE_LABEL: Record<AdminRole, string> = { owner: "Owner", viewer: "Viewer" };
+
+/** Owners only: who can sign in to this console, invites, roles, disabling and removing. */
+export function AdminsPage({ meId }: { meId: string }) {
+  const now = useTick();
+  const qc = useQueryClient();
+  const admins = useQuery({ queryKey: ["admins"], queryFn: () => call<AdminAccount[]>("/admin/admins") });
+  const invites = useQuery({ queryKey: ["admin-invites"], queryFn: () => call<AdminInvite[]>("/admin/admins/invites") });
+  const [form, setForm] = useState<{ email: string; role: AdminRole }>({ email: "", role: "viewer" });
+  const [made, setMade] = useState<AdminInvite | null>(null);
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ["admins"] }), qc.invalidateQueries({ queryKey: ["admin-invites"] })]);
+  const fail = (e: Error) => window.alert(e.message);
+
+  const invite = useMutation({
+    mutationFn: () => send<AdminInvite>("/admin/admins/invites", "POST", form),
+    onSuccess: (res) => {
+      setMade(res);
+      setForm({ email: "", role: form.role });
+      void refresh();
+    },
+    onError: fail,
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => send(`/admin/admins/invites/${id}`, "DELETE"),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const change = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { role?: AdminRole; disabled?: boolean } }) => send(`/admin/admins/${id}`, "PATCH", body),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => send(`/admin/admins/${id}`, "DELETE"),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const resetTwoFactor = useMutation({
+    mutationFn: (id: string) => send(`/admin/admins/${id}/two-factor/reset`, "POST"),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const busy = change.isPending || remove.isPending || resetTwoFactor.isPending;
+
+  return (
+    <>
+      <PageHead title="Admins" sub="Who can sign in to this console. Owners manage admins; viewers can only read." />
+      <Card title="Invite an admin">
+        <form
+          className="ad-invite"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setMade(null);
+            invite.mutate();
+          }}
+        >
+          <input
+            className="input"
+            type="email"
+            placeholder="Email address"
+            aria-label="Email address"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            required
+          />
+          <select className="input" aria-label="Role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as AdminRole })}>
+            <option value="viewer">Viewer: reads only</option>
+            <option value="owner">Owner: manages admins</option>
+          </select>
+          <button type="submit" className="btn btn-primary" disabled={invite.isPending}>
+            {invite.isPending ? "Inviting…" : "Send invite"}
+          </button>
+        </form>
+        {made && (
+          <p className="ad-note" role="status">
+            {made.emailed ? `Invite emailed to ${made.email}. It works once and expires in 72 hours.` : made.note}
+            {made.link_path && (
+              <>
+                {" "}
+                <code className="mono">{`${location.origin}${made.link_path}`}</code>
+              </>
+            )}
+          </p>
+        )}
+      </Card>
+      <Card title="Admins" flush>
+        {admins.isError ? (
+          <Failed error={admins.error} />
+        ) : admins.isPending ? (
+          <Loading />
+        ) : (
+          <table className="ad-table">
+            <thead>
+              <tr>
+                <th>Admin</th>
+                <th>Role</th>
+                <th>Last sign-in</th>
+                <th>State</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {admins.data.map((a) => {
+                const me = a.id === meId;
+                return (
+                  <tr key={a.id}>
+                    <td>
+                      <b>{a.name}</b> <span className="mono dim">{a.email}</span>
+                      {me && <span className="tag">you</span>}
+                    </td>
+                    <td>{ROLE_LABEL[a.role]}</td>
+                    <td>{a.last_sign_in_at ? <span title={when(a.last_sign_in_at)}>{ago(a.last_sign_in_at, now)}</span> : "never"}</td>
+                    <td>
+                      {a.disabled_at ? <Pill tone="warn">Disabled</Pill> : <Pill tone="good">Active</Pill>}{" "}
+                      {a.two_factor ? <span className="tag">2FA</span> : <span className="tag">no 2FA yet</span>}
+                    </td>
+                    <td className="ad-row-actions">
+                      <button
+                        className="link"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          const role: AdminRole = a.role === "owner" ? "viewer" : "owner";
+                          if (window.confirm(`Make ${a.email} ${role === "owner" ? "an owner" : "a viewer"}?`)) change.mutate({ id: a.id, body: { role } });
+                        }}
+                      >
+                        {a.role === "owner" ? "Make viewer" : "Make owner"}
+                      </button>
+                      <button
+                        className="link"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          const disabled = !a.disabled_at;
+                          if (!disabled || window.confirm(`Disable ${a.email}? They are signed out everywhere.`))
+                            change.mutate({ id: a.id, body: { disabled } });
+                        }}
+                      >
+                        {a.disabled_at ? "Enable" : "Disable"}
+                      </button>
+                      {a.two_factor && !me && (
+                        <button
+                          className="link"
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            window.confirm(`Reset the two-factor sign-in of ${a.email}? They are signed out and set it up again at their next sign-in.`) &&
+                            resetTwoFactor.mutate(a.id)
+                          }
+                        >
+                          Reset 2FA
+                        </button>
+                      )}
+                      <button
+                        className="link"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => window.confirm(`Remove ${a.email}? Their account is deleted and they are signed out.`) && remove.mutate(a.id)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </Card>
+      <Card title="Pending invites" flush>
+        {invites.isError ? (
+          <Failed error={invites.error} />
+        ) : invites.isPending ? (
+          <Loading />
+        ) : invites.data.length === 0 ? (
+          <Empty>No invites waiting.</Empty>
+        ) : (
+          <table className="ad-table">
+            <tbody>
+              {invites.data.map((i) => (
+                <tr key={i.id}>
+                  <td className="mono">{i.email}</td>
+                  <td>{ROLE_LABEL[i.role]}</td>
+                  <td>expires {ago(i.expires_at, now)}</td>
+                  <td className="ad-row-actions">
+                    <button className="link" type="button" disabled={revoke.isPending} onClick={() => revoke.mutate(i.id)}>
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Admin activity
+
+const TRAIL_LABEL: Record<string, string> = {
+  "admin.created": "Admin account created",
+  "admin.signed_in": "Signed in",
+  "admin.sign_in_failed": "Sign-in failed",
+  "admin.signed_out": "Signed out",
+  "admin.invited": "Invited an admin",
+  "admin.invite_revoked": "Revoked an invite",
+  "admin.role_changed": "Changed a role",
+  "admin.disabled": "Disabled an admin",
+  "admin.enabled": "Re-enabled an admin",
+  "admin.removed": "Removed an admin",
+  "admin.password_changed": "Changed their password",
+  "admin.password_reset": "Reset a password",
+  "admin.sessions_revoked": "Signed out their other sessions",
+  "admin.storage_limit_changed": "Changed a storage limit",
+  "admin.two_factor_enabled": "Turned on two-factor sign-in",
+  "admin.two_factor_reset": "Reset two-factor sign-in",
+  "admin.recovery_codes_replaced": "Replaced their recovery codes",
+};
+
+const TRAIL_FILTERS: [string, string][] = [
+  ["", "Everything"],
+  ["admin.sign_in", "Failed sign-ins"],
+  ["admin.signed", "Sign-ins and sign-outs"],
+  ["admin.invite", "Invites"],
+  ["admin.role", "Roles"],
+  ["admin.password", "Passwords"],
+  ["admin.two_factor", "Two-factor sign-in"],
+];
+
+const trailColumns = (now: number): Column<TrailEvent>[] => [
+  {
+    id: "action",
+    header: "Action",
+    cell: ({ row: { original: e } }) => (
+      <span className="strong" title={e.action}>
+        {TRAIL_LABEL[e.action] ?? e.action}
+      </span>
+    ),
+  },
+  { id: "who", header: "Who", cell: ({ row }) => <span className="mono">{row.original.actor_email ?? "—"}</span> },
+  {
+    id: "target",
+    header: "Target",
+    cell: ({ row: { original: e } }) => <span className="mono">{e.target_email ?? e.workspace ?? "—"}</span>,
+  },
+  { id: "ip", header: "IP", cell: ({ row }) => <span className="mono dim">{row.original.ip ?? "—"}</span> },
+  {
+    id: "when",
+    header: "When",
+    meta: { align: "right" },
+    cell: ({ row }) => <span title={when(row.original.created_at)}>{ago(row.original.created_at, now)}</span>,
+  },
+];
+
+/** Owners only: admin sign-ins, failed sign-ins and changes to admin accounts. */
+export function TrailPage() {
+  const now = useTick();
+  const [action, setAction] = useState("");
+  const [page, setPage] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZES[0] });
+  const q = useQuery({
+    queryKey: ["trail", action, page.pageIndex, page.pageSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: String(page.pageSize), offset: String(page.pageIndex * page.pageSize) });
+      if (action) params.set("action", action);
+      return call<Page<TrailEvent>>(`/admin/trail?${params}`);
+    },
+    placeholderData: keepPreviousData,
+  });
+  return (
+    <>
+      <PageHead title="Admin activity" sub="Who signed in to this console, who failed to, and what changed on admin accounts. Never passwords or links.">
+        <input
+          className="input mono"
+          placeholder="Action starts with…"
+          value={action}
+          onChange={(e) => {
+            setAction(e.target.value.trim());
+            setPage((p) => ({ ...p, pageIndex: 0 }));
+          }}
+          aria-label="Filter by action"
+        />
+      </PageHead>
+      <div className="fchips">
+        {TRAIL_FILTERS.map(([f, label]) => (
+          <button
+            key={f}
+            type="button"
+            className={action === f ? "fchip on" : "fchip"}
+            onClick={() => {
+              setAction(f);
+              setPage((p) => ({ ...p, pageIndex: 0 }));
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <Card flush>
+        {q.isError ? (
+          <Failed error={q.error} />
+        ) : (
+          <DataTable
+            columns={trailColumns(now)}
             data={q.data?.items ?? []}
             total={q.data?.total ?? 0}
             pagination={page}

@@ -85,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if settings.jobs == "worker" or settings.rate_limits == "redis":
                 redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
                 stack.push_async_callback(redis.aclose)
+            app.state.redis = redis
             app.state.rate_limiter = build_rate_limiter(settings, redis)
             job_context = JobContext(
                 sessionmaker, settings, build_email_sender(settings), app.state.storage, app.state.embedder,
@@ -137,6 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     asyncio.create_task(_every(local_jobs, "index_knowledge", INDEX_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "run_automations", AUTOMATIONS_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "email_notifications", EMAIL_INTERVAL_SECONDS)),
+                    asyncio.create_task(_every(local_jobs, "check_operator_alerts", settings.alert_interval_minutes * 60)),
                 ]
             yield
             for loop in loops:
@@ -165,6 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # tests that don't run the lifespan) emails go straight to the provider.
     app.state.email_sender = build_email_sender(settings)
     app.state.rate_limiter = build_rate_limiter(settings, None)
+    app.state.redis = None  # the lifespan sets the pool when worker mode or Redis rate limits need one
     app.state.storage = build_storage(settings)
     app.state.embedder = build_embedder(settings)
     # Checkouts of connected repos: kept where agents run (here in local mode, else the worker).

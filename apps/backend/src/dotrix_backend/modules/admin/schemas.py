@@ -26,19 +26,107 @@ class AdminLogin(BaseModel):
     password: str = Field(max_length=200)
 
 
-class AdminWorkspace(BaseModel):
-    id: uuid.UUID
-    name: str
-    slug: str
-    kind: str
+class AdminLoginChallenge(BaseModel):
+    """The password was right and a second factor is needed: send the challenge back with a code
+    to `/login/verify`. The challenge is not a session and lives five minutes."""
+
+    second_factor: Literal["totp"] = "totp"
+    challenge: str
+
+
+class AdminLoginVerify(BaseModel):
+    challenge: str = Field(max_length=2000)
+    code: str = Field(min_length=6, max_length=100, description="A 6-digit code from the authenticator app, or a recovery code")
+
+
+class AdminTwoFactorStart(BaseModel):
+    """The secret to add to an authenticator app, shown once as text and as an otpauth:// link."""
+
+    secret: str
+    otpauth_uri: str
+
+
+class AdminTwoFactorCode(BaseModel):
+    code: str = Field(min_length=6, max_length=100, description="A 6-digit code from the authenticator app")
+
+
+class AdminRecoveryCodes(BaseModel):
+    """Single-use recovery codes, shown once; only their hashes are kept."""
+
+    recovery_codes: list[str]
+
+
+AdminRole = Literal["owner", "viewer"]
+NEW_PASSWORD_MIN = 12
 
 
 class AdminRead(BaseModel):
     id: uuid.UUID
     email: str
     name: str
-    workspace: AdminWorkspace | None = None
+    role: AdminRole
     created_at: datetime
+    two_factor: bool = False
+    must_enrol: bool = False
+
+
+class AdminListed(BaseModel):
+    """One admin account in the owners' list."""
+
+    id: uuid.UUID
+    email: str
+    name: str
+    role: AdminRole
+    created_at: datetime
+    disabled_at: datetime | None
+    last_sign_in_at: datetime | None
+    two_factor: bool = False
+
+
+class AdminInviteCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+$")
+    role: AdminRole = "viewer"
+
+
+class AdminInviteRead(BaseModel):
+    """A pending invite. The token is never here; it only travels in the emailed link. Without
+    `DOTRIX_ADMIN_URL` nothing is emailed, so `link_path` (which holds the token) is returned once,
+    to the owner who made the invite, to pass on."""
+
+    id: uuid.UUID
+    email: str
+    role: AdminRole
+    created_at: datetime
+    expires_at: datetime
+    invited_by: str | None = None
+    emailed: bool = False
+    link_path: str | None = None
+    note: str | None = None
+
+
+class AdminInvitePreviewRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
+class AdminInvitePreview(BaseModel):
+    email: str
+    role: AdminRole
+
+
+class AdminInviteAccept(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=NEW_PASSWORD_MIN, max_length=200)
+
+
+class AdminUpdate(BaseModel):
+    role: AdminRole | None = None
+    disabled: bool | None = None
+
+
+class AdminPasswordChange(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=NEW_PASSWORD_MIN, max_length=200)
 
 
 class AdminBootstrap(BaseModel):
@@ -61,6 +149,15 @@ class StuckRun(BaseModel):
     workspace: str = Field(description="The workspace's slug")
     label: str | None = Field(default=None, description="Coding: the issue key")
     lease_expired_at: datetime | None
+
+
+class DependencyCheck(BaseModel):
+    """One thing dotrix depends on, as the console shows it."""
+
+    id: str = Field(description="redis, workers, storage, email, github")
+    state: Literal["ok", "degraded", "down", "off"] = Field(description="off: not configured here, which is allowed")
+    detail: str = Field(description="One short line for an operator: never a secret, never text people wrote")
+    latency_ms: float | None = None
 
 
 class PlatformHealth(BaseModel):
@@ -87,6 +184,21 @@ class PlatformHealth(BaseModel):
     runners: int
     failed_24h: int
     finished_24h: int
+    dependencies: list[DependencyCheck] = []
+    workers_alive: int | None = Field(
+        default=None,
+        description="1 when a worker has checked in (arq keeps one check-in per queue, so workers aren't counted), "
+        "0 when none has; null outside worker mode",
+    )
+    notification_emails_waiting: int = Field(
+        default=0, description="Notifications the minute job should have handled (older than 5 minutes) and hasn't"
+    )
+    notification_email_oldest_seconds: float | None = None
+    automation_events_waiting: int = Field(
+        default=0, description="Automation events written and not yet handled (they are deleted once handled)"
+    )
+    coding_slots: int | None = Field(default=None, description="Cloud coding turns each worker runs at once; null: no limit")
+    coding_running_cloud: int = 0
 
 
 class PlatformCounts(BaseModel):
@@ -113,7 +225,24 @@ class DayStats(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     coding_cost_usd: float = 0.0
+    chat_cost_usd: float = Field(default=0.0, description="Estimated from tokens and list prices; models without a price add nothing")
+    unpriced_chat_runs: int = Field(default=0, description="Chat runs on models with no listed price, so chat_cost_usd is partial")
     signups: int = 0
+
+
+class ModelUsage(BaseModel):
+    """One model's use in the window, chat and coding together."""
+
+    model: str = Field(description='"provider:model", or "(default)" when a run recorded none')
+    provider: str
+    chat_runs: int
+    coding_runs: int
+    failed: int
+    limit_stops: int = Field(description="Chat runs the provider stopped for its limits")
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float | None = Field(description="Estimated from tokens and list prices; None when the model has no price")
+    cost_is_estimate: bool = True
 
 
 class FailureGroup(BaseModel):
@@ -196,3 +325,35 @@ class RunPage(BaseModel):
 class AuditPage(BaseModel):
     items: list[PlatformAuditEvent]
     total: int
+
+
+class AdminTrailEvent(BaseModel):
+    """One admin sign-in or change. Never carries a password, token or anything people wrote."""
+
+    id: uuid.UUID
+    action: str
+    actor_email: str | None = Field(description="Who did it; the email tried, for a failed sign-in; `command line` from the server")
+    target_email: str | None = Field(description="The admin account it was done to, if any")
+    workspace: str | None = Field(description="The workspace's slug, for a storage limit change")
+    ip: str | None
+    created_at: datetime
+
+
+class AdminTrailPage(BaseModel):
+    items: list[AdminTrailEvent]
+    total: int
+
+
+class AdminAlertRead(BaseModel):
+    """A condition that needs an operator. The summary has counts only, never names or messages."""
+
+    key: str
+    summary: str
+    opened_at: datetime
+    resolved_at: datetime | None = None
+    notified: bool = Field(description="Whether the operators have been emailed about it")
+
+
+class AdminAlerts(BaseModel):
+    open: list[AdminAlertRead]
+    resolved: list[AdminAlertRead] = Field(description="Cleared in the last 24 hours, newest first")

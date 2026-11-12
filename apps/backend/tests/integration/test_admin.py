@@ -6,10 +6,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dotrix_backend.core.model_prices import cost_of
 from dotrix_backend.modules.agents.models import RunStatus
-from dotrix_backend.modules.audit.models import AuthorType
+from dotrix_backend.modules.audit.models import AuditEvent, AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.coding.models import CodingRunStatus
 
@@ -67,7 +69,7 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     await _admin(db_client)
 
     me = (await db_client.get("/v1/admin/me")).json()
-    assert me["email"] == "admin@example.com" and me["workspace"] is None
+    assert me["email"] == "admin@example.com" and me["role"] == "owner" and "workspace" not in me
 
     ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
     base = f"/v1/workspaces/{ws['id']}"
@@ -82,7 +84,7 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     db_session.add(
         _chat_run(
             other_ws["id"], other_project["id"], other, title="Theirs", status=RunStatus.FAILED,
-            error="Provider refused: rate limit\ntrace", error_kind="model_limit", finished_at=now,
+            error="BadRequestError: Error code: 429 - {'message': 'my distinctive secret plan'}\ntrace", error_kind="model_limit", finished_at=now,
         )
     )
     db_session.add(
@@ -91,7 +93,7 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     db_session.add(
         _coding_run(
             ws["id"], project["id"], issue["id"], owner, issue_key=issue["key"], status=CodingRunStatus.FAILED,
-            error="the sandbox died", started_at=now - timedelta(minutes=4), finished_at=now, cost_usd=0.5,
+            error="the sandbox died for Ada Lovelace's distinctive plan", started_at=now - timedelta(minutes=4), finished_at=now, cost_usd=0.5,
         )
     )
     db_session.add(
@@ -123,7 +125,8 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     failures = (await db_client.get("/v1/admin/observe/failures")).json()
     assert [(g["key"], g["count"]) for g in failures["chat_kinds"]] == [("model_limit", 1)]
     lines = {(g["kind"], g["key"]) for g in failures["messages"]}
-    assert lines == {("chat", "Provider refused: rate limit"), ("coding", "the sandbox died")}
+    assert lines == {("chat", "BadRequestError: HTTP 429"), ("coding", "other")}
+    assert "distinctive" not in str(failures) and "Lovelace" not in str(failures)
 
     coding = (await db_client.get("/v1/admin/observe/coding")).json()
     assert len(coding) == 1 and coding[0]["turns"] == 2 and coding[0]["failed"] == 1 and coding[0]["prs"] == 1
@@ -156,6 +159,38 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     assert res.status_code == 200 and "secret.example.com" not in res.text
     assert [(e["action"], e["workspace"]) for e in res.json()["items"]] == [("sandbox_network.updated", ws["slug"])]
     assert res.json()["total"] == 1
+    # Filters: workspace, kind of actor and day each narrow the page and the total.
+    old = datetime.now(UTC) - timedelta(days=10)
+    AuditLog(db_session).record(
+        workspace_id=uuid.UUID(other_ws["id"]), project_id=None, action="agent_run.started", target="y",
+        actor_type=AuthorType.AGENT, agent="nova", details={"words": "private words"},
+    )
+    await db_session.flush()
+    event = (await db_session.execute(select(AuditEvent).where(AuditEvent.action == "agent_run.started"))).scalar_one()
+    event.created_at = old
+    await db_session.commit()
+
+    async def found(query: str) -> tuple[set[str], int]:
+        res = await db_client.get(f"/v1/admin/audit?limit=200&{query}")
+        assert res.status_code == 200 and "private words" not in res.text and "details" not in res.text and "target" not in res.text
+        return {e["action"] for e in res.json()["items"]}, res.json()["total"]
+
+    everything_total = (await found(""))[1]
+    mine_actions, mine_total = await found(f"workspace={ws['slug']}")
+    assert "sandbox_network.updated" in mine_actions and "agent_run.started" not in mine_actions and mine_total < everything_total
+    assert await found(f"workspace={other_ws['slug']}") == ({"agent_run.started"}, 1)
+    assert await found("workspace=no-such-workspace") == (set(), 0)
+    assert await found("actor_type=agent") == ({"agent_run.started"}, 1)
+    users, users_total = await found("actor_type=user")
+    assert "agent_run.started" not in users and users_total == everything_total - 1
+    today = datetime.now(UTC).date()
+    recent, recent_total = await found(f"since={today}")
+    assert "agent_run.started" not in recent and recent_total == everything_total - 1
+    assert await found(f"until={old.date()}") == ({"agent_run.started"}, 1)
+    assert await found(f"since={old.date()}&until={old.date()}") == ({"agent_run.started"}, 1)
+    assert await found(f"since={today}&actor_type=agent") == (set(), 0)
+    assert await found(f"workspace={other_ws['slug']}&actor_type=agent&until={today}") == ({"agent_run.started"}, 1)
+    assert (await db_client.get("/v1/admin/audit?actor_type=robot")).status_code == 422
     assert (await db_client.get("/v1/admin/audit?action=nothing.")).json() == {"items": [], "total": 0}
     everything = (await db_client.get("/v1/admin/audit?limit=1")).json()
     assert len(everything["items"]) == 1 and everything["total"] >= 1
@@ -192,3 +227,125 @@ async def test_admin_cookie_writes_require_csrf_header(db_client: AsyncClient) -
     await _admin(db_client)
     res = await db_client.post("/v1/admin/logout", headers={"X-Requested-With": ""})
     assert res.status_code == 403
+
+
+async def test_health_covers_each_dependency_and_survives_a_failing_one(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dotrix_backend.core.storage import MemoryBlobStorage
+
+    await _admin(db_client)
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    monkeypatch.setattr(app.state, "storage", MemoryBlobStorage())
+    health = (await db_client.get("/v1/admin/observe/health")).json()
+    checks = {d["id"]: d for d in health["dependencies"]}
+    assert set(checks) == {"redis", "workers", "storage", "email", "github"}
+    assert checks["storage"]["state"] == "ok"
+    assert checks["redis"]["state"] in ("ok", "off")
+    assert checks["workers"]["state"] in ("ok", "off", "down", "degraded")
+
+    async def broken(self) -> None:
+        raise RuntimeError("secret-host.internal:9000 password=hunter2")
+
+    monkeypatch.setattr(MemoryBlobStorage, "ping", broken)
+    res = await db_client.get("/v1/admin/observe/health")
+    assert res.status_code == 200
+    storage = next(d for d in res.json()["dependencies"] if d["id"] == "storage")
+    assert storage["state"] == "down"
+    assert "RuntimeError" in storage["detail"]
+    assert "hunter2" not in res.text and "secret-host" not in res.text
+
+
+async def test_health_counts_old_unsent_notifications_and_mirrors_coding_slots(
+    signup, db_client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dotrix_backend.modules.notifications.models import Notification, NotificationKind
+
+    owner = await signup()
+    await _admin(db_client)
+    ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
+    project = (
+        await db_client.post(f"/v1/workspaces/{ws['id']}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=owner.headers)
+    ).json()
+    now = datetime.now(UTC)
+
+    def note(created: datetime, emailed: datetime | None = None) -> Notification:
+        return Notification(
+            workspace_id=uuid.UUID(ws["id"]), user_id=uuid.UUID(owner.id), project_id=uuid.UUID(project["id"]),
+            kind=NotificationKind.ASSIGNED, title="x", created_at=created, emailed_at=emailed,
+        )
+
+    db_session.add_all([note(now - timedelta(minutes=30)), note(now), note(now - timedelta(hours=2), now)])
+    await db_session.commit()
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings, "coding_max_runs", 3)
+
+    health = (await db_client.get("/v1/admin/observe/health")).json()
+    assert health["notification_emails_waiting"] == 1
+    assert health["notification_email_oldest_seconds"] >= 29 * 60
+    assert health["coding_slots"] == 3 and health["coding_running_cloud"] == 0
+
+    monkeypatch.setattr(settings, "coding_max_runs", 0)
+    assert (await db_client.get("/v1/admin/observe/health")).json()["coding_slots"] is None
+
+
+async def test_models_and_chat_cost_by_model_never_guess_and_never_show_text(
+    db_client: AsyncClient, db_session: AsyncSession, signup
+) -> None:
+    owner = await signup()
+    await _admin(db_client)
+    ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
+    base = f"/v1/workspaces/{ws['id']}"
+    project = (await db_client.post(f"{base}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=owner.headers)).json()
+    issue = (await db_client.post(f"{base}/projects/{project['id']}/issues", json={"title": "Refunds"}, headers=owner.headers)).json()
+
+    priced, unpriced = "anthropic:claude-opus-5-5", "acme:mystery-1"
+    db_session.add_all(
+        [
+            _chat_run(ws["id"], project["id"], owner, model=priced, input_tokens=1000, output_tokens=200,
+                      cached_input_tokens=100, title="SECRET-TITLE", message="SECRET-MESSAGE"),
+            _chat_run(ws["id"], project["id"], owner, conversation_model=priced, input_tokens=3000, output_tokens=800,
+                      cached_input_tokens=0, status=RunStatus.FAILED, error_kind="model_limit"),
+            _chat_run(ws["id"], project["id"], owner, model=unpriced, input_tokens=500, output_tokens=50),
+            _coding_run(ws["id"], project["id"], issue["id"], owner, model="acme:coder-1", input_tokens=10,
+                        output_tokens=5, cost_usd=0.75),
+        ]
+    )
+    await db_session.commit()
+
+    r = await db_client.get("/v1/admin/observe/models")
+    assert r.status_code == 200
+    assert "SECRET" not in r.text
+    by = {m["model"]: m for m in r.json()}
+    expected = cost_of(priced, input_tokens=4000, output_tokens=1000, cached_input_tokens=100)
+    assert expected is not None
+    m = by[priced]
+    assert m["provider"] == "anthropic" and m["chat_runs"] == 2 and m["failed"] == 1 and m["limit_stops"] == 1
+    assert m["cost_usd"] == pytest.approx(expected, abs=1e-4) and m["cost_is_estimate"] is True
+    assert by[unpriced]["cost_usd"] is None and by[unpriced]["chat_runs"] == 1
+    assert by["acme:coder-1"]["coding_runs"] == 1 and by["acme:coder-1"]["cost_usd"] == 0.75
+
+    today = (await db_client.get("/v1/admin/observe/trends?days=1")).json()[-1]
+    assert today["unpriced_chat_runs"] == 1
+    assert today["chat_cost_usd"] == pytest.approx(expected, abs=1e-4)
+    assert "SECRET" not in (await db_client.get("/v1/admin/observe/trends?days=1")).text
+
+
+async def test_a_specialists_tokens_count_under_the_model_it_ran_on(
+    db_client: AsyncClient, db_session: AsyncSession, signup
+) -> None:
+    owner = await signup()
+    await _admin(db_client)
+    ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
+    base = f"/v1/workspaces/{ws['id']}"
+    project = (await db_client.post(f"{base}/projects", json={"key": "KUN", "name": "Kunemi"}, headers=owner.headers)).json()
+    nova, specialist = "anthropic:claude-opus-5-5", "anthropic:claude-haiku-5-5"
+    # Nova delegated: the child keeps the conversation's model but worked on the specialist's.
+    db_session.add(_chat_run(ws["id"], project["id"], owner, conversation_model=nova, model=specialist,
+                             input_tokens=2000, output_tokens=400))
+    await db_session.commit()
+    by = {m["model"]: m for m in (await db_client.get("/v1/admin/observe/models")).json()}
+    assert by[specialist]["chat_runs"] == 1 and nova not in by
+    expected = cost_of(specialist, input_tokens=2000, output_tokens=400, cached_input_tokens=0)
+    assert expected is not None
+    assert by[specialist]["cost_usd"] == pytest.approx(expected, abs=1e-4)

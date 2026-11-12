@@ -46,7 +46,7 @@ enforcement are removed; a person can still choose a limit for their project or 
    service, the public site's (`dotrix.cc`, and `www.dotrix.cc` if you like) to the `site`
    service, and the admin console's (`admin.dotrix.cc`) to the `admin` service, each on port 80
    with HTTPS. The admin console forwards only `/v1/admin` to the API; whoever operates dotrix
-   creates their console account there with `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` (the sign-up form asks for it; without the variable, admin sign-up stays closed). Nothing else needs a
+   creates their console account there with `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` (the sign-up form asks for it; without the variable, admin sign-up stays closed). Further admins are invited by email from the console's Admins page by an owner (set `DOTRIX_ADMIN_URL` to the console's address so the invite link points there; unset, the console shows the link to pass on). Every admin must also set up two-factor sign-in (a code from an authenticator app, plus ten single-use recovery codes) at their next sign-in; that needs `DOTRIX_ENCRYPTION_KEY`, which encrypts the secrets (without it the console falls back to a password alone). A lost device is fixed by an owner (Admins page, Reset 2FA) or from the server: `docker compose exec api python -m dotrix_backend.admin_cli reset-two-factor --email …`. The server's command line still adds one, and is the way back in after a forgotten password: `docker compose exec api python -m dotrix_backend.admin_cli create --email … --name …` (also `list` and `reset-password --email …`; the password is prompted for, or read from `DOTRIX_ADMIN_PASSWORD`). Nothing else needs a
    domain: the API is reached through `web`, on the same origin. The site has no API; its Sign in, Get started and Open dotrix links go
    to `DOTRIX_APP_URL`, and its downloads to the repository's latest release.
 4. **Deploy.** The first deploy builds the images on the VPS (the backend, the web app, the public
@@ -55,6 +55,23 @@ enforcement are removed; a person can still choose a limit for their project or 
 5. **Desktop downloads and updates:** set the repository variable `DOTRIX_APP_URL` to the same
    address before cutting a release. Each release then carries the Windows installer and CLI, built
    for that address, and installed apps update themselves from it.
+
+## Alerts
+
+The worker checks the deployment's health every five minutes (`DOTRIX_ALERT_INTERVAL_MINUTES`) and emails the
+operators when something needs attention and again when it clears. Set `DOTRIX_ALERT_EMAILS` to a comma-separated
+list; empty, the admin console's active owners are emailed. A condition is emailed once it holds on two checks in
+a row, and only once until it clears. The conditions, which the Overview also lists:
+
+- Redis, file storage, or another dependency is down.
+- No worker has checked in recently.
+- A run's lease lapsed more than 10 minutes ago and the sweep hasn't recovered it.
+- The run queue's oldest dispatch has waited more than 10 minutes.
+- Coding turns are waiting to be recovered.
+- At least 10 runs finished in 24 hours and more than half failed.
+- Notification emails have been unsent for over an hour.
+
+The emails give counts only, never a workspace's name or what people wrote.
 
 ## Storage limit per workspace
 

@@ -56,9 +56,59 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
-export type Me = { email: string; name: string };
+/** A change (POST, PATCH, DELETE), with the same one retry after a refresh as `call`. */
+export async function send<T = void>(path: string, method: "POST" | "PATCH" | "DELETE" | "PUT", body?: unknown): Promise<T> {
+  try {
+    return await rawCall<T>(path, { method, body });
+  } catch (e) {
+    if ((e as ApiError).status !== 401) throw e;
+    if (!(await refreshSession())) throw e;
+    return rawCall<T>(path, { method, body });
+  }
+}
+
+export type AdminRole = "owner" | "viewer";
+
+export type Me = { id: string; email: string; name: string; role: AdminRole; two_factor: boolean; must_enrol: boolean };
+
+/** The password step passed and a code is needed: sent back, with the code, to /admin/login/verify. */
+export type LoginChallenge = { second_factor: "totp"; challenge: string };
+
+export type AdminAccount = {
+  id: string;
+  email: string;
+  name: string;
+  role: AdminRole;
+  created_at: string;
+  disabled_at: string | null;
+  last_sign_in_at: string | null;
+  two_factor: boolean;
+};
+
+export type AdminInvite = {
+  id: string;
+  email: string;
+  role: AdminRole;
+  created_at: string;
+  expires_at: string;
+  invited_by: string | null;
+  emailed: boolean;
+  link_path: string | null;
+  note: string | null;
+};
 
 type StuckRun = { kind: "chat" | "coding"; id: string; status: string; workspace: string; label: string | null; lease_expired_at: string | null };
+
+export type DependencyCheck = {
+  id: string;
+  state: "ok" | "degraded" | "down" | "off";
+  detail: string;
+  latency_ms: number | null;
+};
+
+type AdminAlert = { key: string; summary: string; opened_at: string; resolved_at: string | null; notified: boolean };
+
+export type AdminAlerts = { open: AdminAlert[]; resolved: AdminAlert[] };
 
 export type Health = {
   generated_at: string;
@@ -82,6 +132,13 @@ export type Health = {
   runners: number;
   failed_24h: number;
   finished_24h: number;
+  dependencies: DependencyCheck[];
+  workers_alive: number | null;
+  notification_emails_waiting: number;
+  notification_email_oldest_seconds: number | null;
+  automation_events_waiting: number;
+  coding_slots: number | null;
+  coding_running_cloud: number;
 };
 
 export type Counts = {
@@ -106,6 +163,8 @@ export type Day = {
   input_tokens: number;
   output_tokens: number;
   coding_cost_usd: number;
+  chat_cost_usd: number;
+  unpriced_chat_runs: number;
   signups: number;
 };
 
@@ -175,4 +234,27 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type TrailEvent = {
+  id: string;
+  action: string;
+  actor_email: string | null;
+  target_email: string | null;
+  workspace: string | null;
+  ip: string | null;
+  created_at: string;
+};
+
 export type Page<T> = { items: T[]; total: number };
+
+export type ModelRow = {
+  model: string;
+  provider: string;
+  chat_runs: number;
+  coding_runs: number;
+  failed: number;
+  limit_stops: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  cost_is_estimate: boolean;
+};

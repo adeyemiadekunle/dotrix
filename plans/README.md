@@ -23,14 +23,14 @@ the audit nor the other plans.
 | [008](008-runner-commit-ids-are-validated.md) | A commit ID reported by a local runner must be 40-character hex | P2 | S | — | DONE |
 | [009](009-env-example-has-the-jwt-secret.md) | `.env.example` documents the required `DOTRIX_JWT_SECRET` | P2 | S | — | DONE |
 | [010](010-ci-enforces-uv-lock.md) | CI fails when `uv.lock` is out of date | P2 | S | — | DONE (CI proof pending on the PR) |
-| [011](011-admin-accounts-from-the-server.md) | Admin accounts can be created and rescued from the server's command line | P1 | S | — | TODO |
-| [012](012-several-admins-invites-and-roles.md) | Several people can be admins: invites, two roles, and a way to remove someone | P1 | L | 011 | TODO |
-| [013](013-admin-two-factor-sign-in.md) | Admins sign in with a second factor (TOTP) | P1 | M | 011, 012 | TODO |
-| [014](014-admin-trail.md) | What admins do in the console is recorded and shown | P2 | M | 012 (013 if landed) | TODO |
-| [015](015-console-health-covers-dependencies.md) | The console's health shows the services, workers, backlogs and capacity dotrix depends on | P1 | M | — | TODO |
-| [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | TODO |
-| [017](017-console-usage-by-model-and-chat-cost.md) | The console shows what chat costs and how each model is doing | P2 | M | — | TODO |
-| [018](018-console-failures-and-audit-cleanup.md) | The console's failure report can't show what people wrote, and the audit log can be filtered | P2 | S–M | — | TODO |
+| [011](011-admin-accounts-from-the-server.md) | Admin accounts can be created and rescued from the server's command line | P1 | S | — | DONE |
+| [012](012-several-admins-invites-and-roles.md) | Several people can be admins: invites, two roles, and a way to remove someone | P1 | L | 011 | DONE |
+| [013](013-admin-two-factor-sign-in.md) | Admins sign in with a second factor (TOTP) | P1 | M | 011, 012 | DONE |
+| [014](014-admin-trail.md) | What admins do in the console is recorded and shown | P2 | M | 012 (013 if landed) | DONE |
+| [015](015-console-health-covers-dependencies.md) | The console's health shows the services, workers, backlogs and capacity dotrix depends on | P1 | M | — | DONE |
+| [016](016-operator-alerts.md) | Operators are emailed when the deployment needs attention | P1 | M | 015 | DONE |
+| [017](017-console-usage-by-model-and-chat-cost.md) | The console shows what chat costs and how each model is doing | P2 | M | — | DONE |
+| [018](018-console-failures-and-audit-cleanup.md) | The console's failure report can't show what people wrote, and the audit log can be filtered | P2 | S–M | — | DONE |
 | [019](019-one-coding-turn-at-a-time-per-issue.md) | Two requests can't start coding on the same issue or session at once | P1 | S | — | DONE |
 | [020](020-approvals-refresh-the-board.md) | Approving in Chat or Codes refreshes the task lists straight away | P1 | S | — | DONE |
 | [021](021-isolation-test-covers-every-id.md) | The cross-workspace test tries every kind of ID, not eight of them | P1 | S | — | DONE |
@@ -116,7 +116,7 @@ Leads only: open the code before planning any of these.
 - Lease renew/release logic differs between chat runs, coding runs and local turns.
 - pytest runs serially in CI (about 9.5 minutes at the last observed run).
 - `CLAUDE.md`'s backend tree omits `modules/admin` and `modules/observe`; `.env.example` covers under half the settings.
-- A malformed manifest fails the whole dependencies view (`dotrix_engine/dependencies.py:181,215,243`); `dotrix runner` exits on a transient network error.
+- `dotrix runner` exits on a transient network error. (A malformed manifest failing the whole dependencies view was fixed by plan 030.)
 
 ## Findings considered and rejected
 

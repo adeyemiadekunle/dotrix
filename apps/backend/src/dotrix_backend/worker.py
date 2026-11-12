@@ -13,6 +13,7 @@ import logging
 import sys
 import uuid
 from contextlib import AsyncExitStack
+from datetime import UTC, datetime
 from typing import Any
 
 from arq import cron, func
@@ -27,7 +28,14 @@ from .core.logging import configure_logging
 from .core.settings import get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import JOBS, cleanup_expired, email_notifications, index_knowledge, run_automations
+from .jobs import (
+    JOBS,
+    check_operator_alerts,
+    cleanup_expired,
+    email_notifications,
+    index_knowledge,
+    run_automations,
+)
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -201,6 +209,14 @@ async def emails(ctx: dict[str, Any]) -> None:
     await email_notifications(ctx["jobs"])
 
 
+async def alerts(ctx: dict[str, Any]) -> None:
+    """The operator alerts, every `alert_interval_minutes` (the cron runs each minute; arq's cron entries
+    can't read settings when the class is defined)."""
+    jobs = ctx["jobs"]
+    if datetime.now(UTC).minute % jobs.settings.alert_interval_minutes == 0:
+        await check_operator_alerts(jobs)
+
+
 class WorkerSettings:
     functions = [
         func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
@@ -218,6 +234,7 @@ class WorkerSettings:
         cron(index, run_at_startup=True, timeout=10 * 60),
         cron(automations, timeout=2 * 60),
         cron(emails, timeout=2 * 60),
+        cron(alerts, timeout=2 * 60),
     ]
     queue_name = QUEUE_NAME
     on_startup = startup

@@ -148,9 +148,9 @@ TAGS: list[dict[str, str]] = [
     },
     {
         "name": "admin",
-        "description": "The Admin app's own accounts and reads: sign-up by proving workspace "
-        "ownership, httpOnly cookie sessions, workspace observability, audit, and creating an "
-        "organisation workspace.",
+        "description": "The Admin app's own accounts and reads: sign-up of the first account with the "
+        "deployment's setup token (others are made from the server's command line), httpOnly "
+        "cookie sessions, workspace observability, audit, and creating an organisation workspace.",
     },
     {"name": "health", "description": "Liveness and readiness probes."},
     {"name": "features", "description": "What this server offers, for clients to show only what works (no sign-in needed)."},
