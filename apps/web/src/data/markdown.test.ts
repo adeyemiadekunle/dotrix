@@ -103,6 +103,8 @@ describe("editorCanKeep", () => {
     ["Plain **text** with [a link](https://x.dev)", true],
     ["* agent bullet\n* another", true],
     ["- a\n  - b", true],
+    ["Spelled _differently_ than the editor writes it", true],
+    ["Extra\n\n\n\nblank lines", true],
     ["| a | b |\n| - | - |\n| 1 | 2 |", false],
     ["```ts\nconst a = 1;\n```", false],
   ])("%j -> %s", (md, ok) => {

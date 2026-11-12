@@ -139,12 +139,9 @@ export function htmlToMd(html: string): string {
 
 /** Whether the drawer's editor can save this Markdown without losing or rewriting anything (no tables or fenced code, and it round-trips). */
 export function editorCanKeep(md: string): boolean {
-  const norm = (x: string) =>
-    x
-      .replace(/\r\n/g, "\n")
-      .replace(/^(\s*)\* /gm, "$1- ")
-      .replace(/\s+$/gm, "")
-      .trim();
   if (/^\s*(```|~~~)/m.test(md) || /^\s*\|.*\|\s*$/m.test(md)) return false;
-  return norm(htmlToMd(mdToHtml(md))) === norm(md);
+  // What the editor would save may be spelled differently (`_x_` as `*x*`, fewer blank lines);
+  // it's kept if it shows the same as the original.
+  const shown = mdToHtml(md);
+  return mdToHtml(htmlToMd(shown)) === shown;
 }
