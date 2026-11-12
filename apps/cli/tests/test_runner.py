@@ -339,3 +339,124 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     assert (edited / "a.txt").read_text() == "edited by hand\n"
     listed = subprocess.run(["git", "-C", str(checkout), "worktree", "list"], capture_output=True, text=True).stdout
     assert str(old) not in listed and str(recent) in listed
+
+
+def _checkout(tmp_path: Path, files: dict[str, bytes]) -> Path:
+    import subprocess
+
+    origin = tmp_path / "origin"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    for name, data in files.items():
+        (origin / name).write_bytes(data)
+    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
+    checkout = tmp_path / "checkout"
+    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+    return checkout
+
+
+def _tool(script: str) -> str:
+    import shlex
+    import sys
+
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+
+
+_RUN = {"run_id": "run-000003", "project_id": "p", "lease_token": 1, "lease_seconds": 120, "issue_key": "KUN-3",
+        "turn": 1, "title": "x", "base_branch": "main", "branch": None, "tool": "claude-code", "brief": "x"}
+
+
+def _steps(count: int) -> str:
+    return (f"import json\nfor i in range({count}):\n print(json.dumps({{'type': 'assistant', 'message': "
+            "{'content': [{'type': 'text', 'text': f'step {i}'}]}}), flush=True)\n")
+
+
+def _texts(calls: list[tuple[str, dict]]) -> list[str]:
+    return [e["text"] for _, body in calls for e in body.get("events", [])]
+
+
+async def _turn(tmp_path: Path, script: str, api, files=None) -> list[str]:
+    said: list[str] = []
+    runner = LocalRunner(api=api, repo=_checkout(tmp_path, files or {"a.txt": b"a\n"}), workspace_id="w",
+                         project_id="p", runner_id="r1", command=_tool(script), worktrees=tmp_path / "trees",
+                         echo=said.append)
+    await runner.work(dict(_RUN))
+    return said
+
+
+async def test_a_burst_of_steps_all_reach_the_platform_before_the_result(tmp_path: Path) -> None:
+    calls: list[tuple[str, dict]] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            calls.append((path.rsplit("/", 1)[-1], body or {}))
+            return {"stop": False}
+
+    await _turn(tmp_path, _steps(180), Api())
+    texts = [t for t in _texts(calls) if t.startswith("step ")]
+    assert texts == [f"step {i}" for i in range(180)]
+    assert calls[-1][0] == "result"
+
+
+async def test_steps_survive_failed_heartbeats(tmp_path: Path) -> None:
+    calls: list[tuple[str, dict]] = []
+    failures = [3]
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/heartbeat") and failures[0] > 0:
+                failures[0] -= 1
+                raise ConnectionError("down")
+            calls.append((path.rsplit("/", 1)[-1], body or {}))
+            return {"stop": False}
+
+    await _turn(tmp_path, _steps(180), Api())
+    texts = [t for t in _texts(calls) if t.startswith("step ")]
+    assert texts == [f"step {i}" for i in range(180)]
+
+
+async def test_when_the_platform_stays_away_the_result_says_steps_are_missing(tmp_path: Path) -> None:
+    calls: list[tuple[str, dict]] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/heartbeat"):
+                raise ConnectionError("down")
+            calls.append((path.rsplit("/", 1)[-1], body or {}))
+            return {}
+
+    await _turn(tmp_path, _steps(180), Api())
+    [(kind, body)] = calls
+    assert kind == "result" and len(body["events"]) <= 50
+    assert body["events"][-1]["text"].endswith("earlier steps couldn't be sent")
+    assert body["events"][-2]["text"] == "step 179"
+
+
+async def test_a_change_that_is_not_utf8_text_is_not_sent_as_a_patch(tmp_path: Path) -> None:
+    results: list[dict] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    script = "open('a.txt', 'wb').write('caf\\xe9\\n'.encode('latin-1'))"
+    said = await _turn(tmp_path, script, Api(), {"a.txt": b"a\n"})
+    [result] = results
+    assert result["outcome"] == "failed" and "patch" not in result and "UTF-8" in result["error"]
+    assert any("UTF-8" in e["text"] for e in result["events"]) and "UTF-8" in said[-1]
+
+
+async def test_a_utf8_change_is_still_sent_as_a_patch(tmp_path: Path) -> None:
+    results: list[dict] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    await _turn(tmp_path, "open('a.txt', 'wb').write('caf\\xe9\\n'.encode('utf-8'))", Api())
+    [result] = results
+    assert result["outcome"] == "changes" and "+café" in result["patch"]

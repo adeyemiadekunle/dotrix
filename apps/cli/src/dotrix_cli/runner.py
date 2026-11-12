@@ -44,6 +44,7 @@ SBX_AGENTS = {"claude-code": "claude", "opencode": "opencode"}
 # The provider whose key `sbx secret set` stores for each tool, named when a turn fails to sign in.
 SBX_SECRETS = {"claude-code": "anthropic", "opencode": "anthropic, openai or another provider"}
 EVENTS_PER_BEAT = 50
+MAX_PENDING = 2000  # steps kept while the platform can't be reached; the oldest go first
 WORKTREE_DAYS = 3  # a finished turn's worktree is removed once untouched this long
 EVENTS_SECONDS = 2.0  # waiting events go out this often (the lease is renewed every third of it regardless)
 STOP_GRACE_SECONDS = 5
@@ -243,7 +244,8 @@ def parse_line(line: str, out: Outcome) -> None:
         out.events.append({"kind": "error", "text": str(error.get("message") or error)[:4000]})
 
 
-async def git(cwd: Path, *args: str, check: bool = True) -> str:
+async def git_bytes(cwd: Path, *args: str, check: bool = True) -> bytes:
+    """git's output exactly as it wrote it (a patch can hold bytes that aren't UTF-8)."""
     process = await asyncio.create_subprocess_exec(
         "git", "-c", "core.quotepath=off", "-c", "core.autocrlf=false", *args, cwd=cwd,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -251,7 +253,11 @@ async def git(cwd: Path, *args: str, check: bool = True) -> str:
     out, err = await process.communicate()
     if check and process.returncode != 0:
         raise RuntimeError(f"git {' '.join(args[:2])}: {err.decode(errors='replace').strip()[:500]}")
-    return out.decode(errors="replace")
+    return out
+
+
+async def git(cwd: Path, *args: str, check: bool = True) -> str:
+    return (await git_bytes(cwd, *args, check=check)).decode(errors="replace")
 
 
 # Folders a person doesn't edit by hand: walking them would only slow the check down.
@@ -416,22 +422,47 @@ class LocalRunner:
         token = run["lease_token"]
         beat_every = self.beat_seconds if self.beat_seconds is not None else max(5.0, run["lease_seconds"] / 3)
         pending: list[dict[str, str]] = []
+        dropped = 0  # steps given up on (the platform stayed away), told in the result
+        failed_beats = 0  # heartbeats in a row the platform didn't answer
+
+        def trim() -> None:
+            nonlocal dropped
+            if len(pending) > MAX_PENDING:
+                dropped += len(pending) - MAX_PENDING
+                del pending[:len(pending) - MAX_PENDING]
 
         async def beat(extra: dict[str, Any] | None = None) -> bool:
+            nonlocal failed_beats
             body = {"lease_token": token, "events": pending[:EVENTS_PER_BEAT], **(extra or {})}
             try:
                 answer = await self.api.post(f"{path}/heartbeat", body)
             except Exception as exc:
                 if _lost(exc):
                     raise LeaseLost() from exc
+                failed_beats += 1
+                trim()
                 return False  # the platform may be back before the lease runs out
+            failed_beats = 0
             del pending[:EVENTS_PER_BEAT]
             return bool(answer.get("stop"))
 
         async def report(outcome: str, **fields: Any) -> None:
+            nonlocal dropped, failed_beats
+            # Every step goes out before the result; give up only after three heartbeats in a row fail.
+            failed_beats = 0
+            while len(pending) > EVENTS_PER_BEAT and failed_beats < 3:
+                await beat()
+            if len(pending) > EVENTS_PER_BEAT or (dropped and len(pending) >= EVENTS_PER_BEAT):
+                excess = len(pending) - (EVENTS_PER_BEAT - 1)
+                dropped += excess
+                del pending[:excess]
+            events = list(pending)
+            if dropped:
+                events.append({"kind": "step", "text": f"{dropped} earlier steps couldn't be sent"})
             try:
                 await self.api.post(f"{path}/result", {"lease_token": token, "outcome": outcome,
-                                                       "events": pending[:EVENTS_PER_BEAT], **fields})
+                                                       "events": events, **fields})
+                del pending[:]
             except Exception as exc:
                 if _lost(exc):
                     raise LeaseLost() from exc
@@ -503,6 +534,7 @@ class LocalRunner:
             before = len(out.events)
             parse_line(line, out)
             pending.extend(out.events[before:])
+            trim()
 
         async def read() -> None:
             assert process.stdout
@@ -542,9 +574,20 @@ class LocalRunner:
             return
 
         await git(tree, "add", "-A")
-        patch = await git(tree, "diff", "--cached", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",
+        raw_patch = await git_bytes(tree, "diff", "--cached", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",
                           "--no-renames", base_sha)
         usage = {k: v for k, v in out.usage.items() if v is not None}
+        try:
+            patch = raw_patch.decode("utf-8")
+        except UnicodeDecodeError:
+            # The API takes the patch as text: sending it decoded with replacements would change the
+            # files it writes, so the turn ends here instead.
+            reason = ("A changed file isn't UTF-8 text, so the changes can't be sent exactly yet; "
+                      "nothing was sent. The worktree keeps them.")
+            pending.append({"kind": "error", "text": reason})
+            await report("failed", base_sha=base_sha, summary=out.summary, error=reason, **usage)
+            self.echo(f"  Failed: {reason}")
+            return
         if not patch.strip():
             if code != 0:
                 error = (stderr or f"{tool.name} exited with {code}")[-2000:]
