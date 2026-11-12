@@ -32,6 +32,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - Juno's review of a pull request is posted on a later attempt when an earlier one failed or was interrupted; before, it could be skipped for good.
 - A coding session's sandbox is shut down when it can't be checked for reuse, and the turn starts in a fresh one.
 - A push or a failed CI run reported by GitHub while the job queue is briefly unavailable is still followed up (the checkout synced, Juno asked to look); before, it could be skipped.
+- A workspace or project with more than 5,000 tasks now shows all of them.
 - Kai's changes to files that aren't UTF-8 text (older encodings such as Latin-1) are now pushed exactly as written, from cloud and local turns; before, cloud turns replaced those characters and local turns refused them.
 - A turn coded on your computer now delivers every step to the session, including the last ones, and a turn that changed a file that isn't UTF-8 text now fails with a clear reason instead of sending damaged changes.
 - A new reply in Chat no longer opens showing the previous reply's text, and a reply in a conversation across projects keeps streaming after a dropped connection.

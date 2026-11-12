@@ -48,15 +48,40 @@ export interface WorkspaceIssueFilters {
   order?: "due" | "priority" | "created" | "updated";
 }
 
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 50;
+
+/**
+ * Every row of an offset-paged list: requests pages until one is shorter than `pageSize`, keeps the
+ * order, and drops a key seen before (an insert between pages can shift rows).
+ */
+export async function fetchAllIssues<T extends { key: string }>(fetchPage: (offset: number) => Promise<T[]>, pageSize = PAGE_SIZE): Promise<T[]> {
+  const rows: T[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const batch = await fetchPage(page * pageSize);
+    for (const row of batch) {
+      if (seen.has(row.key)) continue;
+      seen.add(row.key);
+      rows.push(row);
+    }
+    if (batch.length < pageSize) return rows;
+  }
+  console.warn(`Stopped loading issues after ${MAX_PAGES} pages (${MAX_PAGES * pageSize} rows).`);
+  return rows;
+}
+
 /** Issues in every project of the workspace you can see (Home, My issues). */
 export function useWorkspaceIssues(workspaceId: string | undefined, filters: WorkspaceIssueFilters) {
   return useQuery({
     queryKey: ["issues", "workspace", workspaceId, filters],
     queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/issues", {
-          params: { path: { workspace_id: workspaceId! }, query: { ...filters, limit: 5000 } },
-        }),
+      fetchAllIssues((offset) =>
+        unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/issues", {
+            params: { path: { workspace_id: workspaceId! }, query: { ...filters, limit: PAGE_SIZE, offset } },
+          }),
+        ),
       ),
     enabled: Boolean(workspaceId),
     placeholderData: keepPreviousData,
@@ -68,10 +93,12 @@ export function useAllIssues(scope: Scope | undefined) {
   return useQuery({
     queryKey: scope ? [...issueKeys.all(scope), "all"] : ["issues", "none"],
     queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", {
-          params: { path: path(scope!), query: { order: "rank", limit: 5000 } },
-        }),
+      fetchAllIssues((offset) =>
+        unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/issues", {
+            params: { path: path(scope!), query: { order: "rank", limit: PAGE_SIZE, offset } },
+          }),
+        ),
       ),
     enabled: Boolean(scope),
   });
