@@ -107,16 +107,21 @@ class NotificationEmails:
         by_user: dict[uuid.UUID, tuple[User, list[Item]]] = {}
         for n, user, slug, key in rows:
             by_user.setdefault(user.id, (user, []))[1].append(Item(n, slug, key))
-        sent = 0
+        outgoing: list[tuple[User, list[Item]]] = []
         for user, items in by_user.values():
             wanted = await self._wanted(user, items) if user.email_notifications == "immediately" else []
             if wanted:
-                sent += await self._send(user, wanted, digest=False)
+                outgoing.append((user, wanted))
+        # Mark everything handled and commit before any email goes out: a crash can lose an email
+        # (the Inbox still has it) but never sends the same ones twice.
         if rows:
             await self.session.execute(
                 update(Notification).where(Notification.id.in_([n.id for n, *_ in rows])).values(emailed_at=now)
             )
         await self.session.commit()
+        sent = 0
+        for user, wanted in outgoing:
+            sent += await self._send(user, wanted, digest=False)
         return {"handled": len(rows), "emails": sent}
 
     async def send_digests(self, now: datetime | None = None) -> int:
@@ -132,7 +137,7 @@ class NotificationEmails:
                 or_(User.digest_sent_at.is_(None), User.digest_sent_at < today),
             ).with_for_update(skip_locked=True)
         ))
-        sent = 0
+        outgoing: list[tuple[User, list[Item]]] = []
         for user in users:
             since = user.digest_sent_at or now - timedelta(days=1)
             rows = (await self.session.execute(
@@ -144,9 +149,13 @@ class NotificationEmails:
             )).all()
             wanted = await self._wanted(user, [Item(n, slug, key) for n, slug, key in rows])
             if wanted:
-                sent += await self._send(user, wanted, digest=True)
+                outgoing.append((user, wanted))
             user.digest_sent_at = now
+        # Record the digests before sending them, so a crash can't send them again.
         await self.session.commit()
+        sent = 0
+        for user, wanted in outgoing:
+            sent += await self._send(user, wanted, digest=True)
         return sent
 
     async def _wanted(self, user: User, items: list[Item]) -> list[Item]:
