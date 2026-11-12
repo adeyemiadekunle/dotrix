@@ -17,15 +17,29 @@ from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin
 class AdminUser(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "admin_users"
 
-    # Optional: set when an admin was created against a specific workspace (earlier phase-1
-    # accounts). The platform console reads the whole deployment, not one workspace.
-    workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id", ondelete="SET NULL"), index=True)
-    # The person who created the account (informational only).
-    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     password_hash: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # "owner" manages admins; "viewer" only reads.
+    role: Mapped[str] = mapped_column(String(16), server_default="owner")
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AdminInvite(UUIDPrimaryKeyMixin, Base):
+    """A single-use, emailed invitation to become an admin. Only the token's hash is stored."""
+
+    __tablename__ = "admin_invites"
+
+    email: Mapped[str] = mapped_column(String(320))
+    role: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    invited_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("admin_users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AdminSession(UUIDPrimaryKeyMixin, Base):

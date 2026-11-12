@@ -26,19 +26,74 @@ class AdminLogin(BaseModel):
     password: str = Field(max_length=200)
 
 
-class AdminWorkspace(BaseModel):
-    id: uuid.UUID
-    name: str
-    slug: str
-    kind: str
+AdminRole = Literal["owner", "viewer"]
+NEW_PASSWORD_MIN = 12
 
 
 class AdminRead(BaseModel):
     id: uuid.UUID
     email: str
     name: str
-    workspace: AdminWorkspace | None = None
+    role: AdminRole
     created_at: datetime
+
+
+class AdminListed(BaseModel):
+    """One admin account in the owners' list."""
+
+    id: uuid.UUID
+    email: str
+    name: str
+    role: AdminRole
+    created_at: datetime
+    disabled_at: datetime | None
+    last_sign_in_at: datetime | None
+
+
+class AdminInviteCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+$")
+    role: AdminRole = "viewer"
+
+
+class AdminInviteRead(BaseModel):
+    """A pending invite. The token is never here; it only travels in the emailed link. Without
+    `DOTRIX_ADMIN_URL` nothing is emailed, so `link_path` (which holds the token) is returned once,
+    to the owner who made the invite, to pass on."""
+
+    id: uuid.UUID
+    email: str
+    role: AdminRole
+    created_at: datetime
+    expires_at: datetime
+    invited_by: str | None = None
+    emailed: bool = False
+    link_path: str | None = None
+    note: str | None = None
+
+
+class AdminInvitePreviewRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+
+
+class AdminInvitePreview(BaseModel):
+    email: str
+    role: AdminRole
+
+
+class AdminInviteAccept(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=NEW_PASSWORD_MIN, max_length=200)
+
+
+class AdminUpdate(BaseModel):
+    role: AdminRole | None = None
+    disabled: bool | None = None
+
+
+class AdminPasswordChange(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=NEW_PASSWORD_MIN, max_length=200)
 
 
 class AdminBootstrap(BaseModel):

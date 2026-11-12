@@ -13,6 +13,7 @@ import {
   ScrollIcon,
   SignOutIcon,
   SquaresFourIcon,
+  UsersThreeIcon,
   WarningCircleIcon,
   WarningOctagonIcon,
   type Icon,
@@ -20,7 +21,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 
-import { call, rawCall, refreshSession, type Me } from "./api";
+import { call, rawCall, refreshSession, send, type Me } from "./api";
 
 // The pages (and their charts and tables) load after sign-in, so the sign-in page is small and quick.
 const pages = () => import("./pages");
@@ -31,11 +32,12 @@ const CodingPage = lazy(() => pages().then((m) => ({ default: m.CodingPage })));
 const ModelsPage = lazy(() => pages().then((m) => ({ default: m.ModelsPage })));
 const WorkspacesPage = lazy(() => pages().then((m) => ({ default: m.WorkspacesPage })));
 const AuditPage = lazy(() => pages().then((m) => ({ default: m.AuditPage })));
+const AdminsPage = lazy(() => pages().then((m) => ({ default: m.AdminsPage })));
 
 /** Where people who use dotrix sign in: the web app (`VITE_APP_URL`, set at build time). */
 const APP_URL = (import.meta.env.VITE_APP_URL as string | undefined) ?? "https://app.dotrix.cc";
 
-const PAGES: { id: string; label: string; icon: Icon }[] = [
+const PAGES: { id: string; label: string; icon: Icon; owner?: boolean }[] = [
   { id: "overview", label: "Overview", icon: ChartBarIcon },
   { id: "runs", label: "Runs", icon: ListBulletsIcon },
   { id: "failures", label: "Failures", icon: WarningOctagonIcon },
@@ -43,6 +45,7 @@ const PAGES: { id: string; label: string; icon: Icon }[] = [
   { id: "models", label: "Models", icon: CpuIcon },
   { id: "workspaces", label: "Workspaces", icon: SquaresFourIcon },
   { id: "audit", label: "Audit log", icon: ScrollIcon },
+  { id: "admins", label: "Admins", icon: UsersThreeIcon, owner: true },
 ];
 
 function Mark({ size = 20 }: { size?: number }) {
@@ -58,7 +61,7 @@ function Mark({ size = 20 }: { size?: number }) {
 
 function usePage(): [string, (p: string) => void] {
   const read = () => {
-    const id = location.hash.replace(/^#\/?/, "");
+    const id = location.hash.replace(/^#\/?/, "").split("?")[0];
     return PAGES.some((p) => p.id === id) ? id : "overview";
   };
   const [page, setPage] = useState(read);
@@ -160,7 +163,7 @@ function Login({ onAuth }: { onAuth: () => void }) {
         </button>
         <p className="ad-auth-foot">
           <LockKeyIcon size={13} />
-          Read-only. Sessions last 12 hours.
+          Sessions last 12 hours.
         </p>
       </form>
       <a className="ad-auth-out" href={APP_URL}>
@@ -171,11 +174,198 @@ function Login({ onAuth }: { onAuth: () => void }) {
   );
 }
 
+/** The token of an invite link (`#/accept?token=…`), read from the address; kept in memory only. */
+function inviteToken(): string | null {
+  const [path, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
+  return path === "accept" ? new URLSearchParams(query).get("token") : null;
+}
+
+function leaveInvite() {
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
+function Accept({ token, onAuth }: { token: string; onAuth: () => void }) {
+  const invite = useQuery({
+    queryKey: ["invite-preview"],
+    queryFn: () => rawCall<{ email: string; role: string }>("/admin/invites/preview", { method: "POST", body: { token } }),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const [f, setF] = useState({ name: "", password: "", again: "" });
+  const mismatch = f.again !== "" && f.again !== f.password;
+  const accept = useMutation({
+    mutationFn: () => rawCall<void>("/admin/invites/accept", { method: "POST", body: { token, name: f.name, password: f.password } }),
+    onSuccess: () => {
+      leaveInvite();
+      onAuth();
+    },
+  });
+  return (
+    <main className="ad-auth">
+      <div className="ad-auth-bg" aria-hidden="true" />
+      <form
+        className="ad-auth-card"
+        aria-busy={accept.isPending}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!mismatch) accept.mutate();
+        }}
+      >
+        <span className="ad-auth-brand">
+          <Mark size={22} />
+          dotrix <em>admin</em>
+        </span>
+        {invite.isPending ? (
+          <p className="ad-auth-sub">Checking your invite…</p>
+        ) : invite.isError ? (
+          <>
+            <h1>This invite doesn&apos;t work</h1>
+            <p className="ad-auth-sub">The link was used, revoked or has expired. Ask an owner for a new one.</p>
+            <a className="btn" href={location.pathname} onClick={leaveInvite}>
+              Go to sign in
+            </a>
+          </>
+        ) : (
+          <>
+            <div>
+              <h1>Accept your invite</h1>
+              <p className="ad-auth-sub">
+                You&apos;re joining as {invite.data.role === "owner" ? "an owner" : "a viewer"} with {invite.data.email}. Choose your own password.
+              </p>
+            </div>
+            {accept.isError && (
+              <p className="ad-auth-error" role="alert">
+                <WarningCircleIcon size={16} weight="fill" />
+                {accept.error.message}
+              </p>
+            )}
+            <label>
+              Name
+              <input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
+            </label>
+            <label>
+              Password (at least 12 characters)
+              <input
+                className="input"
+                type="password"
+                value={f.password}
+                onChange={(e) => setF({ ...f, password: e.target.value })}
+                required
+                minLength={12}
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              Repeat the password
+              <input
+                className="input"
+                type="password"
+                value={f.again}
+                onChange={(e) => setF({ ...f, again: e.target.value })}
+                required
+                autoComplete="new-password"
+              />
+            </label>
+            {mismatch && <p className="ad-auth-error">The passwords don&apos;t match.</p>}
+            <button type="submit" className="btn btn-primary" disabled={accept.isPending || mismatch}>
+              {accept.isPending ? "Creating…" : "Create my account"}
+            </button>
+          </>
+        )}
+      </form>
+    </main>
+  );
+}
+
+function ChangePassword({ onClose }: { onClose: () => void }) {
+  const [f, setF] = useState({ current: "", next: "", again: "" });
+  const mismatch = f.again !== "" && f.again !== f.next;
+  const change = useMutation({
+    mutationFn: () => send("/admin/me/password", "POST", { current_password: f.current, new_password: f.next }),
+  });
+  return (
+    <div className="ad-modal" role="dialog" aria-modal="true" aria-label="Change password">
+      <form
+        className="ad-auth-card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!mismatch) change.mutate();
+        }}
+      >
+        <h1>Change password</h1>
+        {change.isSuccess ? (
+          <>
+            <p className="ad-auth-sub">Done. Your other sessions were signed out.</p>
+            <button type="button" className="btn" onClick={onClose}>
+              Close
+            </button>
+          </>
+        ) : (
+          <>
+            {change.isError && (
+              <p className="ad-auth-error" role="alert">
+                <WarningCircleIcon size={16} weight="fill" />
+                {change.error.message}
+              </p>
+            )}
+            <label>
+              Current password
+              <input
+                className="input"
+                type="password"
+                value={f.current}
+                onChange={(e) => setF({ ...f, current: e.target.value })}
+                required
+                autoComplete="current-password"
+                autoFocus
+              />
+            </label>
+            <label>
+              New password (at least 12 characters)
+              <input
+                className="input"
+                type="password"
+                value={f.next}
+                onChange={(e) => setF({ ...f, next: e.target.value })}
+                required
+                minLength={12}
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              Repeat the new password
+              <input
+                className="input"
+                type="password"
+                value={f.again}
+                onChange={(e) => setF({ ...f, again: e.target.value })}
+                required
+                autoComplete="new-password"
+              />
+            </label>
+            {mismatch && <p className="ad-auth-error">The passwords don&apos;t match.</p>}
+            <div className="ad-actions">
+              <button type="button" className="btn" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={change.isPending || mismatch}>
+                {change.isPending ? "Saving…" : "Change password"}
+              </button>
+            </div>
+          </>
+        )}
+      </form>
+    </div>
+  );
+}
+
 export function App() {
   const qc = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
   const [booting, setBooting] = useState(true);
   const [page, go] = usePage();
+  const [invite] = useState(inviteToken);
+  const [changing, setChanging] = useState(false);
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => call<Me>("/admin/me"), enabled: signedIn, retry: false });
 
@@ -194,6 +384,16 @@ export function App() {
   };
 
   if (booting || (signedIn && me.isPending)) return <p className="state boot">Loading…</p>;
+  if (!signedIn && invite)
+    return (
+      <Accept
+        token={invite}
+        onAuth={() => {
+          qc.removeQueries({ queryKey: ["me"] });
+          setSignedIn(true);
+        }}
+      />
+    );
   if (!signedIn || me.isError || !me.data)
     return (
       <Login
@@ -212,7 +412,7 @@ export function App() {
           dotrix <em>admin</em>
         </span>
         <nav aria-label="Pages">
-          {PAGES.map(({ id, label, icon: I }) => (
+          {PAGES.filter((p) => !p.owner || me.data.role === "owner").map(({ id, label, icon: I }) => (
             <a key={id} href={`#/${id}`} className={page === id ? "on" : undefined} aria-current={page === id ? "page" : undefined}>
               <I size={17} weight={page === id ? "fill" : "regular"} />
               <span>{label}</span>
@@ -224,6 +424,9 @@ export function App() {
             <b>{me.data.name}</b>
             <span>{me.data.email}</span>
           </span>
+          <button type="button" className="icon-btn" onClick={() => setChanging(true)} title="Change password" aria-label="Change password">
+            <LockKeyIcon size={17} />
+          </button>
           <button type="button" className="icon-btn" onClick={signOut} title="Sign out" aria-label="Sign out">
             <SignOutIcon size={17} />
           </button>
@@ -238,8 +441,10 @@ export function App() {
           {page === "models" && <ModelsPage />}
           {page === "workspaces" && <WorkspacesPage />}
           {page === "audit" && <AuditPage />}
+          {page === "admins" && me.data.role === "owner" && <AdminsPage meId={me.data.id} />}
         </Suspense>
       </main>
+      {changing && <ChangePassword onClose={() => setChanging(false)} />}
     </div>
   );
 }

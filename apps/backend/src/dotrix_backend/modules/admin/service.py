@@ -23,7 +23,7 @@ from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.workspaces.models import Workspace
 
 from .models import AdminSession, AdminUser
-from .schemas import AdminLogin, AdminRead, AdminSignup, AdminWorkspace
+from .schemas import AdminLogin, AdminRead, AdminSignup
 
 ADMIN_TOKEN_TYPE = "admin"
 ACCESS_TTL = timedelta(hours=12)
@@ -107,6 +107,7 @@ class AdminService:
             name=data.name,
             password_hash=hash_password(data.password),
             created_at=datetime.now(UTC),
+            role="owner",
         )
         self.session.add(admin)
         await self.session.flush()
@@ -116,7 +117,7 @@ class AdminService:
 
     async def login(self, data: AdminLogin) -> tuple[str, str]:
         admin = await self.session.scalar(select(AdminUser).where(AdminUser.email == data.email.lower()))
-        if admin is None or not verify_password(admin.password_hash, data.password):
+        if admin is None or admin.disabled_at is not None or not verify_password(admin.password_hash, data.password):
             raise Unauthorized("Wrong email or password")
         pair = await self._tokens(admin)
         await self.session.commit()
@@ -133,7 +134,7 @@ class AdminService:
         if session is None or session.revoked_at is not None or session.expires_at <= now:
             raise Unauthorized("Sign in again")
         admin = await self.session.get(AdminUser, session.admin_user_id)
-        if admin is None:
+        if admin is None or admin.disabled_at is not None:
             raise Unauthorized("That admin account is gone")
         pair = await self._tokens(admin, existing=session)
         await self.session.commit()
@@ -154,20 +155,7 @@ class AdminService:
             await self.session.commit()
 
     async def read(self, admin: AdminUser) -> AdminRead:
-        workspace = (
-            await self.session.get(Workspace, admin.workspace_id) if admin.workspace_id is not None else None
-        )
-        return AdminRead(
-            id=admin.id,
-            email=admin.email,
-            name=admin.name,
-            workspace=(
-                AdminWorkspace(id=workspace.id, name=workspace.name, slug=workspace.slug, kind=workspace.kind.value)
-                if workspace is not None
-                else None
-            ),
-            created_at=admin.created_at,
-        )
+        return AdminRead(id=admin.id, email=admin.email, name=admin.name, role=admin.role, created_at=admin.created_at)
 
 
 async def get_admin(
@@ -202,9 +190,28 @@ async def get_admin(
     admin = await session.get(AdminUser, admin_id)
     if admin is None:
         raise Unauthorized("That admin account is gone")
+    if admin.disabled_at is not None:
+        raise Unauthorized("Sign in to the Admin app again")
     return admin
 
 
 AdminDep = Annotated[AdminUser, Depends(get_admin)]
+
+
+def session_id_of(access_token: str, settings: Settings) -> uuid.UUID:
+    """The session an access token names (it was checked by `get_admin` already)."""
+    claims = jwt.decode(
+        access_token, settings.jwt_secret.get_secret_value(), algorithms=["HS256"], issuer=settings.jwt_issuer
+    )
+    return uuid.UUID(claims["sid"])
+
+
+def require_owner(admin: AdminDep) -> AdminUser:
+    if admin.role != "owner":
+        raise Forbidden("Only an owner can manage admins")
+    return admin
+
+
+OwnerDep = Annotated[AdminUser, Depends(require_owner)]
 
 

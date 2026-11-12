@@ -18,6 +18,10 @@ import { useState, type ReactNode } from "react";
 import {
   call,
   put,
+  send,
+  type AdminAccount,
+  type AdminInvite,
+  type AdminRole,
   type AuditEvent,
   type CodingRow,
   type Counts,
@@ -26,6 +30,7 @@ import {
   type FailureGroup,
   type Failures,
   type Health,
+  type Me,
   type ModelRow,
   type Page,
   type Run,
@@ -697,6 +702,7 @@ const size = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 
 /** Used of the limit that applies, with a way to set this workspace's own: MB, 0 for none, blank for the deployment's default. */
 function StorageCell({ w }: { w: WorkspaceRow }) {
   const qc = useQueryClient();
+  const owner = qc.getQueryData<Me>(["me"])?.role === "owner";
   const save = useMutation({
     mutationFn: (mb: number | null) => put<void>("/admin/storage-limit", { workspace_id: w.id, storage_limit_mb: mb }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workspaces"] }),
@@ -717,9 +723,11 @@ function StorageCell({ w }: { w: WorkspaceRow }) {
         {size(w.used_bytes)} / {limit === null ? "no limit" : size(limit)}
       </span>
       {w.storage_limit_mb !== null && <span className="tag">own limit</span>}
-      <button className="link" type="button" onClick={edit} disabled={save.isPending}>
-        Edit
-      </button>
+      {owner && (
+        <button className="link" type="button" onClick={edit} disabled={save.isPending}>
+          Edit
+        </button>
+      )}
     </span>
   );
 }
@@ -872,6 +880,186 @@ export function AuditPage() {
             empty="Nothing recorded."
             rowKey={(e) => e.id}
           />
+        )}
+      </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Admins
+
+const ROLE_LABEL: Record<AdminRole, string> = { owner: "Owner", viewer: "Viewer" };
+
+/** Owners only: who can sign in to this console, invites, roles, disabling and removing. */
+export function AdminsPage({ meId }: { meId: string }) {
+  const now = useTick();
+  const qc = useQueryClient();
+  const admins = useQuery({ queryKey: ["admins"], queryFn: () => call<AdminAccount[]>("/admin/admins") });
+  const invites = useQuery({ queryKey: ["admin-invites"], queryFn: () => call<AdminInvite[]>("/admin/admins/invites") });
+  const [form, setForm] = useState<{ email: string; role: AdminRole }>({ email: "", role: "viewer" });
+  const [made, setMade] = useState<AdminInvite | null>(null);
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ["admins"] }), qc.invalidateQueries({ queryKey: ["admin-invites"] })]);
+  const fail = (e: Error) => window.alert(e.message);
+
+  const invite = useMutation({
+    mutationFn: () => send<AdminInvite>("/admin/admins/invites", "POST", form),
+    onSuccess: (res) => {
+      setMade(res);
+      setForm({ email: "", role: form.role });
+      void refresh();
+    },
+    onError: fail,
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => send(`/admin/admins/invites/${id}`, "DELETE"),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const change = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { role?: AdminRole; disabled?: boolean } }) => send(`/admin/admins/${id}`, "PATCH", body),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => send(`/admin/admins/${id}`, "DELETE"),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const busy = change.isPending || remove.isPending;
+
+  return (
+    <>
+      <PageHead title="Admins" sub="Who can sign in to this console. Owners manage admins; viewers can only read." />
+      <Card title="Invite an admin">
+        <form
+          className="ad-invite"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setMade(null);
+            invite.mutate();
+          }}
+        >
+          <input
+            className="input"
+            type="email"
+            placeholder="Email address"
+            aria-label="Email address"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            required
+          />
+          <select className="input" aria-label="Role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as AdminRole })}>
+            <option value="viewer">Viewer: reads only</option>
+            <option value="owner">Owner: manages admins</option>
+          </select>
+          <button type="submit" className="btn btn-primary" disabled={invite.isPending}>
+            {invite.isPending ? "Inviting…" : "Send invite"}
+          </button>
+        </form>
+        {made && (
+          <p className="ad-note" role="status">
+            {made.emailed ? `Invite emailed to ${made.email}. It works once and expires in 72 hours.` : made.note}
+            {made.link_path && (
+              <>
+                {" "}
+                <code className="mono">{`${location.origin}${made.link_path}`}</code>
+              </>
+            )}
+          </p>
+        )}
+      </Card>
+      <Card title="Admins" flush>
+        {admins.isError ? (
+          <Failed error={admins.error} />
+        ) : admins.isPending ? (
+          <Loading />
+        ) : (
+          <table className="ad-table">
+            <thead>
+              <tr>
+                <th>Admin</th>
+                <th>Role</th>
+                <th>Last sign-in</th>
+                <th>State</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {admins.data.map((a) => {
+                const me = a.id === meId;
+                return (
+                  <tr key={a.id}>
+                    <td>
+                      <b>{a.name}</b> <span className="mono dim">{a.email}</span>
+                      {me && <span className="tag">you</span>}
+                    </td>
+                    <td>{ROLE_LABEL[a.role]}</td>
+                    <td>{a.last_sign_in_at ? <span title={when(a.last_sign_in_at)}>{ago(a.last_sign_in_at, now)}</span> : "never"}</td>
+                    <td>{a.disabled_at ? <Pill tone="warn">Disabled</Pill> : <Pill tone="good">Active</Pill>}</td>
+                    <td className="ad-row-actions">
+                      <button
+                        className="link"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          const role: AdminRole = a.role === "owner" ? "viewer" : "owner";
+                          if (window.confirm(`Make ${a.email} ${role === "owner" ? "an owner" : "a viewer"}?`)) change.mutate({ id: a.id, body: { role } });
+                        }}
+                      >
+                        {a.role === "owner" ? "Make viewer" : "Make owner"}
+                      </button>
+                      <button
+                        className="link"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          const disabled = !a.disabled_at;
+                          if (!disabled || window.confirm(`Disable ${a.email}? They are signed out everywhere.`))
+                            change.mutate({ id: a.id, body: { disabled } });
+                        }}
+                      >
+                        {a.disabled_at ? "Enable" : "Disable"}
+                      </button>
+                      <button
+                        className="link"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => window.confirm(`Remove ${a.email}? Their account is deleted and they are signed out.`) && remove.mutate(a.id)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </Card>
+      <Card title="Pending invites" flush>
+        {invites.isError ? (
+          <Failed error={invites.error} />
+        ) : invites.isPending ? (
+          <Loading />
+        ) : invites.data.length === 0 ? (
+          <Empty>No invites waiting.</Empty>
+        ) : (
+          <table className="ad-table">
+            <tbody>
+              {invites.data.map((i) => (
+                <tr key={i.id}>
+                  <td className="mono">{i.email}</td>
+                  <td>{ROLE_LABEL[i.role]}</td>
+                  <td>expires {ago(i.expires_at, now)}</td>
+                  <td className="ad-row-actions">
+                    <button className="link" type="button" disabled={revoke.isPending} onClick={() => revoke.mutate(i.id)}>
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </Card>
     </>

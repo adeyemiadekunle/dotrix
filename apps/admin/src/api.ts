@@ -56,7 +56,42 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
-export type Me = { email: string; name: string };
+/** A change (POST, PATCH, DELETE), with the same one retry after a refresh as `call`. */
+export async function send<T = void>(path: string, method: "POST" | "PATCH" | "DELETE" | "PUT", body?: unknown): Promise<T> {
+  try {
+    return await rawCall<T>(path, { method, body });
+  } catch (e) {
+    if ((e as ApiError).status !== 401) throw e;
+    if (!(await refreshSession())) throw e;
+    return rawCall<T>(path, { method, body });
+  }
+}
+
+export type AdminRole = "owner" | "viewer";
+
+export type Me = { id: string; email: string; name: string; role: AdminRole };
+
+export type AdminAccount = {
+  id: string;
+  email: string;
+  name: string;
+  role: AdminRole;
+  created_at: string;
+  disabled_at: string | null;
+  last_sign_in_at: string | null;
+};
+
+export type AdminInvite = {
+  id: string;
+  email: string;
+  role: AdminRole;
+  created_at: string;
+  expires_at: string;
+  invited_by: string | null;
+  emailed: boolean;
+  link_path: string | null;
+  note: string | null;
+};
 
 type StuckRun = { kind: "chat" | "coding"; id: string; status: string; workspace: string; label: string | null; lease_expired_at: string | null };
 

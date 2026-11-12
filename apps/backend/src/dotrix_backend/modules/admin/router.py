@@ -3,11 +3,12 @@ platform's observability across every workspace, never what people wrote, and ne
 users' session."""
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Cookie, Depends, Query, Request, Response, status
 
-from dotrix_backend.api.deps import SessionDep, SettingsDep
+from dotrix_backend.api.deps import EmailDep, SessionDep, SettingsDep
 from dotrix_backend.core.errors import Forbidden, Unauthorized
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.core.settings import Settings
@@ -26,8 +27,22 @@ from dotrix_backend.modules.admin.schemas import (
 )
 from dotrix_backend.modules.auth.limits import LOGIN, ThrottleDep
 
-from .schemas import AdminBootstrap, AdminLogin, AdminRead, AdminSignup
-from .service import AdminDep, AdminService
+from .accounts import AdminAccounts
+from .schemas import (
+    AdminBootstrap,
+    AdminInviteAccept,
+    AdminInviteCreate,
+    AdminInvitePreview,
+    AdminInvitePreviewRequest,
+    AdminInviteRead,
+    AdminListed,
+    AdminLogin,
+    AdminPasswordChange,
+    AdminRead,
+    AdminSignup,
+    AdminUpdate,
+)
+from .service import AdminDep, AdminService, OwnerDep, session_id_of
 
 
 def require_admin_header(request: Request) -> None:
@@ -131,6 +146,96 @@ async def admin_me(admin: AdminDep, svc: Service) -> AdminRead:
     return await svc.read(admin)
 
 
+def get_admin_accounts(session: SessionDep, settings: SettingsDep, email: EmailDep) -> AdminAccounts:
+    return AdminAccounts(session, settings, email)
+
+
+Accounts = Annotated[AdminAccounts, Depends(get_admin_accounts)]
+
+
+@router.get("/admins", responses=errors(403))
+async def list_admins(owner: OwnerDep, accounts: Accounts) -> list[AdminListed]:
+    """Every admin account with its role, state and last sign-in. Owners only."""
+    return await accounts.list()
+
+
+@router.post("/admins/invites", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422, 429))
+async def invite_admin(data: AdminInviteCreate, owner: OwnerDep, accounts: Accounts, throttle: ThrottleDep) -> AdminInviteRead:
+    """Invite someone by email as an owner or a viewer: a link valid for 72 hours, usable once.
+    An earlier pending invite for the same address is revoked. Owners only. The token is never in
+    the response, except the link's path when `DOTRIX_ADMIN_URL` is not set and nothing could be emailed."""
+    await throttle(LOGIN, data.email)
+    return await accounts.invite(owner, data)
+
+
+@router.get("/admins/invites", responses=errors(403))
+async def list_admin_invites(owner: OwnerDep, accounts: Accounts) -> list[AdminInviteRead]:
+    """Invites not yet accepted, revoked or expired. Owners only."""
+    return await accounts.pending_invites()
+
+
+@router.delete("/admins/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 404, 422))
+async def revoke_admin_invite(invite_id: uuid.UUID, owner: OwnerDep, accounts: Accounts) -> None:
+    """Revoke a pending invite. Owners only."""
+    await accounts.revoke_invite(invite_id)
+
+
+@router.post("/invites/preview", responses=errors(400, 422, 429))
+async def preview_admin_invite(
+    data: AdminInvitePreviewRequest, accounts: Accounts, throttle: ThrottleDep
+) -> AdminInvitePreview:
+    """The email and role an invite is for, without using it up. No sign-in. The token goes in the body."""
+    await throttle(LOGIN, data.token)
+    invite = await accounts.preview(data.token)
+    return AdminInvitePreview(email=invite.email, role=invite.role)
+
+
+@router.post("/invites/accept", status_code=status.HTTP_204_NO_CONTENT, responses=errors(400, 409, 422, 429))
+async def accept_admin_invite(
+    data: AdminInviteAccept, accounts: Accounts, response: Response, throttle: ThrottleDep
+) -> None:
+    """Use an invite up: create the admin with the invite's email and role, and sign it in. No sign-in needed."""
+    await throttle(LOGIN, data.token)
+    access, refresh = await accounts.accept(data)
+    _set_session(response, access, refresh, accounts.settings)
+
+
+@router.patch("/admins/{admin_id}", responses=errors(403, 404, 409, 422))
+async def update_admin(admin_id: uuid.UUID, data: AdminUpdate, owner: OwnerDep, accounts: Accounts) -> AdminListed:
+    """Change an admin's role, or disable or re-enable them (disabling signs them out everywhere).
+    The last active owner can't be demoted or disabled. Owners only."""
+    return await accounts.update(admin_id, data)
+
+
+@router.delete("/admins/{admin_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 404, 409, 422))
+async def remove_admin(admin_id: uuid.UUID, owner: OwnerDep, accounts: Accounts) -> None:
+    """Delete an admin account and its sessions. The last active owner can't be removed. Owners only."""
+    await accounts.remove(admin_id)
+
+
+@router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 422))
+async def change_admin_password(
+    data: AdminPasswordChange,
+    admin: AdminDep,
+    accounts: Accounts,
+    dtx_admin_access: Annotated[str | None, Cookie()] = None,
+) -> None:
+    """Change your own password (at least 12 characters). Your other sessions are signed out; this one stays."""
+    assert dtx_admin_access
+    await accounts.change_password(
+        admin, data.current_password, data.new_password, session_id_of(dtx_admin_access, accounts.settings)
+    )
+
+
+@router.post("/me/sessions/revoke-others", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_other_admin_sessions(
+    admin: AdminDep, accounts: Accounts, dtx_admin_access: Annotated[str | None, Cookie()] = None
+) -> None:
+    """Sign out everywhere else, keeping this session."""
+    assert dtx_admin_access
+    await accounts.revoke_other_sessions(admin, session_id_of(dtx_admin_access, accounts.settings))
+
+
 def get_admin_runs(session: SessionDep, settings: SettingsDep) -> AdminRunService:
     return AdminRunService(session, settings)
 
@@ -193,12 +298,12 @@ async def observe_workspaces(
     return await platform.workspaces(days, limit)
 
 
-@router.put("/storage-limit", status_code=status.HTTP_204_NO_CONTENT, responses=errors(404, 422))
-async def set_workspace_storage_limit(data: StorageLimitUpdate, admin: AdminDep, svc: Service) -> None:
+@router.put("/storage-limit", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 404, 422))
+async def set_workspace_storage_limit(data: StorageLimitUpdate, admin: OwnerDep, svc: Service) -> None:
     """Set one workspace's limit on uploads (document originals and task attachments), in MB:
     0 is unlimited, null follows the deployment's `DOTRIX_WORKSPACE_STORAGE_MB`. Nothing is deleted
     when it is lowered; the workspace just can't add more until it is under. Audited in the
-    workspace's log (`workspace.storage_limit_updated`)."""
+    workspace's log (`workspace.storage_limit_updated`). Owners only."""
     await svc.set_storage_limit(admin, data.workspace_id, data.storage_limit_mb)
 
 

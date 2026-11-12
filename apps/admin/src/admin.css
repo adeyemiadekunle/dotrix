@@ -858,3 +858,56 @@ body {
     margin-left: 0;
   }
 }
+
+/* Admins page, the change-password dialog */
+.ad-invite {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ad-invite .input[type="email"] {
+  flex: 1 1 240px;
+}
+.ad-note {
+  margin-top: 10px;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.ad-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.ad-table th {
+  text-align: left;
+  color: var(--text-3);
+  font-weight: 500;
+  font-size: var(--fs-xs);
+}
+.ad-table th,
+.ad-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ad-row-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.ad-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--text) 40%, transparent);
+}
+.ad-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

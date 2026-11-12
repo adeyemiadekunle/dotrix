@@ -68,7 +68,7 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     await _admin(db_client)
 
     me = (await db_client.get("/v1/admin/me")).json()
-    assert me["email"] == "admin@example.com" and me["workspace"] is None
+    assert me["email"] == "admin@example.com" and me["role"] == "owner" and "workspace" not in me
 
     ws = (await db_client.get("/v1/workspaces", headers=owner.headers)).json()[0]
     base = f"/v1/workspaces/{ws['id']}"
