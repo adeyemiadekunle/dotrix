@@ -1,8 +1,8 @@
 """Admin accounts: a separate identity for the Admin app (apps/admin), never an app user.
 
-An admin account is created by proving ownership of a workspace once (the owner's own
-email and password at sign-up) and stays bound to that workspace; afterwards the admin signs
-in with its own credentials only. Phase 1: personal workspaces."""
+An admin account is created with the deployment's setup token (the first account) or from the
+server's command line (`python -m dotrix_backend.admin_cli`); it signs in with its own
+credentials only."""
 from __future__ import annotations
 
 import uuid
