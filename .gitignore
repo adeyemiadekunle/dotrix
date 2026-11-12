@@ -46,3 +46,7 @@ apps/desktop/release/
 
 # taste-skill working files
 .taste-skill/
+
+# Local Redis snapshots
+dump.rdb
+*.rdb

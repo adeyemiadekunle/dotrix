@@ -33,6 +33,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - A coding session's sandbox is shut down when it can't be checked for reuse, and the turn starts in a fresh one.
 - A push or a failed CI run reported by GitHub while the job queue is briefly unavailable is still followed up (the checkout synced, Juno asked to look); before, it could be skipped.
 - A workspace or project with more than 5,000 tasks now shows all of them.
+- The README's CLI install instructions now describe installs that work (the release download, or a checkout).
 - Kai's changes to files that aren't UTF-8 text (older encodings such as Latin-1) are now pushed exactly as written, from cloud and local turns; before, cloud turns replaced those characters and local turns refused them.
 - A turn coded on your computer now delivers every step to the session, including the last ones, and a turn that changed a file that isn't UTF-8 text now fails with a clear reason instead of sending damaged changes.
 - A new reply in Chat no longer opens showing the previous reply's text, and a reply in a conversation across projects keeps streaming after a dropped connection.
@@ -56,6 +57,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Security
 
+- Updated a routing dependency for two moderate advisories.
 - If an account's email was never verified, signing in to it with GitHub or an emailed link (or resetting its password) now removes the password set before that and signs out every browser, app and API token, so nobody who registered the address earlier keeps access. Verified accounts are unchanged.
 - The app and the admin console can no longer be shown inside another website's frame, and they send stricter content-type and referrer headers.
 - Creating the admin console's first account now needs the deployment's setup token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN); without it, admin sign-up stays closed on a deployed server.
