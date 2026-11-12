@@ -462,3 +462,82 @@ async def test_a_utf8_change_is_still_sent_as_a_patch(tmp_path: Path) -> None:
     [result] = results
     assert result["outcome"] == "changes" and "+café" in result["patch"]
     assert base64.b64decode(result["patch_b64"]).decode() == result["patch"]
+
+
+def _flaky_runner(tmp_path: Path, errors: list, **kwargs):
+    claims: list[int] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            claims.append(1)
+            if errors:
+                raise errors.pop(0)
+            return {"run": None}
+
+    return LocalRunner(api=Api(), repo=tmp_path, workspace_id="w", project_id="p", runner_id="r1", **kwargs), claims
+
+
+async def _serve_until(runner, stop, monkeypatch, done) -> None:
+    import asyncio
+
+    from dotrix_cli import runner as runner_module
+
+    monkeypatch.setattr(runner_module, "BACKOFF_START", 0.01)
+    monkeypatch.setattr(runner_module, "BACKOFF_MAX", 0.02)
+    task = asyncio.create_task(runner.serve(poll_seconds=0.01, stop=stop))
+    for _ in range(500):
+        if done() or task.done():
+            break
+        await asyncio.sleep(0.01)
+    stop.set()
+    await asyncio.wait_for(task, 2)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("status", [0, 503, 429])
+async def test_serve_waits_out_a_transient_failure(tmp_path: Path, monkeypatch, status: int) -> None:
+    import asyncio
+
+    from dotrix_cli.platform import PlatformError
+
+    errors = [PlatformError(status, "unreachable", "Can't reach"), PlatformError(status, "unreachable", "Can't reach")]
+    said: list[str] = []
+    events: list[dict] = []
+    runner, claims = _flaky_runner(tmp_path, errors, echo=said.append, notify=events.append)
+    await _serve_until(runner, asyncio.Event(), monkeypatch, lambda: len(claims) >= 4)
+    assert len(claims) >= 4 and not errors
+    assert said.count("Can't reach dotrix; trying again…") == 1 and said.count("Connected again") == 1
+    assert [e["event"] for e in events if e["event"] in ("offline", "online")] == ["offline", "offline", "online"]
+    assert all(e["retry_in"] > 0 for e in events if e["event"] == "offline")
+
+
+async def test_serve_still_stops_on_an_auth_error(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+
+    import pytest
+
+    from dotrix_cli.platform import PlatformError
+
+    runner, _ = _flaky_runner(tmp_path, [PlatformError(401, "unauthorized", "Signed out")])
+    with pytest.raises(PlatformError) as caught:
+        await asyncio.wait_for(runner.serve(poll_seconds=0.01), 2)
+    assert caught.value.status == 401
+
+
+async def test_stop_ends_the_wait_between_retries(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+
+    from dotrix_cli import runner as runner_module
+    from dotrix_cli.platform import PlatformError
+
+    monkeypatch.setattr(runner_module, "BACKOFF_START", 30.0)
+    monkeypatch.setattr(runner_module, "BACKOFF_MAX", 60.0)
+    runner, claims = _flaky_runner(tmp_path, [PlatformError(0, "unreachable", "x")] * 5)
+    stop = asyncio.Event()
+    task = asyncio.create_task(runner.serve(poll_seconds=0.01, stop=stop))
+    while not claims:
+        await asyncio.sleep(0.01)
+    stop.set()
+    await asyncio.wait_for(task, 1)
