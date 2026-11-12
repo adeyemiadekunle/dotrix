@@ -451,3 +451,42 @@ J07 readiness: onboarding, project Overview and empty task views share one read-
 First workspace onboarding (J08): one login keeps its private personal workspace. The optional first onboarding step defaults to Personal; Skip persists that choice. Choosing Organisation requires a name and creates a separate organisation owned by the current person. The server serializes the saved choice per user; retries reuse the same workspace and a conflicting saved choice must be reviewed. Reconcile newly observed choices from background profile refetches as well as submission recovery before exposing project setup; retain explicit project contexts once setup has advanced. Organisation names stay out of URLs. Existing accounts are backfilled to their owned personal workspace. Explicit invitation/return destinations and later project setup bypass registration choice. Personal-to-organisation conversion is removed from API, service and UI; project moves in both directions retain their existing permission and privacy checks. Workspace, Project, optional GitHub, Model and Ready have named stepper progress; Back and refresh retain saved IDs, and no model calls or project creation happen in the workspace step.
 
 General chat has no selected projects and receives no project context. New chats choose General or one specific project; do not offer All projects or a project multi-select. Historical cross-project conversations retain their recorded access scopes.
+
+
+## Planning implementation (2026-11-11)
+
+Plan mode now removes project mutation capabilities from the effective contracts, rejects
+mutating specialist batches, and retains private plan saving. Saved plans reject dependency
+cycles; version allocation holds the project lock. Build requests accept `plan_id`, validate
+it against the private conversation and pin it on the run; older clients without a selection
+pin the latest plan at admission. Kai receives that plan's full tasks and acceptance criteria
+in the approval-visible brief, including follow-ups. New built-in skills cover executable
+planning and plan review; coding briefs also include custom skills with no role restriction.
+
+Codes now exposes Plan/Build turns and a private saved JSON plan with an explicit Build action.
+Plan turns wrap every coding engine in a Linux Landlock process boundary: only fresh scratch
+storage is writable. Unsupported kernels, runtimes or architectures refuse execution before the
+model process starts. Local-computer runners do not accept Plan turns. Validate this boundary
+inside the deployed coding image before exposing Plan mode to users; this environment refuses
+Landlock, so its refusal is tested and successful deployed execution is still unverified.
+
+Saved plans accept optional typed execution metadata: repository, base SHA, constraints,
+exclusions and complete task specifications. `DOTRIX_CODING_PARALLEL` defaults false. When
+explicitly enabled, coding builds with execution metadata use isolated sandbox copies per task,
+a maximum of two workers subject to available worker slots, persisted task attempts and patch
+results fenced by the parent lease, path-scope validation and serial integration. Dependents
+start from integrated prerequisites. Combined checks run before the existing acceptance and
+publication path. Task status/checks stream through Codes; Juno retains the existing post-PR
+review flow. Human merge is unchanged. Recovery reuses saved verified patches only at the
+same plan base and rebuilds the combined checkout, avoiding duplicate external publication.
+
+Skill catalogs are pinned with content hashes per run; specialist children inherit the parent's
+catalog. Chat role filters apply to `read_skill`; coding briefs include their pinned role catalog
+in full so all four coding runtimes and their workers receive the same content. Catalogs are
+bounded to 256 KB and do not grant tools. Defaults are virtual during guidance reads, which no
+longer write template/skill files into a project. Existing project skill customizations win.
+
+Deployment validation still required: all four paid coding engines under the read-only wrapper,
+distributed crash/recovery and cancellation under load, and actual gVisor/OpenShell compatibility.
+The feature flag must stay off until these checks pass. Skills currently embed their procedures;
+external skill-package imports and separately downloadable skill resources are not implemented.

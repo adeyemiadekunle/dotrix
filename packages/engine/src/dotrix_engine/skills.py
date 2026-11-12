@@ -34,6 +34,40 @@ A change is done when all of these hold; say how each was checked, or why it cou
 """
 
 SKILLS: dict[str, str] = {
+    "write-an-executable-plan": """# Skill: write an executable plan
+Description: Turn repository evidence and a goal into a self-contained implementation plan.
+Agents: project-manager, architecture, product, coding
+When: plan, planning, implementation plan
+
+## Steps
+1. Read the relevant code, repository guidance and product decisions. Cite paths and record the
+   revision inspected; distinguish verified behavior from assumptions and unresolved questions.
+2. State the goal, acceptance criteria, constraints and explicit exclusions. Resolve questions
+   that change the implementation before calling the plan ready to build.
+3. Split work into tasks with dependencies, owned files, required interfaces and concrete checks.
+   Shared schemas, generated files, migrations and lockfiles need one owner and dependency order.
+4. Make each task understandable without this conversation: include necessary evidence, inputs,
+   expected outputs, verification commands and conditions under which execution must stop.
+5. Delegate independent read-only investigations only through the platform's available tools.
+   A skill grants no tools or permission. In Plan mode, do not change code, documents or boards.
+6. Save the versioned private plan with the platform tool when available. Report open questions
+   and unverified commands; do not claim that a plan or a review authorizes execution.
+""",
+    "review-an-executable-plan": """# Skill: review an executable plan
+Description: Check that a proposed plan is grounded, bounded and independently executable.
+Agents: reviewer, architecture, project-manager
+When: plan, planning, implementation plan
+
+## Steps
+1. Reread the cited code and product decisions. Reject claims without evidence and identify
+   drift between the plan's revision and the current repository.
+2. Check that dependencies form an acyclic graph and that every task has checkable outcomes.
+3. Examine shared interfaces and file ownership. Different filenames alone do not establish
+   independence; flag integration work and missing shared-contract decisions.
+4. Check the verification commands, failure handling and stop conditions. Say which checks
+   were executed and which were only inspected.
+5. Return actionable corrections to the coordinator. Review is not build or merge approval.
+""",
     "write-an-adr": """# Skill: write an ADR
 Description: Record an architecture decision so it can be followed and later superseded.
 Agents: architecture, documentation, project-manager

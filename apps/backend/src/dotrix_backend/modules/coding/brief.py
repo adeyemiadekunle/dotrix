@@ -25,9 +25,9 @@ from dotrix_engine.skills import (
     SKILLS_FOLDER,
     default_skills,
     describe_skill,
-    skill_agents,
     skill_matches,
     skill_name,
+    skills_for,
 )
 
 from .fences import defuse, fence
@@ -124,8 +124,8 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
     skills = await WorkspaceSkills(session).texts(project.workspace_id)
     skills |= {skill_name(path): text for path, text in default_skills().items() if path not in ever}
     skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
-    kais = {name: text for name, text in sorted(skills.items())
-            if "coding" in (skill_agents(text) or ()) and name != "definition-of-done"}
+    kais = {name: text for name, text in sorted(skills_for(skills, "coding").items())
+            if name != "definition-of-done"}
     mine = {name: text for name, text in kais.items() if skill_matches(text, work)}
     others = {name: text for name, text in kais.items() if name not in mine}
     rules = []

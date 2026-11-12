@@ -101,6 +101,12 @@ WAITING = frozenset({CodingRunStatus.AWAITING_APPROVAL, CodingRunStatus.CHANGES_
 
 
 class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    work_mode: Mapped[str] = mapped_column(String(8), default="build", server_default="build")
+    plan_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    execution_plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    skill_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    task_records: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
     __tablename__ = "coding_runs"
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)

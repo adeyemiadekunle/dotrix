@@ -6,7 +6,7 @@ session to an admitted platform run; session IDs supplied by a model are not aut
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from langchain_core.tools import StructuredTool
@@ -40,6 +40,7 @@ class RuntimeRunScope:
     agent: str
     lease_token: int
     session_id: str
+    skill_snapshot: dict[str, str] | None = field(default=None, compare=False)
 
 
 async def _authorize_read(
@@ -87,6 +88,7 @@ def scoped_knowledge_tools(
     tools = []
     for fn in build_knowledge_tools(
         sessions, workspace_id=scope.workspace_id, project_id=scope.project_id, embedder=embedder,
+        skill_snapshot=scope.skill_snapshot,
     ):
         tool = StructuredTool.from_function(coroutine=fn)
         capability = tool_id(tool)

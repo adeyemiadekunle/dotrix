@@ -9,7 +9,23 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Fixed
+
+- Building a saved plan pins its version and includes its tasks and acceptance criteria in Kai's approval brief.
+- Kai receives custom skills intended for every agent as well as coding-specific skills.
+- Plan mode restricts agents to read-only project work and saved plans, rejects mutating specialist delegation, and detects cyclic plan dependencies.
+
 ### Changed
+
+- Codes shows expandable background tasks for every turn, including saved activity, command output, verification results and live status.
+
+- Codes supports private Plan turns and an explicit Build action; read-only planning refuses hosts that cannot enforce its filesystem boundary.
+- Coding can execute independent plan tasks in separate sandboxes behind `DOTRIX_CODING_PARALLEL`, with scope checks, saved task results, combined verification and one existing approval/publication flow.
+- Agent runs pin versioned skill catalogs; specialists inherit their parent catalog and Kai's workers receive its saved instructions.
+
+- Saved plans can include repository revisions, task ownership, implementation instructions, checks and stop conditions, shown in the plan card. Incomplete or cyclic execution specifications are rejected.
+
+- Agents have shared procedures for writing and reviewing executable plans, including dependencies, ownership, evidence and verification.
 
 - Approve and Reject work in place in the agents panel and the corner notices for everything that waits on you: Kai's turns waiting to start or with checked changes to push, and all of an agent's waiting changes, not only a single board change. A plan to steer still opens, since it needs your choice.
 - Saving a setting (your models and keys, the workspace's permissions and approval limits, an agent, a repository) refreshes only what it affects. Before, it reloaded the whole workspace.

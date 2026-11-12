@@ -28313,6 +28313,27 @@
       },
       "CodingFollowUp": {
         "properties": {
+          "work_mode": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "build"
+            ],
+            "title": "Work Mode",
+            "default": "build"
+          },
+          "source_plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Plan Id"
+          },
           "message": {
             "type": "string",
             "maxLength": 5000,
@@ -28404,6 +28425,15 @@
       },
       "CodingRunCreate": {
         "properties": {
+          "work_mode": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "build"
+            ],
+            "title": "Work Mode",
+            "default": "build"
+          },
           "note": {
             "anyOf": [
               {
@@ -28463,6 +28493,34 @@
       },
       "CodingRunRead": {
         "properties": {
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/CodingTaskRead"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "work_mode": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "build"
+            ],
+            "title": "Work Mode",
+            "default": "build"
+          },
+          "plan_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Result"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -29416,6 +29474,49 @@
         "type": "object",
         "title": "CodingSessionUpdate"
       },
+      "CodingTaskRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "Attempt",
+            "default": 0
+          },
+          "owned_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Owned Paths"
+          },
+          "checks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "usage": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Usage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "status"
+        ],
+        "title": "CodingTaskRead"
+      },
       "CodingToolOption": {
         "properties": {
           "agent": {
@@ -30330,6 +30431,113 @@
           "percent"
         ],
         "title": "EpicProgress"
+      },
+      "ExecutionSpec": {
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+            "title": "Repository"
+          },
+          "base_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Base Sha"
+          },
+          "constraints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Constraints"
+          },
+          "exclusions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Exclusions"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionTask"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Tasks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "repository",
+          "base_sha",
+          "tasks"
+        ],
+        "title": "ExecutionSpec"
+      },
+      "ExecutionTask": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "title": "Key"
+          },
+          "task_number": {
+            "type": "integer",
+            "maximum": 40.0,
+            "minimum": 1.0,
+            "title": "Task Number",
+            "description": "The corresponding saved plan task, from 1"
+          },
+          "owned_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Owned Paths"
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 12000,
+            "minLength": 1,
+            "title": "Instructions"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedCheck"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Checks"
+          },
+          "stop_conditions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Stop Conditions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "task_number",
+          "owned_paths",
+          "instructions",
+          "checks",
+          "stop_conditions"
+        ],
+        "title": "ExecutionTask"
       },
       "FailureGroup": {
         "properties": {
@@ -34019,6 +34227,16 @@
             "type": "array",
             "title": "Open Questions"
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -34067,6 +34285,29 @@
           "depends_on"
         ],
         "title": "PlanTaskRead"
+      },
+      "PlannedCheck": {
+        "properties": {
+          "command": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Command"
+          },
+          "expected": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Expected"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "command",
+          "expected"
+        ],
+        "title": "PlannedCheck"
       },
       "PlatformAuditEvent": {
         "properties": {
@@ -36096,7 +36337,7 @@
                 "type": "null"
               }
             ],
-            "description": "How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Changes wait for approval in every mode; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools)"
+            "description": "How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Plan permits reads and private plan saves only; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools)"
           },
           "approval_mode": {
             "anyOf": [
@@ -36108,6 +36349,19 @@
               }
             ],
             "description": "How much goes through without waiting: `manual` (every change waits for a yes; the default), `accept_edits` (what you ask for goes through, recorded as approved by you, and coding starts at once), `auto` (the same, and checkpoints don't pause). Never above the workspace's cap, and Manual for people who may not approve agent changes"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id",
+            "description": "Exact private plan version to build in this conversation"
           },
           "mentions": {
             "items": {

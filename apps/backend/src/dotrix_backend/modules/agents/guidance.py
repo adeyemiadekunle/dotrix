@@ -1,8 +1,6 @@
 """Layered guidance shared by project chat runtimes."""
 from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
-from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
 from dotrix_backend.modules.lessons.service import lessons_path
-from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
 from dotrix_engine.layout import AGENTS
 from dotrix_engine.skills import (
@@ -15,18 +13,13 @@ from dotrix_engine.skills import (
 from dotrix_engine.templates import TEMPLATES_GUIDE, default_templates
 
 
-async def project_rules(session, project_id, handles=None, workspace_id=None) -> dict[str, str]:
+async def project_rules(session, project_id, handles=None, workspace_id=None, skill_snapshot=None) -> dict[str, str]:
     files = await KnowledgeRepository(session).list_files(project_id)
     names = ("base", *AGENTS, *(handles or []))
     live = {f.path: f.content for f in files if not f.deleted}
     ever = {f.path for f in files}  # a deleted template or skill stays deleted
     missing = {path: text for path, text in {**default_templates(), **default_skills()}.items() if path not in ever}
-    if missing:
-        project = await session.get(Project, project_id)
-        knowledge = KnowledgeService(session)
-        for path, text in missing.items():
-            await knowledge.write(project, path, text, Actor.system(), message="Default template or skill")
-            live[path] = text
+    live.update(missing)  # Virtual defaults: reading guidance never mutates the project.
     rules = {name: live[f"agent-rules/{name}.md"] for name in names if f"agent-rules/{name}.md" in live}
     for name in names:
         lessons = live.get(lessons_path(name), "").strip()
@@ -41,6 +34,8 @@ async def project_rules(session, project_id, handles=None, workspace_id=None) ->
         skills = await WorkspaceSkills(session).texts(workspace_id)
     # The project's own skills win over the workspace's of the same name.
     skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
+    if skill_snapshot is not None:
+        skills = skill_snapshot
     # Skills for every agent go with the base rules; a skill naming its agents, with theirs only.
     shared = {name: text for name, text in skills.items() if skill_agents(text) is None}
     rules["base"] = "\n\n".join(part for part in (rules.get("base", "").rstrip(), TEMPLATES_GUIDE, skills_guide(shared)) if part)

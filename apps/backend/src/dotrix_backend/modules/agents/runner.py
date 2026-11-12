@@ -70,6 +70,7 @@ from dotrix_engine.agent import PM_ROLE, briefing_system_prompt, build_team, rol
 from dotrix_engine.code import build_code_tools
 from dotrix_engine.contracts import AgentPolicy, AgentSpec
 from dotrix_engine.delegation import SpecialistResult
+from dotrix_engine.work_modes import planning_spec
 
 from .activity import WEIGHING_SPECIALISTS, WRITING, activity_label, result_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
@@ -599,7 +600,11 @@ class AgentRunner:
                 executing = True
                 holder = self._hold_lease(run_id, token)
                 fx_preview = run.chat_runtime is ChatRuntime.FX
-                rules = {} if fx_preview else await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
+                from .skill_snapshots import for_role, pin
+
+                skill_snapshot = await pin(session, run, self.secrets)
+                rules = {} if fx_preview else await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id,
+                                                               skill_snapshot=skill_snapshot)
                 context = "" if fx_preview else await build_context_pack(session, project, run, self.embedder)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
@@ -629,6 +634,8 @@ class AgentRunner:
                     # single project is bound. A specialist child is bound to this project:
                     # retain only the read capabilities its original contract already grants.
                     specs = [_read_only_specialist(spec) if child else read_only(spec) for spec in specs]
+                if work_mode == "plan":
+                    specs = [planning_spec(spec) for spec in specs]
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
                 unattended = Unattended(
@@ -810,6 +817,7 @@ class AgentRunner:
                         workspace_id=workspace_id,
                         project_id=project_id,
                         embedder=self.embedder,
+                        skill_snapshot=for_role(skill_snapshot, run.agent or PM_ROLE),
                     ),
                     *build_graph_tools(board_context),
                 ],
@@ -1353,7 +1361,7 @@ class AgentRunner:
 
     async def _rules(
         self, session: Any, project_id: uuid.UUID, handles: list[str] | None = None,
-        workspace_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | None = None, skill_snapshot: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Each agent's rules, keyed by handle ("base", "product", a custom agent's): the
         workspace's rules, then the project's agent-rules/*.md and the lessons owners accepted
@@ -1361,7 +1369,7 @@ class AgentRunner:
         templates. Default templates and skills are written into projects made before them."""
         from .guidance import project_rules
 
-        return await project_rules(session, project_id, handles, workspace_id)
+        return await project_rules(session, project_id, handles, workspace_id, skill_snapshot)
 
 
 async def _changes_approved(session: Any, run: AgentRun) -> None:

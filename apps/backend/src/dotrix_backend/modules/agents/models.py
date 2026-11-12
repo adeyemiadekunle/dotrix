@@ -95,6 +95,8 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     source: Mapped[str] = mapped_column(String(24), default="user", server_default="user")
     outcome_key: Mapped[str | None] = mapped_column(String(160))
     review_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    skill_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    selected_plan_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     repository_write_paths: Mapped[list[str] | None] = mapped_column(JSONB)
 
     # The project it's about; null for a conversation across projects (or about none), which
@@ -294,6 +296,8 @@ class AgentRuntimeCall(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
 class ConversationPlan(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     """A version of a conversation's plan, saved in Plan mode (`save_plan`): what Build works from.
     Seen by whoever sees the conversation."""
+
+    execution: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     __tablename__ = "conversation_plans"
     __table_args__ = (UniqueConstraint("thread_id", "version"),)

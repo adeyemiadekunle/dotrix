@@ -176,6 +176,7 @@ class Settings(DatabaseSettings):
     coding_warm_max: int = Field(default=3, ge=0, le=50)
     # Coding runs working at once in one worker; the rest wait for a free sandbox ("Waiting for a
     # free sandbox"). 0: no limit. Size it to the machine: each run may use the memory and CPUs below.
+    coding_parallel: bool = False
     coding_max_runs: int = Field(default=2, ge=0, le=100)
     # Each Docker sandbox's limits. Deployed Docker coding requires gVisor ("runsc", installed
     # and registered on the host); development may use Docker's default runtime.

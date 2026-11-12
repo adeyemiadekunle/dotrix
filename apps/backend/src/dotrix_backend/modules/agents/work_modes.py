@@ -34,8 +34,9 @@ from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
+from dotrix_engine.planning import ExecutionSpec
 
-from .models import ConversationPlan, WorkMode
+from .models import AgentRun, ConversationPlan, WorkMode
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ class SavePlan(BaseModel):
     acceptance_criteria: list[str] = Field(max_length=30, description="Each one checkable when it's done")
     tasks: list[PlanTask] = Field(min_length=1, max_length=40, description="In order")
     open_questions: list[str] = Field(default_factory=list, max_length=20)
+    execution: ExecutionSpec | None = None
 
 
 class StartCoding(BaseModel):
@@ -105,11 +107,28 @@ def lead_tools(mode: WorkMode | None, ctx: ModeContext) -> list[Any]:
 
 
 async def _save_plan(ctx: ModeContext, plan: SavePlan) -> dict[str, Any]:
+    if plan.execution is not None:
+        try:
+            plan.execution.validate_plan(plan.tasks, plan.open_questions)
+        except ValueError as exc:
+            return {"error": str(exc)}
     count = len(plan.tasks)
     for number, task in enumerate(plan.tasks, 1):
         if any(d < 1 or d > count or d == number for d in task.depends_on):
             return {"error": f"Task {number} depends on a task that isn't in the plan (tasks are 1 to {count})"}
+    pending = set(range(1, count + 1))
+    while pending:
+        ready = {number for number in pending if not pending.intersection(plan.tasks[number - 1].depends_on)}
+        if not ready:
+            return {"error": "Task dependencies contain a cycle"}
+        pending -= ready
     async with ctx.session_factory() as session:
+        # Serialize version allocation with other saves for this project.
+        from dotrix_backend.modules.projects.models import Project
+
+        await session.scalar(select(Project).where(
+            Project.workspace_id == ctx.workspace_id, Project.id == ctx.project_id,
+        ).with_for_update())
         if not await _sees(session, ctx):
             return {"error": "The project or the person who asked is gone"}
         latest = await session.scalar(select(func.max(ConversationPlan.version)).where(
@@ -120,6 +139,7 @@ async def _save_plan(ctx: ModeContext, plan: SavePlan) -> dict[str, Any]:
             version=(latest or 0) + 1, run_id=ctx.run_id, title=plan.title, summary=plan.summary,
             acceptance_criteria=plan.acceptance_criteria, tasks=[t.model_dump() for t in plan.tasks],
             open_questions=plan.open_questions, created_at=datetime.now(UTC),
+            execution=plan.execution.model_dump(mode="json") if plan.execution else None,
         )
         session.add(row)
         await session.commit()
@@ -141,9 +161,11 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
             return {"error": "The project or the person who asked is gone"}
         if not can(member, Permission.INSTRUCT_CODING_AGENT):
             return {"error": "The person you're working for can't instruct Kai; say so, and suggest who can"}
-        plan_id = await session.scalar(select(ConversationPlan.id).where(
-            ConversationPlan.workspace_id == ctx.workspace_id, ConversationPlan.thread_id == ctx.thread_id,
-        ).order_by(ConversationPlan.version.desc()).limit(1))
+        plan_id = await session.scalar(select(AgentRun.selected_plan_id).where(
+            AgentRun.workspace_id == ctx.workspace_id, AgentRun.project_id == ctx.project_id,
+            AgentRun.thread_id == ctx.thread_id, AgentRun.id == ctx.run_id,
+            AgentRun.requested_by_id == ctx.instructed_by_id,
+        ))
         try:
             approval = ctx.approval if ctx.jobs is not None else None
             service = CodingService(session, ctx.settings, ctx.jobs or _NO_JOBS, github=ctx.github)
@@ -154,6 +176,8 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
                 CodingSession.archived_at.is_(None),
             ).order_by(CodingRun.created_at.desc()).limit(1).with_for_update(of=CodingRun))
             if previous and previous.status.value in {"awaiting_approval", "queued", "running", "changes_ready", "recovery_required"}:
+                if previous.plan_id != plan_id:
+                    return {"error": "Kai already has a turn for a different plan; finish or stop it before changing plans"}
                 note = (ask.note or "").strip()
                 request = f'<data source="request">\n{note}\n</data>'
                 if note and note != (previous.note or "").strip() and request not in previous.brief:
@@ -178,7 +202,7 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
             if previous:
                 run = await service.follow_up(ProjectAccess(project, member), previous.session_id,
                     CodingFollowUp(message=ask.note or "Continue the instructed work on this issue", approval_mode=approval),
-                    origin_run_id=ctx.run_id)
+                    origin_run_id=ctx.run_id, plan_id=plan_id)
             else:
                 # Nova wrote this brief, not the person: it waits for them to read and approve it, unless
                 # the conversation runs in Auto (capped by the workspace and the person's own limits).

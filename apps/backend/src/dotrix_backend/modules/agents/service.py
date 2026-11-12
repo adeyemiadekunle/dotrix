@@ -255,6 +255,19 @@ class AgentService:
                     )
                 if available is not None and model not in available:
                     raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
+        selected_plan = None
+        if data.plan_id is not None and (data.work_mode is not WorkMode.BUILD or data.thread_id is None):
+            raise Unprocessable("A selected plan requires Build mode and its existing conversation")
+        if data.work_mode is WorkMode.BUILD and data.thread_id is not None:
+            query = select(ConversationPlan).where(
+                ConversationPlan.workspace_id == project.workspace_id,
+                ConversationPlan.project_id == project.id, ConversationPlan.thread_id == data.thread_id,
+            )
+            if data.plan_id is not None:
+                query = query.where(ConversationPlan.id == data.plan_id)
+            selected_plan = await self.session.scalar(query.order_by(ConversationPlan.version.desc()).limit(1))
+            if data.plan_id is not None and selected_plan is None:
+                raise NotFound("Plan not found in this conversation")
         keys = run_key.keys
         if runtime is ChatRuntime.FX:
             from .fx_pilot import validate_fx_pilot_model
@@ -277,6 +290,7 @@ class AgentService:
             agent=None if data.agent in ("auto", PM_ROLE) else data.agent,
             mode=mode,
             work_mode=data.work_mode,
+            selected_plan_id=selected_plan.id if selected_plan else None,
             # Automations work in Manual (their own switch governs changes without approval).
             approval_mode=effective(data.approval_mode if automation_id is None else None, member).value,
             automation_id=automation_id,
