@@ -12,6 +12,9 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Fixed
 
 - dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
+### Added
+
+- dotrix chat: /plans lists the conversation's saved plans, and /build [version] builds the one you pick.
 
 ## [0.2.0] - 2026-11-12
 

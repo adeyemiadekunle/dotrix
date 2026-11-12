@@ -1137,14 +1137,51 @@ class _ChatSession:
                 typer.echo(f"Approvals: {APPROVAL_NAMES[mode]} (the workspace's cap and your own still apply).")
         elif name == "/continue":
             self.continue_run(later=arg.lower() in ("later", "when-reset", "reset"))
+        elif name == "/plans":
+            self.list_plans()
+        elif name == "/build":
+            self.build_plan(arg)
         else:
             typer.secho(
-                "Commands: /mode NAME, /approvals NAME, /agent NAME, /continue [later], /new, /quit",
+                "Commands: /mode NAME, /approvals NAME, /agent NAME, /plans, /build [VERSION], /continue [later], /new, /quit",
                 fg=typer.colors.RED,
             )
         return True
 
-    def send(self, message: str) -> None:
+    def _plans(self) -> list[dict]:
+        """The conversation's saved plans, newest first (none before it has a thread)."""
+        if not self.thread:
+            return []
+        return sorted(self.client.plans(self.thread), key=lambda p: p["version"], reverse=True)
+
+    def list_plans(self) -> None:
+        plans = self._plans()
+        if not plans:
+            typer.secho("No saved plans yet. Plan mode saves one: /mode plan.", dim=True)
+            return
+        for i, plan in enumerate(plans):
+            tasks = len(plan.get("tasks") or [])
+            saved = _ago(plan.get("created_at"))
+            latest = "  (newest)" if i == 0 else ""
+            typer.echo(f"v{plan['version']}  {plan['title']}  {tasks} task{'' if tasks == 1 else 's'}  {saved}{latest}")
+
+    def build_plan(self, arg: str) -> None:
+        plans = self._plans()
+        if not plans:
+            typer.secho("No saved plans yet. Plan mode saves one: /mode plan.", dim=True)
+            return
+        chosen = plans[0]
+        if arg:
+            chosen = next((p for p in plans if arg.lstrip("vV") == str(p["version"])), None)
+            if chosen is None:
+                versions = ", ".join(f"v{p['version']}" for p in plans)
+                typer.secho(f"No plan version {arg}. Saved versions: {versions}.", fg=typer.colors.RED)
+                return
+        self.work_mode = "build"
+        typer.echo(f"Build mode. Building plan v{chosen['version']}: {chosen['title']}")
+        self.send("Build this plan", plan_id=chosen["id"])
+
+    def send(self, message: str, *, plan_id: str | None = None) -> None:
         if self.work_mode == "build":
             self.sessions |= self._kai_sessions().keys()
         run = self.client.start(
@@ -1155,6 +1192,7 @@ class _ChatSession:
             work_mode=self.work_mode,
             approval_mode=self.approval_mode,
             runtime=self.runtime,
+            plan_id=plan_id,
         )
         self.thread = run["thread_id"]
         self.follow(run)
@@ -1238,6 +1276,7 @@ def _platform_chat(
     typer.echo(
         f"Talking to {who} ({state.project_name}) on the platform{extra}. Changes wait for your approval "
         "unless your approval mode lets them through. /mode, /approvals and /agent change who answers and how; "
+        "/plans lists the conversation's saved plans and /build [version] builds one; "
         "/continue goes on after a model limit; /new starts a new conversation; Ctrl+C stops a reply; /quit exits.\n"
     )
     while True:

@@ -112,3 +112,63 @@ def test_build_names_the_session_kai_started(platform: FakePlatform, linked_repo
     assert result.exit_code == 0, result.output
     assert "Kai is on KUN-7 (Waiting for approval): dotrix codes show KUN-7" in result.output
     assert "KUN-3" not in result.output and "KUN-9" not in result.output
+
+
+def _plans(platform: FakePlatform) -> None:
+    platform.plans = [
+        {"id": f"plan-{v}", "thread_id": "t-1", "version": v, "title": f"Plan {v}", "tasks": [{}] * v,
+         "created_at": "2026-11-12T00:00:00Z"}
+        for v in (1, 2)
+    ]
+
+
+def _plan_requests(platform: FakePlatform) -> list:
+    return [r for r in platform.requests if r.url.path.endswith("/plans")]
+
+
+def test_plans_lists_versions_newest_first(platform: FakePlatform, linked_repo: Path) -> None:
+    _plans(platform)
+    result = chat(linked_repo, "/plans\n/quit\n", "--thread", "t-1")
+    assert result.exit_code == 0, result.output
+    assert result.output.index("v2  Plan 2") < result.output.index("v1  Plan 1")
+    assert "2 tasks" in result.output and "(newest)" in result.output
+    assert result.output.count("(newest)") == 1
+
+
+def test_build_sends_the_newest_plan(platform: FakePlatform, linked_repo: Path) -> None:
+    _plans(platform)
+    platform.agent_script = [{"status": "completed", "reply": "Ok."}]
+    result = chat(linked_repo, "/build\n/quit\n", "--thread", "t-1")
+    assert result.exit_code == 0, result.output
+    assert platform.runs_started[0]["work_mode"] == "build" and platform.runs_started[0]["plan_id"] == "plan-2"
+
+
+def test_build_a_chosen_version(platform: FakePlatform, linked_repo: Path) -> None:
+    _plans(platform)
+    platform.agent_script = [{"status": "completed", "reply": "Ok."}]
+    result = chat(linked_repo, "/build 1\n/quit\n", "--thread", "t-1")
+    assert result.exit_code == 0, result.output
+    assert platform.runs_started[0]["plan_id"] == "plan-1"
+
+
+def test_build_an_unknown_version_is_refused(platform: FakePlatform, linked_repo: Path) -> None:
+    _plans(platform)
+    result = chat(linked_repo, "/build 9\n/quit\n", "--thread", "t-1")
+    assert result.exit_code == 0, result.output
+    assert platform.runs_started == []
+    assert "No plan version 9" in result.output and "v2, v1" in result.output
+
+
+def test_plans_without_a_thread_makes_no_request(platform: FakePlatform, linked_repo: Path) -> None:
+    result = chat(linked_repo, "/plans\n/quit\n")
+    assert result.exit_code == 0, result.output
+    assert "No saved plans yet" in result.output
+    assert _plan_requests(platform) == []
+
+
+def test_build_mode_message_sends_no_plan_id(platform: FakePlatform, linked_repo: Path) -> None:
+    _plans(platform)
+    platform.agent_script = [{"status": "completed", "reply": "Ok."}]
+    result = chat(linked_repo, "go\n/quit\n", "--thread", "t-1", "--mode", "build")
+    assert result.exit_code == 0, result.output
+    assert "plan_id" not in platform.runs_started[0]

@@ -80,12 +80,14 @@ class PlatformAgent:
         work_mode: str | None = None,
         approval_mode: str | None = None,
         runtime: str | None = None,
+        plan_id: str | None = None,
     ) -> dict:
         """Send a message: `agent` picks who answers (auto or a specialist); `work_mode` is Discuss,
         Plan, Build or Review (the conversation's last when left out); `approval_mode` asks for
         Manual, Accept edits or Auto (the platform gives the lowest of that, the workspace's cap
         and yours). `model` and `runtime` (DeepAgents or fx) are only for a new conversation: an
-        existing one keeps what it started with."""
+        existing one keeps what it started with. `plan_id` (with Build) names the exact saved plan
+        version to build; without it the platform pins the latest."""
         body: dict[str, Any] = {"message": message}
         if thread_id:
             body["thread_id"] = thread_id
@@ -99,7 +101,13 @@ class PlatformAgent:
             body["work_mode"] = work_mode
         if approval_mode:
             body["approval_mode"] = approval_mode
+        if plan_id:
+            body["plan_id"] = plan_id
         return self.client.post(f"{self.base}/runs", body)
+
+    def plans(self, thread_id: str) -> list[dict]:
+        """The conversation's saved plan versions."""
+        return self.client.get(f"{self.base}/threads/{thread_id}/plans")
 
     def continue_run(self, run_id: str, *, when_reset: bool = False) -> dict:
         """Go on with a run that stopped at its model's limit: now, or once the limit resets."""
