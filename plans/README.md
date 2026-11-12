@@ -39,7 +39,7 @@ the audit nor the other plans.
 | [024](024-task-descriptions-survive-the-editor.md) | Opening a task doesn't rewrite its description, and the editor keeps links and headings | P1 | M | 022 | TODO |
 | [025](025-changes-to-a-task-being-created-are-kept.md) | Changes made to a task while it is still being created are kept | P1 | M | — | TODO |
 | [026](026-overlapping-changes-dont-undo-each-other.md) | Two quick changes to the same list don't undo each other | P1 | S–M | 025 (shares its test file) | TODO |
-| [027](027-a-network-blip-doesnt-eject-you.md) | A brief network failure doesn't replace the workspace with an error or sign you out | P1 | S | — | TODO |
+| [027](027-a-network-blip-doesnt-eject-you.md) | A brief network failure doesn't replace the workspace with an error or sign you out | P1 | S | — | DONE |
 | [028](028-a-new-reply-never-shows-the-last-one.md) | A new reply never starts by showing the previous reply's text | P2 | S | — | TODO |
 | [029](029-local-turns-send-exact-patches-and-all-events.md) | A turn coded on your computer sends its patch byte for byte and all of its steps | P1 | M | — | TODO |
 | [030](030-dependency-reader-handles-real-requirements-files.md) | The dependency reader gets versions right in hash-pinned requirements files, and one bad manifest doesn't break the view | P1 | S | — | DONE |
