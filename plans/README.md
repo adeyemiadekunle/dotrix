@@ -54,10 +54,18 @@ the audit nor the other plans.
 | [039](039-ci-actions-pinned-and-least-privilege.md) | CI's third-party actions are pinned to commits, and pull-request builds can't write to the repository | P2 | S | — | DONE |
 | [040](040-small-housekeeping.md) | Housekeeping: the stray Redis dump, the seroval advisories, and the documented CLI install | P3 | S | — | DONE |
 | [041](041-workspace-storage-limit.md) | Each workspace has a storage limit for uploads, shown in Settings and enforced on upload | P1 | M | — (admin part follows 011–018's shape if they land first) | DONE |
+| [042](042-cli-plan-turns-and-chosen-plans.md) | The CLI asks Kai for a Plan turn, and builds from a plan you choose | P2 | S | — | TODO |
+| [043](043-codes-show-plans-tasks-and-skills.md) | dotrix codes show prints a turn's plan, its parallel tasks, and the skills it used | P3 | S | 042 (shares codes.py) | TODO |
+| [044](044-cli-chat-plans-and-building-a-version.md) | dotrix chat lists the conversation's saved plans and builds the version you pick | P2 | S | — | TODO |
+| [045](045-runner-survives-network-blips.md) | dotrix runner keeps running through a brief network or server outage | P1 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
 ## Dependency notes
+
+Plans 042–045 (written 2026-11-12 at `ee73ad4`): the CLI catching up with #254 and #258 (Plan turns, chosen plans, parallel tasks, skills), and the runner's network outage lead.
+
+- All four touch only `apps/cli` (045 may add two `--json` events the desktop app already ignores). 042 and 043 both edit `codes.py`: run them one after the other. 044 and 045 are independent.
 
 Plans 032–041 (written 2026-11-12 at `7fb2b01`): the third batch, the audit's remaining bugs, two security leads checked in the code, and the workspace storage limit.
 
@@ -115,7 +123,6 @@ Leads only: open the code before planning any of these.
 - Lease renew/release logic differs between chat runs, coding runs and local turns.
 - pytest runs serially in CI (about 9.5 minutes at the last observed run).
 - `CLAUDE.md`'s backend tree omits `modules/admin` and `modules/observe`; `.env.example` covers under half the settings.
-- `dotrix runner` exits on a transient network error. (A malformed manifest failing the whole dependencies view was fixed by plan 030.)
 
 ## Findings considered and rejected
 
