@@ -29,6 +29,7 @@ const h = vi.hoisted(() => {
 
 vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api: h.api }));
 
+import * as toasts from "../ui/toast";
 import type { Task } from "./types";
 import { live, taskCreated, taskPatched, taskRanked, taskStarred, tasksDeleted } from "./live";
 
@@ -155,5 +156,89 @@ describe("changes to a task that is still being created", () => {
       expect(JSON.stringify([c.params, c.body])).not.toContain("new-");
     }
     expect(sends().map((c) => [c.params.key, c.body])).toEqual([["KUN-5", { after: "KUN-6" }]]);
+  });
+});
+
+describe("overlapping writes to the same list", () => {
+  // Patches stay pending until the test settles them.
+  const pending: { resolve: () => void; reject: () => void }[] = [];
+  const rows = () => queryClient.getQueryData<{ key: string; title: string }[]>(["issues", "workspace", "ws", {}]) ?? [];
+  const patch = (key: string, title: string) => {
+    h.api.PATCH = (() =>
+      new Promise((resolve) =>
+        pending.push({
+          resolve: () => resolve({ data: { key, description: "" }, error: undefined, response: new Response() }),
+          reject: () => resolve({ data: undefined, error: { detail: "no" }, response: new Response(null, { status: 500 }) }),
+        }),
+      )) as unknown as typeof h.api.PATCH;
+    const t = { id: key, key, project: PROJECT, title: "x" } as unknown as Task;
+    t.title = title;
+    taskPatched(t, ["title"]);
+  };
+  const issuesInvalidations = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.filter(([f]: unknown[]) => (f as { predicate?: (q: unknown) => boolean }).predicate?.({ queryKey: ["issues"] })).length;
+
+  beforeEach(() => {
+    pending.length = 0;
+    queryClient.setQueryData(
+      ["issues", "workspace", "ws", {}],
+      [
+        { key: "A-1", project_id: PROJECT, title: "a" },
+        { key: "A-2", project_id: PROJECT, title: "b" },
+      ],
+    );
+  });
+
+  it("refetches once, when the last of two overlapping writes settles", async () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    patch("A-1", "one");
+    await flush();
+    patch("A-2", "two");
+    await flush();
+    pending[0]!.resolve();
+    await flush();
+    expect(issuesInvalidations(spy)).toBe(0);
+    pending[1]!.resolve();
+    await flush();
+    expect(issuesInvalidations(spy)).toBe(1);
+    spy.mockRestore();
+  });
+
+  it("a refusal keeps the other change on screen and the refetch follows", async () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    patch("A-1", "one");
+    await flush();
+    patch("A-2", "two");
+    await flush();
+    const toastSpy = vi.spyOn(toasts, "toast");
+    pending[0]!.reject();
+    await flush();
+    expect(toastSpy).toHaveBeenCalledTimes(1);
+    toastSpy.mockRestore();
+    expect(rows().find((r) => r.key === "A-2")?.title).toBe("two");
+    expect(issuesInvalidations(spy)).toBe(0);
+    pending[1]!.resolve();
+    await flush();
+    expect(issuesInvalidations(spy)).toBe(1);
+    spy.mockRestore();
+  });
+
+  it("a lone refusal puts the cache back, and a lone success refetches, twice in a row", async () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    for (let i = 1; i <= 2; i++) {
+      const before = JSON.stringify(rows());
+      patch("A-1", "nope");
+      await flush();
+      expect(rows()[0]!.title).toBe("nope");
+      pending.at(-1)!.reject();
+      await flush();
+      expect(JSON.stringify(rows())).toBe(before);
+      patch("A-1", "yes");
+      await flush();
+      pending.at(-1)!.resolve();
+      await flush();
+      expect(issuesInvalidations(spy)).toBe(i * 2);
+    }
+    spy.mockRestore();
   });
 });

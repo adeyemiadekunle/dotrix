@@ -31,6 +31,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - A task list grouped by assignee now shows tasks assigned to an agent (such as one Kai is coding) and to people who have left; grouped by due date it keeps finished tasks whose date has passed; estimates sort as numbers; and lists show comment counts in every workspace.
 - Clicking into a task's description and out again no longer saves it when nothing changed, and the description editor keeps links, headings, italics and nested lists.
 - Clicking into a task's description and out again no longer saves it when nothing changed, and the description editor keeps links, headings, italics and nested lists. A description with a table or code block opens read-only instead of being flattened.
+- Making several changes in quick succession (dragging cards, ticking subtasks) no longer makes one of them jump back for a moment, and a change that can't be saved no longer undoes the others on screen.
 - After you approve an agent's change in Chat or a coding turn in Codes, the board, the lists and the open task show the new status and assignee at once.
 - Dependency versions are now read correctly from requirements files with hashes (pip-compile), so known vulnerabilities in them are found; and a dependency file with an unexpected format is listed as unread and no longer breaks a project's dependencies view.
 - A brief loss of connection (waking a laptop, a server restart) no longer replaces the workspace with an error screen or sends you to sign in again.

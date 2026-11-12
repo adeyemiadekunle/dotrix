@@ -54,6 +54,11 @@ const KNOWLEDGE = ["knowledge", "graph", "search", "activity", "audit", "project
 const DOCUMENTS = ["documents", ...KNOWLEDGE];
 const AUTOMATIONS = ["automations", "audit"];
 const refresh = (kinds: readonly string[]) => void queryClient.invalidateQueries({ predicate: (q) => kinds.includes(q.queryKey[0] as string) });
+/** Writes in flight, by kind of query: a kind is refetched only when the last write touching it settles. */
+const inFlight = new Map<string, number>();
+/** Kinds a refused change left wrong on screen: refetched once no write to them is in flight. */
+const owed = new Set<string>();
+const flying = (kind: string) => inFlight.get(kind) ?? 0;
 
 type Req<T> = Promise<{ data?: T; error?: unknown; response: Response }>;
 interface Write<T> {
@@ -77,6 +82,9 @@ interface Write<T> {
  * puts the caches back as they were and says why. Resolves with the API's answer, or undefined if refused. */
 function write<T>(w: Write<T>): Promise<T | undefined> {
   let before: [QueryKey, unknown][] = [];
+  // Counted before anything async, so a write started later sees this one in flight.
+  const kinds = [...new Set([...w.refresh, ...w.touches.map((k) => String(k[0]))])];
+  for (const k of kinds) inFlight.set(k, flying(k) + 1);
   const m = new MutationObserver<T, unknown, void>(queryClient, {
     mutationKey: ["write", ...w.refresh.slice(0, 1)],
     onMutate: async () => {
@@ -88,14 +96,31 @@ function write<T>(w: Write<T>): Promise<T | undefined> {
     mutationFn: () => unwrap(w.request()),
     onSuccess: (r) => w.done?.(r),
     onError: (e) => {
-      for (const [k, d] of before) queryClient.setQueryData(k, d);
-      // A change the store made in place that never reached a cache goes too.
-      forgetSlots();
+      // Another change to the same caches is in flight: restoring the snapshot would wipe it too, so the
+      // refetch once they have all settled corrects this one instead.
+      const overlapped = w.touches.some((k) => flying(String(k[0])) > 1);
+      if (overlapped) for (const k of w.refresh) owed.add(k);
+      else {
+        for (const [k, d] of before) queryClient.setQueryData(k, d);
+        // A change the store made in place that never reached a cache goes too.
+        forgetSlots();
+      }
       if (w.what) failed(w.what, e);
       w.undone?.();
       render();
     },
-    onSettled: () => refresh(w.refresh),
+    onSettled: () => {
+      const due: string[] = [];
+      for (const k of kinds) {
+        const n = flying(k) - 1;
+        if (n > 0) inFlight.set(k, n);
+        else inFlight.delete(k);
+      }
+      for (const k of w.refresh) if (!flying(k)) due.push(k);
+      for (const k of owed) if (!flying(k)) due.push(k);
+      for (const k of due) owed.delete(k);
+      if (due.length) refresh(due);
+    },
   });
   return m.mutate().catch(() => undefined);
 }
