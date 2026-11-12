@@ -134,10 +134,17 @@ class Codes:
     def recover(self, run_id: str, action: str) -> dict:
         return self.client.post(f"{self.project}/runs/{run_id}/recover", {"action": action})
 
-    def follow_up(self, session_id: str, message: str, approval_mode: str | None) -> dict:
+    def follow_up(self, session_id: str, message: str, approval_mode: str | None, *, work_mode: str | None = None,
+                  source_plan_id: str | None = None, location: str | None = None) -> dict:
         body: dict[str, Any] = {"message": message}
         if approval_mode:
             body["approval_mode"] = approval_mode
+        if work_mode:
+            body["work_mode"] = work_mode
+        if source_plan_id:
+            body["source_plan_id"] = source_plan_id
+        if location:
+            body["location"] = location
         return self.client.post(f"{self.project}/sessions/{session_id}/turns", body)
 
 
@@ -168,11 +175,13 @@ def echo_session_row(session: dict, ago: Callable[[str | None], str]) -> None:
     )
 
 
-def echo_turn(turn: dict, *, steps: bool = False) -> None:
+def echo_turn(turn: dict, *, steps: bool = False, details: bool = False) -> None:
     where = "your computer" if turn.get("location") == "local" else "cloud"
     head = f"Turn {turn['turn']}"
     if turn.get("revert_of"):
         head += " (a revert)"
+    elif turn.get("work_mode") == "plan":
+        head += " (a plan)"
     typer.secho(f"\n{head}  ", bold=True, nl=False)
     typer.echo(_status(turn.get("status")) + typer.style(f"  · {where}", dim=True))
     request = (turn.get("note") or "").strip()
@@ -189,6 +198,12 @@ def echo_turn(turn: dict, *, steps: bool = False) -> None:
         typer.echo("")
         for line in turn["summary"].strip().splitlines():
             typer.echo(f"  {line}")
+    if turn.get("plan_result"):
+        _echo_plan(turn, steps=steps)
+    if turn.get("tasks"):
+        _echo_tasks(turn["tasks"])
+    if details:
+        _echo_details(turn)
     if turn.get("error"):
         typer.secho(f"  {turn['error']}", fg=typer.colors.RED)
     files = _files(turn)
@@ -202,6 +217,64 @@ def echo_turn(turn: dict, *, steps: bool = False) -> None:
     hint = _hint(turn)
     if hint:
         typer.secho(f"  {hint}", fg=typer.colors.CYAN)
+
+
+def _echo_plan(turn: dict, *, steps: bool) -> None:
+    plan = turn["plan_result"]
+    typer.echo("")
+    if plan.get("title"):
+        typer.secho(f"  {plan['title']}", bold=True)
+    for line in (plan.get("summary") or "").strip().splitlines():
+        typer.echo(f"  {line}")
+    if plan.get("acceptance_criteria"):
+        typer.secho("\n  Acceptance criteria", bold=True)
+        for item in plan["acceptance_criteria"]:
+            typer.echo(f"    - {item}")
+    tasks = plan.get("tasks") or []
+    if tasks:
+        typer.secho("\n  Tasks", bold=True)
+        for number, task in enumerate(tasks, 1):
+            after = ", ".join(str(n) for n in task.get("depends_on") or [])
+            typer.echo(f"    {number}. {task.get('title', '')}" + (f"  (after {after})" if after else ""))
+            if steps and task.get("detail"):
+                for line in str(task["detail"]).strip().splitlines():
+                    typer.secho(f"       {line}", dim=True)
+    if plan.get("open_questions"):
+        typer.secho("\n  Open questions", bold=True)
+        for item in plan["open_questions"]:
+            typer.echo(f"    - {item}")
+    typer.secho(f'\n  Build it: dotrix codes follow {turn["issue_key"]} "…" --plan {turn["turn"]}', dim=True)
+
+
+def _echo_tasks(tasks: list[dict]) -> None:
+    typer.secho("\n  Tasks", bold=True)
+    for task in tasks:
+        line = f"    {task.get('key', '')}  {_status(task.get('status'))}"
+        if (task.get("attempt") or 0) > 1:
+            line += f"  attempt {task['attempt']}"
+        checks = task.get("checks") or []
+        if checks:
+            failed = any((c.get("exit_code") not in (0, None)) or c.get("passed") is False for c in checks)
+            line += "  checks " + ("failed" if failed else "passed")
+        typer.echo(line)
+
+
+def _echo_details(turn: dict) -> None:
+    skills = turn.get("skills") or []
+    if skills:
+        typer.secho("\n  Skills", bold=True)
+        for skill in skills:
+            line = f"    {skill.get('name', '')}"
+            if skill.get("missing_resources"):
+                line += f"  missing: {', '.join(skill['missing_resources'])}"
+            if skill.get("unavailable_tools"):
+                line += f"  tools unavailable: {', '.join(skill['unavailable_tools'])}"
+            typer.echo(line)
+    missing = [c for c in turn.get("capabilities") or [] if not c.get("available")]
+    if missing:
+        typer.secho("\n  Unavailable capabilities", bold=True)
+        for cap in missing:
+            typer.echo(f"    {cap.get('label') or cap.get('id')}: {cap.get('reason') or 'not available'}")
 
 
 def _hint(turn: dict) -> str:
@@ -218,7 +291,7 @@ def _hint(turn: dict) -> str:
     return ""
 
 
-def echo_session(session: dict, turns: list[dict], *, steps: bool = False) -> None:
+def echo_session(session: dict, turns: list[dict], *, steps: bool = False, details: bool = False) -> None:
     title = session.get("title") or session.get("issue_title") or ""
     typer.secho(f"{session['issue_key']}  {title}", bold=True)
     latest = turns[-1] if turns else {}
@@ -233,7 +306,7 @@ def echo_session(session: dict, turns: list[dict], *, steps: bool = False) -> No
         meta.append("from a conversation")
     typer.echo("  ".join(meta))
     for turn in turns:
-        echo_turn(turn, steps=steps)
+        echo_turn(turn, steps=steps, details=details)
     if session.get("pr_number"):
         pushed = next((t for t in reversed(turns) if t.get("commit_sha") and t.get("pr_number")), {})
         ci = pushed.get("ci_state")
@@ -329,12 +402,13 @@ def codes_show(
     target: str = typer.Argument(..., help="An issue key (its latest session) or the start of a session's id"),
     diff: bool = typer.Option(False, "--diff", help="Also print the latest turn's diff"),
     steps: bool = typer.Option(False, "--steps", help="List every step, not just the one-line summary"),
+    details: bool = typer.Option(False, "--details", help="Also list each turn's skills and the capabilities it lacked"),
     project: str = ProjectOpt,
 ):
     """A session's turns: your requests, what Kai did, its summaries, the files changed, the PR and its checks."""
     codes, cli = _ctx(project)
     session, turns = _latest(cli, codes, target)
-    echo_session(session, turns, steps=steps)
+    echo_session(session, turns, steps=steps, details=details)
     if diff:
         typer.echo("")
         echo_diff(cli._platform_call(lambda: codes.diff(turns[-1]["id"])))
@@ -345,14 +419,40 @@ def codes_follow(
     target: str = typer.Argument(..., help="An issue key or the start of a session's id"),
     message: str = typer.Argument(..., help="What Kai should do in this turn"),
     approvals: str | None = ApprovalsOpt,
+    plan_only: bool = typer.Option(False, "--plan-only", help="Ask for a Plan turn: Kai reads the repository and returns a plan, changing nothing (runs in the cloud)"),
+    plan: str | None = typer.Option(None, "--plan", help="Build from a finished Plan turn of this session: its number (as `codes show` prints it) or the start of its run id"),
     wait: bool = typer.Option(False, "--wait", help="Wait here for the turn, printing its steps"),
     project: str = ProjectOpt,
 ):
-    """Ask Kai for another turn in a session."""
+    """Ask Kai for another turn in a session. A Plan turn (--plan-only) returns a plan without changing
+    anything; --plan TURN builds from one."""
     codes, cli = _ctx(project)
+    if plan_only and plan:
+        cli._fail("Use either --plan-only or --plan, not both.")
     mode = _approval(cli, approvals)
     session = cli._platform_call(lambda: codes.find(target))
-    run = cli._platform_call(lambda: codes.follow_up(session["session_id"], message, mode))
+    work_mode = source = location = None
+    if plan_only:
+        work_mode = "plan"
+        turns = cli._platform_call(lambda: codes.turns(session["session_id"]))
+        if turns and turns[-1].get("location") == "local":
+            location = "cloud"
+            typer.echo("A Plan turn runs in the platform's sandbox: asking for it in the cloud.")
+    elif plan:
+        turns = cli._platform_call(lambda: codes.turns(session["session_id"]))
+        want = plan.strip()
+        chosen = next((t for t in turns if str(t["turn"]) == want), None)
+        if chosen is None:
+            # Run ids are UUIDv7, so turns made close together share their leading characters.
+            matches = [t for t in turns if str(t["id"]).startswith(want.lower())]
+            if len(matches) > 1:
+                cli._fail(f"More than one turn's id starts with {want}: use more of it, or the turn's number.")
+            chosen = matches[0] if matches else None
+        if chosen is None or chosen.get("work_mode") != "plan" or not chosen.get("plan_result"):
+            cli._fail(f"Turn {plan.strip()} isn't a finished plan.")
+        work_mode, source = "build", chosen["id"]
+    run = cli._platform_call(lambda: codes.follow_up(
+        session["session_id"], message, mode, work_mode=work_mode, source_plan_id=source, location=location))
     _started(cli, codes, run, wait)
 
 

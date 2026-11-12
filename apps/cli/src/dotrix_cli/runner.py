@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from .platform import PlatformError
 from .toolenv import tool_environment
 
 TOOLS = ("claude-code", "opencode")
@@ -59,6 +60,16 @@ class Api(Protocol):
 
 class LeaseLost(Exception):
     """The platform no longer gives this runner the turn: stop writing, keep the worktree."""
+
+
+# Waiting out an outage: the first retry comes after BACKOFF_START seconds, doubling up to BACKOFF_MAX.
+BACKOFF_START = 5.0
+BACKOFF_MAX = 60.0
+
+
+def _transient(exc: Exception) -> bool:
+    """A failure worth waiting out: the platform unreachable, down (5xx) or asking us to slow down (429)."""
+    return isinstance(exc, PlatformError) and (exc.status == 0 or exc.status >= 500 or exc.status == 429)
 
 
 @dataclass
@@ -407,11 +418,32 @@ class LocalRunner:
     async def serve(self, *, poll_seconds: float = 5, stop: asyncio.Event | None = None) -> None:
         stop = stop or asyncio.Event()
         await self.clean_worktrees()
+        wait = BACKOFF_START
+        offline = False
         while not stop.is_set():
             try:
-                if await self.once():
-                    continue
+                worked = await self.once()
             except LeaseLost:
+                continue
+            except PlatformError as exc:
+                if not _transient(exc):
+                    raise
+                if not offline:
+                    offline = True
+                    self.echo("Can't reach dotrix; trying again…")
+                self.notify({"event": "offline", "retry_in": wait})
+                try:
+                    await asyncio.wait_for(stop.wait(), wait)
+                except TimeoutError:
+                    pass
+                wait = min(wait * 2, BACKOFF_MAX)
+                continue
+            if offline:
+                offline = False
+                wait = BACKOFF_START
+                self.echo("Connected again")
+                self.notify({"event": "online"})
+            if worked:
                 continue
             try:
                 await asyncio.wait_for(stop.wait(), poll_seconds)

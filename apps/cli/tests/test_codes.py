@@ -75,6 +75,44 @@ def test_show(platform: FakePlatform, linked_repo: Path) -> None:
     assert "+fixed" in out and "-broken" in out
 
 
+PLAN = {
+    "title": "Fix lookups", "summary": "Two small steps.", "acceptance_criteria": ["Lookups work"],
+    "tasks": [{"title": "Add the test", "detail": "Cover the empty postcode.", "depends_on": []},
+              {"title": "Fix the bug", "detail": "Trim the input.", "depends_on": [1]}],
+    "open_questions": ["Which postcode format?"],
+}
+
+
+def test_show_plan_turn(platform: FakePlatform, linked_repo: Path) -> None:
+    one_session(platform, coding_run("run-1", work_mode="plan", plan_result=PLAN))
+    out = codes(linked_repo, "show", "kun-7").output
+    assert "(a plan)" in out and "Fix lookups" in out and "Lookups work" in out
+    assert "1. Add the test" in out and "2. Fix the bug  (after 1)" in out
+    assert "Which postcode format?" in out and 'codes follow KUN-7 "…" --plan 1' in out
+    assert "Cover the empty postcode." not in out
+    assert "Cover the empty postcode." in codes(linked_repo, "show", "kun-7", "--steps").output
+
+
+def test_show_parallel_tasks(platform: FakePlatform, linked_repo: Path) -> None:
+    tasks = [{"key": "T1", "status": "completed", "attempt": 1, "checks": [{"command": "pytest", "exit_code": 0}]},
+             {"key": "T2", "status": "failed", "attempt": 2, "checks": [{"command": "pytest", "exit_code": 1}]}]
+    one_session(platform, coding_run("run-1", tasks=tasks))
+    out = codes(linked_repo, "show", "kun-7").output
+    assert "T1" in out and "completed" in out and "checks passed" in out
+    assert "T2" in out and "attempt 2" in out and "checks failed" in out
+
+
+def test_show_details(platform: FakePlatform, linked_repo: Path) -> None:
+    one_session(platform, coding_run(
+        "run-1", skills=[{"name": "plan-review", "missing_resources": ["ref.md"], "unavailable_tools": []}],
+        capabilities=[{"id": "browser", "label": "Browser", "available": False, "reason": "Not on this engine"},
+                      {"id": "shell", "label": "Shell", "available": True, "reason": None}]))
+    plain = codes(linked_repo, "show", "kun-7").output
+    assert "plan-review" not in plain and "Not on this engine" not in plain
+    out = codes(linked_repo, "show", "kun-7", "--details").output
+    assert "plan-review  missing: ref.md" in out and "Browser: Not on this engine" in out and "Shell" not in out
+
+
 def test_show_by_session_id_and_unknown(platform: FakePlatform, linked_repo: Path) -> None:
     one_session(platform, coding_run("run-1"))
     assert codes(linked_repo, "show", "0192abcd").exit_code == 0
@@ -154,6 +192,64 @@ def test_code_with_wait(platform: FakePlatform, linked_repo: Path) -> None:
     body = platform.bodies("/issues/KUN-7/runs")[0]
     assert body["approval_mode"] == "accept_edits" and body["location"] == "cloud"
     assert "is queued" in result.output and "Nothing to change." in result.output
+
+
+def test_code_plan_only(platform: FakePlatform, linked_repo: Path) -> None:
+    platform.coding_turns = {SID: [coding_run("run-new", status="running")]}
+    result = CliRunner().invoke(cli_module.app, ["code", "KUN-7", "--plan-only", "--cloud", "--project", str(linked_repo)])
+    assert result.exit_code == 0, result.output
+    body = platform.bodies("/issues/KUN-7/runs")[0]
+    assert body["work_mode"] == "plan" and body["location"] == "cloud"
+    assert "Plan turn" in result.output
+
+
+def test_code_plan_only_needs_cloud(platform: FakePlatform, linked_repo: Path) -> None:
+    result = CliRunner().invoke(cli_module.app, ["code", "KUN-7", "--plan-only", "--project", str(linked_repo)])
+    assert result.exit_code != 0 and "add --cloud" in result.output
+    assert not platform.bodies("/issues/KUN-7/runs")
+
+
+def test_follow_plan_only(platform: FakePlatform, linked_repo: Path) -> None:
+    one_session(platform, coding_run("run-1"))
+    assert codes(linked_repo, "follow", "kun-7", "next", "--plan-only").exit_code == 0
+    assert platform.bodies(f"/sessions/{SID}/turns") == [{"message": "next", "work_mode": "plan"}]
+    one_session(platform, coding_run("run-1", location="local"))
+    result = codes(linked_repo, "follow", "kun-7", "next", "--plan-only")
+    assert result.exit_code == 0 and "in the cloud" in result.output
+    assert platform.bodies(f"/sessions/{SID}/turns")[-1] == {"message": "next", "work_mode": "plan", "location": "cloud"}
+
+
+def test_follow_builds_from_plan(platform: FakePlatform, linked_repo: Path) -> None:
+    one_session(
+        platform,
+        coding_run("run-1"),
+        coding_run("run-2", turn=2, work_mode="plan", plan_result={"title": "P", "tasks": []}),
+    )
+    assert codes(linked_repo, "follow", "kun-7", "build it", "--plan", "2").exit_code == 0
+    assert platform.bodies(f"/sessions/{SID}/turns") == [{"message": "build it", "work_mode": "build", "source_plan_id": "run-2"}]
+
+
+def test_follow_plan_must_be_a_finished_plan(platform: FakePlatform, linked_repo: Path) -> None:
+    one_session(platform, coding_run("run-1", work_mode="build"), coding_run("run-2", turn=2, work_mode="plan", plan_result={"tasks": []}))
+    result = codes(linked_repo, "follow", "kun-7", "go", "--plan", "1")
+    assert result.exit_code != 0 and "isn't a finished plan" in result.output
+    assert not platform.bodies(f"/sessions/{SID}/turns")
+    result = codes(linked_repo, "follow", "kun-7", "go", "--plan-only", "--plan", "2")
+    assert result.exit_code != 0 and not platform.bodies(f"/sessions/{SID}/turns")
+
+
+def test_follow_plan_id_prefix_must_be_unique(platform: FakePlatform, linked_repo: Path) -> None:
+    plan = {"title": "P", "tasks": []}
+    one_session(
+        platform,
+        coding_run("0192ffff-aaaa-7000-8000-000000000001", work_mode="plan", plan_result=plan),
+        coding_run("0192ffff-bbbb-7000-8000-000000000002", turn=2, work_mode="plan", plan_result=plan),
+    )
+    result = codes(linked_repo, "follow", "kun-7", "go", "--plan", "0192ffff")
+    assert result.exit_code != 0 and "use more of it" in result.output
+    assert not platform.bodies(f"/sessions/{SID}/turns")
+    assert codes(linked_repo, "follow", "kun-7", "go", "--plan", "0192ffff-bb").exit_code == 0
+    assert platform.bodies(f"/sessions/{SID}/turns")[0]["source_plan_id"] == "0192ffff-bbbb-7000-8000-000000000002"
 
 
 def test_steps_summary() -> None:

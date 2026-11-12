@@ -67,6 +67,7 @@ class FakePlatform:
         # GET .../coding/sessions answers with the next of these lists when there are any (a
         # session appearing after a Build turn), then with `coding_sessions`.
         self.coding_session_lists: list[list[dict[str, Any]]] = []
+        self.plans: list[dict[str, Any]] = []  # GET .../agent/threads/{id}/plans
 
     # -- state changes, as if someone edited on the platform ----------------------------
     def put(self, path: str, content: str) -> None:
@@ -201,6 +202,8 @@ class FakePlatform:
                 f"event: {event}\ndata: {json.dumps({'text': text})}\n\n" for event, text in [*events, ("end", "")]
             )
             return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+        if path.startswith(AGENT + "/threads/") and path.endswith("/plans") and method == "GET":
+            return httpx.Response(200, json=self.plans)
         if path.startswith(AGENT + "/runs/") and method == "GET":
             return httpx.Response(200, json=self._next_run())
         if path == f"/v1/workspaces/{WS}/coding/sessions" and method == "GET":
