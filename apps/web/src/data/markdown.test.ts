@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 
-import { htmlToMd, mdToHtml } from "./markdown";
+import { editorCanKeep, htmlToMd, mdToHtml } from "./markdown";
 
 describe("mdToHtml", () => {
   it("escapes HTML in the Markdown", () => {
@@ -94,5 +94,18 @@ describe("safety", () => {
     const el = document.createElement("div");
     el.innerHTML = html;
     expect(el.querySelector("a")?.getAttributeNames().sort()).toEqual(["href", "rel", "target"]);
+  });
+});
+
+describe("editorCanKeep", () => {
+  it.each([
+    ["", true],
+    ["Plain **text** with [a link](https://x.dev)", true],
+    ["* agent bullet\n* another", true],
+    ["- a\n  - b", true],
+    ["| a | b |\n| - | - |\n| 1 | 2 |", false],
+    ["```ts\nconst a = 1;\n```", false],
+  ])("%j -> %s", (md, ok) => {
+    expect(editorCanKeep(md)).toBe(ok);
   });
 });

@@ -30,6 +30,7 @@ import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "..
 import { toast } from "../ui/toast";
 import { SharedCodingOutcomes } from "../components/SharedCodingOutcomes";
 import { useCodingRuns } from "@/lib/coding";
+import { editorCanKeep } from "../data/markdown";
 import { useTask, useTaskDetail } from "../data/tasks";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
@@ -340,7 +341,8 @@ export function CommentBox({
 }
 
 /* ---------- the rich-text description ---------- */
-function Rte({ t, desc }: { t: Task; desc: string }) {
+function Rte({ t, desc, md }: { t: Task; desc: string; md?: string }) {
+  const locked = md !== undefined && !editorCanKeep(md);
   const ref = useRef<HTMLDivElement>(null);
   const atFocus = useRef("");
   useEffect(() => {
@@ -358,29 +360,31 @@ function Rte({ t, desc }: { t: Task; desc: string }) {
     <div className="dsec">
       <div className="dsec-h">
         <h3 id="d-desc-l">Description</h3>
-        <div className="rte-tb" role="toolbar" aria-label="Formatting" aria-controls="d-desc">
-          {(
-            [
-              ["bold", "bold", "Bold"],
-              ["italic", "italic", "Italic"],
-              ["insertUnorderedList", "list", "Bulleted list"],
-              ["insertOrderedList", "list-ordered", "Numbered list"],
-              ["formatBlock:h4", "heading", "Heading"],
-              ["createLink", "link", "Link"],
-            ] as const
-          ).map(([c, i, n]) => (
-            <button key={c} className="ibtn ibtn-xs" data-tip={n} aria-label={n} onMouseDown={(e) => (e.preventDefault(), cmd(c))}>
-              <Ic n={i} s={13} />
-            </button>
-          ))}
-        </div>
+        {!locked && (
+          <div className="rte-tb" role="toolbar" aria-label="Formatting" aria-controls="d-desc">
+            {(
+              [
+                ["bold", "bold", "Bold"],
+                ["italic", "italic", "Italic"],
+                ["insertUnorderedList", "list", "Bulleted list"],
+                ["insertOrderedList", "list-ordered", "Numbered list"],
+                ["formatBlock:h4", "heading", "Heading"],
+                ["createLink", "link", "Link"],
+              ] as const
+            ).map(([c, i, n]) => (
+              <button key={c} className="ibtn ibtn-xs" data-tip={n} aria-label={n} onMouseDown={(e) => (e.preventDefault(), cmd(c))}>
+                <Ic n={i} s={13} />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="rte">
         <div
           ref={ref}
           className="rte-body"
           id="d-desc"
-          contentEditable
+          contentEditable={!locked}
           suppressContentEditableWarning
           data-ph="Add a description…"
           role="textbox"
@@ -392,6 +396,7 @@ function Rte({ t, desc }: { t: Task; desc: string }) {
             if (html !== atFocus.current) mutate(() => applyPatch(t, { desc: html }));
           }}
         />
+        {locked && <div className="muted">This description has formatting the editor can't change here.</div>}
       </div>
     </div>
   );
@@ -875,7 +880,7 @@ export function Drawer() {
                   )}
                 </div>
               ) : (
-                <Rte t={t} desc={detail.desc} />
+                <Rte t={t} desc={detail.desc} md={detail.md} />
               )}
               <Subtasks t={t} sd={sd} />
               <div className="dsec">

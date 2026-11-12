@@ -136,3 +136,15 @@ export function htmlToMd(html: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+/** Whether the drawer's editor can save this Markdown without losing or rewriting anything (no tables or fenced code, and it round-trips). */
+export function editorCanKeep(md: string): boolean {
+  const norm = (x: string) =>
+    x
+      .replace(/\r\n/g, "\n")
+      .replace(/^(\s*)\* /gm, "$1- ")
+      .replace(/\s+$/gm, "")
+      .trim();
+  if (/^\s*(```|~~~)/m.test(md) || /^\s*\|.*\|\s*$/m.test(md)) return false;
+  return norm(htmlToMd(mdToHtml(md))) === norm(md);
+}
