@@ -1,5 +1,5 @@
 """Agents as data: built-ins that owners change, custom agents, project overrides, and runs
-that use them (docs/agents-v2.md §4)."""
+that use them (docs/architecture.md)."""
 import pytest
 from httpx import AsyncClient
 

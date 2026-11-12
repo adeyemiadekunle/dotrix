@@ -1,4 +1,4 @@
-"""Which web search agents get, from settings (docs/agents-v2.md §6.2)."""
+"""Which web search agents get, from settings (docs/architecture.md)."""
 import pytest
 
 from dotrix_backend.core.settings import Settings

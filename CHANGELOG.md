@@ -15,6 +15,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - dotrix code --plan-only and dotrix codes follow --plan-only ask Kai for a plan first; --plan TURN builds from that plan.
 - dotrix codes show prints a Plan turn's plan and a turn's parallel tasks; --details adds its skills and unavailable capabilities.
 
+### Changed
+
+- Consolidated product, release-readiness and agent design documentation into two current guides, replacing obsolete proposals and updating navigation.
+
 ### Fixed
 
 - dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
@@ -34,7 +38,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - The admin console's health now covers Redis, workers, file storage, email, the GitHub App, waiting emails and automation events, and coding capacity.
 - Each workspace has a storage limit for uploaded documents and task attachments (1 GB by default; the operator can change it per workspace). Settings shows how much is used, and an upload that doesn't fit is refused with the reason.
 - NVIDIA as a model provider: connect your build.nvidia.com key (`nvapi-…`) in Account → Your models to use NVIDIA's hosted models, which are free to try with rate limits, for chat and for Kai (on OpenCode or fx). Six are offered, each checked live for fast, working tool calls: Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Bolt, Mistral Large 4, Gemma 4 31B and Laguna XS 2.1.
-- A private solo beta readiness page (`docs/solo-beta-readiness.md`): the supported configuration, the checks to run where, and the known limitations to tell participants.
+- A private solo beta readiness page (`docs/product.md`): the supported configuration, the checks to run where, and the known limitations to tell participants.
 - Personal workspaces can launch on their own: with `DOTRIX_ORGANISATIONS` off (the default on staging and production), organisation workspaces can't be created, joined, opened or moved into, and the app hides every way to reach one. A personal workspace also no longer shows Members, Permissions or invites. Existing organisations keep their data and return when the setting is turned on.
 - Optional first-workspace choice after signup, defaulting to Personal, with durable organisation setup and a labelled onboarding stepper.
 - Project readiness across setup, Overview and empty task views, with private model evidence and next actions that explain missing prerequisites and permissions.

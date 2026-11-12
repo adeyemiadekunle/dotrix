@@ -6816,7 +6816,7 @@ export interface components {
         ChunkSource: "document" | "issue";
         /**
          * ClaimCheck
-         * @description A report item checked against its sources (docs/agents-v2.md §6.3).
+         * @description A report item checked against its sources (docs/architecture.md).
          */
         ClaimCheck: {
             /**

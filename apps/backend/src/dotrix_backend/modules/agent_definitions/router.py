@@ -1,4 +1,4 @@
-"""Agents as data: the workspace's agents and each project's overrides (docs/agents-v2.md §4.8).
+"""Agents as data: the workspace's agents and each project's overrides (docs/architecture.md).
 
 Everyone who sees the workspace (or project) sees its agents; owners and admins change them.
 """

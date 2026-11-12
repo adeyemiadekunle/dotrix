@@ -1,5 +1,4 @@
-"""Pipelines: the stages an agent works through, and where a person can steer (docs/agents-v2.md
-§4.7, §5).
+"""Pipelines: the stages an agent works through, and where a person can steer (docs/architecture.md#research-pipelines-and-structured-results).
 
 Each built-in agent follows one by default (its contract's `pipeline`); a run can pick another
 for the agent that leads it (`build_team(mode=...)`), e.g. the Reviewer reviewing one issue or

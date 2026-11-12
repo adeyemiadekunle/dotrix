@@ -1,5 +1,5 @@
 """Reading pages safely: only public addresses (checked again on every redirect and on the
-connection made), standard ports, capped size and time, robots.txt (docs/agents-v2.md §6.1)."""
+connection made), standard ports, capped size and time, robots.txt (docs/architecture.md)."""
 import asyncio
 
 import httpx

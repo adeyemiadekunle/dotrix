@@ -1,5 +1,5 @@
 """The agents' web tools: source ids, untrusted wrapping, limits, the extract fallback, tiers
-(docs/agents-v2.md §6)."""
+(docs/architecture.md)."""
 import httpx
 import pytest
 

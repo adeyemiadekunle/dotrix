@@ -1,4 +1,4 @@
-"""Pipelines on the platform (docs/agents-v2.md §4.7, §5): checkpoints a person answers, tokens per
+"""Pipelines on the platform (docs/architecture.md): checkpoints a person answers, tokens per
 stage, findings deduplicated, and the triage and issue-review entry points."""
 import pytest
 from httpx import AsyncClient

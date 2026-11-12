@@ -1,4 +1,4 @@
-"""Agent contracts stored per workspace, with per-project overrides (docs/agents-v2.md §4.2).
+"""Agent contracts stored per workspace, with per-project overrides (docs/architecture.md).
 
 A definition exists only once someone edits a built-in or creates an agent; everything else
 comes from the engine's built-ins. Every save is a new version (append-only, like knowledge

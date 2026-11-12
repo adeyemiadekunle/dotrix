@@ -1,5 +1,5 @@
 """Tavily behind the search interface: the request we send, the results we keep, and errors
-that never leak the key (docs/agents-v2.md §6.1, D3)."""
+that never leak the key (docs/architecture.md)."""
 import json
 
 import httpx

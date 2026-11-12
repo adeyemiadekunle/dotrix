@@ -1,4 +1,4 @@
-"""`web_search` and `fetch_page`: the agents' web tools (docs/agents-v2.md §6.1).
+"""`web_search` and `fetch_page`: the agents' web tools (docs/architecture.md).
 
 Every result and page gets a source id for the run (`S1`, `S2`, …) in a `SourceLog`, which
 the platform persists (`on_change`) and seeds again when a run resumes, so ids stay stable
