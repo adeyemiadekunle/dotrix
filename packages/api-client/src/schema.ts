@@ -13712,6 +13712,14 @@ export interface operations {
             query?: {
                 /** @description Actions starting with this, e.g. `coding.` */
                 action?: string | null;
+                /** @description Only this workspace, by its slug */
+                workspace?: string | null;
+                /** @description Only events by people, agents or the system */
+                actor_type?: components["schemas"]["AuthorType"] | null;
+                /** @description From this day (UTC), inclusive */
+                since?: string | null;
+                /** @description Up to this day (UTC), inclusive */
+                until?: string | null;
                 /** @description Skip this many events: the page times its size */
                 offset?: number;
                 limit?: number;

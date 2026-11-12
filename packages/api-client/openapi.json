@@ -2718,6 +2718,81 @@
             "description": "Actions starting with this, e.g. `coding.`"
           },
           {
+            "name": "workspace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this workspace, by its slug",
+              "title": "Workspace"
+            },
+            "description": "Only this workspace, by its slug"
+          },
+          {
+            "name": "actor_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AuthorType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only events by people, agents or the system",
+              "title": "Actor Type"
+            },
+            "description": "Only events by people, agents or the system"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "From this day (UTC), inclusive",
+              "title": "Since"
+            },
+            "description": "From this day (UTC), inclusive"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Up to this day (UTC), inclusive",
+              "title": "Until"
+            },
+            "description": "Up to this day (UTC), inclusive"
+          },
+          {
             "name": "offset",
             "in": "query",
             "required": false,

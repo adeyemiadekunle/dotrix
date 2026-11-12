@@ -453,7 +453,13 @@ const failureColumns = (now: number): Column<FailureGroup>[] => [
       </>
     ),
   },
-  { id: "error", accessorKey: "key", header: "Error", enableSorting: false, cell: ({ row }) => <span className="mono wrap">{row.original.key}</span> },
+  {
+    id: "error",
+    accessorKey: "key",
+    header: "Kind of failure",
+    enableSorting: false,
+    cell: ({ row }) => <span className="mono wrap">{row.original.key}</span>,
+  },
   {
     id: "last",
     accessorFn: (g) => g.last_at ?? "",
@@ -815,9 +821,20 @@ export function WorkspacesPage() {
 
 const AUDIT_FILTERS = ["", "coding.", "agent_run.", "project.", "github.", "member.", "sandbox_network."];
 
-const auditColumns = (now: number): Column<AuditEvent>[] => [
+const auditColumns = (now: number, onWorkspace: (slug: string) => void): Column<AuditEvent>[] => [
   { id: "action", header: "Action", cell: ({ row }) => <span className="mono strong">{row.original.action}</span> },
-  { id: "workspace", header: "Workspace", cell: ({ row }) => <span className="mono">{row.original.workspace ?? "—"}</span> },
+  {
+    id: "workspace",
+    header: "Workspace",
+    cell: ({ row }) =>
+      row.original.workspace ? (
+        <button type="button" className="mono link" title="Only this workspace" onClick={() => onWorkspace(row.original.workspace!)}>
+          {row.original.workspace}
+        </button>
+      ) : (
+        <span className="mono">—</span>
+      ),
+  },
   {
     id: "by",
     header: "By",
@@ -835,17 +852,22 @@ const auditColumns = (now: number): Column<AuditEvent>[] => [
 export function AuditPage() {
   const now = useTick();
   const [action, setAction] = useState("");
+  const [workspace, setWorkspace] = useState("");
+  const [actor, setActor] = useState("");
+  const [since, setSince] = useState("");
+  const [until, setUntil] = useState("");
   const [page, setPage] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZES[0] });
   const q = useQuery({
-    queryKey: ["audit", action, page.pageIndex, page.pageSize],
-    queryFn: () =>
-      call<Page<AuditEvent>>(
-        `/admin/audit?limit=${page.pageSize}&offset=${page.pageIndex * page.pageSize}${action ? `&action=${encodeURIComponent(action)}` : ""}`,
-      ),
+    queryKey: ["audit", action, workspace, actor, since, until, page.pageIndex, page.pageSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: String(page.pageSize), offset: String(page.pageIndex * page.pageSize) });
+      for (const [key, value] of Object.entries({ action, workspace, actor_type: actor, since, until })) if (value) params.set(key, value);
+      return call<Page<AuditEvent>>(`/admin/audit?${params}`);
+    },
     placeholderData: keepPreviousData,
   });
-  const filter = (v: string) => {
-    setAction(v);
+  const filter = (set: (v: string) => void) => (v: string) => {
+    set(v);
     setPage((p) => ({ ...p, pageIndex: 0 }));
   };
   return (
@@ -855,13 +877,35 @@ export function AuditPage() {
           className="input mono"
           placeholder="Action starts with…"
           value={action}
-          onChange={(e) => filter(e.target.value.trim())}
+          onChange={(e) => filter(setAction)(e.target.value.trim())}
           aria-label="Filter by action"
+        />
+        <input
+          className="input mono"
+          placeholder="Workspace slug"
+          value={workspace}
+          onChange={(e) => filter(setWorkspace)(e.target.value.trim())}
+          aria-label="Filter by workspace"
+        />
+        <select className="input" value={actor} onChange={(e) => filter(setActor)(e.target.value)} aria-label="Filter by who acted">
+          <option value="">Anyone</option>
+          <option value="user">People</option>
+          <option value="agent">Agents</option>
+          <option value="system">System</option>
+        </select>
+        <input className="input" type="date" value={since} max={until || undefined} onChange={(e) => filter(setSince)(e.target.value)} aria-label="From date" />
+        <input
+          className="input"
+          type="date"
+          value={until}
+          min={since || undefined}
+          onChange={(e) => filter(setUntil)(e.target.value)}
+          aria-label="Up to date"
         />
       </PageHead>
       <div className="fchips">
         {AUDIT_FILTERS.map((f) => (
-          <button key={f} type="button" className={action === f ? "fchip on" : "fchip"} onClick={() => filter(f)}>
+          <button key={f} type="button" className={action === f ? "fchip on" : "fchip"} onClick={() => filter(setAction)(f)}>
             {f || "Everything"}
           </button>
         ))}
@@ -871,7 +915,7 @@ export function AuditPage() {
           <Failed error={q.error} />
         ) : (
           <DataTable
-            columns={auditColumns(now)}
+            columns={auditColumns(now, filter(setWorkspace))}
             data={q.data?.items ?? []}
             total={q.data?.total ?? 0}
             pagination={page}

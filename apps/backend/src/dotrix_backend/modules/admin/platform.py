@@ -7,6 +7,7 @@ are named by their workspace, project and issue key; failures by the error the p
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
@@ -49,6 +50,7 @@ from dotrix_backend.modules.coding.models import (
 from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.issues.models import IssueAttachment
+from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.notifications.models import Notification
 from dotrix_backend.modules.observe.service import ObserveService
 from dotrix_backend.modules.projects.models import Project
@@ -66,10 +68,63 @@ CODING_FAILED = (CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)
 CODING_DONE = (CodingRunStatus.PR_OPENED, CodingRunStatus.NO_CHANGES, CodingRunStatus.CHANGES_READY)
 
 
-def _error_line(error: str | None) -> str:
-    """The first line of a recorded error, short: enough to group the same failure together."""
-    line = (error or "").strip().splitlines()[0] if (error or "").strip() else "(no message)"
-    return line[:160]
+# Messages the platform itself writes (agents/runner.py, coding/runner.py, coding/local.py): only their
+# fixed opening is kept, since what follows can carry a person's name or words.
+_PLATFORM_PREFIXES = (
+    "Kai didn't finish",
+    "Stopped by",
+    "Stopped before it started",
+    "Stopped for outcome reconciliation",
+    "Stopped because the server shut down",
+    "Stopped:",
+    "The person who asked no longer sees this project",
+    "Whoever asked is no longer in this workspace",
+    "You can no longer see every project in this conversation",
+    "The PM finished without writing a reply",
+    "A required specialist result is no longer available",
+    "The specialist history could not be validated",
+    "Something went wrong running the coding agent",
+)
+_EXCEPTION = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Timeout|Refused|Limit)\w*):")
+_STATUS = re.compile(r"\b([45]\d\d)\b")
+_KINDS = (
+    (re.compile(r"rate.?limit|quota|too many requests|credit|overloaded", re.I), "rate limited"),
+    (re.compile(r"timeout|timed out", re.I), "timed out"),
+    (re.compile(r"connect|network|dns", re.I), "connection failed"),
+    (re.compile(r"auth|api key|unauthori[sz]ed|permission", re.I), "authentication failed"),
+    (re.compile(r"context.*(length|window)|(length|window).*context|too many tokens", re.I), "context too long"),
+)
+
+
+def _classify(message: str) -> str:
+    status = _STATUS.search(message)
+    if status:
+        return f"HTTP {status.group(1)}"
+    for pattern, kind in _KINDS:
+        if pattern.search(message):
+            return kind
+    return "other"
+
+
+def _failure_key(error: str | None) -> str:
+    """A recorded error as a kind of failure, to group the same one together. The raw text can repeat
+    part of what someone asked, so the console gets a class name and a fixed classification, or the
+    opening of a message the platform wrote, never the rest."""
+    text_ = (error or "").strip()
+    if not text_:
+        return "(no message)"
+    line = text_.splitlines()[0].strip()
+    if line.startswith("Stopped by"):
+        return "Stopped by a person"
+    for prefix in _PLATFORM_PREFIXES:
+        if line.startswith(prefix):
+            return prefix.rstrip(":")[:80]
+    if re.match(r"The @\S+ agent no longer exists", line):
+        return "An agent no longer exists"
+    named = _EXCEPTION.match(line)
+    if named:
+        return f"{named.group(1)}: {_classify(line[named.end():])}"[:80]
+    return _classify(line)
 
 
 class PlatformObserve:
@@ -479,7 +534,7 @@ class PlatformObserve:
             .limit(500)
         )
         for error, at, kind in rows:
-            self._group(messages, "chat", _error_line(error), at, kind)
+            self._group(messages, "chat", _failure_key(error), at, kind)
         rows = await self.session.execute(
             select(CodingRun.error, CodingRun.finished_at, CodingRun.status)
             .where(CodingRun.status.in_(CODING_FAILED), CodingRun.finished_at >= since)
@@ -487,7 +542,7 @@ class PlatformObserve:
             .limit(500)
         )
         for error, at, status in rows:
-            self._group(messages, "coding", _error_line(error), at, status.value)
+            self._group(messages, "coding", _failure_key(error), at, status.value)
         top = sorted(messages.values(), key=lambda g: (g.count, g.last_at or datetime.min.replace(tzinfo=UTC)), reverse=True)
 
         return FailureReport(days=days, chat_kinds=chat_kinds, chat_models=by_model, messages=top[:25])
@@ -628,10 +683,29 @@ class PlatformObserve:
         found.sort(key=lambda w: (w.chat_runs + w.coding_runs, w.tokens, w.created_at), reverse=True)
         return found[:limit]
 
-    async def audit(self, *, action: str | None = None, offset: int = 0, limit: int = 100) -> AuditPage:
+    async def audit(
+        self,
+        *,
+        action: str | None = None,
+        workspace: str | None = None,
+        actor_type: AuthorType | None = None,
+        since: date | None = None,
+        until: date | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> AuditPage:
         """A page of audit events across every workspace, newest first, with the total. `action`
-        matches a prefix (`coding.` finds every coding event)."""
+        matches a prefix (`coding.` finds every coding event); `workspace` is a slug, `since` and
+        `until` are inclusive UTC days. The total follows the filters."""
         where = []
+        if workspace:
+            where.append(Workspace.slug == workspace)
+        if actor_type:
+            where.append(AuditEvent.actor_type == actor_type)
+        if since:
+            where.append(AuditEvent.created_at >= datetime.combine(since, datetime.min.time(), tzinfo=UTC))
+        if until:
+            where.append(AuditEvent.created_at < datetime.combine(until + timedelta(days=1), datetime.min.time(), tzinfo=UTC))
         if action:
             escaped = action.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             where.append(AuditEvent.action.like(f"{escaped}%", escape="\\"))
@@ -655,7 +729,9 @@ class PlatformObserve:
             )
             for e, slug in rows
         ]
-        total = await self._scalar(select(func.count(AuditEvent.id)).where(*where))
+        total = await self._scalar(
+            select(func.count(AuditEvent.id)).outerjoin(Workspace, Workspace.id == AuditEvent.workspace_id).where(*where)
+        )
         return AuditPage(items=items, total=int(total))
 
 

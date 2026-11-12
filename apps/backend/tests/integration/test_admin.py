@@ -6,11 +6,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.model_prices import cost_of
 from dotrix_backend.modules.agents.models import RunStatus
-from dotrix_backend.modules.audit.models import AuthorType
+from dotrix_backend.modules.audit.models import AuditEvent, AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.coding.models import CodingRunStatus
 
@@ -83,7 +84,7 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     db_session.add(
         _chat_run(
             other_ws["id"], other_project["id"], other, title="Theirs", status=RunStatus.FAILED,
-            error="Provider refused: rate limit\ntrace", error_kind="model_limit", finished_at=now,
+            error="BadRequestError: Error code: 429 - {'message': 'my distinctive secret plan'}\ntrace", error_kind="model_limit", finished_at=now,
         )
     )
     db_session.add(
@@ -92,7 +93,7 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     db_session.add(
         _coding_run(
             ws["id"], project["id"], issue["id"], owner, issue_key=issue["key"], status=CodingRunStatus.FAILED,
-            error="the sandbox died", started_at=now - timedelta(minutes=4), finished_at=now, cost_usd=0.5,
+            error="the sandbox died for Ada Lovelace's distinctive plan", started_at=now - timedelta(minutes=4), finished_at=now, cost_usd=0.5,
         )
     )
     db_session.add(
@@ -124,7 +125,8 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     failures = (await db_client.get("/v1/admin/observe/failures")).json()
     assert [(g["key"], g["count"]) for g in failures["chat_kinds"]] == [("model_limit", 1)]
     lines = {(g["kind"], g["key"]) for g in failures["messages"]}
-    assert lines == {("chat", "Provider refused: rate limit"), ("coding", "the sandbox died")}
+    assert lines == {("chat", "BadRequestError: HTTP 429"), ("coding", "other")}
+    assert "distinctive" not in str(failures) and "Lovelace" not in str(failures)
 
     coding = (await db_client.get("/v1/admin/observe/coding")).json()
     assert len(coding) == 1 and coding[0]["turns"] == 2 and coding[0]["failed"] == 1 and coding[0]["prs"] == 1
@@ -157,6 +159,38 @@ async def test_me_and_the_platform_reads(db_client: AsyncClient, db_session: Asy
     assert res.status_code == 200 and "secret.example.com" not in res.text
     assert [(e["action"], e["workspace"]) for e in res.json()["items"]] == [("sandbox_network.updated", ws["slug"])]
     assert res.json()["total"] == 1
+    # Filters: workspace, kind of actor and day each narrow the page and the total.
+    old = datetime.now(UTC) - timedelta(days=10)
+    AuditLog(db_session).record(
+        workspace_id=uuid.UUID(other_ws["id"]), project_id=None, action="agent_run.started", target="y",
+        actor_type=AuthorType.AGENT, agent="nova", details={"words": "private words"},
+    )
+    await db_session.flush()
+    event = (await db_session.execute(select(AuditEvent).where(AuditEvent.action == "agent_run.started"))).scalar_one()
+    event.created_at = old
+    await db_session.commit()
+
+    async def found(query: str) -> tuple[set[str], int]:
+        res = await db_client.get(f"/v1/admin/audit?limit=200&{query}")
+        assert res.status_code == 200 and "private words" not in res.text and "details" not in res.text and "target" not in res.text
+        return {e["action"] for e in res.json()["items"]}, res.json()["total"]
+
+    everything_total = (await found(""))[1]
+    mine_actions, mine_total = await found(f"workspace={ws['slug']}")
+    assert "sandbox_network.updated" in mine_actions and "agent_run.started" not in mine_actions and mine_total < everything_total
+    assert await found(f"workspace={other_ws['slug']}") == ({"agent_run.started"}, 1)
+    assert await found("workspace=no-such-workspace") == (set(), 0)
+    assert await found("actor_type=agent") == ({"agent_run.started"}, 1)
+    users, users_total = await found("actor_type=user")
+    assert "agent_run.started" not in users and users_total == everything_total - 1
+    today = datetime.now(UTC).date()
+    recent, recent_total = await found(f"since={today}")
+    assert "agent_run.started" not in recent and recent_total == everything_total - 1
+    assert await found(f"until={old.date()}") == ({"agent_run.started"}, 1)
+    assert await found(f"since={old.date()}&until={old.date()}") == ({"agent_run.started"}, 1)
+    assert await found(f"since={today}&actor_type=agent") == (set(), 0)
+    assert await found(f"workspace={other_ws['slug']}&actor_type=agent&until={today}") == ({"agent_run.started"}, 1)
+    assert (await db_client.get("/v1/admin/audit?actor_type=robot")).status_code == 422
     assert (await db_client.get("/v1/admin/audit?action=nothing.")).json() == {"items": [], "total": 0}
     everything = (await db_client.get("/v1/admin/audit?limit=1")).json()
     assert len(everything["items"]) == 1 and everything["total"] >= 1

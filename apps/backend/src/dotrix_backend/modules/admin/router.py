@@ -4,6 +4,7 @@ users' session."""
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Cookie, Depends, Query, Request, Response, status
@@ -26,6 +27,7 @@ from dotrix_backend.modules.admin.schemas import (
     WorkspaceUsage,
 )
 from dotrix_backend.modules.auth.limits import LOGIN, ThrottleDep
+from dotrix_backend.modules.knowledge.models import AuthorType
 
 from .accounts import AdminAccounts
 from .schemas import (
@@ -326,10 +328,22 @@ async def audit(
     admin: AdminDep,
     platform: Platform,
     action: str | None = Query(default=None, max_length=100, description="Actions starting with this, e.g. `coding.`"),
+    workspace: str | None = Query(default=None, max_length=100, description="Only this workspace, by its slug"),
+    actor_type: AuthorType | None = Query(default=None, description="Only events by people, agents or the system"),
+    since: date | None = Query(default=None, description="From this day (UTC), inclusive"),
+    until: date | None = Query(default=None, description="Up to this day (UTC), inclusive"),
     offset: int = Query(default=0, ge=0, le=100_000, description="Skip this many events: the page times its size"),
     limit: int = Query(default=25, ge=1, le=200),
 ) -> AuditPage:
     """A page of audit events across the whole platform, newest first, with the total: the action,
     who, and which workspace, without the details (they can carry words people wrote)."""
-    return await platform.audit(action=action, offset=offset, limit=limit)
+    return await platform.audit(
+        action=action,
+        workspace=workspace,
+        actor_type=actor_type,
+        since=since,
+        until=until,
+        offset=offset,
+        limit=limit,
+    )
 
