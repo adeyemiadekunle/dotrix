@@ -176,7 +176,7 @@ test("the session bar opens panes beside it, stacked, and Juno's findings show o
   await review.getByRole("tab", { name: "Summary" }).click();
   await review.getByRole("tab", { name: /^Findings/ }).click();
   await review.getByRole("button", { name: "Ask Kai to fix" }).click();
-  await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
+  await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveValue(/Keyboard focus is difficult to see/);
   // A reference in the review opens its line in Files.
   await toggle(page, "Terminal");
   await review.getByRole("button", { name: `${path}:2` }).click();
@@ -213,7 +213,8 @@ test("the session shows Kai, never the engine underneath", async ({ page, contex
   await mockWorkspace(page, context, baseURL!, undefined, false);
   const main = page.locator(".conv-main");
   await expect(main.getByText("Kai", { exact: true }).first()).toBeVisible();
-  await expect(page.getByLabel("Follow-up")).toHaveAttribute("placeholder", /Ask Kai/);
+  await expect(page.getByRole("combobox", { name: "Follow-up mode", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveAttribute("placeholder", /Ask Kai/);
   await expect(page.locator(".chat-list")).not.toContainText("Codex");
   await expect(main).not.toContainText("Codex");
 });
@@ -266,7 +267,7 @@ test("the panes are closeable and keyboard accessible on mobile", async ({ page,
   await toggle(page, "Review");
   await pane(page, "Review").getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
+  await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveValue(/Keyboard focus is difficult to see/);
 });
 
 test("live session menus still pin using the current workspace and project scope", async ({ page, context, baseURL }) => {
