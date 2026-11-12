@@ -9,7 +9,8 @@ import { cancelComposer, commitComposer, confirmDlg, deleteTasks, newTask, resto
 import { isLive } from "../data/live";
 import { go } from "../core/nav";
 import { ago, relDate } from "../core/utils";
-import { D, S, commentsOf, isOver, logAct, mutate, pColor, proj, render, task, who } from "../data/store";
+import { commentCount } from "../data/tasks";
+import { D, S, isOver, logAct, mutate, pColor, proj, render, task, who } from "../data/store";
 import type { Activity, Task } from "../data/types";
 import { viewChange, type Group } from "../shell/viewEngine";
 import { Av, Due, Empty, Lbl, PrIcon, PrPill, StIcon, StPill, TypeIcon } from "../ui/helpers";
@@ -116,7 +117,7 @@ function TitleCell({ t }: { t: Task }) {
   const editing = S.ui.editCell?.id === t.id && S.ui.editCell.field === "title";
   const [v, setV] = useState(t.title);
   const open = openRows[t.id];
-  const cc = commentsOf(t.id).length;
+  const cc = commentCount(t);
   const sd = t.subtasks.filter((s) => s.done).length;
   const commit = () => {
     S.ui.editCell = null;

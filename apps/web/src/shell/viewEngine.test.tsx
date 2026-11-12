@@ -84,13 +84,38 @@ describe("groupTasks", () => {
     expect(g).toEqual({ [p1!.id]: [a.id], [p2!.id]: [b.id], none: [c.id] });
   });
 
-  it.fails("keeps a task assigned to an agent (plan 023)", () => {
+  it("keeps a task assigned to an agent", () => {
     const k = task({ assignee: "agent:kai" });
     const all = Object.values(groupIds([k], "assignee")).flat();
     expect(all).toContain(k.id);
   });
 
-  // Note: "week" is n >= 0 && n <= 7, so a task due today is in both Today and Next 7 days (recorded as is).
+  it("names an agent's group after the agent and keeps Unassigned last", () => {
+    const [p1] = people();
+    const k = task({ assignee: "agent:coding-agent" });
+    const gone = task({ assignee: "removed-member" });
+    const a = task({ assignee: p1!.id });
+    const u = task({ assignee: null });
+    const g = groupTasks([k, gone, a, u], "assignee");
+    expect(g.find((G) => G.key === "agent:coding-agent")?.name).toBe("Kai");
+    expect(g.find((G) => G.key === "removed-member")?.name).toBe("Former member");
+    expect(g[g.length - 1]!.key).toBe("none");
+  });
+
+  it.each(["assignee", "due", "project", "status", "priority"])("puts every task in exactly one group by %s", (by) => {
+    const [p1] = people();
+    const ts = [
+      task({ assignee: p1!.id, due: dOff(-2), priority: "high" }),
+      task({ assignee: "agent:kai", due: dOff(0), status: "progress" }),
+      task({ assignee: "removed-member", due: dOff(4) }),
+      task({ assignee: null, due: dOff(30) }),
+      task({ due: dOff(-3), status: "done" }),
+      task({ due: null, status: "done" }),
+    ];
+    const seen = groupTasks(ts, by).flatMap((G) => ids(G.tasks));
+    expect(seen.sort()).toEqual(ids(ts).sort());
+  });
+
   it("groups by due date bucket", () => {
     const over = task({ due: dOff(-3) });
     const today = task({ due: dOff(0) });
@@ -98,10 +123,10 @@ describe("groupTasks", () => {
     const later = task({ due: dOff(20) });
     const none = task({ due: null });
     const g = groupIds([over, today, week, later, none], "due");
-    expect(g).toEqual({ overdue: [over.id], today: [today.id], week: [today.id, week.id], later: [later.id], nodate: [none.id] });
+    expect(g).toEqual({ overdue: [over.id], today: [today.id], week: [week.id], later: [later.id], nodate: [none.id] });
   });
 
-  it.fails("keeps a done task whose due date has passed (plan 023)", () => {
+  it("keeps a done task whose due date has passed", () => {
     const d = task({ due: dOff(-3), status: "done" });
     const all = Object.values(groupIds([d], "due")).flat();
     expect(all).toContain(d.id);
@@ -154,7 +179,7 @@ describe("sortTasks", () => {
     expect(sorted([a, b], "title", -1)).toEqual([b.id, a.id]);
   });
 
-  it.fails("sorts estimates as numbers (plan 023)", () => {
+  it("sorts estimates as numbers", () => {
     const ten = task({ estimate: "10" });
     const two = task({ estimate: "2" });
     expect(sorted([ten, two], "estimate")).toEqual([two.id, ten.id]);

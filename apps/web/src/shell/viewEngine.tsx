@@ -6,7 +6,7 @@ import { closePop, openPop } from "../core/actions";
 import { LABELS, PR, PRIOS, STATUSES, type StatusId } from "../core/constants";
 import { Ic } from "../core/icons";
 import { DAY, TODAY, diffD, parse } from "../core/utils";
-import { D, S, canSee, isOver, mem, pColor, proj, render, save, visibleProjects, type View, people } from "../data/store";
+import { D, S, canSee, isOver, mem, pColor, proj, render, save, visibleProjects, who, type View, people } from "../data/store";
 import type { Filter, Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
 
@@ -115,13 +115,22 @@ export function sortTasks(ts: Task[], s: { f: string; dir: number }): Task[] {
         assignee: (t: Task) => mem(t.assignee)?.name || "zzz",
         created: (t: Task) => -t.created,
         updated: (t: Task) => -t.updated,
-        estimate: (t: Task) => t.estimate || "zzz",
+        estimate: (t: Task) => {
+          if (!t.estimate) return Number.POSITIVE_INFINITY;
+          const num = parseFloat(t.estimate);
+          return Number.isNaN(num) ? t.estimate : num;
+        },
         project: (t: Task) => proj(t.project)?.name ?? "",
       } as Record<string, (t: Task) => string | number>
     )[s.f] || ((t: Task) => t.order);
+  // Numbers sort before text (a non-numeric estimate), and tasks without an estimate come last.
+  const rank = (k: string | number) => (typeof k === "number" ? (k === Number.POSITIVE_INFINITY && s.f === "estimate" ? 2 : 0) : s.f === "estimate" ? 1 : 0);
   return [...ts].sort((x, y) => {
     const p = key(x);
     const q = key(y);
+    const rp = rank(p);
+    const rq = rank(q);
+    if (rp !== rq) return (rp - rq) * d;
     return (p > q ? 1 : p < q ? -1 : 0) * d;
   });
 }
@@ -135,11 +144,16 @@ export interface Group {
 export function groupTasks(ts: Task[], g: string): Group[] {
   if (g === "none") return [{ key: "all", name: "All tasks", html: null, tasks: ts }];
   let groups: Omit<Group, "tasks">[];
+  const known = new Set(people().map((m) => m.id));
+  const others: string[] = [];
+  if (g === "assignee") for (const t of ts) if (t.assignee && !known.has(t.assignee) && !others.includes(t.assignee)) others.push(t.assignee);
   if (g === "status") groups = STATUSES.map((s) => ({ key: s.id, name: s.name, html: <StIcon st={s.id} />, set: { status: s.id as StatusId } }));
   else if (g === "priority") groups = PRIOS.map((p) => ({ key: p.id, name: p.name, html: <PrIcon p={p.id} />, set: { priority: p.id } }));
   else if (g === "assignee")
     groups = [
       ...people().map((m) => ({ key: m.id, name: m.name, html: <Av id={m.id} cls="sm" tip={false} />, set: { assignee: m.id } })),
+      // Agents (such as Kai) and people who have left: shown, but a row can't be dragged onto them.
+      ...others.map((id) => ({ key: id, name: who(id)?.name ?? "Former member", html: <Av id={id} cls="sm" tip={false} /> })),
       { key: "none", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, set: { assignee: null } },
     ];
   else if (g === "project")
@@ -152,13 +166,20 @@ export function groupTasks(ts: Task[], g: string): Group[] {
       { key: "today", name: "Today" },
       { key: "week", name: "Next 7 days" },
       { key: "later", name: "Later" },
+      { key: "past", name: "Past" },
       { key: "nodate", name: "No due date" },
     ].map((x) => ({ ...x, html: <Ic n="calendar" s={14} /> }));
+  const bucket = (t: Task) => {
+    if (!t.due) return "nodate";
+    const n = diffD(parse(t.due)!, TODAY);
+    if (n < 0) return t.status === "done" ? "past" : "overdue";
+    return n === 0 ? "today" : n <= 7 ? "week" : "later";
+  };
   const out = groups.map((G) => ({
     ...G,
     tasks: ts.filter((t) => {
       if (g === "assignee") return (t.assignee || "none") === G.key;
-      if (g === "due") return matchF(t, { f: "due", op: "is", v: [G.key] });
+      if (g === "due") return bucket(t) === G.key;
       return String((t as unknown as Record<string, unknown>)[g]) === G.key;
     }),
   }));
