@@ -54,10 +54,10 @@ the audit nor the other plans.
 | [039](039-ci-actions-pinned-and-least-privilege.md) | CI's third-party actions are pinned to commits, and pull-request builds can't write to the repository | P2 | S | — | DONE |
 | [040](040-small-housekeeping.md) | Housekeeping: the stray Redis dump, the seroval advisories, and the documented CLI install | P3 | S | — | DONE |
 | [041](041-workspace-storage-limit.md) | Each workspace has a storage limit for uploads, shown in Settings and enforced on upload | P1 | M | — (admin part follows 011–018's shape if they land first) | DONE |
-| [042](042-cli-plan-turns-and-chosen-plans.md) | The CLI asks Kai for a Plan turn, and builds from a plan you choose | P2 | S | — | TODO |
-| [043](043-codes-show-plans-tasks-and-skills.md) | dotrix codes show prints a turn's plan, its parallel tasks, and the skills it used | P3 | S | 042 (shares codes.py) | TODO |
-| [044](044-cli-chat-plans-and-building-a-version.md) | dotrix chat lists the conversation's saved plans and builds the version you pick | P2 | S | — | TODO |
-| [045](045-runner-survives-network-blips.md) | dotrix runner keeps running through a brief network or server outage | P1 | S | — | TODO |
+| [042](042-cli-plan-turns-and-chosen-plans.md) | The CLI asks Kai for a Plan turn, and builds from a plan you choose | P2 | S | — | DONE |
+| [043](043-codes-show-plans-tasks-and-skills.md) | dotrix codes show prints a turn's plan, its parallel tasks, and the skills it used | P3 | S | 042 (shares codes.py) | DONE |
+| [044](044-cli-chat-plans-and-building-a-version.md) | dotrix chat lists the conversation's saved plans and builds the version you pick | P2 | S | — | DONE |
+| [045](045-runner-survives-network-blips.md) | dotrix runner keeps running through a brief network or server outage | P1 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
