@@ -93,6 +93,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- `deploy/migrate.sh` shows a deployment's database migrations, backs the database up, applies what's waiting and checks the result; the deploy guide has a checklist for the first deploy, every release and this one.
 - Operators can be emailed when dotrix needs attention (a service down, no worker, stuck or failing runs) and again when it clears; the admin console's Overview lists what is open.
 - The admin console keeps a record of admin sign-ins and changes to admin accounts, shown to owners.
 - The admin console's audit log can be filtered by workspace, by who acted and by date.

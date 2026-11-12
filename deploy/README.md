@@ -17,6 +17,48 @@ VPS
         dotrix-run-<id> and dotrix-run-<id>-egress
 ```
 
+## Your checklist
+
+What only you (whoever runs dotrix) can do; the code can't.
+
+**Before the first production deploy**
+
+- [ ] A domain with HTTPS for the web app, the admin console and the public site ([Set up](#set-up), step 3).
+- [ ] Every required value in Dokploy's Environment tab, from `deploy/dokploy.env.example`. Keep a copy of
+      `DOTRIX_ENCRYPTION_KEY` somewhere safe: people's model keys, saved coding sessions and admins'
+      two-factor secrets can't be read without it.
+- [ ] `DOTRIX_ADMIN_URL` (so admin invites are emailed) and `DOTRIX_ALERT_EMAILS` (who hears when something
+      needs attention; empty, the active admin owners).
+- [ ] The GitHub App: callback and webhook URLs on your `DOTRIX_APP_URL`; permissions Contents, Pull requests
+      and Issues (write), Actions and Checks (read); the Push, Pull request and Check suite events (GitHub
+      sends installation events on its own). Details in [infra/coding/README.md](../infra/coding/README.md).
+- [ ] Email: a Sendly key and a From address on a verified domain (`DOTRIX_SENDLY_API_KEY`, `DOTRIX_EMAIL_FROM`).
+- [ ] On GitHub, in the repository's settings: protect `stage` and `main` (a pull request and the CI checks,
+      including `release-flow`, before merging), and set Actions → General → Workflow permissions to
+      read-only.
+
+**After the first deploy**
+
+- [ ] Check the database: `deploy/migrate.sh check` ([Database migrations](#database-migrations)).
+- [ ] Create the first admin console owner ([Admin console accounts](#admin-console-accounts)), sign in, and
+      set up two-factor sign-in. Then remove `DOTRIX_ADMIN_BOOTSTRAP_TOKEN`.
+- [ ] Open the console's Overview: every dependency should read OK.
+
+**Every release**
+
+- [ ] Back up the database before deploying: `deploy/migrate.sh backup`.
+- [ ] Deploy. The `migrate` service applies new migrations before the API and worker start; then run
+      `deploy/migrate.sh check`. The release notes (`CHANGELOG.md`) say which settings are new.
+
+**Once, for this release (the storage limit, admin roles, two-factor sign-in, alerts)**
+
+- [ ] Before deploying, run the [storage usage query](#storage-limit-per-workspace): no workspace should already
+      be over the 1 GB default. Raise `DOTRIX_WORKSPACE_STORAGE_MB`, or set a workspace's own limit in the
+      console afterwards, if one is.
+- [ ] After deploying, tell your admins they'll be asked to set up an authenticator app at their next sign-in.
+- [ ] In the desktop app, try GitHub sign-in with an organisation that requires SAML single sign-on. The app's
+      window allows GitHub's sign-in and two-factor pages; an organisation's SSO pages may still need adding.
+
 ## Sizing
 
 The defaults in `dokploy.env.example` fit 6 vCPUs and 12 GB of memory:
@@ -45,16 +87,75 @@ enforcement are removed; a person can still choose a limit for their project or 
 3. **Domains:** add the app's domain (`app.dotrix.cc`, the same as `DOTRIX_APP_URL`) to the `web`
    service, the public site's (`dotrix.cc`, and `www.dotrix.cc` if you like) to the `site`
    service, and the admin console's (`admin.dotrix.cc`) to the `admin` service, each on port 80
-   with HTTPS. The admin console forwards only `/v1/admin` to the API; whoever operates dotrix
-   creates their console account there with `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` (the sign-up form asks for it; without the variable, admin sign-up stays closed). Further admins are invited by email from the console's Admins page by an owner (set `DOTRIX_ADMIN_URL` to the console's address so the invite link points there; unset, the console shows the link to pass on). Every admin must also set up two-factor sign-in (a code from an authenticator app, plus ten single-use recovery codes) at their next sign-in; that needs `DOTRIX_ENCRYPTION_KEY`, which encrypts the secrets (without it the console falls back to a password alone). A lost device is fixed by an owner (Admins page, Reset 2FA) or from the server: `docker compose exec api python -m dotrix_backend.admin_cli reset-two-factor --email …`. The server's command line still adds one, and is the way back in after a forgotten password: `docker compose exec api python -m dotrix_backend.admin_cli create --email … --name …` (also `list` and `reset-password --email …`; the password is prompted for, or read from `DOTRIX_ADMIN_PASSWORD`). Nothing else needs a
+   with HTTPS. The admin console forwards only `/v1/admin` to the API; its accounts are its own
+   ([Admin console accounts](#admin-console-accounts)). Nothing else needs a
    domain: the API is reached through `web`, on the same origin. The site has no API; its Sign in, Get started and Open dotrix links go
    to `DOTRIX_APP_URL`, and its downloads to the repository's latest release.
 4. **Deploy.** The first deploy builds the images on the VPS (the backend, the web app, the public
-   site, the admin console, and the coding image the worker starts), runs the migrations, then
-   starts everything.
+   site, the admin console, and the coding image the worker starts), runs the migrations (the
+   `migrate` service, once, before the API and worker start), then starts everything. Check the
+   result with `deploy/migrate.sh check` ([Database migrations](#database-migrations)).
 5. **Desktop downloads and updates:** set the repository variable `DOTRIX_APP_URL` to the same
    address before cutting a release. Each release then carries the Windows installer and CLI, built
    for that address, and installed apps update themselves from it.
+
+## Database migrations
+
+Every deploy applies them on its own: the `migrate` service runs `alembic upgrade head` once, before the
+API and worker start, and they don't start if it fails. `deploy/migrate.sh` is for everything around that,
+run on the VPS (as a user in the docker group, from a checkout of this repository or with the script
+copied there):
+
+```bash
+deploy/migrate.sh status    # where the database is, and what's waiting to be applied
+deploy/migrate.sh backup    # a pg_dump into ./backups (BACKUP_DIR), with the command that restores it
+deploy/migrate.sh upgrade   # apply what's waiting (refuses when the code has two migration heads)
+deploy/migrate.sh check     # exit 0 only when the database is at the code's head
+deploy/migrate.sh           # all of it: status, backup, upgrade once you confirm (YES=1 skips asking), check
+IMAGE=dotrix-backend:0.2.0 deploy/migrate.sh check   # against a given release's migrations
+```
+
+It finds the running `api` and `postgres` containers by their compose labels, so it needs neither the
+compose file nor Dokploy's env file. Migrations run inside the API container, which has the code and the
+database URL. If more than one dotrix runs on the machine, name the one you mean with
+`COMPOSE_PROJECT=<name>` (Dokploy's project name for the service), or pass `API_CONTAINER` and
+`PG_CONTAINER`.
+
+When a deploy fails at `migrate`, the API and worker keep running the previous version, and the previous
+version's code knows only the previous migrations. So name the release you're deploying: with
+`IMAGE=dotrix-backend:<version>` (the backend image the deploy built; `docker images dotrix-backend` lists
+them), the script runs the migrations from that image in a one-off container on Postgres's network, with the
+running API's database URL (or `DOTRIX_DATABASE_URL` when no API is running). Read the migrate container's log
+in Dokploy, fix the cause, then `IMAGE=dotrix-backend:<version> deploy/migrate.sh` and deploy again. `check`
+with the same `IMAGE` confirms the database is at that release's head. A backup restores with the
+`pg_restore` command `backup` prints. Restore only into the version that made it, since a newer version's
+code expects its own migrations.
+
+Keep backups off the VPS too: copy the `.dump` files somewhere else, or back up the `pgdata` volume with
+your host's snapshots.
+
+## Admin console accounts
+
+The admin console (`admin.dotrix.cc`) has accounts of its own, separate from dotrix's. An account is an
+**owner** (everything, including managing admins and changing a workspace's storage limit) or a
+**viewer** (reads the console).
+
+- **The first owner:** sign up in the console with `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` (the form asks for it;
+  without the variable, sign-up stays closed). Or create one from the server:
+  `docker compose exec api python -m dotrix_backend.admin_cli create --email … --name …`. Either way,
+  remove the bootstrap token afterwards.
+- **More admins:** an owner invites them from the console's Admins page. The invite is emailed when
+  `DOTRIX_ADMIN_URL` is the console's address; otherwise the console shows the link to pass on. Owners
+  also change roles, disable or remove an admin, and revoke invites. The last active owner can't be removed.
+- **Two-factor sign-in:** with `DOTRIX_ENCRYPTION_KEY` set, every admin sets up an authenticator app at
+  their next sign-in and gets ten single-use recovery codes. Without the key, the console uses a password
+  alone.
+- **Locked out:** an owner resets another admin's two-factor from the Admins page. From the server:
+  `admin_cli reset-two-factor --email …` (a lost device) or `admin_cli reset-password --email …` (a
+  forgotten password; it also signs that admin out everywhere). `admin_cli list` shows every admin. The
+  password is prompted for, or read from `DOTRIX_ADMIN_PASSWORD`, never typed on the command line.
+- **What admins did:** the console's Admin activity page (owners only) lists sign-ins, failed sign-ins, and
+  every change to an admin account or a storage limit, for 400 days.
 
 ## Alerts
 

@@ -94,12 +94,19 @@ left: [CLAUDE.md](CLAUDE.md).
 - **Teams:**
   - Personal workspaces and organisations, with roles, invites, and restricted projects.
   - Sign-in with a password, an email link, or GitHub.
+  - Each workspace has a storage limit for uploads (1 GB by default; Settings → Workspace shows the use).
 - **Desktop app** (Windows first): the web app in a window. It codes local turns on your
   computer, shows a turn's live worktree, updates itself, and shows What's new.
 - **CLI and MCP:** the same chat, coding sessions and board from a terminal. The MCP server
   gives Claude Code and Codex the board, the documents, and the graph.
-- **Admin console:** for whoever runs dotrix. It shows the platform's health, runs, failures,
-  coding, workspaces and audit log, across every workspace, never what people wrote.
+- **Admin console:** for whoever runs dotrix, across every workspace, never what people wrote:
+  - The platform's health (the worker, Redis, storage, email, the GitHub App and the backlogs),
+    runs, failures by kind, coding, workspaces with their storage, the audit log, and cost by model.
+  - Emails to the operators when the deployment needs attention, and again when it clears.
+  - Several admins (owners and viewers, invited by email), two-factor sign-in with an authenticator
+    app, and a record of what each admin did.
+  - Admin accounts can also be created and recovered from the server
+    (`python -m dotrix_backend.admin_cli`).
 
 ## What's next
 
@@ -205,6 +212,17 @@ Then sign up, open Account → Your models and connect your own provider key: ag
   - `DOTRIX_SPECIALIST_CONTINUITY`: specialists keep their earlier work within a conversation.
 
 There are no platform token budgets: each person's own key pays for their runs.
+
+## Deploying
+
+Production runs on one VPS with Dokploy: [deploy/README.md](deploy/README.md) has the setup, the sizing,
+and **your checklist** (what to do before the first deploy, after it, and for every release).
+
+- Every deploy applies database migrations before the API and worker start.
+- `deploy/migrate.sh` on the server shows where the database stands, backs it up, applies migrations
+  again after a failed deploy, and checks the result:
+  `deploy/migrate.sh status | backup | upgrade | check`, or no argument for all of them.
+- Locally, `pnpm db:migrate` applies them and `pnpm db:revision "what changed"` writes a new one.
 
 ## Install the CLI
 

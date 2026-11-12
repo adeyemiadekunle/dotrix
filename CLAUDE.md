@@ -96,6 +96,7 @@ pnpm dev:backend                          # API on :8000, OpenAPI at /docs (pyth
 pnpm dev:worker                           # background worker (arq on Redis): agent runs, emails; needed when DOTRIX_JOBS=worker
 pnpm db:up && pnpm db:migrate             # Postgres, Redis, RustFS storage (console :9001) from infra/docker-compose.yml, then apply migrations
 pnpm db:revision "add issues"             # autogenerate a migration after model changes
+deploy/migrate.sh [status|backup|upgrade|check]   # on the server: a deployment's migrations (deploy/README.md)
 pnpm docker:up                            # dotrix in Docker: migrate, API on :8000, worker, web on :3080 (DOTRIX_DOCKER_WEB_PORT=3000 keeps the native web address); docker:web rebuilds the web, docker:logs, docker:down
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
 pnpm --filter @dotrix/web e2e            # browser tests: fresh dotrix_e2e DB + backend on :8100 + web on :3100, rule-based model
@@ -176,6 +177,8 @@ apps/backend/
 │   │   ├── graph/               the project graph: nodes and links derived from issues and documents, kept current; neighbours, impact, paths, stale documents
 │   │   ├── rules/               workspace rules layered under each project's agent-rules/, and skills shared by every project
 │   │   ├── audit/               append-only audit log
+│   │   ├── admin/               the admin console's API (/v1/admin): its own accounts (owner/viewer, invites, disabling; accounts.py), two-factor sign-in (TOTP, recovery codes), the admin activity trail (trail.py), the platform's health, runs, failures by kind, models and cost, workspaces and audit across every workspace (platform.py), operator alert emails (alerts.py)
+│   │   ├── observe/             a workspace's own health and run history for its owners (no new tables)
 │   │   ├── research/            web research for agent runs: sources per run (S1, S2, …), the page cache per workspace, web limits and Tavily credits, report claims checked against what was read
 │   │   ├── search/              hybrid search index (pgvector + full text) over documents and issues; embeddings
 │   │   ├── repo_knowledge/      the Repository Knowledge skill's inventory: a snapshot of every tracked path at a commit (dotrix_engine/inventory.py: kinds, domains, status and why), taken after each sync and on request (from the commit, reread if a sync swaps the checkout meanwhile); coverage by status and by the 12 required domains (evidence, pending, or a named gap); "analyzed" kept for unchanged content (git blob) across snapshots; the latest 3 kept; the discovery run's tools (tools.py: `repo_coverage`, `repo_paths`, `repo_mark_read`, `repo_check_page`) and `POST .../explain`
@@ -183,6 +186,7 @@ apps/backend/
 │   │   ├── execution/           durable dispatch (`run_dispatches`): intent committed with the run change, published after commit, republished by the worker's sweep, accepted in the transaction that starts the run; coding runs' expired leases (`expire_coding_leases`)
 │   │   ├── coding/              coding runs: "Start coding" (service.py: ask, approve, stop; a session's model and the engine that follows it, `engine_for`), the brief (brief.py), Claude Code, Codex, OpenCode and fx headless (tools.py: each behind `CodingTool`, its command, resume, saved session, key and model, JSON events; fx through infra/coding/fx-acp.mjs), the sandbox (sandbox.py: Docker, OpenShell, or local; the policy; the Docker egress proxy in infra/coding; each Docker sandbox's memory, CPUs, and runtime from settings), how many runs work at once per worker (slots.py, `DOTRIX_CODING_MAX_RUNS`), the worker (runner.py: clone, run, patch, guard.py, push, PR, Reviewer; its lease, renewed while it works, and fencing), recovery (recovery.py: an uncertain run settled from what GitHub shows), local turns (local.py: people's runners, claim, heartbeat, result; the platform pushes what's accepted), a turn's files (files.py: its diff, the tree it leaves, a file before and after, from the project's checkout at the turn's base with its diff in a scratch index), the run_coding job
 │   │   └── connectors/          the GitHub App (github_app.py: app JWT, installation tokens), installations per workspace, each project's connected repo, the webhook (FR-10); GitLab and doc sources planned (FR-12)
+│   ├── admin_cli.py             `python -m dotrix_backend.admin_cli`: list, create, reset-password, reset-two-factor for admin console accounts
 │   ├── jobs.py                  background jobs by name (send_email, send_password_reset, index_knowledge, run_automations, email_notifications, ...); where they run: core/jobs.py
 │   └── worker.py                arq worker (`pnpm dev:worker`): agent runs and jobs when DOTRIX_JOBS=worker
 └── tests/
