@@ -73,6 +73,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Security
 
+- Admin console sign-in needs a code from an authenticator app, with recovery codes for a lost device.
 - The admin console's failure report shows a kind of failure (for example "HTTP 429" or "timed out") in place of the raw error text, which could repeat part of what someone asked.
 - Updated a routing dependency for two moderate advisories.
 - If an account's email was never verified, signing in to it with GitHub or an emailed link (or resetting its password) now removes the password set before that and signs out every browser, app and API token, so nobody who registered the address earlier keeps access. Verified accounts are unchanged.

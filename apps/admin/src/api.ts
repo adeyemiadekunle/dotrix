@@ -69,7 +69,10 @@ export async function send<T = void>(path: string, method: "POST" | "PATCH" | "D
 
 export type AdminRole = "owner" | "viewer";
 
-export type Me = { id: string; email: string; name: string; role: AdminRole };
+export type Me = { id: string; email: string; name: string; role: AdminRole; two_factor: boolean; must_enrol: boolean };
+
+/** The password step passed and a code is needed: sent back, with the code, to /admin/login/verify. */
+export type LoginChallenge = { second_factor: "totp"; challenge: string };
 
 export type AdminAccount = {
   id: string;
@@ -79,6 +82,7 @@ export type AdminAccount = {
   created_at: string;
   disabled_at: string | null;
   last_sign_in_at: string | null;
+  two_factor: boolean;
 };
 
 export type AdminInvite = {

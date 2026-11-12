@@ -63,3 +63,16 @@ def test_parser_lists_its_commands(capsys: pytest.CaptureFixture[str]) -> None:
     assert stop.value.code == 0
     out = capsys.readouterr().out
     assert "list" in out and "create" in out and "reset-password" in out
+
+
+async def test_the_command_line_clears_a_second_factor(db_session: AsyncSession) -> None:
+    from datetime import UTC, datetime
+
+    from dotrix_backend.admin_cli import execute
+
+    admin = await create_admin(db_session, email="one@example.com", name="One", password=PASSWORD)
+    admin.totp_secret_encrypted, admin.totp_enabled_at, admin.totp_last_step = "x", datetime.now(UTC), 5
+    args = build_parser().parse_args(["reset-two-factor", "--email", "ONE@example.com"])
+    lines = await execute(db_session, args, lambda: "")
+    assert lines == ["Two-factor cleared for one@example.com; its sessions were signed out"]
+    assert admin.totp_secret_encrypted is None and admin.totp_enabled_at is None and admin.totp_last_step is None

@@ -22,7 +22,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 
-import { call, rawCall, refreshSession, send, type Me } from "./api";
+import { call, rawCall, refreshSession, send, type LoginChallenge, type Me } from "./api";
 
 // The pages (and their charts and tables) load after sign-in, so the sign-in page is small and quick.
 const pages = () => import("./pages");
@@ -85,18 +85,24 @@ function Login({ onAuth }: { onAuth: () => void }) {
   const first = boot.data?.enabled === true;
   const [f, setF] = useState({ email: "", name: "", password: "", token: "" });
   const [show, setShow] = useState(false);
+  // The challenge lives in memory only; it is not a session and expires in five minutes.
+  const [challenge, setChallenge] = useState<string | null>(null);
   const auth = useMutation({
     mutationFn: () =>
-      rawCall<void>(first ? "/admin/signup" : "/admin/login", {
+      rawCall<LoginChallenge | undefined>(first ? "/admin/signup" : "/admin/login", {
         method: "POST",
         body: first ? { email: f.email, name: f.name, password: f.password, bootstrap_token: f.token || undefined } : { email: f.email, password: f.password },
       }),
-    onSuccess: onAuth,
+    onSuccess: (result) => {
+      if (result?.challenge) setChallenge(result.challenge);
+      else onAuth();
+    },
   });
   const submit = (e: FormEvent) => {
     e.preventDefault();
     auth.mutate();
   };
+  if (challenge) return <SecondFactor challenge={challenge} onAuth={onAuth} onBack={() => setChallenge(null)} />;
   return (
     <main className="ad-auth">
       <div className="ad-auth-bg" aria-hidden="true" />
@@ -173,6 +179,173 @@ function Login({ onAuth }: { onAuth: () => void }) {
         Looking for dotrix? Open the app
         <ArrowUpRightIcon size={13} />
       </a>
+    </main>
+  );
+}
+
+/** The second step of sign-in: a code from the authenticator app, or a recovery code. */
+function SecondFactor({ challenge, onAuth, onBack }: { challenge: string; onAuth: () => void; onBack: () => void }) {
+  const [code, setCode] = useState("");
+  const [recovery, setRecovery] = useState(false);
+  const verify = useMutation({
+    mutationFn: () => rawCall<void>("/admin/login/verify", { method: "POST", body: { challenge, code: code.trim() } }),
+    onSuccess: onAuth,
+  });
+  return (
+    <main className="ad-auth">
+      <div className="ad-auth-bg" aria-hidden="true" />
+      <form
+        className="ad-auth-card"
+        aria-busy={verify.isPending}
+        onSubmit={(e) => {
+          e.preventDefault();
+          verify.mutate();
+        }}
+      >
+        <span className="ad-auth-brand">
+          <Mark size={22} />
+          dotrix <em>admin</em>
+        </span>
+        <div>
+          <h1>{recovery ? "Use a recovery code" : "Enter your code"}</h1>
+          <p className="ad-auth-sub">{recovery ? "Each recovery code works once." : "The 6-digit code from your authenticator app."}</p>
+        </div>
+        {verify.isError && (
+          <p className="ad-auth-error" role="alert">
+            <WarningCircleIcon size={16} weight="fill" />
+            {verify.error.message}
+          </p>
+        )}
+        <label>
+          {recovery ? "Recovery code" : "Code"}
+          <input
+            className="input"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            required
+            autoFocus
+            autoComplete={recovery ? "off" : "one-time-code"}
+            inputMode={recovery ? "text" : "numeric"}
+            maxLength={recovery ? 100 : 6}
+            minLength={recovery ? 6 : 6}
+            pattern={recovery ? undefined : "[0-9]{6}"}
+          />
+        </label>
+        <button type="submit" className="btn btn-primary" disabled={verify.isPending}>
+          {verify.isPending ? "Checking…" : "Sign in"}
+        </button>
+        <p className="ad-auth-foot">
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              setRecovery(!recovery);
+              setCode("");
+              verify.reset();
+            }}
+          >
+            {recovery ? "Use the authenticator app" : "Use a recovery code"}
+          </button>
+          {" · "}
+          <button type="button" className="link" onClick={onBack}>
+            Start over
+          </button>
+        </p>
+      </form>
+    </main>
+  );
+}
+
+/** Required once per admin: add the secret to an authenticator app, confirm with a code, keep the
+ * recovery codes. The secret and codes are shown here only and held in memory, never stored in the browser. */
+function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => void }) {
+  const [code, setCode] = useState("");
+  const start = useMutation({ mutationFn: () => send<{ secret: string; otpauth_uri: string }>("/admin/me/two-factor/start", "POST") });
+  const confirm = useMutation({
+    mutationFn: () => send<{ recovery_codes: string[] }>("/admin/me/two-factor/confirm", "POST", { code: code.trim() }),
+  });
+  return (
+    <main className="ad-auth">
+      <div className="ad-auth-bg" aria-hidden="true" />
+      <form
+        className="ad-auth-card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!confirm.isPending) confirm.mutate();
+        }}
+      >
+        <span className="ad-auth-brand">
+          <Mark size={22} />
+          dotrix <em>admin</em>
+        </span>
+        <h1>Set up two-factor sign-in</h1>
+        {confirm.data ? (
+          <>
+            <p className="ad-auth-sub">Save these recovery codes somewhere safe. Each works once if you lose your device. They are not shown again.</p>
+            <ul className="mono ad-codes">
+              {confirm.data.recovery_codes.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+            <button type="button" className="btn btn-primary" onClick={onDone}>
+              I&apos;ve saved these
+            </button>
+          </>
+        ) : !start.data ? (
+          <>
+            <p className="ad-auth-sub">Admins sign in with a code from an authenticator app as well as a password. Set it up now to continue.</p>
+            {start.isError && (
+              <p className="ad-auth-error" role="alert">
+                <WarningCircleIcon size={16} weight="fill" />
+                {start.error.message}
+              </p>
+            )}
+            <button type="button" className="btn btn-primary" disabled={start.isPending} onClick={() => start.mutate()}>
+              {start.isPending ? "Starting…" : "Set up an authenticator app"}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="ad-auth-sub">
+              Add this key to your authenticator app (a time-based code, 6 digits), or <a href={start.data.otpauth_uri}>open the setup link</a> on a device that
+              has one.
+            </p>
+            <p className="mono ad-secret" aria-label="Setup key">
+              {start.data.secret}
+            </p>
+            {confirm.isError && (
+              <p className="ad-auth-error" role="alert">
+                <WarningCircleIcon size={16} weight="fill" />
+                {confirm.error.message}
+              </p>
+            )}
+            <label>
+              Code from the app
+              <input
+                className="input"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                autoFocus
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={6}
+                pattern="[0-9]{6}"
+              />
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={confirm.isPending}>
+              {confirm.isPending ? "Checking…" : "Turn on two-factor sign-in"}
+            </button>
+          </>
+        )}
+        {!confirm.data && (
+          <p className="ad-auth-foot">
+            <button type="button" className="link" onClick={onSignOut}>
+              Sign out
+            </button>
+          </p>
+        )}
+      </form>
     </main>
   );
 }
@@ -406,6 +579,8 @@ export function App() {
         }}
       />
     );
+
+  if (me.data.must_enrol) return <Enrol onDone={() => void qc.invalidateQueries({ queryKey: ["me"] })} onSignOut={signOut} />;
 
   return (
     <div className="ad-shell">

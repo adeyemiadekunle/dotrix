@@ -911,3 +911,22 @@ body {
   gap: 8px;
   justify-content: flex-end;
 }
+
+.ad-secret {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.ad-codes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  font-size: 12px;
+  user-select: all;
+}

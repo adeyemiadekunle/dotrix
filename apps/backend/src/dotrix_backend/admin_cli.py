@@ -1,4 +1,4 @@
-"""Admin console accounts from the server: `python -m dotrix_backend.admin_cli list | create | reset-password`.
+"""Admin console accounts from the server: `python -m dotrix_backend.admin_cli list | create | reset-password | reset-two-factor`.
 
 Needs only DOTRIX_DATABASE_URL. The password is read from a prompt (twice) or from
 DOTRIX_ADMIN_PASSWORD, never from the command line, so it stays out of the process list and
@@ -39,6 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--name", required=True)
     reset = commands.add_parser("reset-password", help="Set a new password and sign the admin out everywhere")
     reset.add_argument("--email", required=True)
+    reset_2fa = commands.add_parser(
+        "reset-two-factor", help="Clear an admin's authenticator and recovery codes and sign them out; they set one up at the next sign-in"
+    )
+    reset_2fa.add_argument("--email", required=True)
     return parser
 
 
@@ -58,6 +62,7 @@ async def execute(session: AsyncSession, args: argparse.Namespace, password: Cal
         "list": lambda: _list(session),
         "create": lambda: _create(session, args, password),
         "reset-password": lambda: _reset(session, args, password),
+        "reset-two-factor": lambda: _reset_two_factor(session, args),
     }
     return await handlers[args.command]()
 
@@ -74,6 +79,11 @@ async def _create(session: AsyncSession, args: argparse.Namespace, password: Cal
 async def _reset(session: AsyncSession, args: argparse.Namespace, password: Callable[[], str]) -> list[str]:
     admin = await accounts.reset_admin_password(session, email=args.email, password=password())
     return [f"Password changed for {admin.email}; its sessions were signed out"]
+
+
+async def _reset_two_factor(session: AsyncSession, args: argparse.Namespace) -> list[str]:
+    admin = await accounts.reset_admin_two_factor(session, email=args.email)
+    return [f"Two-factor cleared for {admin.email}; its sessions were signed out"]
 
 
 def main() -> None:

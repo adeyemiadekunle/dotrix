@@ -970,7 +970,12 @@ export function AdminsPage({ meId }: { meId: string }) {
     onSuccess: refresh,
     onError: fail,
   });
-  const busy = change.isPending || remove.isPending;
+  const resetTwoFactor = useMutation({
+    mutationFn: (id: string) => send(`/admin/admins/${id}/two-factor/reset`, "POST"),
+    onSuccess: refresh,
+    onError: fail,
+  });
+  const busy = change.isPending || remove.isPending || resetTwoFactor.isPending;
 
   return (
     <>
@@ -1040,7 +1045,10 @@ export function AdminsPage({ meId }: { meId: string }) {
                     </td>
                     <td>{ROLE_LABEL[a.role]}</td>
                     <td>{a.last_sign_in_at ? <span title={when(a.last_sign_in_at)}>{ago(a.last_sign_in_at, now)}</span> : "never"}</td>
-                    <td>{a.disabled_at ? <Pill tone="warn">Disabled</Pill> : <Pill tone="good">Active</Pill>}</td>
+                    <td>
+                      {a.disabled_at ? <Pill tone="warn">Disabled</Pill> : <Pill tone="good">Active</Pill>}{" "}
+                      {a.two_factor ? <span className="tag">2FA</span> : <span className="tag">no 2FA yet</span>}
+                    </td>
                     <td className="ad-row-actions">
                       <button
                         className="link"
@@ -1065,6 +1073,19 @@ export function AdminsPage({ meId }: { meId: string }) {
                       >
                         {a.disabled_at ? "Enable" : "Disable"}
                       </button>
+                      {a.two_factor && !me && (
+                        <button
+                          className="link"
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            window.confirm(`Reset the two-factor sign-in of ${a.email}? They are signed out and set it up again at their next sign-in.`) &&
+                            resetTwoFactor.mutate(a.id)
+                          }
+                        >
+                          Reset 2FA
+                        </button>
+                      )}
                       <button
                         className="link"
                         type="button"
@@ -1128,6 +1149,9 @@ const TRAIL_LABEL: Record<string, string> = {
   "admin.password_reset": "Reset a password",
   "admin.sessions_revoked": "Signed out their other sessions",
   "admin.storage_limit_changed": "Changed a storage limit",
+  "admin.two_factor_enabled": "Turned on two-factor sign-in",
+  "admin.two_factor_reset": "Reset two-factor sign-in",
+  "admin.recovery_codes_replaced": "Replaced their recovery codes",
 };
 
 const TRAIL_FILTERS: [string, string][] = [
@@ -1137,6 +1161,7 @@ const TRAIL_FILTERS: [string, string][] = [
   ["admin.invite", "Invites"],
   ["admin.role", "Roles"],
   ["admin.password", "Passwords"],
+  ["admin.two_factor", "Two-factor sign-in"],
 ];
 
 const trailColumns = (now: number): Column<TrailEvent>[] => [

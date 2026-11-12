@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.email import EmailSender
@@ -15,7 +15,7 @@ from dotrix_backend.core.security import generate_token, hash_password, hash_tok
 from dotrix_backend.core.settings import Settings
 
 from . import trail
-from .models import AdminInvite, AdminSession, AdminUser
+from .models import AdminInvite, AdminRecoveryCode, AdminSession, AdminUser
 from .schemas import AdminInviteAccept, AdminInviteCreate, AdminInviteRead, AdminListed, AdminUpdate
 from .service import AdminService
 
@@ -72,6 +72,31 @@ async def reset_admin_password(
     return admin
 
 
+async def reset_admin_two_factor(
+    session: AsyncSession, *, email: str, actor_email: str | None = "command line"
+) -> AdminUser:
+    """Clear an admin's second factor and sign them out everywhere: their next sign-in must set one up again."""
+    admin = await session.scalar(select(AdminUser).where(AdminUser.email == email.strip().lower()))
+    if admin is None:
+        raise NotFound("No admin with this email")
+    await clear_two_factor(session, admin)
+    trail.record(session, "admin.two_factor_reset", actor_email=actor_email, target_email=admin.email)
+    return admin
+
+
+async def clear_two_factor(session: AsyncSession, admin: AdminUser) -> None:
+    admin.totp_secret_encrypted = None
+    admin.totp_enabled_at = None
+    admin.totp_last_step = None
+    await session.execute(delete(AdminRecoveryCode).where(AdminRecoveryCode.admin_user_id == admin.id))
+    await session.execute(
+        update(AdminSession)
+        .where(AdminSession.admin_user_id == admin.id, AdminSession.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(UTC))
+    )
+    await session.flush()
+
+
 async def list_admins(session: AsyncSession) -> list[AdminUser]:
     return list((await session.scalars(select(AdminUser).order_by(AdminUser.created_at))).all())
 
@@ -116,7 +141,7 @@ class AdminAccounts:
         return [
             AdminListed(
                 id=a.id, email=a.email, name=a.name, role=a.role, created_at=a.created_at,
-                disabled_at=a.disabled_at, last_sign_in_at=at,
+                disabled_at=a.disabled_at, last_sign_in_at=at, two_factor=a.totp_enabled_at is not None,
             )
             for a, at in rows.all()
         ]
@@ -247,6 +272,18 @@ class AdminAccounts:
             raise Conflict("There must be at least one owner")
         trail.record(self.session, "admin.removed", admin=owner, target_email=admin.email, ip=ip)
         await self.session.delete(admin)  # sessions cascade
+        await self.session.commit()
+
+    async def reset_two_factor(self, owner: AdminUser, admin_id: object, ip: str | None = None) -> None:
+        """An owner clears another admin's second factor (a lost device). Not your own: that is the
+        command line's job, so one stolen owner session can't strip its own protection."""
+        admin = await self.session.get(AdminUser, admin_id, with_for_update=True)
+        if admin is None:
+            raise NotFound("Admin not found")
+        if admin.id == owner.id:
+            raise Conflict("You can't reset your own second factor here")
+        await clear_two_factor(self.session, admin)
+        trail.record(self.session, "admin.two_factor_reset", admin=owner, target_email=admin.email, ip=ip)
         await self.session.commit()
 
     async def change_password(

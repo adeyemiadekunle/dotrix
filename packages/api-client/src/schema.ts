@@ -433,10 +433,33 @@ export interface paths {
         put?: never;
         /**
          * Admin Login
-         * @description Sign the admin in: its own email and password, never an app session. Rate-limited per
-         *     IP and per email (10 attempts in 15 minutes).
+         * @description Sign the admin in: its own email and password, never an app session. Without a second factor
+         *     this answers 204 and sets the session cookies. With one it sets nothing and answers 200 with a
+         *     challenge to send, with a code, to `/login/verify`. Rate-limited per IP and per email (10
+         *     attempts in 15 minutes).
          */
         post: operations["admin_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/login/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Login Verify
+         * @description The second step of sign-in: the challenge from `/login` and a 6-digit authenticator code or
+         *     a recovery code (each works once). Sets the session cookies. Rate-limited like sign-in.
+         */
+        post: operations["admin_login_verify"];
         delete?: never;
         options?: never;
         head?: never;
@@ -493,11 +516,73 @@ export interface paths {
         };
         /**
          * Admin Me
-         * @description Who's signed in.
+         * @description Who's signed in, and whether a second factor is set up (`must_enrol`: only the set-up routes work until it is).
          */
         get: operations["admin_me"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/me/two-factor/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Two Factor
+         * @description Begin setting up an authenticator app: a new secret (shown once, stored encrypted) and its
+         *     otpauth:// link. It counts only after `/me/two-factor/confirm`. Needs DOTRIX_ENCRYPTION_KEY.
+         */
+        post: operations["start_two_factor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/me/two-factor/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Two Factor
+         * @description Finish the set-up with a current code from the app. Answers ten single-use recovery codes,
+         *     shown only this once; this session is a full one from then on.
+         */
+        post: operations["confirm_two_factor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/me/two-factor/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace Recovery Codes
+         * @description Replace your recovery codes (the old ones stop working) with ten new ones, shown once. Needs a current authenticator code.
+         */
+        post: operations["replace_recovery_codes"];
         delete?: never;
         options?: never;
         head?: never;
@@ -633,6 +718,27 @@ export interface paths {
          *     The last active owner can't be demoted or disabled. Owners only.
          */
         patch: operations["update_admin"];
+        trace?: never;
+    };
+    "/v1/admin/admins/{admin_id}/two-factor/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Admin Two Factor
+         * @description Clear another admin's second factor and sign them out (they lost their device); they set one
+         *     up again at their next sign-in. Owners only, and never your own: use the server's command line.
+         */
+        post: operations["reset_admin_two_factor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/admin/me/password": {
@@ -5360,6 +5466,11 @@ export interface components {
             disabled_at: string | null;
             /** Last Sign In At */
             last_sign_in_at: string | null;
+            /**
+             * Two Factor
+             * @default false
+             */
+            two_factor: boolean;
         };
         /** AdminLogin */
         AdminLogin: {
@@ -5367,6 +5478,31 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * AdminLoginChallenge
+         * @description The password was right and a second factor is needed: send the challenge back with a code
+         *     to `/login/verify`. The challenge is not a session and lives five minutes.
+         */
+        AdminLoginChallenge: {
+            /**
+             * Second Factor
+             * @default totp
+             * @constant
+             */
+            second_factor: "totp";
+            /** Challenge */
+            challenge: string;
+        };
+        /** AdminLoginVerify */
+        AdminLoginVerify: {
+            /** Challenge */
+            challenge: string;
+            /**
+             * Code
+             * @description A 6-digit code from the authenticator app, or a recovery code
+             */
+            code: string;
         };
         /** AdminPasswordChange */
         AdminPasswordChange: {
@@ -5396,6 +5532,24 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Two Factor
+             * @default false
+             */
+            two_factor: boolean;
+            /**
+             * Must Enrol
+             * @default false
+             */
+            must_enrol: boolean;
+        };
+        /**
+         * AdminRecoveryCodes
+         * @description Single-use recovery codes, shown once; only their hashes are kept.
+         */
+        AdminRecoveryCodes: {
+            /** Recovery Codes */
+            recovery_codes: string[];
         };
         /**
          * AdminSignup
@@ -5454,6 +5608,24 @@ export interface components {
             items: components["schemas"]["AdminTrailEvent"][];
             /** Total */
             total: number;
+        };
+        /** AdminTwoFactorCode */
+        AdminTwoFactorCode: {
+            /**
+             * Code
+             * @description A 6-digit code from the authenticator app
+             */
+            code: string;
+        };
+        /**
+         * AdminTwoFactorStart
+         * @description The secret to add to an authenticator app, shown once as text and as an otpauth:// link.
+         */
+        AdminTwoFactorStart: {
+            /** Secret */
+            secret: string;
+            /** Otpauth Uri */
+            otpauth_uri: string;
         };
         /** AdminUpdate */
         AdminUpdate: {
@@ -12622,6 +12794,64 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLoginChallenge"];
+                };
+            };
+            /** @description Signed in: the session cookies are set */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Too many attempts; the Retry-After header says how many seconds to wait */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    admin_login_verify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLoginVerify"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -12763,6 +12993,179 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    start_two_factor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTwoFactorStart"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    confirm_two_factor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminTwoFactorCode"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRecoveryCodes"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    replace_recovery_codes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminTwoFactorCode"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRecoveryCodes"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -13219,6 +13622,73 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AdminListed"];
                 };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    reset_admin_two_factor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                admin_id: string;
+            };
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Missing, invalid, or expired credentials */
             401: {

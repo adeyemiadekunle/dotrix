@@ -928,13 +928,78 @@
           "admin"
         ],
         "summary": "Admin Login",
-        "description": "Sign the admin in: its own email and password, never an app session. Rate-limited per\nIP and per email (10 attempts in 15 minutes).",
+        "description": "Sign the admin in: its own email and password, never an app session. Without a second factor\nthis answers 204 and sets the session cookies. With one it sets nothing and answers 200 with a\nchallenge to send, with a code, to `/login/verify`. Rate-limited per IP and per email (10\nattempts in 15 minutes).",
         "operationId": "admin_login",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AdminLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLoginChallenge"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts; the Retry-After header says how many seconds to wait",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Signed in: the session cookies are set"
+          }
+        }
+      }
+    },
+    "/v1/admin/login/verify": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Login Verify",
+        "description": "The second step of sign-in: the challenge from `/login` and a 6-digit authenticator code or\na recovery code (each works once). Sets the session cookies. Rate-limited like sign-in.",
+        "operationId": "admin_login_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginVerify"
               }
             }
           },
@@ -1089,7 +1154,7 @@
           "admin"
         ],
         "summary": "Admin Me",
-        "description": "Who's signed in.",
+        "description": "Who's signed in, and whether a second factor is set up (`must_enrol`: only the set-up routes work until it is).",
         "operationId": "admin_me",
         "parameters": [
           {
@@ -1132,6 +1197,256 @@
           },
           "422": {
             "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/me/two-factor/start": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Start Two Factor",
+        "description": "Begin setting up an authenticator app: a new secret (shown once, stored encrypted) and its\notpauth:// link. It counts only after `/me/two-factor/confirm`. Needs DOTRIX_ENCRYPTION_KEY.",
+        "operationId": "start_two_factor",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTwoFactorStart"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/me/two-factor/confirm": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Confirm Two Factor",
+        "description": "Finish the set-up with a current code from the app. Answers ten single-use recovery codes,\nshown only this once; this session is a full one from then on.",
+        "operationId": "confirm_two_factor",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTwoFactorCode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRecoveryCodes"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/me/two-factor/recovery-codes": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Replace Recovery Codes",
+        "description": "Replace your recovery codes (the old ones stop working) with ten new ones, shown once. Needs a current authenticator code.",
+        "operationId": "replace_recovery_codes",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTwoFactorCode"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRecoveryCodes"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1735,6 +2050,99 @@
         "summary": "Remove Admin",
         "description": "Delete an admin account and its sessions. The last active owner can't be removed. Owners only.",
         "operationId": "remove_admin",
+        "parameters": [
+          {
+            "name": "admin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Admin Id"
+            }
+          },
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/admins/{admin_id}/two-factor/reset": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reset Admin Two Factor",
+        "description": "Clear another admin's second factor and sign them out (they lost their device); they set one\nup again at their next sign-in. Owners only, and never your own: use the server's command line.",
+        "operationId": "reset_admin_two_factor",
         "parameters": [
           {
             "name": "admin_id",
@@ -26244,6 +26652,11 @@
               }
             ],
             "title": "Last Sign In At"
+          },
+          "two_factor": {
+            "type": "boolean",
+            "title": "Two Factor",
+            "default": false
           }
         },
         "type": "object",
@@ -26278,6 +26691,48 @@
           "password"
         ],
         "title": "AdminLogin"
+      },
+      "AdminLoginChallenge": {
+        "properties": {
+          "second_factor": {
+            "type": "string",
+            "const": "totp",
+            "title": "Second Factor",
+            "default": "totp"
+          },
+          "challenge": {
+            "type": "string",
+            "title": "Challenge"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge"
+        ],
+        "title": "AdminLoginChallenge",
+        "description": "The password was right and a second factor is needed: send the challenge back with a code\nto `/login/verify`. The challenge is not a session and lives five minutes."
+      },
+      "AdminLoginVerify": {
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Challenge"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 6,
+            "title": "Code",
+            "description": "A 6-digit code from the authenticator app, or a recovery code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge",
+          "code"
+        ],
+        "title": "AdminLoginVerify"
       },
       "AdminPasswordChange": {
         "properties": {
@@ -26327,6 +26782,16 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "two_factor": {
+            "type": "boolean",
+            "title": "Two Factor",
+            "default": false
+          },
+          "must_enrol": {
+            "type": "boolean",
+            "title": "Must Enrol",
+            "default": false
           }
         },
         "type": "object",
@@ -26338,6 +26803,23 @@
           "created_at"
         ],
         "title": "AdminRead"
+      },
+      "AdminRecoveryCodes": {
+        "properties": {
+          "recovery_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recovery Codes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recovery_codes"
+        ],
+        "title": "AdminRecoveryCodes",
+        "description": "Single-use recovery codes, shown once; only their hashes are kept."
       },
       "AdminSignup": {
         "properties": {
@@ -26478,6 +26960,41 @@
           "total"
         ],
         "title": "AdminTrailPage"
+      },
+      "AdminTwoFactorCode": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 6,
+            "title": "Code",
+            "description": "A 6-digit code from the authenticator app"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "AdminTwoFactorCode"
+      },
+      "AdminTwoFactorStart": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          },
+          "otpauth_uri": {
+            "type": "string",
+            "title": "Otpauth Uri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "secret",
+          "otpauth_uri"
+        ],
+        "title": "AdminTwoFactorStart",
+        "description": "The secret to add to an authenticator app, shown once as text and as an otpauth:// link."
       },
       "AdminUpdate": {
         "properties": {

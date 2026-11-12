@@ -41,14 +41,19 @@ from .schemas import (
     AdminInviteRead,
     AdminListed,
     AdminLogin,
+    AdminLoginChallenge,
+    AdminLoginVerify,
     AdminPasswordChange,
     AdminRead,
+    AdminRecoveryCodes,
     AdminSignup,
     AdminTrailEvent,
     AdminTrailPage,
+    AdminTwoFactorCode,
+    AdminTwoFactorStart,
     AdminUpdate,
 )
-from .service import AdminDep, AdminService, OwnerDep, session_id_of
+from .service import AdminDep, AdminService, EnrollingAdminDep, OwnerDep, session_id_of
 
 
 def require_admin_header(request: Request) -> None:
@@ -90,8 +95,8 @@ def _ip(request: Request, settings: Settings) -> str:
     return client_ip(request, settings.trusted_proxies)
 
 
-def get_admin_service(session: SessionDep, settings: SettingsDep) -> AdminService:
-    return AdminService(session, settings)
+def get_admin_service(request: Request, session: SessionDep, settings: SettingsDep) -> AdminService:
+    return AdminService(session, settings, request.app.state.secrets)
 
 
 Service = Annotated[AdminService, Depends(get_admin_service)]
@@ -116,14 +121,37 @@ async def admin_signup(
     _set_session(response, access, refresh, svc.settings)
 
 
-@router.post("/login", status_code=status.HTTP_204_NO_CONTENT, responses=errors(422, 429))
+@router.post(
+    "/login",
+    status_code=status.HTTP_200_OK,
+    response_model=AdminLoginChallenge,
+    responses={**errors(422, 429), 204: {"description": "Signed in: the session cookies are set"}},
+)
 async def admin_login(
     data: AdminLogin, svc: Service, response: Response, throttle: ThrottleDep, request: Request
-) -> None:
-    """Sign the admin in: its own email and password, never an app session. Rate-limited per
-    IP and per email (10 attempts in 15 minutes)."""
+) -> AdminLoginChallenge | Response:
+    """Sign the admin in: its own email and password, never an app session. Without a second factor
+    this answers 204 and sets the session cookies. With one it sets nothing and answers 200 with a
+    challenge to send, with a code, to `/login/verify`. Rate-limited per IP and per email (10
+    attempts in 15 minutes)."""
     await throttle(LOGIN, data.email)
-    access, refresh = await svc.login(data, _ip(request, svc.settings))
+    result = await svc.login(data, _ip(request, svc.settings))
+    if isinstance(result, AdminLoginChallenge):
+        return result
+    signed_in = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _set_session(signed_in, result[0], result[1], svc.settings)
+    return signed_in
+
+
+@router.post("/login/verify", status_code=status.HTTP_204_NO_CONTENT, responses=errors(401, 422, 429))
+async def admin_login_verify(
+    data: AdminLoginVerify, svc: Service, response: Response, throttle: ThrottleDep, request: Request
+) -> None:
+    """The second step of sign-in: the challenge from `/login` and a 6-digit authenticator code or
+    a recovery code (each works once). Sets the session cookies. Rate-limited like sign-in."""
+    admin = await svc.challenged_admin(data.challenge)
+    await throttle(LOGIN, admin.email)
+    access, refresh = await svc.verify_second_factor(admin, data.code, _ip(request, svc.settings))
     _set_session(response, access, refresh, svc.settings)
 
 
@@ -143,7 +171,7 @@ async def admin_refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_logout(
-    admin: AdminDep,
+    admin: EnrollingAdminDep,
     svc: Service,
     response: Response,
     request: Request,
@@ -156,9 +184,33 @@ async def admin_logout(
 
 
 @router.get("/me")
-async def admin_me(admin: AdminDep, svc: Service) -> AdminRead:
-    """Who's signed in."""
+async def admin_me(admin: EnrollingAdminDep, svc: Service) -> AdminRead:
+    """Who's signed in, and whether a second factor is set up (`must_enrol`: only the set-up routes work until it is)."""
     return await svc.read(admin)
+
+
+@router.post("/me/two-factor/start", responses=errors(403, 409, 503))
+async def start_two_factor(admin: EnrollingAdminDep, svc: Service) -> AdminTwoFactorStart:
+    """Begin setting up an authenticator app: a new secret (shown once, stored encrypted) and its
+    otpauth:// link. It counts only after `/me/two-factor/confirm`. Needs DOTRIX_ENCRYPTION_KEY."""
+    return await svc.start_two_factor(admin)
+
+
+@router.post("/me/two-factor/confirm", responses=errors(401, 409, 422))
+async def confirm_two_factor(
+    data: AdminTwoFactorCode, admin: EnrollingAdminDep, svc: Service, request: Request
+) -> AdminRecoveryCodes:
+    """Finish the set-up with a current code from the app. Answers ten single-use recovery codes,
+    shown only this once; this session is a full one from then on."""
+    return await svc.confirm_two_factor(admin, data.code, _ip(request, svc.settings))
+
+
+@router.post("/me/two-factor/recovery-codes", responses=errors(401, 403, 422))
+async def replace_recovery_codes(
+    data: AdminTwoFactorCode, admin: AdminDep, svc: Service, request: Request
+) -> AdminRecoveryCodes:
+    """Replace your recovery codes (the old ones stop working) with ten new ones, shown once. Needs a current authenticator code."""
+    return await svc.replace_recovery_codes(admin, data.code, _ip(request, svc.settings))
 
 
 def get_admin_accounts(session: SessionDep, settings: SettingsDep, email: EmailDep) -> AdminAccounts:
@@ -230,6 +282,15 @@ async def update_admin(
 async def remove_admin(admin_id: uuid.UUID, owner: OwnerDep, accounts: Accounts, request: Request) -> None:
     """Delete an admin account and its sessions. The last active owner can't be removed. Owners only."""
     await accounts.remove(owner, admin_id, _ip(request, accounts.settings))
+
+
+@router.post("/admins/{admin_id}/two-factor/reset", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 404, 409, 422))
+async def reset_admin_two_factor(
+    admin_id: uuid.UUID, owner: OwnerDep, accounts: Accounts, request: Request, settings: SettingsDep
+) -> None:
+    """Clear another admin's second factor and sign them out (they lost their device); they set one
+    up again at their next sign-in. Owners only, and never your own: use the server's command line."""
+    await accounts.reset_two_factor(owner, admin_id, _ip(request, settings))
 
 
 @router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 422))

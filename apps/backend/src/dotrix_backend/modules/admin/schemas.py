@@ -26,6 +26,36 @@ class AdminLogin(BaseModel):
     password: str = Field(max_length=200)
 
 
+class AdminLoginChallenge(BaseModel):
+    """The password was right and a second factor is needed: send the challenge back with a code
+    to `/login/verify`. The challenge is not a session and lives five minutes."""
+
+    second_factor: Literal["totp"] = "totp"
+    challenge: str
+
+
+class AdminLoginVerify(BaseModel):
+    challenge: str = Field(max_length=2000)
+    code: str = Field(min_length=6, max_length=100, description="A 6-digit code from the authenticator app, or a recovery code")
+
+
+class AdminTwoFactorStart(BaseModel):
+    """The secret to add to an authenticator app, shown once as text and as an otpauth:// link."""
+
+    secret: str
+    otpauth_uri: str
+
+
+class AdminTwoFactorCode(BaseModel):
+    code: str = Field(min_length=6, max_length=100, description="A 6-digit code from the authenticator app")
+
+
+class AdminRecoveryCodes(BaseModel):
+    """Single-use recovery codes, shown once; only their hashes are kept."""
+
+    recovery_codes: list[str]
+
+
 AdminRole = Literal["owner", "viewer"]
 NEW_PASSWORD_MIN = 12
 
@@ -36,6 +66,8 @@ class AdminRead(BaseModel):
     name: str
     role: AdminRole
     created_at: datetime
+    two_factor: bool = False
+    must_enrol: bool = False
 
 
 class AdminListed(BaseModel):
@@ -48,6 +80,7 @@ class AdminListed(BaseModel):
     created_at: datetime
     disabled_at: datetime | None
     last_sign_in_at: datetime | None
+    two_factor: bool = False
 
 
 class AdminInviteCreate(BaseModel):

@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin
@@ -25,6 +25,21 @@ class AdminUser(UUIDPrimaryKeyMixin, Base):
     role: Mapped[str] = mapped_column(String(16), server_default="owner")
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Authenticator-app second factor. The secret is encrypted (core/crypto.py); it counts only once
+    # `totp_enabled_at` is set. `totp_last_step` is the last accepted 30-second step, so a code can't be replayed.
+    totp_secret_encrypted: Mapped[str | None] = mapped_column(String(400))
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class AdminRecoveryCode(UUIDPrimaryKeyMixin, Base):
+    """A single-use recovery code for a lost authenticator; only its hash is stored."""
+
+    __tablename__ = "admin_recovery_codes"
+
+    admin_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AdminInvite(UUIDPrimaryKeyMixin, Base):
