@@ -161,6 +161,16 @@ class WorkspaceUsage(BaseModel):
     cost_usd: float
     last_run_at: datetime | None
     paused: bool = Field(description="An owner paused the workspace's agents")
+    used_bytes: int = Field(description="Uploads stored: document originals and task attachments")
+    storage_limit_mb: int | None = Field(description="This workspace's own limit; null follows the deployment's, 0 is none")
+    effective_limit_bytes: int | None = Field(description="The limit that applies; null: none")
+
+
+class StorageLimitUpdate(BaseModel):
+    workspace_id: uuid.UUID
+    storage_limit_mb: int | None = Field(
+        ge=0, le=10_000_000, description="MB; 0 is unlimited, null follows the deployment's default"
+    )
 
 
 class PlatformAuditEvent(BaseModel):

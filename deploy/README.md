@@ -56,6 +56,21 @@ enforcement are removed; a person can still choose a limit for their project or 
    address before cutting a release. Each release then carries the Windows installer and CLI, built
    for that address, and installed apps update themselves from it.
 
+## Storage limit per workspace
+
+`DOTRIX_WORKSPACE_STORAGE_MB` (default `1024`, i.e. 1 GB; `0` is unlimited) caps what one workspace
+stores in uploads: document originals and task attachments. Knowledge text, coding screenshots,
+saved sessions and profile photos aren't counted. An upload that would pass the limit is refused
+(nothing is deleted; reading, downloading and deleting still work). The admin console's Workspaces
+page shows each workspace's use and sets its own limit. Before the first deploy with the default,
+check that no existing workspace is already over it:
+
+```sql
+select workspace_id, sum(size) as bytes from (
+  select workspace_id, size from documents union all select workspace_id, size from issue_attachments
+) u group by workspace_id order by bytes desc limit 10;
+```
+
 ## What survives a restart
 
 Runs execute in the `worker`, never in the API, so redeploying either loses nothing that

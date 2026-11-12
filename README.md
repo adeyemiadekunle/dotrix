@@ -208,18 +208,14 @@ There are no platform token budgets: each person's own key pays for their runs.
 
 ## Install the CLI
 
-The `dotrix` command installs on its own (Python 3.11+ and [uv](https://docs.astral.sh/uv/)):
+The `dotrix` CLI depends on `dotrix-engine`, which isn't published to PyPI, so install it from a release or a checkout (Python 3.11+ and [uv](https://docs.astral.sh/uv/) for the checkout):
 
-```bash
-uv tool install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"
-```
+- **Release download:** the standalone CLI (Windows) is attached to each [GitHub release](https://github.com/adeyemiadekunle/dotrix/releases). No Python needed.
+- **From a checkout:** run `uv sync` once, then `uv run dotrix`.
 
-- On Windows, run `uv tool update-shell` once (then open a new terminal) so `dotrix` is on your
-  PATH. A standalone Windows CLI is attached to each release.
-- Without uv: `pipx install "git+https://github.com/adeyemiadekunle/dotrix#subdirectory=apps/cli"`.
 - Point it at your server with `DOTRIX_API_URL` (or `--api-url` on `login`). The default is
   `http://127.0.0.1:8000`.
-- Upgrade with `uv tool upgrade dotrix`; remove with `uv tool uninstall dotrix`.
+- Upgrade by downloading the newest release, or `git pull && uv sync` in a checkout.
 
 ## The CLI with the platform
 

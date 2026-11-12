@@ -27,6 +27,13 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A restart while notification emails are going out no longer sends the same emails again.
+- A long reply on the fx runtime no longer fails with "the runtime journal has reached its size limit": steps a checkpoint has replaced are cleared.
+- Juno's review of a pull request is posted on a later attempt when an earlier one failed or was interrupted; before, it could be skipped for good.
+- A coding session's sandbox is shut down when it can't be checked for reuse, and the turn starts in a fresh one.
+- A push or a failed CI run reported by GitHub while the job queue is briefly unavailable is still followed up (the checkout synced, Juno asked to look); before, it could be skipped.
+- A workspace or project with more than 5,000 tasks now shows all of them.
+- The README's CLI install instructions now describe installs that work (the release download, or a checkout).
 - Kai's changes to files that aren't UTF-8 text (older encodings such as Latin-1) are now pushed exactly as written, from cloud and local turns; before, cloud turns replaced those characters and local turns refused them.
 - A turn coded on your computer now delivers every step to the session, including the last ones, and a turn that changed a file that isn't UTF-8 text now fails with a clear reason instead of sending damaged changes.
 - A new reply in Chat no longer opens showing the previous reply's text, and a reply in a conversation across projects keeps streaming after a dropped connection.
@@ -50,15 +57,19 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Security
 
+- Updated a routing dependency for two moderate advisories.
 - If an account's email was never verified, signing in to it with GitHub or an emailed link (or resetting its password) now removes the password set before that and signs out every browser, app and API token, so nobody who registered the address earlier keeps access. Verified accounts are unchanged.
 - The app and the admin console can no longer be shown inside another website's frame, and they send stricter content-type and referrer headers.
 - Creating the admin console's first account now needs the deployment's setup token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN); without it, admin sign-up stays closed on a deployed server.
 - Text that reaches Kai's brief or Juno's look at a failed build (issue text, imported GitHub issues, documents, CI logs) can no longer break out of the part of the prompt marked as data.
+- CI's build steps are pinned to exact versions and run with the least access they need.
 - Staging and production Docker coding require gVisor and a finite worker run limit. Both coding and egress containers verify their configured runtime before repository upload, with no fallback; swap is disabled and egress CPU is capped.
 - A computer coding a turn locally can only report a full commit ID as the turn's starting point; anything else is refused.
+- The desktop app opens only web and email links in your browser, and its window stays on dotrix (and GitHub's sign-in pages).
 
 ### Added
 
+- Each workspace has a storage limit for uploaded documents and task attachments (1 GB by default; the operator can change it per workspace). Settings shows how much is used, and an upload that doesn't fit is refused with the reason.
 - NVIDIA as a model provider: connect your build.nvidia.com key (`nvapi-…`) in Account → Your models to use NVIDIA's hosted models, which are free to try with rate limits, for chat and for Kai (on OpenCode or fx). Six are offered, each checked live for fast, working tool calls: Nemotron 3 Ultra, Nemotron 3.5 Lightning, Nemotron 3.5 Bolt, Mistral Large 4, Gemma 4 31B and Laguna XS 2.1.
 - A private solo beta readiness page (`docs/solo-beta-readiness.md`): the supported configuration, the checks to run where, and the known limitations to tell participants.
 - Personal workspaces can launch on their own: with `DOTRIX_ORGANISATIONS` off (the default on staging and production), organisation workspaces can't be created, joined, opened or moved into, and the app hides every way to reach one. A personal workspace also no longer shows Members, Permissions or invites. Existing organisations keep their data and return when the setting is turned on.

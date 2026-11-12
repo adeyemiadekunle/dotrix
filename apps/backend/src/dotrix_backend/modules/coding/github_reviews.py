@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import uuid
 from typing import Any
 
@@ -131,7 +132,25 @@ async def linked_run(session: AsyncSession, workspace_id: uuid.UUID, agent_run_i
     ).limit(1))
 
 
-POSTING = "posting"  # the claim on a turn's review (or CI look) while it's being posted
+POSTING = "posting"  # the claim on a turn's review (or CI look) while it's being posted: "posting:<unix time>"
+CLAIM_SECONDS = 600  # a claim older than this was left by a worker that died mid-post
+
+
+def _claim() -> str:
+    return f"{POSTING}:{int(time.time())}"
+
+
+def _claimed(value: str | None) -> bool:
+    """Is this turn's review posted, or being posted right now? A bare `posting` (the earlier code's) or a
+    claim older than CLAIM_SECONDS is free again."""
+    if not value:
+        return False
+    if not value.startswith(POSTING):
+        return True  # a real link
+    _, _, stamp = value.partition(":")
+    if not stamp.isdigit():
+        return False
+    return time.time() - int(stamp) <= CLAIM_SECONDS
 
 
 async def post_when_done(session_factory: Any, jobs: Any, agent_run_id: uuid.UUID) -> None:
@@ -163,7 +182,7 @@ async def post_review(ctx: JobContext, *, run_id: str) -> None:
         if run is None or run.pr_number is None:
             return
         is_ci = run.ci_review_run_id == agent_run.id
-        if (run.ci_review_posted_url if is_ci else run.review_posted_url):
+        if _claimed(run.ci_review_posted_url if is_ci else run.review_posted_url):
             return  # posted already, or being posted
         repo = await _repo(session, run)
         if repo is None:
@@ -178,9 +197,9 @@ async def post_review(ctx: JobContext, *, run_id: str) -> None:
         number, commit, key, workspace_id, project_id = run.pr_number, run.commit_sha, run.issue_key, run.workspace_id, run.project_id
         requested_by, coding_id = run.requested_by_id, run.id
         if is_ci:
-            run.ci_review_posted_url = POSTING
+            run.ci_review_posted_url = _claim()
         else:
-            run.review_posted_url = POSTING
+            run.review_posted_url = _claim()
         await session.commit()
     installation_id, repo_id, full_name = repo
     app = _app(ctx)
@@ -201,22 +220,26 @@ async def post_review(ctx: JobContext, *, run_id: str) -> None:
                                         comments=inline, commit_id=commit)
     except (Forbidden, GitHubUnavailable) as exc:
         logger.warning("coding run %s: Juno's %s wasn't posted on GitHub: %s", coding_id, "CI look" if is_ci else "review", exc)
-    async with ctx.session_factory() as session:
-        held = await session.get(CodingRun, coding_id, with_for_update=True, populate_existing=True)
-        if held is not None:
-            posted = (url or held.pr_url) if url is not None else None  # None again: the next finish may retry
-            if is_ci:
-                held.ci_review_posted_url = posted
-            else:
-                held.review_posted_url = posted
-        if url is not None:
-            AuditLog(session).record(
-                workspace_id=workspace_id, project_id=project_id,
-                action="coding.ci_review_posted" if is_ci else "coding.review_posted", target=str(coding_id),
-                actor_type=AuthorType.AGENT, agent="reviewer", instructed_by_id=requested_by,
-                details={"pr": number, "issue": key, "url": url},
-            )
-        await session.commit()
+    except Exception:
+        logger.exception("coding run %s: posting Juno's %s failed", coding_id, "CI look" if is_ci else "review")
+        raise
+    finally:  # the claim is always released or turned into the link, whatever happened above
+        async with ctx.session_factory() as session:
+            held = await session.get(CodingRun, coding_id, with_for_update=True, populate_existing=True)
+            if held is not None:
+                posted = (url or held.pr_url) if url is not None else None  # None again: the next finish may retry
+                if is_ci:
+                    held.ci_review_posted_url = posted
+                else:
+                    held.review_posted_url = posted
+            if url is not None:
+                AuditLog(session).record(
+                    workspace_id=workspace_id, project_id=project_id,
+                    action="coding.ci_review_posted" if is_ci else "coding.review_posted", target=str(coding_id),
+                    actor_type=AuthorType.AGENT, agent="reviewer", instructed_by_id=requested_by,
+                    details={"pr": number, "issue": key, "url": url},
+                )
+            await session.commit()
 
 
 async def ci_completed(session: AsyncSession, settings: Any, payload: dict[str, Any]) -> tuple[str, list[tuple[str, dict]]]:

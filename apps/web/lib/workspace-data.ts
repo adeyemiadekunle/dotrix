@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import { api, unwrap, type Schemas } from "./api";
 import { useProjectActivity, useWorkspaceActivity } from "./activity";
 import { useDocuments } from "./documents";
-import { useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./issues";
+import { fetchAllIssues, useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./issues";
 import { useKnowledge, useKnowledgeFile } from "./knowledge";
 import { useNotifications } from "./notifications";
 import { useProjects } from "./queries";
@@ -17,19 +17,26 @@ import { useStarredProjects } from "./stars";
 import { ms, toActivity, toAutomation, toFile, toTask } from "./view-models";
 import type { Activity, Agent, AuditEvent, Automation, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
 
-/** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
-function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean, byRank = false): Task[] | undefined {
-  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, filters);
-  const starred = useQuery({
+/** The issues you starred, every page of them. */
+function useStarredKeys(workspaceId: string | undefined, enabled: boolean) {
+  return useQuery({
     queryKey: ["issues", "workspace", workspaceId, "starred-keys"],
     queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/issues", {
-          params: { path: { workspace_id: workspaceId! }, query: { starred: true, limit: 5000 } },
-        }),
+      fetchAllIssues((offset) =>
+        unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/issues", {
+            params: { path: { workspace_id: workspaceId! }, query: { starred: true, limit: 1000, offset } },
+          }),
+        ),
       ),
     enabled: enabled && Boolean(workspaceId),
   });
+}
+
+/** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
+function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean, byRank = false): Task[] | undefined {
+  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, filters);
+  const starred = useStarredKeys(workspaceId, enabled);
   return useMemo(() => {
     if (!issues.data) return undefined;
     const fav = new Set((starred.data ?? []).map((i) => i.key));
@@ -62,16 +69,7 @@ export function useLiveAllTasks(workspaceId: string | undefined, enabled = true)
 /** Every issue including archived ones, rank-ordered: the same Tasks the store's `D().tasks` reads (lib/store-slots.ts). */
 export function useLiveWorkspaceTasks(workspaceId: string | undefined, enabled = true): Task[] | undefined {
   const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, EVERY_ISSUE);
-  const starred = useQuery({
-    queryKey: ["issues", "workspace", workspaceId, "starred-keys"],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/issues", {
-          params: { path: { workspace_id: workspaceId! }, query: { starred: true, limit: 5000 } },
-        }),
-      ),
-    enabled: enabled && Boolean(workspaceId),
-  });
+  const starred = useStarredKeys(workspaceId, enabled);
   // starred.data is read so this re-renders when stars change; the slot reads both from the cache.
   return issues.data && workspaceId ? (starred.data, readSlot("tasks", workspaceId)) : undefined;
 }

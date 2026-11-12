@@ -173,18 +173,21 @@ async def github_webhook(
     if x_github_delivery is None and settings.is_deployed:
         raise Unprocessable("X-GitHub-Delivery is missing")
     if x_github_delivery and not await webhook.first_delivery(session, x_github_delivery, x_github_event):
+        if await webhook.enqueue_pending(session, jobs, x_github_delivery):  # its jobs weren't queued the first time
+            logger.info("github webhook %s: delivery %s resumed", x_github_event, x_github_delivery)
+            return {"result": "resumed"}
         logger.info("github webhook %s: delivery %s already applied", x_github_event, x_github_delivery)
         return {"result": "duplicate"}
     done, follow_ups = await webhook.handle(session, x_github_event, payload, settings)
+    if x_github_delivery:  # kept with the delivery's record, so a failed queueing is finished later
+        await webhook.record_follow_ups(session, x_github_delivery, follow_ups)
     await session.commit()  # the delivery's record, when handling changed nothing
     logger.info("github webhook %s: %s", x_github_event, done)
-    try:
-        for name, kwargs in follow_ups:  # checkouts behind a push; Juno's look at a failed CI
+    if x_github_delivery and follow_ups:
+        await webhook.enqueue_pending(session, jobs, x_github_delivery)  # checkouts behind a push; Juno's look at a failed CI
+    else:
+        for name, kwargs in follow_ups:  # no delivery id (development only): nothing to keep them with
             await jobs.enqueue(name, **kwargs)
-    except Exception:
-        if x_github_delivery:  # so GitHub's retry is applied again and schedules the jobs
-            await webhook.forget_delivery(session, x_github_delivery)
-        raise
     return {"result": done}
 
 

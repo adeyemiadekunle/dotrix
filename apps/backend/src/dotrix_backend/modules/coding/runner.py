@@ -504,8 +504,16 @@ class CodingWorker:
             woken = box is not None
         warm = False
         if box is not None:
-            here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
-            warm = here.code == 0 and here.stdout.strip() == (await run_git(host, "rev-parse", "HEAD^{tree}")).strip()
+            try:
+                here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
+                warm = here.code == 0 and here.stdout.strip() == (await run_git(host, "rev-parse", "HEAD^{tree}")).strip()
+            except asyncio.CancelledError:
+                await close_quietly(box)
+                raise
+            except Exception:
+                # The box has left the pool: a failed check means "not warm", and it must not be left running.
+                logger.warning("coding run %s: couldn't check the session's sandbox for reuse", run_id, exc_info=True)
+                warm = False
             if not warm:
                 await close_quietly(box)
                 box = None
@@ -516,7 +524,11 @@ class CodingWorker:
             await _baseline(copy)
             box = await self.sandbox.open(run_id, copy, tool, key, **({"allow": allow} if allow else {}))
             if resumable and transcript_key:
-                resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)
+                try:
+                    resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)
+                except BaseException:
+                    await close_quietly(box)
+                    raise
         keep = False
         reported: float | None = None
         try:

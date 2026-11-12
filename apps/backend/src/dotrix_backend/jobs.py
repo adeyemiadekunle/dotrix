@@ -23,7 +23,7 @@ from .modules.code.service import CodeService
 from .modules.coding.github_reviews import post_review as post_coding_review
 from .modules.coding.github_reviews import triage_ci
 from .modules.coding.models import CodingRun, CodingRunStatus
-from .modules.connectors.webhook import delete_stale_deliveries
+from .modules.connectors.webhook import delete_stale_deliveries, enqueue_stale_pending
 from .modules.documents.service import DocumentService
 from .modules.execution.service import accept_operation, load_operation
 from .modules.invites.repository import InviteRepository
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 # How long finished rows are kept before cleanup deletes them.
 TOKEN_RETENTION = timedelta(days=7)  # refresh tokens after expiry; email links after use or expiry; device logins
 INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
+FOLLOW_UP_GRACE = timedelta(minutes=1)  # a GitHub delivery's jobs unqueued this long are queued by the sweep
 CLEANUP_INTERVAL_SECONDS = 3600
 INDEX_INTERVAL_SECONDS = 60
 AUTOMATIONS_INTERVAL_SECONDS = 60
@@ -74,6 +75,8 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
     at = datetime.fromisoformat(now) if now else datetime.now(UTC)
     token_cutoff, invite_cutoff = at - TOKEN_RETENTION, at - INVITE_RETENTION
     async with ctx.session_factory() as session:
+        # Deliveries whose follow-up jobs never got queued (GitHub didn't redeliver): queue them now.
+        queued = await enqueue_stale_pending(session, ctx.jobs, at - FOLLOW_UP_GRACE) if ctx.jobs is not None else 0
         deleted = {
             "refresh_tokens": await RefreshTokenRepository(session).delete_stale(token_cutoff),
             "auth_sessions": await AuthSessionRepository(session).delete_stale(
@@ -94,6 +97,8 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
         await session.commit()
         if ctx.checkouts is not None:
             deleted["checkouts"] = await CodeService(session, ctx.checkouts).prune()
+    if queued:
+        logger.info("cleanup queued the follow-ups of %d GitHub deliveries that GitHub never redelivered", queued)
     if any(deleted.values()):
         logger.info("cleanup deleted %s", ", ".join(f"{n} {name}" for name, n in deleted.items() if n))
     return deleted

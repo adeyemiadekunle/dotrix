@@ -15,6 +15,8 @@ import readline from "node:readline";
 
 import { app, BrowserWindow, dialog, shell } from "electron";
 
+import { opensOutside } from "./links";
+
 type RunnerState = "starting" | "waiting" | "coding" | "stopped" | "failed";
 
 export interface RunnerStatus {
@@ -156,8 +158,17 @@ export class Runners {
             title: "Sign in this computer's runner",
             webPreferences: { contextIsolation: true, sandbox: true },
           });
+          const stay = (event: { preventDefault(): void }, to: string) => {
+            if (!sameOrigin(to, this.webUrl)) event.preventDefault();
+          };
+          approval.webContents.on("will-navigate", stay);
+          approval.webContents.on("will-redirect", stay);
+          approval.webContents.setWindowOpenHandler(({ url: to }) => {
+            if (opensOutside(to)) void shell.openExternal(to);
+            return { action: "deny" };
+          });
           void approval.loadURL(url);
-        } else {
+        } else if (opensOutside(url)) {
           void shell.openExternal(url);
         }
       });

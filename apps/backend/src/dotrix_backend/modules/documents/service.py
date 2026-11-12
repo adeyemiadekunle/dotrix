@@ -24,6 +24,7 @@ from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.errors import Conflict, DomainError, NotFound, Unprocessable
 from dotrix_backend.core.jobs import Jobs
+from dotrix_backend.core.settings import Settings
 from dotrix_backend.core.storage import BlobStorage
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.knowledge.models import AuthorType
@@ -31,6 +32,7 @@ from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
+from dotrix_backend.modules.workspaces.storage import ensure_room
 from dotrix_engine.ingest import SUPPORTED_EXTENSIONS, UnsupportedDocument, to_markdown
 
 from .models import Document, DocumentStatus
@@ -67,10 +69,13 @@ def normalized_path(filename: str) -> str:
 
 
 class DocumentService:
-    def __init__(self, session: AsyncSession, storage: BlobStorage, jobs: Jobs | None = None) -> None:
+    def __init__(
+        self, session: AsyncSession, storage: BlobStorage, jobs: Jobs | None = None, settings: Settings | None = None
+    ) -> None:
         self.session = session
         self.storage = storage
         self.jobs = jobs  # the API's; None inside the conversion job
+        self.settings = settings  # the API's; None inside the conversion job (which stores no upload)
 
     async def upload(
         self,
@@ -97,6 +102,8 @@ class DocumentService:
             raise UnreadableDocument("The file is empty")
 
         project, member = access.project, access.member
+        assert self.settings is not None
+        await ensure_room(self.session, project.workspace_id, self.settings, len(data))
         document_id = uuid7()
         storage_key = f"{project.workspace_id}/{project.id}/{document_id}/{filename}"
         await self.storage.put(storage_key, data, content_type)

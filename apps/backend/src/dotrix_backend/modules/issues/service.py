@@ -23,6 +23,7 @@ from sqlalchemy.orm import aliased
 from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from dotrix_backend.core.settings import Settings
 from dotrix_backend.core.storage import BlobStorage
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.automations.events import record_event
@@ -35,6 +36,7 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.storage import ensure_room
 from dotrix_engine.contracts import AgentPolicy
 
 from .models import (
@@ -817,6 +819,7 @@ class IssueService:
         data: bytes,
         *,
         max_bytes: int,
+        settings: Settings,
     ) -> IssueRead:
         """Store a file and list it under the issue (any type; nothing converts it)."""
         issue = await self._by_key(project, key)
@@ -826,6 +829,7 @@ class IssueService:
             raise AttachmentTooLarge(f"Attachments are limited to {max_bytes // 1_000_000} MB")
         if not data:
             raise InvalidIssue("The file is empty")
+        await ensure_room(self.session, project.workspace_id, settings, len(data))
         filename = safe_filename(filename)
         attachment_id = uuid7()
         storage_key = f"{project.workspace_id}/{project.id}/attachments/{attachment_id}/{filename}"

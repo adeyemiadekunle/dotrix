@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { readChangelog } from "./changelog";
 import { webUrl } from "./config";
+import { opensOutside, staysInside } from "./links";
 import { Runners, sameOrigin } from "./runner";
 import { Updates } from "./updates";
 import { notify } from "./notify";
@@ -37,9 +38,18 @@ function createWindow(): void {
 
   // Open external links in the system browser, never inside the app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (opensOutside(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
+
+  // The window stays on dotrix (and GitHub's sign-in pages): any other page is refused, and opened in the browser when it is a web link.
+  const keepInside = (event: { preventDefault(): void }, url: string): void => {
+    if (staysInside(url, WEB_URL)) return;
+    event.preventDefault();
+    if (opensOutside(url)) void shell.openExternal(url);
+  };
+  win.webContents.on("will-navigate", (event, url) => keepInside(event, url));
+  win.webContents.on("will-redirect", (event, url) => keepInside(event, url));
 
   void win.loadURL(WEB_URL);
 }

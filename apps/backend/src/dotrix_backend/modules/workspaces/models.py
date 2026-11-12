@@ -55,6 +55,9 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Hosts Kai's sandboxes may reach besides the model API (coding/network.py): {"presets": [...],
     # "hosts": [...]}; owners and admins set it, each project adds its own.
     sandbox_network: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # What this workspace may store in uploads, in MB (storage.py); null follows the deployment's
+    # `workspace_storage_mb`, 0 is unlimited. Set by the operator in the admin console.
+    storage_limit_mb: Mapped[int | None] = mapped_column()
 
 
 class Membership(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):

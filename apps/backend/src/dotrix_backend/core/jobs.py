@@ -43,6 +43,7 @@ class JobContext:
     checkouts: Any = None  # connected repos' checkouts for agents (modules/code; None: not kept here)
     runner: Any = None  # the agent runner, for jobs that start runs (automations)
     coding: Any = None  # the coding worker (modules/coding/runner.py; None: coding runs aren't executed here)
+    jobs: Any = None  # the job queue, for jobs that queue others (the cleanup's sweep of GitHub follow-ups)
 
 
 JobFunction = Callable[..., Awaitable[Any]]

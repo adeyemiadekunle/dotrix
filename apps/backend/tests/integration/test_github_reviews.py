@@ -1,6 +1,9 @@
 """Juno on GitHub: its review of Kai's PR posted there, and a failed CI on Kai's PR looked at."""
+import time
+import uuid
 from pathlib import Path
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
@@ -13,7 +16,7 @@ from apps.backend.tests.integration.test_coding import (  # noqa: F401  (fixture
     origin,
 )
 from dotrix_backend.modules.audit.models import AuditEvent
-from dotrix_backend.modules.coding.github_reviews import diff_lines, review_comments
+from dotrix_backend.modules.coding.github_reviews import diff_lines, post_review, review_comments
 from dotrix_engine.testing import tool_call
 
 DIFF = """diff --git a/src/payments.py b/src/payments.py
@@ -201,3 +204,108 @@ async def test_a_finding_becomes_a_github_issue_when_a_person_asks(
     # Once is enough.
     again = await db_client.post(url, headers=ada.headers)
     assert again.status_code == 409 and len(github.issues) == 1
+
+
+# --- a claim on a review can't stick (plan 033) ---------------------------------------------------------------
+
+_FIELDS = [("review_posted_url", False), ("ci_review_posted_url", True)]
+
+
+async def _post_again(db_client, github, db_session, coding_run_id: str, field: str, claim: str | None, *, fail=False):
+    """Set a claim on the turn's review, then run the job again with the fake GitHub (or one that breaks)."""
+    from types import SimpleNamespace
+
+    from dotrix_backend.core.jobs import JobContext
+    from dotrix_backend.modules.agents.models import AgentRun
+    from dotrix_backend.modules.coding.models import CodingRun
+    from dotrix_backend.modules.connectors.github_app import get_github_app
+
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    client = app.dependency_overrides[get_github_app]()
+    if fail:
+        async def boom(*args, **kwargs):
+            raise RuntimeError("connection reset")
+
+        client.post_review = client.comment = boom
+    run = await db_session.get(CodingRun, uuid.UUID(coding_run_id), populate_existing=True)
+    if field == "ci_review_posted_url":
+        run.ci_review_run_id = run.review_run_id  # the CI path: the same finished Juno run stands in for the look
+    setattr(run, field, claim)
+    await db_session.commit()
+    agent_run_id = run.ci_review_run_id if field == "ci_review_posted_url" else run.review_run_id
+    assert await db_session.get(AgentRun, agent_run_id) is not None
+    ctx = JobContext(app.state.runner.session_factory, app.state.settings, None, coding=SimpleNamespace(app=client))
+    return ctx, str(agent_run_id), run
+
+
+@pytest.mark.parametrize("field", ["review_posted_url", "ci_review_posted_url"])
+async def test_a_failed_post_releases_the_claim_and_a_later_attempt_posts(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session, field,  # noqa: F811
+) -> None:
+    run = await _turn(db_client, coding, claude, agent_script, "Looks right.")
+    ctx, agent_run_id, row = await _post_again(db_client, github, db_session, run["id"], field, None, fail=True)
+    before = len(github.reviews) + len(github.comments)
+    with pytest.raises(RuntimeError):
+        await post_review(ctx, run_id=agent_run_id)
+    await db_session.refresh(row)
+    assert getattr(row, field) is None
+    ctx, agent_run_id, row = await _post_again(db_client, github, db_session, run["id"], field, None)
+    await post_review(ctx, run_id=agent_run_id)
+    await db_session.refresh(row)
+    assert getattr(row, field).startswith("http") and len(github.reviews) + len(github.comments) == before + 1
+
+
+@pytest.mark.parametrize("field", ["review_posted_url", "ci_review_posted_url"])
+@pytest.mark.parametrize(("age", "posts"), [(None, True), (0, False), (601, True)])
+async def test_a_claim_is_free_when_bare_or_stale_but_not_when_fresh(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session,  # noqa: F811
+    field, age, posts,
+) -> None:
+    run = await _turn(db_client, coding, claude, agent_script, "Looks right.")
+    claim = "posting" if age is None else f"posting:{int(time.time()) - age}"
+    ctx, agent_run_id, row = await _post_again(db_client, github, db_session, run["id"], field, claim)
+    before = len(github.reviews) + len(github.comments)
+    await post_review(ctx, run_id=agent_run_id)
+    await db_session.refresh(row)
+    assert len(github.reviews) + len(github.comments) == before + (1 if posts else 0)
+    assert (getattr(row, field) or "").startswith("http") is posts
+
+
+@pytest.mark.parametrize("field", ["review_posted_url", "ci_review_posted_url"])
+async def test_the_api_never_returns_a_claim_as_a_link(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session, field,  # noqa: F811
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    run = await _turn(db_client, coding, claude, agent_script, "Looks right.")
+    _, _, row = await _post_again(db_client, github, db_session, run["id"], field, f"posting:{int(time.time())}")
+    read = (await db_client.get(f"{ws}/projects/{kun['id']}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert read[field] is None and "posting" not in str(read)
+
+
+async def test_a_failed_ci_is_still_looked_at_when_the_queue_was_down_for_the_first_delivery(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script,  # noqa: F811
+) -> None:
+    from dotrix_backend.core.jobs import get_jobs
+
+    class Down:
+        async def enqueue(self, name: str, **kwargs: object) -> None:
+            raise ConnectionError("redis is down")
+
+    class Recording:
+        queued: list[str] = []
+
+        async def enqueue(self, name: str, **kwargs: object) -> None:
+            self.queued.append(name)
+
+    run = await _turn(db_client, coding, claude, agent_script, "Looks right.")
+    body = _suite(run["commit_sha"], "failure")
+    overrides = db_client._transport.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_jobs] = Down
+    try:
+        assert (await _deliver(db_client, "check_suite", body, delivery="ci-1")).status_code == 503
+        recording = Recording()
+        overrides[get_jobs] = lambda: recording
+        assert (await _deliver(db_client, "check_suite", body, delivery="ci-1")).status_code == 202
+        assert recording.queued == ["triage_ci"]
+    finally:
+        overrides.pop(get_jobs, None)

@@ -45,6 +45,17 @@ export async function call<T>(path: string): Promise<T> {
   }
 }
 
+/** A change (PUT), with the same one retry after a refresh as `call`. */
+export async function put<T>(path: string, body: unknown): Promise<T> {
+  try {
+    return await rawCall<T>(path, { method: "PUT", body });
+  } catch (e) {
+    if ((e as ApiError).status !== 401) throw e;
+    if (!(await refreshSession())) throw e;
+    return rawCall<T>(path, { method: "PUT", body });
+  }
+}
+
 export type Me = { email: string; name: string };
 
 type StuckRun = { kind: "chat" | "coding"; id: string; status: string; workspace: string; label: string | null; lease_expired_at: string | null };
@@ -129,6 +140,9 @@ export type WorkspaceRow = {
   cost_usd: number;
   last_run_at: string | null;
   paused: boolean;
+  used_bytes: number;
+  storage_limit_mb: number | null;
+  effective_limit_bytes: number | null;
 };
 
 export type Run = {

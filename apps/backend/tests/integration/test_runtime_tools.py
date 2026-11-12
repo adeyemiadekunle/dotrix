@@ -252,12 +252,74 @@ async def test_runtime_journal_persists_encrypted_records_and_checkpoints(journa
     async with sessions() as session:
         records = list(await session.scalars(select(AgentRuntimeJournal).where(AgentRuntimeJournal.workspace_id == run.workspace_id)))
         checkpoint = await session.scalar(select(AgentRuntimeCheckpoint).where(AgentRuntimeCheckpoint.workspace_id == run.workspace_id))
-        assert len(records) == 2
+        assert len(records) == 1
         assert all("private" not in row.encrypted for row in records) and "private" not in checkpoint.encrypted
         await session.execute(delete(AgentRun).where(AgentRun.workspace_id == run.workspace_id, AgentRun.id == run.id))
         await session.commit()
         assert not list(await session.scalars(select(AgentRuntimeJournal).where(AgentRuntimeJournal.workspace_id == run.workspace_id)))
         assert await session.scalar(select(AgentRuntimeCheckpoint.id).where(AgentRuntimeCheckpoint.workspace_id == run.workspace_id)) is None
+
+
+async def _journal_rows(sessions, run):
+    async with sessions() as session:
+        return list(await session.scalars(select(AgentRuntimeJournal.sequence).where(
+            AgentRuntimeJournal.workspace_id == run.workspace_id).order_by(AgentRuntimeJournal.sequence)))
+
+
+async def test_runtime_journal_checkpoint_prunes_replaced_records_and_keeps_the_head(journal_world):
+    run, sessions, _, _, journal = journal_world
+    await journal.append(expected=None, idempotency_key="one", data=b"a")
+    await journal.append(expected="1", idempotency_key="two", data=b"b")
+    await journal.save_checkpoint(through="2", data=b"state")
+    assert await _journal_rows(sessions, run) == []
+    snapshot = await journal.load()
+    assert snapshot.checkpoint == ("2", b"state") and snapshot.records == ()
+    assert await journal.append(expected="2", idempotency_key="three", data=b"c") == "3"
+    assert await _journal_rows(sessions, run) == [3]
+    snapshot = await journal.load()
+    assert snapshot.checkpoint == ("2", b"state") and snapshot.records == (("3", b"c"),)
+    with pytest.raises(Unprocessable):
+        await journal.save_checkpoint(through="9", data=b"beyond")
+    await journal.save_checkpoint(through="2", data=b"state")
+
+
+async def test_runtime_journal_size_limit_bounds_the_live_journal(journal_world, monkeypatch):
+    _, _, _, _, journal = journal_world
+    monkeypatch.setattr(runtime_journal, "MAX_JOURNAL_BYTES", 10)
+    cursor = None
+    for number in range(1, 9):
+        cursor = await journal.append(expected=cursor, idempotency_key=f"k{number}", data=b"1234")
+        await journal.save_checkpoint(through=cursor, data=b"cp")
+    assert cursor == "8"
+    with pytest.raises(Unprocessable, match="size limit"):
+        await journal.append(expected="8", idempotency_key="big", data=b"123456789")
+    await journal.append(expected="8", idempotency_key="x1", data=b"12345")
+    with pytest.raises(Unprocessable, match="size limit"):
+        await journal.append(expected="9", idempotency_key="x2", data=b"12345")
+
+
+async def test_runtime_journal_checkpoint_fits_when_what_it_replaces_is_near_the_limit(journal_world, monkeypatch):
+    _, _, _, _, journal = journal_world
+    monkeypatch.setattr(runtime_journal, "MAX_JOURNAL_BYTES", 10)
+    one = await journal.append(expected=None, idempotency_key="a", data=b"1234")
+    two = await journal.append(expected=one, idempotency_key="b", data=b"5678")
+    # 8 bytes stored; a 4-byte checkpoint replacing both leaves 4, so it fits.
+    await journal.save_checkpoint(through=two, data=b"cpcp")
+    snapshot = await journal.load()
+    assert snapshot.checkpoint == (two, b"cpcp") and snapshot.records == ()
+    # One that would leave too much after the records it keeps is still refused.
+    three = await journal.append(expected=two, idempotency_key="c", data=b"123")
+    await journal.append(expected=three, idempotency_key="d", data=b"123")
+    with pytest.raises(Unprocessable):
+        await journal.save_checkpoint(through=three, data=b"12345678")
+
+
+async def test_runtime_journal_retry_of_a_pruned_append_is_fenced(journal_world):
+    _, _, _, _, journal = journal_world
+    await journal.append(expected=None, idempotency_key="one", data=b"a")
+    await journal.save_checkpoint(through="1", data=b"state")
+    with pytest.raises(JournalFenced):
+        await journal.append(expected=None, idempotency_key="one", data=b"a")
 
 
 async def test_runtime_journal_serializes_competing_and_duplicate_writers(journal_world):

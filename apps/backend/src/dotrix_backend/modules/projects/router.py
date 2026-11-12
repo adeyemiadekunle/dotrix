@@ -129,7 +129,7 @@ async def delete_project(access: ProjectManager, session: SessionDep, storage: S
             logger.warning("couldn't delete %s from storage", key)
 
 
-@router.post("/{project_id}/move", responses=errors(403, 409, 422))
+@router.post("/{project_id}/move", responses=errors(403, 409, 413, 422))
 async def move_project(
     data: ProjectMove, access: ProjectManager, session: SessionDep, settings: SettingsDep
 ) -> ProjectRead:
@@ -138,9 +138,11 @@ async def move_project(
     projects in both (owners and admins). 409 if the other workspace already has a project with
     its key or repo, or while one of its agent runs is working or waiting for approval. People
     who can't see it there are unassigned from its issues (logged) and stop watching them; linked
-    checkouts follow the move on their next command."""
+    checkouts follow the move on their next command. 413 `storage_full` when its uploads
+    wouldn't fit in the other workspace's storage limit."""
     return await ProjectService(session).move(
-        access.project, access.member, data.workspace_id, organisations=settings.organisations_enabled
+        access.project, access.member, data.workspace_id,
+        organisations=settings.organisations_enabled, settings=settings,
     )
 
 

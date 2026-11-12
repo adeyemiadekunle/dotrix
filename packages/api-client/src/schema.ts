@@ -626,6 +626,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/storage-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Workspace Storage Limit
+         * @description Set one workspace's limit on uploads (document originals and task attachments), in MB:
+         *     0 is unlimited, null follows the deployment's `DOTRIX_WORKSPACE_STORAGE_MB`. Nothing is deleted
+         *     when it is lowered; the workspace just can't add more until it is under. Audited in the
+         *     workspace's log (`workspace.storage_limit_updated`).
+         */
+        put: operations["set_workspace_storage_limit"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/observe/runs": {
         parameters: {
             query?: never;
@@ -1088,6 +1111,28 @@ export interface paths {
         patch: operations["update_workspace"];
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Storage
+         * @description How much this workspace has stored in uploads (document originals and task attachments) and
+         *     the limit on it. Any member. Uploads that would pass the limit are refused (413 `storage_full`);
+         *     nothing is deleted, and reading, downloading and deleting always work.
+         */
+        get: operations["get_workspace_storage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/members": {
         parameters: {
             query?: never;
@@ -1425,7 +1470,8 @@ export interface paths {
          *     projects in both (owners and admins). 409 if the other workspace already has a project with
          *     its key or repo, or while one of its agent runs is working or waiting for approval. People
          *     who can't see it there are unassigned from its issues (logged) and stop watching them; linked
-         *     checkouts follow the move on their next command.
+         *     checkouts follow the move on their next command. 413 `storage_full` when its uploads
+         *     wouldn't fit in the other workspace's storage limit.
          */
         post: operations["move_project"];
         delete?: never;
@@ -1652,7 +1698,8 @@ export interface paths {
          *     it to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
          *     read it: the document is `converting` until then (poll it), then `ready` or `failed`.
          *     Uploading the same filename again adds a new version of that markdown. Adding a
-         *     project's external docs is setup work: owners and admins.
+         *     project's external docs is setup work: owners and admins. 413 `storage_full` when the upload
+         *     would pass the workspace's storage limit.
          */
         post: operations["upload_document"];
         delete?: never;
@@ -1726,7 +1773,8 @@ export interface paths {
         /**
          * Duplicate Document
          * @description Copy a document under a free name ("spec copy.pdf"); the copy is converted like an
-         *     upload (`converting`, then `ready` or `failed`). Owners and admins.
+         *     upload (`converting`, then `ready` or `failed`). Owners and admins. 413 `storage_full` when
+         *     the copy wouldn't fit in the workspace's storage limit.
          */
         post: operations["duplicate_document"];
         delete?: never;
@@ -3447,7 +3495,8 @@ export interface paths {
         /**
          * Attach File To Issue
          * @description Add a file to the issue, listed under it (any type; it isn't converted for the agents,
-         *     unlike a project document). Anyone who may edit issues.
+         *     unlike a project document). Anyone who may edit issues. 413 `storage_full` when the file
+         *     would pass the workspace's storage limit.
          */
         post: operations["attach_file_to_issue"];
         delete?: never;
@@ -10321,6 +10370,42 @@ export interface components {
              */
             why: "changed" | "removed" | "unread";
         };
+        /** StorageLimitUpdate */
+        StorageLimitUpdate: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Storage Limit Mb
+             * @description MB; 0 is unlimited, null follows the deployment's default
+             */
+            storage_limit_mb: number | null;
+        };
+        /** StorageRead */
+        StorageRead: {
+            /**
+             * Used Bytes
+             * @description Document originals plus task attachments
+             */
+            used_bytes: number;
+            /**
+             * Limit Bytes
+             * @description Null: no limit
+             */
+            limit_bytes: number | null;
+            /**
+             * Documents Bytes
+             * @description Uploaded document originals
+             */
+            documents_bytes: number;
+            /**
+             * Attachments Bytes
+             * @description Task attachments
+             */
+            attachments_bytes: number;
+        };
         /**
          * StuckRun
          * @description An active run whose lease lapsed: the worker on it is gone, and the sweep should pick it up.
@@ -11108,6 +11193,21 @@ export interface components {
              * @description An owner paused the workspace's agents
              */
             paused: boolean;
+            /**
+             * Used Bytes
+             * @description Uploads stored: document originals and task attachments
+             */
+            used_bytes: number;
+            /**
+             * Storage Limit Mb
+             * @description This workspace's own limit; null follows the deployment's, 0 is none
+             */
+            storage_limit_mb: number | null;
+            /**
+             * Effective Limit Bytes
+             * @description The limit that applies; null: none
+             */
+            effective_limit_bytes: number | null;
         };
         /** WorkspaceWithRole */
         WorkspaceWithRole: {
@@ -12346,6 +12446,57 @@ export interface operations {
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_workspace_storage_limit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorageLimitUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13632,6 +13783,55 @@ export interface operations {
             };
         };
     };
+    get_workspace_storage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_members: {
         parameters: {
             query?: never;
@@ -14868,6 +15068,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
             /** @description Request body or parameters failed validation */
             422: {
                 headers: {
@@ -15700,6 +15909,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
             /** @description Request body or parameters failed validation */
             422: {
                 headers: {
@@ -16022,6 +16240,15 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21861,6 +22088,15 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

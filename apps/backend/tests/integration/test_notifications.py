@@ -342,3 +342,43 @@ async def test_watchers_hear_about_changes_and_comments(world, db_client: AsyncC
         "mention": True, "assigned": True, "finding": True, "decided": True, "watching": False, "email": "immediately",
     })
     assert await _notifications(db_client, ws, cat) == []
+
+
+async def test_a_crash_while_emailing_does_not_email_everyone_again(world, db_client: AsyncClient, agent_script, db_session, outbox) -> None:
+    from datetime import timedelta
+
+    from sqlalchemy import func, select, update
+
+    from dotrix_backend.modules.notifications.emails import NotificationEmails
+    from dotrix_backend.modules.notifications.models import Notification
+
+    ada, bob, cat, _, _, base = await world()
+    await _verify(db_session, ada, bob, cat)
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# R\n"), "Done.")
+    await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 3"}, headers=cat.headers)
+    await db_session.execute(update(Notification).values(created_at=Notification.created_at - timedelta(minutes=2)))
+    await db_session.commit()
+    sent = len(outbox.messages)
+
+    class Crash(BaseException):
+        pass
+
+    emails = NotificationEmails(db_session, outbox, "https://pm.example")
+    real_send, calls = emails._send, 0
+
+    async def crashing(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise Crash
+        return await real_send(*args, **kwargs)
+
+    emails._send = crashing  # type: ignore[method-assign]
+    with pytest.raises(Crash):
+        await emails.send_due()
+    assert len(outbox.messages) == sent + 1  # the first person was emailed before the crash
+
+    await db_session.rollback()
+    assert await db_session.scalar(select(func.count()).select_from(Notification).where(Notification.emailed_at.is_(None))) == 0
+    await NotificationEmails(db_session, outbox, "https://pm.example").send_due()
+    assert len(outbox.messages) == sent + 1  # nobody is emailed a second time

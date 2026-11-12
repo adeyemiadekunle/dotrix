@@ -1597,6 +1597,79 @@
         }
       }
     },
+    "/v1/admin/storage-limit": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set Workspace Storage Limit",
+        "description": "Set one workspace's limit on uploads (document originals and task attachments), in MB:\n0 is unlimited, null follows the deployment's `DOTRIX_WORKSPACE_STORAGE_MB`. Nothing is deleted\nwhen it is lowered; the workspace just can't add more until it is under. Audited in the\nworkspace's log (`workspace.storage_limit_updated`).",
+        "operationId": "set_workspace_storage_limit",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageLimitUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/observe/runs": {
       "get": {
         "tags": [
@@ -3327,6 +3400,75 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/storage": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Get Workspace Storage",
+        "description": "How much this workspace has stored in uploads (document originals and task attachments) and\nthe limit on it. Any member. Uploads that would pass the limit are refused (413 `storage_full`);\nnothing is deleted, and reading, downloading and deleting always work.",
+        "operationId": "get_workspace_storage",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/members": {
       "get": {
         "tags": [
@@ -5030,7 +5172,7 @@
           "projects"
         ],
         "summary": "Move Project",
-        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. People\nwho can't see it there are unassigned from its issues (logged) and stop watching them; linked\ncheckouts follow the move on their next command.",
+        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. People\nwho can't see it there are unassigned from its issues (logged) and stop watching them; linked\ncheckouts follow the move on their next command. 413 `storage_full` when its uploads\nwouldn't fit in the other workspace's storage limit.",
         "operationId": "move_project",
         "security": [
           {
@@ -5112,6 +5254,16 @@
           },
           "409": {
             "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6332,7 +6484,7 @@
           "documents"
         ],
         "summary": "Upload Document",
-        "description": "Upload a document. The original is kept in storage, and a background job converts\nit to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents\nread it: the document is `converting` until then (poll it), then `ready` or `failed`.\nUploading the same filename again adds a new version of that markdown. Adding a\nproject's external docs is setup work: owners and admins.",
+        "description": "Upload a document. The original is kept in storage, and a background job converts\nit to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents\nread it: the document is `converting` until then (poll it), then `ready` or `failed`.\nUploading the same filename again adds a new version of that markdown. Adding a\nproject's external docs is setup work: owners and admins. 413 `storage_full` when the upload\nwould pass the workspace's storage limit.",
         "operationId": "upload_document",
         "security": [
           {
@@ -6414,6 +6566,16 @@
           },
           "409": {
             "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6947,7 +7109,7 @@
           "documents"
         ],
         "summary": "Duplicate Document",
-        "description": "Copy a document under a free name (\"spec copy.pdf\"); the copy is converted like an\nupload (`converting`, then `ready` or `failed`). Owners and admins.",
+        "description": "Copy a document under a free name (\"spec copy.pdf\"); the copy is converted like an\nupload (`converting`, then `ready` or `failed`). Owners and admins. 413 `storage_full` when\nthe copy wouldn't fit in the workspace's storage limit.",
         "operationId": "duplicate_document",
         "security": [
           {
@@ -7019,6 +7181,16 @@
           },
           "403": {
             "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16664,7 +16836,7 @@
           "issues"
         ],
         "summary": "Attach File To Issue",
-        "description": "Add a file to the issue, listed under it (any type; it isn't converted for the agents,\nunlike a project document). Anyone who may edit issues.",
+        "description": "Add a file to the issue, listed under it (any type; it isn't converted for the agents,\nunlike a project document). Anyone who may edit issues. 413 `storage_full` when the file\nwould pass the workspace's storage limit.",
         "operationId": "attach_file_to_issue",
         "security": [
           {
@@ -16745,6 +16917,16 @@
           },
           "403": {
             "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -37290,6 +37472,74 @@
         ],
         "title": "StaleSource"
       },
+      "StorageLimitUpdate": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "storage_limit_mb": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Limit Mb",
+            "description": "MB; 0 is unlimited, null follows the deployment's default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "storage_limit_mb"
+        ],
+        "title": "StorageLimitUpdate"
+      },
+      "StorageRead": {
+        "properties": {
+          "used_bytes": {
+            "type": "integer",
+            "title": "Used Bytes",
+            "description": "Document originals plus task attachments"
+          },
+          "limit_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Bytes",
+            "description": "Null: no limit"
+          },
+          "documents_bytes": {
+            "type": "integer",
+            "title": "Documents Bytes",
+            "description": "Uploaded document originals"
+          },
+          "attachments_bytes": {
+            "type": "integer",
+            "title": "Attachments Bytes",
+            "description": "Task attachments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "used_bytes",
+          "limit_bytes",
+          "documents_bytes",
+          "attachments_bytes"
+        ],
+        "title": "StorageRead"
+      },
       "StuckRun": {
         "properties": {
           "kind": {
@@ -39030,6 +39280,35 @@
             "type": "boolean",
             "title": "Paused",
             "description": "An owner paused the workspace's agents"
+          },
+          "used_bytes": {
+            "type": "integer",
+            "title": "Used Bytes",
+            "description": "Uploads stored: document originals and task attachments"
+          },
+          "storage_limit_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Limit Mb",
+            "description": "This workspace's own limit; null follows the deployment's, 0 is none"
+          },
+          "effective_limit_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Limit Bytes",
+            "description": "The limit that applies; null: none"
           }
         },
         "type": "object",
@@ -39047,7 +39326,10 @@
           "tokens",
           "cost_usd",
           "last_run_at",
-          "paused"
+          "paused",
+          "used_bytes",
+          "storage_limit_mb",
+          "effective_limit_bytes"
         ],
         "title": "WorkspaceUsage"
       },
