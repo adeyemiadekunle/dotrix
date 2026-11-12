@@ -792,6 +792,94 @@ async def test_a_session_keeps_its_sandbox_and_resumes_its_conversation(
     assert len(github.pulls) == 1
 
 
+async def test_a_warm_sandbox_that_cannot_be_checked_is_closed_and_replaced(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, storage
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    sandbox = TranscriptSandbox(claude)
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage,
+                                 secrets=app.state.secrets, pool=WarmPool(3600, 3))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
+    claude.found_transcript, claude.argvs = [], []
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine again.")
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    assert first["status"] == "pr_opened" and sandbox.opened == 1
+    session_id = first["session_id"]
+
+    # The kept sandbox can no longer be asked anything.
+    [warm_box] = [w.box for w in worker.pool._boxes.values()]
+    closed: list[int] = []
+    real_exec, real_close = warm_box.exec, warm_box.close
+
+    async def broken(argv, **kwargs):
+        if argv[:3] == ["git", "rev-parse", "HEAD^{tree}"]:
+            raise RuntimeError("the container is gone")
+        return await real_exec(argv, **kwargs)
+
+    async def counted() -> None:
+        closed.append(1)
+        await real_close()
+
+    warm_box.exec, warm_box.close = broken, counted  # type: ignore[method-assign]
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    assert amount > 0\n    return amount\n"}
+    turns = f"{base}/coding/sessions/{session_id}/turns"
+    second = (await db_client.post(turns, json={"message": "Only positive amounts"}, headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "pr_opened" and sandbox.opened == 2
+    assert closed == [1]
+
+
+async def test_a_fresh_sandbox_is_closed_when_restoring_the_transcript_fails(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, storage
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    sandbox = TranscriptSandbox(claude)
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage,
+                                 secrets=app.state.secrets, pool=WarmPool(3600, 0))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
+    claude.found_transcript, claude.argvs = [], []
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine again.")
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    assert first["status"] == "pr_opened"
+
+    closes: list[int] = []
+    real_open = sandbox.open
+
+    async def open_and_watch(*args, **kwargs):
+        box = await real_open(*args, **kwargs)
+        real_close = box.close
+
+        async def counted() -> None:
+            closes.append(1)
+            await real_close()
+
+        box.close = counted  # type: ignore[method-assign]
+        return box
+
+    async def failing(*args, **kwargs):
+        raise RuntimeError("storage fell over")
+
+    sandbox.open = open_and_watch  # type: ignore[method-assign]
+    worker._restore_transcript = failing  # type: ignore[method-assign]
+    turns = f"{base}/coding/sessions/{first['session_id']}/turns"
+    second = (await db_client.post(turns, json={"message": "Again"}, headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "failed"
+    assert closes == [1]
+
+
 async def test_opencode_codes_on_the_model_the_server_names(
     db_client: AsyncClient, coding, github, origin: Path, agent_script
 ) -> None:
