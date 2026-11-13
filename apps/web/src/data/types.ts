@@ -119,8 +119,10 @@ export interface Notif {
   thread?: string;
   /** the agent run it's about (a run stopped at its model's limit can continue) */
   run?: string;
-  /** a turn of Kai's waiting to start or to be accepted, or decided */
+  /** the coding turn the notification describes, including completed turns */
   codingRun?: string;
+  /** the exact session that coding turn belongs to */
+  codingSession?: string;
   text: string;
   snippet: string;
   at: number;
