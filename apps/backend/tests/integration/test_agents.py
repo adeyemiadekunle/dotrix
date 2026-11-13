@@ -763,3 +763,51 @@ async def test_past_briefings_are_listed_by_kind(project, db_client: AsyncClient
     assert [b["reply"] for b in briefings] == ["Briefing two.", "Briefing one."]
     bad = await db_client.get(f"{base}/agent/runs", params={"kind": "nonsense"}, headers=ada.headers)
     assert bad.status_code == 422
+
+
+async def test_an_approved_overwrite_never_loses_a_persons_edit_made_while_it_waited(
+    project, db_client: AsyncClient, agent_script
+) -> None:
+    ada, _, base = await project()
+    model = agent_script.say(
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1: core.\n"),
+        "I'll read it again.",
+    )
+    paused = await run(db_client, base, ada.headers, "Rewrite the roadmap")
+    assert paused["status"] == "awaiting_approval"
+    # While the write waits, a person edits the page.
+    edited = await db_client.put(f"{base}/knowledge/files/roadmap.md", json={"content": "# Roadmap\n\nAda's plan.\n"},
+                                 headers=ada.headers)
+    assert edited.status_code == 200, edited.text
+
+    done = (await decide(db_client, base, paused, ada.headers, ("approve",))).json()
+    assert done["status"] == "completed"
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "# Roadmap\n\nAda's plan.\n"
+    told = [m.content for m in model.received[-1] if m.type == "tool"]
+    assert told and "changed since this conversation's turn started" in told[-1]
+
+
+async def test_a_write_or_edit_fails_when_the_page_changed_after_the_agent_read_it(
+    project, db_client: AsyncClient
+) -> None:
+    from dotrix_backend.modules.agents.storage_backend import PlatformKnowledgeBackend
+
+    ada, team, base = await project()
+    project_id = uuid.UUID(base.rsplit("/", 1)[1])
+    sessions = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    agent = PlatformKnowledgeBackend(sessions, workspace_id=uuid.UUID(team["id"]), project_id=project_id,
+                                     instructed_by_id=uuid.UUID(ada.id), approved_by_id=uuid.UUID(ada.id))
+
+    assert (await agent.aread("/roadmap.md")).error is None
+    await db_client.put(f"{base}/knowledge/files/roadmap.md", json={"content": "Ada's plan.\n"}, headers=ada.headers)
+    written = await agent.awrite("/roadmap.md", "The agent's plan.\n")
+    assert written.error and "Reload it" in written.error
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "Ada's plan.\n"
+
+    # Read again, it writes; and its own write counts as read, so a second write needs no reread.
+    assert (await agent.aread("/roadmap.md")).error is None
+    assert (await agent.awrite("/roadmap.md", "The agent's plan.\n")).error is None
+    assert (await agent.aedit("/roadmap.md", "agent's", "team's")).error is None
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "The team's plan.\n"
+    # A brand new page needs no read.
+    assert (await agent.awrite("/progress/new.md", "New.\n")).error is None

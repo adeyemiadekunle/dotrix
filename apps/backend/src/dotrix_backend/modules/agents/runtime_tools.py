@@ -42,6 +42,8 @@ class RuntimeRunScope:
     session_id: str
     skill_snapshot: dict[str, str] | None = field(default=None, compare=False)
     resource_snapshot: dict | None = field(default=None, compare=False)
+    # The version each document's last read saw, shared by this run's read and change tools.
+    read_versions: dict[str, int] = field(default_factory=dict, compare=False, repr=False)
 
 
 async def _authorize_read(
@@ -128,7 +130,8 @@ def scoped_project_tools(
     from .storage_backend import PlatformKnowledgeBackend
 
     backend = PlatformKnowledgeBackend(sessions, workspace_id=scope.workspace_id, project_id=scope.project_id,
-                                       instructed_by_id=scope.requested_by_id)
+                                       instructed_by_id=scope.requested_by_id, run_id=scope.run_id,
+                                       read_versions=scope.read_versions)
 
     def path(value: str) -> str:
         return "/" + value.removeprefix("/dotrix/").lstrip("/")

@@ -736,6 +736,7 @@ class AgentRunner:
                         unattended=unattended,
                         write_prefix="docs/wiki/" if mode == "docs.repository" else None,
                         write_paths=run.repository_write_paths if mode == "docs.repository" else None,
+                        run_id=run_id,
                     )
                 },
             )
