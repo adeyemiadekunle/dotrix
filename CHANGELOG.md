@@ -22,6 +22,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Stopping a coding turn now also ends what Kai started during it, such as a test run or dev server, instead of leaving those processes running in the sandbox.
 - dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
 - Kai's session now says when a tool call wasn't allowed ("Not allowed to run …") instead of the call disappearing, without showing the coding engine's own refusal text; its own checklist updates are no longer listed as steps.
 - Agents see your project.md and current-state.md as written, up to 1,500 characters, instead of a single line cut at 200.
