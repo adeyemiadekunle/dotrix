@@ -91,6 +91,10 @@ class Usage:
     _commands: set[str] = field(default_factory=set)
     # fx: each tool call's description, for when it fails (its result comes on a later line).
     _tools: dict[str, str] = field(default_factory=dict)
+    # Claude Code: the tool calls it refused (`dontAsk`), said once whether its event or its result names them,
+    # and each call's input, which its refusal event leaves out.
+    _denied: set[str] = field(default_factory=set)
+    _inputs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def total(self) -> int:
@@ -197,10 +201,33 @@ def _describe_claude_tool(name: str, args: dict[str, Any]) -> str | None:
             return f"Read {path}"
         case "Glob" | "Grep":
             return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
-        case "TodoWrite":
+        case "TodoWrite" | "TaskCreate" | "TaskUpdate" | "TaskGet" | "TaskList":  # its own checklist
             return None
         case _:
             return f"Used {name}"
+
+
+def _denied_step(denial: dict[str, Any], usage: Usage) -> Step | None:
+    """A tool call Claude Code refused, as a step: once per call (its `permission_denied` event and its
+    result's `permission_denials` both name it; only the result carries the call's input)."""
+    ref = str(denial.get("tool_use_id") or "")
+    if ref and ref in usage._denied:
+        return None
+    if ref:
+        usage._denied.add(ref)
+    name = str(denial.get("tool_name") or "")
+    args = denial.get("tool_input") or usage._inputs.get(ref) or {}
+    path = _relative(str(args.get("file_path") or args.get("path") or ""))
+    match name:
+        case "Bash" if args.get("command"):
+            what = f"run {_clip(str(args['command']), 160)}"
+        case "Edit" | "MultiEdit" | "Write" | "NotebookEdit" if path:
+            what = f"change {path}"
+        case "":
+            what = "use a tool"
+        case _:
+            what = f"use {name}"
+    return Step("error", f"Not allowed to {what}")
 
 
 class ClaudeCode(_NoUsageCommand):
@@ -257,6 +284,9 @@ class ClaudeCode(_NoUsageCommand):
                 out.failed = f"The model provider refused the key ({error})"
             else:
                 out.steps.append(Step("error", f"A model call failed ({error}); retry {event.get('attempt')}"))
+        elif kind == "system" and event.get("subtype") == "permission_denied":
+            if step := _denied_step(event, usage):
+                out.steps.append(step)
         elif kind == "assistant":
             message = event.get("message") or {}
             for block in message.get("content") or []:
@@ -265,6 +295,8 @@ class ClaudeCode(_NoUsageCommand):
                 elif block.get("type") == "tool_use":
                     said = _describe_claude_tool(str(block.get("name")), block.get("input") or {})
                     ref = str(block.get("id") or "") or None
+                    if ref and isinstance(block.get("input"), dict):
+                        usage._inputs[ref] = block["input"]
                     if block.get("name") == "Bash" and ref:
                         usage._commands.add(ref)
                     if said:
@@ -280,8 +312,9 @@ class ClaudeCode(_NoUsageCommand):
                 usage.output_tokens = sum(o for _, o in usage._calls.values())
         elif kind == "user":  # the results of its tool calls: a command's output is kept
             for block in (event.get("message") or {}).get("content") or []:
+                # A refused call's result is the engine's own refusal text (which names it): its step says it.
                 if isinstance(block, dict) and block.get("type") == "tool_result" \
-                        and block.get("tool_use_id") in usage._commands:
+                        and block.get("tool_use_id") in usage._commands and block.get("tool_use_id") not in usage._denied:
                     out.steps.append(output_step(_tool_result_text(block.get("content")), block["tool_use_id"],
                                                  failed=bool(block.get("is_error"))))
         elif kind == "result":
@@ -293,6 +326,9 @@ class ClaudeCode(_NoUsageCommand):
                 usage.output_tokens = max(usage.output_tokens, int(totals.get("output_tokens") or 0))
             if event.get("total_cost_usd") is not None:
                 usage.cost_usd = float(event["total_cost_usd"])
+            for denial in event.get("permission_denials") or []:
+                if isinstance(denial, dict) and (step := _denied_step(denial, usage)):
+                    out.steps.append(step)
             if event.get("is_error") or str(event.get("subtype", "")).startswith("error"):
                 out.failed = _clip(str(event.get("result") or event.get("subtype") or f"{CODING_AGENT_NAME} stopped"), 500)
             elif event.get("result"):

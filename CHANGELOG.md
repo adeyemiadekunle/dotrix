@@ -22,6 +22,13 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Fixed
 
 - dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
+- Kai's session now says when a tool call wasn't allowed ("Not allowed to run …") instead of the call disappearing, without showing the coding engine's own refusal text; its own checklist updates are no longer listed as steps.
+- Agents see your project.md and current-state.md as written, up to 1,500 characters, instead of a single line cut at 200.
+
+### Security
+
+- Local coding (dotrix runner and the desktop app) no longer runs a repository's own Claude Code hooks, permission rules, plugins or MCP servers. Without Docker Sandboxes, Claude Code there gets only its file tools (no shell commands) and none of the repository's CLAUDE.md or skills.
+- A cloud coding turn whose changes or summary contain your model key, as written or base64-encoded, is refused before anything is committed or pushed.
 
 ## [0.2.0] - 2026-11-12
 
