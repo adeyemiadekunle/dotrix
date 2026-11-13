@@ -1,7 +1,7 @@
 """Notifications when a coding turn ends
 
 Revision ID: 6c2f8a1d3e57
-Revises: b83edb29b95d
+Revises: 3d8a5f1c7b29
 Create Date: 2026-11-13 15:00:00.000000
 """
 from collections.abc import Sequence
@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "6c2f8a1d3e57"
-down_revision: str | None = "b83edb29b95d"
+down_revision: str | None = "3d8a5f1c7b29"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
