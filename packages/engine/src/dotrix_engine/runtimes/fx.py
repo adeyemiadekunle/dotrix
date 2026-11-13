@@ -23,12 +23,20 @@ from .contracts import (
     RuntimeHandoff,
     RuntimeJournalStore,
     RuntimeToolContext,
+    RuntimeToolError,
     TurnResult,
     UnsupportedRuntimeOperation,
     validate_session,
 )
 
 _HOST = Path(__file__).with_name("fx_host")
+_TOOL_ERROR_CHARS = 1_000
+
+
+def _said(message: str) -> str:
+    """A tool error as the model reads it: one bounded paragraph."""
+    flat = " ".join(message.split()) or "Tool failed."
+    return flat if len(flat) <= _TOOL_ERROR_CHARS else flat[: _TOOL_ERROR_CHARS - 1] + "…"
 _LOCAL_METADATA = ".dotrix-fx-runtime.json"
 _LOCAL_SESSION = re.compile(r"^wrun_[A-Za-z0-9]+$")
 
@@ -218,6 +226,8 @@ class FxRuntime:
                 # Check serializability before sending, so a malformed host result fails the tool, not the bridge.
                 json.dumps(result)
                 reply = {"op": "tool_reply", "id": event["id"], "ok": True, "result": result}
+        except RuntimeToolError as exc:
+            reply = {"op": "tool_reply", "id": event.get("id"), "ok": False, "error": _said(str(exc))}
         except Exception:
             reply = {"op": "tool_reply", "id": event.get("id"), "ok": False}
         with contextlib.suppress(BrokenPipeError, ConnectionError, RuntimeError):

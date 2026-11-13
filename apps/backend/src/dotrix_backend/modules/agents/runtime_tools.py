@@ -6,13 +6,14 @@ session to an admitted platform run; session IDs supplied by a model are not aut
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from langchain_core.tools import StructuredTool
+from pydantic import ValidationError
 from sqlalchemy import select
 
-from dotrix_backend.core.errors import Conflict, Forbidden
+from dotrix_backend.core.errors import Conflict, DomainError, Forbidden
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.search.embeddings import Embedder
@@ -20,7 +21,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.catalog import tool_id
 from dotrix_engine.contracts import PM_HANDLE, AgentSpec
-from dotrix_engine.runtimes import RuntimeTool, RuntimeToolContext
+from dotrix_engine.runtimes import RuntimeTool, RuntimeToolContext, RuntimeToolError
 
 from .knowledge_tools import build_knowledge_tools
 from .models import AgentRun, AgentRuntimeBinding, RunStatus
@@ -174,3 +175,45 @@ def scoped_project_tools(
         tools.append(RuntimeTool(tool.name, tool.description, tool.args_schema.model_json_schema(),
                                  idempotent=True, writes=False, execute_scoped=execute))
     return tools
+
+
+def _refusal(exc: Exception) -> RuntimeToolError | None:
+    """What the model may read of a tool's failure: the platform's own refusal, or what was wrong
+    with its arguments. Anything else (a crash, a driver error) stays "Tool failed."."""
+    if isinstance(exc, DomainError):
+        return RuntimeToolError(exc.detail)
+    if isinstance(exc, ValidationError):
+        problems = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'arguments'}: {e['msg']}" for e in exc.errors()[:5])
+        return RuntimeToolError(f"Invalid arguments: {problems}")
+    return None
+
+
+def readable_failures(tool: RuntimeTool) -> RuntimeTool:
+    """The same tool, its refusals said to the model as Claude Code returns a tool's error, so it can
+    correct its arguments, ask the person, or work within what it may do rather than retry blind.
+    The handler and its checks are unchanged; only how a failure is reported."""
+    def told(exc: Exception) -> Exception:
+        refusal = _refusal(exc)
+        if refusal is None:
+            return exc
+        refusal.__cause__ = exc
+        return refusal
+
+    if tool.execute_scoped is not None:
+        scoped = tool.execute_scoped
+
+        async def execute_scoped(arguments: dict, context: RuntimeToolContext):
+            try:
+                return await scoped(arguments, context)
+            except Exception as exc:
+                raise told(exc) from exc
+        return replace(tool, execute_scoped=execute_scoped)
+    assert tool.execute is not None
+    plain = tool.execute
+
+    async def execute(arguments: dict):
+        try:
+            return await plain(arguments)
+        except Exception as exc:
+            raise told(exc) from exc
+    return replace(tool, execute=execute)
