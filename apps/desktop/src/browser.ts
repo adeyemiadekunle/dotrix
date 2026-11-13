@@ -2,22 +2,28 @@
 // in the app, each tab a <webview> the app's page creates. Everything here keeps those pages apart from
 // dotrix itself: a profile of their own (never the app's cookies), no preload and no Node, web addresses
 // only, no permissions (camera, location, notifications…), no downloads, and links that ask for a new
-// window become a new tab. A person chooses whether the profile's cookies outlive the app.
+// window become a new tab. A person chooses whether the profile's cookies outlive the app, and whether
+// Kai may use the pane on a turn coding here (browserKai.ts: a tab of its own, pages on this computer only).
 import { app, session, type Session, type WebContents, type WebPreferences } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 
-import { browsable, CLEAN_PARTITION, KEPT_PARTITION, partitionFor, readSettings } from "./browserRules";
+import { browsable, CLEAN_PARTITION, KEPT_PARTITION, loopback, partitionFor, readSettings } from "./browserRules";
 
 export interface BrowserSettings {
   keepCookies: boolean;
+  /** Kai may open and act on pages of this computer's dev server in a tab of its own. */
+  kaiAllowed: boolean;
   /** The profile a tab must use; a tab with another is refused. */
   partition: string;
 }
 
 export class Browser {
   private keepCookies: boolean;
+  private kaiAllowed: boolean;
   private readonly guarded = new Set<Session>();
+  /** Whether a tab is Kai's (browserKai.ts): its pages stay on this computer. */
+  kais: (tab: WebContents) => boolean = () => false;
 
   constructor(private readonly file = path.join(app.getPath("userData"), "browser.json")) {
     let raw: string | null = null;
@@ -26,21 +32,32 @@ export class Browser {
     } catch {
       // Never saved: a clean profile.
     }
-    this.keepCookies = readSettings(raw).keepCookies;
+    ({ keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed } = readSettings(raw));
+  }
+
+  private save(): void {
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    fs.writeFileSync(this.file, JSON.stringify({ keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed }));
   }
 
   get settings(): BrowserSettings {
-    return { keepCookies: this.keepCookies, partition: partitionFor(this.keepCookies) };
+    return { keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed, partition: partitionFor(this.keepCookies) };
   }
 
   /** Keep the profile's cookies after the app quits, or not (what was kept is cleared). */
   async setKeepCookies(keep: boolean): Promise<BrowserSettings> {
     if (keep !== this.keepCookies) {
       this.keepCookies = keep;
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(this.file, JSON.stringify({ keepCookies: keep }));
+      this.save();
       if (!keep) await wipe(session.fromPartition(KEPT_PARTITION));
     }
+    return this.settings;
+  }
+
+  /** Let Kai use the pane on a turn coding here, or not (its tools then say so). */
+  setKaiAllowed(allowed: boolean): BrowserSettings {
+    this.kaiAllowed = allowed;
+    this.save();
     return this.settings;
   }
 
@@ -68,13 +85,14 @@ export class Browser {
   /** A tab that exists: it stays on web pages, and a new window it asks for is offered to the app's page as a tab. */
   watch(tab: WebContents): void {
     const stay = (event: { preventDefault(): void }, url: string): void => {
-      if (!browsable(url)) event.preventDefault();
+      if (!browsable(url) || (this.kais(tab) && !loopback(url))) event.preventDefault();
     };
     tab.on("will-navigate", stay);
     tab.on("will-redirect", stay);
     tab.setWindowOpenHandler(({ url }) => {
       const host = tab.hostWebContents;
-      if (browsable(url) && host && !host.isDestroyed()) host.send("dotrix:browser:open", url);
+      // From Kai's tab, only this computer's pages open (as an ordinary tab).
+      if (browsable(url) && (!this.kais(tab) || loopback(url)) && host && !host.isDestroyed()) host.send("dotrix:browser:open", url);
       return { action: "deny" };
     });
   }

@@ -101,8 +101,15 @@ export function desktopNotify(): NotifyBridge["notify"] | null {
 
 export interface BrowserSettings {
   keepCookies: boolean;
+  /** Kai may use the pane (a tab of its own, pages on this computer only) on a turn coding here. */
+  kaiAllowed: boolean;
   /** The profile every tab uses: the app refuses a tab with another. */
   partition: string;
+}
+
+export interface KaiTabRequest {
+  id: number;
+  url: string;
 }
 
 interface BrowserBridge {
@@ -112,6 +119,13 @@ interface BrowserBridge {
     clear(): Promise<void>;
     /** A page in the pane asked for a new window: open it as a tab. */
     onOpen(listener: (url: string) => void): () => void;
+    setKaiAllowed(allowed: boolean): Promise<BrowserSettings>;
+    /** Kai, coding on this computer, asks for its tab at an address there: the pane opens and makes it. */
+    onKai(listener: (request: KaiTabRequest) => void): () => void;
+    /** The request still waiting, for a pane that opened after it was sent. */
+    kaiRequest(): Promise<KaiTabRequest | null>;
+    /** Which page the pane made for a request (the app checks it before Kai may use it). */
+    kaiReady(id: number, contentsId: number): Promise<void>;
   };
 }
 

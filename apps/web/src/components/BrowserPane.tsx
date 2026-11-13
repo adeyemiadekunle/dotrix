@@ -3,12 +3,16 @@
 // browser. Each tab is a <webview> the app checks before it exists (apps/desktop: browser.ts): web addresses
 // only, no permissions, no downloads, and a page that asks for a new window gets a new tab here.
 // A person chooses whether that profile's cookies outlive the app, and can clear what it saved.
+// Kai, on a turn coding on this computer, gets one tab of its own here (apps/desktop: browserKai.ts): it asks
+// for it at an address on this computer, this pane makes it and says which page it is, and the person
+// watches Kai read, click and type there. A person can turn that off in the pane's menu.
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { hostOf, toAddress } from "../core/browserUrl";
-import { desktopBrowser, type BrowserSettings } from "../core/desktop";
+import { desktopBrowser, type BrowserSettings, type KaiTabRequest } from "../core/desktop";
 import { Ic } from "../core/icons";
+import { CODING_AGENT } from "../data/seed-dotrix";
 import { toast } from "../ui/toast";
 import { PanelFrame } from "./SidePanel";
 
@@ -23,6 +27,7 @@ interface Webview extends HTMLElement {
   goForward(): void;
   reload(): void;
   stop(): void;
+  getWebContentsId(): number;
 }
 
 interface Tab {
@@ -35,12 +40,14 @@ interface Tab {
   back: boolean;
   forward: boolean;
   failed: string | null;
+  /** Kai's tab: the request it was made for (null: a person's tab). */
+  kai: number | null;
 }
 
-type Patch = Partial<Omit<Tab, "id" | "initial">>;
+type Patch = Partial<Omit<Tab, "id" | "initial" | "kai">>;
 
 let serial = 0;
-const newTab = (url: string | null = null): Tab => ({
+const newTab = (url: string | null = null, kai: number | null = null): Tab => ({
   id: `tab-${++serial}`,
   initial: url,
   url,
@@ -49,6 +56,7 @@ const newTab = (url: string | null = null): Tab => ({
   back: false,
   forward: false,
   failed: null,
+  kai,
 });
 
 // A session's tabs while the app runs, so closing the pane (or opening another session) doesn't lose them.
@@ -59,12 +67,14 @@ const Page = memo(function Page({
   id,
   src,
   partition,
+  kai,
   onChange,
   onElement,
 }: {
   id: string;
   src: string;
   partition: string;
+  kai: number | null;
   onChange: (id: string, patch: Patch) => void;
   onElement: (id: string, element: Webview | null) => void;
 }) {
@@ -78,7 +88,16 @@ const Page = memo(function Page({
       onChange(id, { url: page.getURL(), title: page.getTitle(), back: page.canGoBack(), forward: page.canGoForward(), ...extra });
     };
     const events: [string, (event: Event) => void][] = [
-      ["dom-ready", () => ((ready = true), onElement(id, page), sync())],
+      [
+        "dom-ready",
+        () => {
+          // Kai's tab, loaded for the first time: the app learns which page it is (and checks it).
+          if (!ready && kai !== null) void desktopBrowser()?.kaiReady(kai, page.getWebContentsId());
+          ready = true;
+          onElement(id, page);
+          sync();
+        },
+      ],
       ["did-start-loading", () => sync({ loading: true, failed: null })],
       ["did-stop-loading", () => sync({ loading: false })],
       ["did-navigate", () => sync()],
@@ -99,7 +118,7 @@ const Page = memo(function Page({
       for (const [name, listener] of events) page.removeEventListener(name, listener);
       onElement(id, null);
     };
-  }, [id, onChange, onElement]);
+  }, [id, kai, onChange, onElement]);
   return createElement("webview", { ref, src, partition, allowpopups: "true", className: "browser-page" });
 });
 
@@ -144,8 +163,10 @@ export function BrowserPane({
   }, [sessionId, tabs, active]);
 
   // The address bar follows the tab and its page, unless a person is typing in it.
+  const shownTab = useRef(active.id);
   useEffect(() => {
-    if (document.activeElement !== address.current) setDraft(active.url ?? "");
+    if (shownTab.current !== active.id || document.activeElement !== address.current) setDraft(active.url ?? "");
+    shownTab.current = active.id;
     setProblem(null);
   }, [active.id, active.url]);
   useEffect(() => {
@@ -168,6 +189,20 @@ export function BrowserPane({
   }, []);
   // A page that asks for a new window gets a tab.
   useEffect(() => bridge?.onOpen((url) => open(url)), [bridge, open]);
+  // Kai asks for its tab (now, or before this pane opened): made once per request, and shown.
+  const made = useRef(new Set<number>());
+  useEffect(() => {
+    if (!bridge) return;
+    const make = (request: KaiTabRequest | null) => {
+      if (!request || made.current.has(request.id)) return;
+      made.current.add(request.id);
+      const tab = newTab(request.url, request.id);
+      setTabs((all) => [...all.filter((other) => other.initial !== null), tab]); // in place of an empty new tab
+      setActiveId(tab.id);
+    };
+    void bridge.kaiRequest().then(make);
+    return bridge.onKai(make);
+  }, [bridge]);
 
   const close = (id: string) => {
     const index = tabs.findIndex((tab) => tab.id === id);
@@ -230,6 +265,19 @@ export function BrowserPane({
       toast("The setting couldn't be saved");
     }
   };
+  const kaiAllowed = async () => {
+    if (!bridge || !settings) return;
+    setMenu(false);
+    try {
+      const next = await bridge.setKaiAllowed(!settings.kaiAllowed);
+      setSettings(next);
+      toast(
+        next.kaiAllowed ? `${CODING_AGENT.name} can use the browser on turns coding on this computer` : `${CODING_AGENT.name} can no longer use the browser`,
+      );
+    } catch {
+      toast("The setting couldn't be saved");
+    }
+  };
   const clear = async () => {
     setMenu(false);
     try {
@@ -281,6 +329,12 @@ export function BrowserPane({
                 <Ic n="trash" s={14} />
                 <span className="grow">Clear browsing data</span>
               </button>
+              <hr />
+              <button role="menuitemcheckbox" aria-checked={settings?.kaiAllowed ?? false} disabled={!settings} onClick={() => void kaiAllowed()}>
+                <Ic n="cursor-click" s={14} />
+                <span className="grow">Let {CODING_AGENT.name} use the browser</span>
+                {settings?.kaiAllowed && <Ic n="check" s={14} />}
+              </button>
               {active.url && (
                 <>
                   <hr />
@@ -307,6 +361,7 @@ export function BrowserPane({
                 title={tab.url ?? "New tab"}
               >
                 {tab.loading && <span className="browser-busy" aria-hidden />}
+                {tab.kai !== null && <span className="badge">{CODING_AGENT.name}</span>}
                 <span className="trunc">{tab.title || (tab.url ? hostOf(tab.url) : "New tab")}</span>
               </button>
               <button className="browser-tab-close" aria-label={`Close ${tab.title || "tab"}`} onClick={() => close(tab.id)}>
@@ -383,7 +438,7 @@ export function BrowserPane({
               (tab) =>
                 tab.initial && (
                   <div key={`${settings.partition}:${tab.id}`} className={`browser-slot ${tab.id === active.id ? "on" : ""}`}>
-                    <Page id={tab.id} src={tab.initial} partition={settings.partition} onChange={change} onElement={element} />
+                    <Page id={tab.id} src={tab.initial} partition={settings.partition} kai={tab.kai} onChange={change} onElement={element} />
                   </div>
                 ),
             )}

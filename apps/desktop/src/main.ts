@@ -5,6 +5,8 @@ import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent, Notification, she
 import path from "node:path";
 
 import { Browser } from "./browser";
+import { KaiBrowser } from "./browserKai";
+import { McpServer } from "./mcp";
 import { readChangelog } from "./changelog";
 import { webUrl } from "./config";
 import { opensOutside, staysInside } from "./links";
@@ -17,8 +19,15 @@ const WEB_URL = webUrl();
 // The web app is served on the API's origin, so the runner talks to the same one unless told otherwise.
 const API_URL = process.env.DOTRIX_API_URL ?? new URL(WEB_URL).origin;
 
-const runners = new Runners(API_URL, WEB_URL);
 let browser: Browser; // the Browser pane's profile and rules (made once the app is ready)
+let kai: KaiBrowser; // Kai's use of the pane on a turn coding here
+let kaiTools: McpServer | null = null; // where that turn's coding tool reaches it
+// A runner hands its coding tool the pane's tools: where they are and the token they answer to (dotrix_cli/runner.py).
+const runners = new Runners(API_URL, WEB_URL, (): Record<string, string> =>
+  kaiTools?.url ? { DOTRIX_BROWSER_MCP_URL: kaiTools.url, DOTRIX_BROWSER_MCP_TOKEN: kaiTools.token } : {},
+);
+/** The app's own page, where the pane lives. */
+const appPage = () => BrowserWindow.getAllWindows().find((win) => !win.isDestroyed() && sameOrigin(win.webContents.getURL(), WEB_URL))?.webContents ?? null;
 let stopped = false; // the runners were stopped for quitting (or restarting into an update)
 // A turn coding here is stopped (the tool with it) before the app restarts into a new version.
 const updates = new Updates(async () => {
@@ -104,12 +113,26 @@ function bridge(): void {
   handle("dotrix:browser:settings", () => browser.settings);
   handle("dotrix:browser:keep-cookies", (_e, keep: unknown) => browser.setKeepCookies(keep === true));
   handle("dotrix:browser:clear", () => browser.clear());
+  handle("dotrix:browser:kai-allowed", (_e, allowed: unknown) => browser.setKaiAllowed(allowed === true));
+  handle("dotrix:browser:kai-request", () => kai.request);
+  handle("dotrix:browser:kai-ready", (event, id: unknown, contentsId: unknown) => kai.ready(event.sender, id, contentsId));
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   browser = new Browser();
+  kai = new KaiBrowser(
+    appPage,
+    () => browser.settings.kaiAllowed,
+    () => browser.settings.partition,
+  );
+  browser.kais = (tab) => kai.owns(tab);
+  kaiTools = new McpServer("dotrix-browser", app.getVersion(), kai);
+  // Without it the app works as before: Kai's local turns just have no browser.
+  await kaiTools.start().catch(() => (kaiTools = null));
   app.on("web-contents-created", (_event, contents) => {
-    if (contents.getType() === "webview") browser.watch(contents);
+    if (contents.getType() !== "webview") return;
+    browser.watch(contents);
+    kai.hear(contents);
   });
   bridge();
   createWindow();

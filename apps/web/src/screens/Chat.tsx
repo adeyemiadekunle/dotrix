@@ -78,7 +78,7 @@ import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { LimitNotice } from "../components/LimitNotice";
 import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
-import { desktop, useDesktopRunners, type DesktopRunner } from "../core/desktop";
+import { desktop, desktopBrowser, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
@@ -2074,6 +2074,10 @@ export function Session({ cs }: { cs: CodingSession }) {
     setDetailsPop(false);
     openPane("changes", turnId ? { turn: turnId } : {});
   };
+  // In the desktop app, Kai asking for its browser tab opens the Browser pane (components/BrowserPane.tsx makes the tab).
+  const showBrowser = useRef(openPane);
+  showBrowser.current = openPane;
+  useEffect(() => desktopBrowser()?.onKai(() => showBrowser.current("browser")), []);
   // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panes, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
   const keys = useRef({ panes, togglePane, setPanes });
   keys.current = { panes, togglePane, setPanes };

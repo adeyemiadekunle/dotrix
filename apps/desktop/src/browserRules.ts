@@ -22,11 +22,25 @@ export function browsable(url: string): boolean {
 }
 
 /** The pane's saved settings, from whatever its file holds. */
-export function readSettings(raw: string | null): { keepCookies: boolean } {
+export function readSettings(raw: string | null): { keepCookies: boolean; kaiAllowed: boolean } {
   try {
-    const saved = JSON.parse(raw ?? "") as { keepCookies?: unknown };
-    return { keepCookies: saved.keepCookies === true };
+    const saved = JSON.parse(raw ?? "") as { keepCookies?: unknown; kaiAllowed?: unknown };
+    // Kai may use the pane unless a person turned that off.
+    return { keepCookies: saved.keepCookies === true, kaiAllowed: saved.kaiAllowed !== false };
   } catch {
-    return { keepCookies: false };
+    return { keepCookies: false, kaiAllowed: true };
   }
+}
+
+/** An address on this computer (a dev server): the only pages Kai may open or act on. */
+export function loopback(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  const host = parsed.hostname;
+  return host === "localhost" || host.endsWith(".localhost") || host === "[::1]" || /^127(\.\d{1,3}){3}$/.test(host);
 }
