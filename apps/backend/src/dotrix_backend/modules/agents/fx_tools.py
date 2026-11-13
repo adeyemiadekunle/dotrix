@@ -101,7 +101,8 @@ def _changes(sessions: SessionFactory, scope: RuntimeRunScope, spec: AgentSpec, 
         def backend(approved_by_id: uuid.UUID | None) -> PlatformKnowledgeBackend:
             return PlatformKnowledgeBackend(sessions, workspace_id=scope.workspace_id, project_id=scope.project_id,
                                             instructed_by_id=scope.requested_by_id, approved_by_id=approved_by_id,
-                                            policy=policy, unattended=unattended)
+                                            policy=policy, unattended=unattended, run_id=scope.run_id,
+                                            read_versions=scope.read_versions)
 
         def path(value: str) -> str:
             return "/" + value.removeprefix("/dotrix/").lstrip("/")
