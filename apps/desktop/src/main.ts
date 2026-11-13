@@ -6,7 +6,8 @@ import path from "node:path";
 
 import { Browser } from "./browser";
 import { KaiBrowser } from "./browserKai";
-import { McpServer } from "./mcp";
+import { DevServers, KaiApp } from "./devServer";
+import { McpServer, type ToolSet } from "./mcp";
 import { readChangelog } from "./changelog";
 import { webUrl } from "./config";
 import { opensOutside, staysInside } from "./links";
@@ -22,17 +23,23 @@ const API_URL = process.env.DOTRIX_API_URL ?? new URL(WEB_URL).origin;
 let browser: Browser; // the Browser pane's profile and rules (made once the app is ready)
 let kai: KaiBrowser; // Kai's use of the pane on a turn coding here
 let kaiTools: McpServer | null = null; // where that turn's coding tool reaches it
-// A runner hands its coding tool the pane's tools: where they are and the token they answer to (dotrix_cli/runner.py).
-const runners = new Runners(API_URL, WEB_URL, (): Record<string, string> =>
-  kaiTools?.url ? { DOTRIX_BROWSER_MCP_URL: kaiTools.url, DOTRIX_BROWSER_MCP_TOKEN: kaiTools.token } : {},
+let devServers: DevServers; // the app Kai starts in its worktree, with the command a person saved
+// A runner hands its coding tool the pane's tools: where they are, and a token of its own folder's (dotrix_cli/runner.py).
+const runners = new Runners(
+  API_URL,
+  WEB_URL,
+  (folder): Record<string, string> => (kaiTools?.url ? { DOTRIX_BROWSER_MCP_URL: kaiTools.url, DOTRIX_BROWSER_MCP_TOKEN: kaiTools.tokenFor(folder) } : {}),
+  (folder) => void devServers?.stop(folder),
 );
+/** The worktree a folder's runner is coding in now (one the runner made), or null. */
+const worktreeOf = (folder: string) => ownWorktree(runners.list().find((runner) => runner.folder === folder)?.turn?.worktree);
 /** The app's own page, where the pane lives. */
 const appPage = () => BrowserWindow.getAllWindows().find((win) => !win.isDestroyed() && sameOrigin(win.webContents.getURL(), WEB_URL))?.webContents ?? null;
 let stopped = false; // the runners were stopped for quitting (or restarting into an update)
 // A turn coding here is stopped (the tool with it) before the app restarts into a new version.
 const updates = new Updates(async () => {
   stopped = true;
-  await runners.stopAll();
+  await Promise.all([runners.stopAll(), devServers?.stopAll()]);
 });
 
 function createWindow(): void {
@@ -114,6 +121,12 @@ function bridge(): void {
   handle("dotrix:browser:keep-cookies", (_e, keep: unknown) => browser.setKeepCookies(keep === true));
   handle("dotrix:browser:clear", () => browser.clear());
   handle("dotrix:browser:enabled", (_e, enabled: unknown) => browser.setEnabled(enabled === true));
+  handle("dotrix:dev-servers:list", () => devServers.commands);
+  handle("dotrix:dev-servers:save", (_e, folder: unknown, given: unknown) => {
+    // Only a folder this computer codes in (one of its runners').
+    if (typeof folder !== "string" || !runners.list().some((runner) => runner.folder === folder)) throw new Error("Not one of this computer's folders");
+    return devServers.save(folder, given && typeof given === "object" ? (given as { command?: unknown; port?: unknown }) : null);
+  });
   handle("dotrix:browser:kai-allowed", (_e, allowed: unknown) => browser.setKaiAllowed(allowed === true));
   handle("dotrix:browser:kai-request", () => kai.request);
   handle("dotrix:browser:kai-ready", (event, id: unknown, contentsId: unknown) => kai.ready(event.sender, id, contentsId));
@@ -127,7 +140,14 @@ app.whenReady().then(async () => {
     () => browser.settings.partition,
   );
   browser.kais = (tab) => kai.owns(tab);
-  kaiTools = new McpServer("dotrix-browser", app.getVersion(), kai);
+  devServers = new DevServers();
+  const kaiApp = new KaiApp(devServers, worktreeOf, () => browser.settings.enabled && browser.settings.kaiAllowed);
+  // The pane's tools, and the app's for a folder with a saved command.
+  const tools: ToolSet = {
+    list: (folder) => [...kai.list(), ...kaiApp.list(folder)],
+    call: (name, args, folder) => (name.startsWith("app_") ? kaiApp.call(name, folder) : kai.call(name, args)),
+  };
+  kaiTools = new McpServer("dotrix-browser", app.getVersion(), tools);
   // Without it the app works as before: Kai's local turns just have no browser.
   await kaiTools.start().catch(() => (kaiTools = null));
   app.on("web-contents-created", (_event, contents) => {
@@ -144,11 +164,12 @@ app.whenReady().then(async () => {
   });
 });
 
-// A turn in progress is stopped (the tool with it) before the app goes, not left coding unwatched.
+// A turn in progress is stopped (the tool with it) before the app goes, not left coding unwatched; and an app
+// Kai started is stopped too (it runs in a process group of its own, so it would outlive this one).
 app.on("before-quit", (event) => {
-  if (stopped || !runners.running) return;
+  if (stopped || (!runners.running && !devServers?.active)) return;
   event.preventDefault();
-  void runners.stopAll().finally(() => {
+  void Promise.all([runners.stopAll(), devServers?.stopAll()]).finally(() => {
     stopped = true;
     app.quit();
   });

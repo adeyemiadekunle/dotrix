@@ -163,6 +163,26 @@ export function useBrowserSettings(): BrowserSettings | null {
   );
 }
 
+/** A command a person saved to start a folder's app for Kai (Settings → Browser), by folder. */
+export interface DevCommand {
+  command: string;
+  /** The port it listens on; null: the app picks a free one and passes it as PORT. */
+  port: number | null;
+}
+
+interface DevServersBridge {
+  devServers: {
+    list(): Promise<Record<string, DevCommand>>;
+    /** Save a folder's command, or forget it (null). Only one of this computer's runner folders. */
+    save(folder: string, command: DevCommand | null): Promise<Record<string, DevCommand>>;
+  };
+}
+
+/** Starting a folder's app for Kai, or null in a browser or an app from before it. */
+export function desktopDevServers(): DevServersBridge["devServers"] | null {
+  return (globalThis as { dotrixDesktop?: Partial<DevServersBridge> }).dotrixDesktop?.devServers ?? null;
+}
+
 /** The app's version, What's new and updates, or null in a browser or an app from before them. */
 export function desktopApp(): AppBridge | null {
   const found = (globalThis as { dotrixDesktop?: Partial<AppBridge> }).dotrixDesktop;

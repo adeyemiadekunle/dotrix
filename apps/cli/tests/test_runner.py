@@ -130,6 +130,7 @@ def test_claude_code_with_the_desktop_apps_browser_gets_only_its_tools(tmp_path:
 
     assert describe("mcp__browser__browser_navigate", {"url": "http://localhost:3000/x"}) == "Opened http://localhost:3000/x in the browser"
     assert describe("mcp__browser__browser_click", {"ref": 4}) == "Clicked in the browser"
+    assert describe("mcp__browser__app_start", {}) == "Started the app on this computer"
 
 
 def test_claude_code_in_a_sandbox_still_ignores_the_repositorys_configuration() -> None:

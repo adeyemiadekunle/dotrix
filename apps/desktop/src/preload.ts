@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
       return () => ipcRenderer.removeListener("dotrix:browser:open", wrapped);
     },
   },
+  devServers: {
+    list: () => ipcRenderer.invoke("dotrix:dev-servers:list"),
+    save: (folder: string, command: { command: string; port: number | null } | null) => ipcRenderer.invoke("dotrix:dev-servers:save", folder, command),
+  },
   worktree: {
     tree: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:tree", worktree),
     file: (worktree: string, file: string) => ipcRenderer.invoke("dotrix:worktree:file", worktree, file),

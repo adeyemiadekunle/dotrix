@@ -57,8 +57,10 @@ export class Runners {
   constructor(
     private apiUrl: string,
     private webUrl: string,
-    /** More for a runner's environment, read when one starts (the Browser pane's tools for Kai: main.ts). */
-    private extraEnv: () => Record<string, string> = () => ({}),
+    /** More for a folder's runner's environment, read when it starts (the Browser pane's tools for Kai: main.ts). */
+    private extraEnv: (folder: string) => Record<string, string> = () => ({}),
+    /** A folder's turn ended, or its runner stopped (main.ts stops the app Kai started for it). */
+    private turnEnded: (folder: string) => void = () => undefined,
   ) {}
 
   private get savedFile(): string {
@@ -103,9 +105,9 @@ export class Runners {
     return this.processes.size > 0;
   }
 
-  private env(): NodeJS.ProcessEnv {
+  private env(folder?: string): NodeJS.ProcessEnv {
     // The CLI's own runtime picks the API from here.
-    return { ...process.env, ...this.extraEnv(), DOTRIX_API_URL: this.apiUrl, PYTHONUNBUFFERED: "1" };
+    return { ...process.env, ...(folder ? this.extraEnv(folder) : {}), DOTRIX_API_URL: this.apiUrl, PYTHONUNBUFFERED: "1" };
   }
 
   private cli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -209,6 +211,7 @@ export class Runners {
     this.save();
     this.changed();
     if (child) await terminate(child);
+    this.turnEnded(folder);
   }
 
   async restart(folder: string): Promise<void> {
@@ -222,7 +225,7 @@ export class Runners {
     const status = this.statuses.get(folder);
     if (!status || this.processes.has(folder)) return;
     Object.assign(status, { state: "starting", message: undefined, turn: undefined });
-    const child = spawn(cliCommand(), ["runner", "--json", "--project", folder], { cwd: folder, env: this.env(), windowsHide: true });
+    const child = spawn(cliCommand(), ["runner", "--json", "--project", folder], { cwd: folder, env: this.env(folder), windowsHide: true });
     this.processes.set(folder, child);
     let errors = "";
     child.stderr?.on("data", (chunk) => (errors = (errors + String(chunk)).slice(-4000)));
@@ -244,6 +247,7 @@ export class Runners {
       } else if (event.event === "done") {
         status.state = "waiting";
         status.turn = undefined;
+        this.turnEnded(folder);
       } else if (event.event === "log" && typeof event.text === "string") {
         status.message = event.text.trim();
       }
@@ -254,6 +258,7 @@ export class Runners {
     });
     child.on("close", (code) => {
       this.processes.delete(folder);
+      this.turnEnded(folder);
       if (this.quitting || this.statuses.get(folder) !== status) return;
       status.state = code === 0 ? "stopped" : "failed";
       status.turn = undefined;

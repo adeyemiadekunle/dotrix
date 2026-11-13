@@ -13,6 +13,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - The desktop app has a Browser pane beside a coding session (Codes → "…" → Browser): tabs for your running app or any web page, in a profile apart from dotrix and your everyday browser. Cookies are cleared when you quit unless you choose to keep them, and you can clear browsing data at any time.
 - In the desktop app, Kai can use the Browser pane on a turn coding on your computer with Claude Code: it opens your running app in a tab of its own that you watch, reads the page, clicks, types, takes screenshots and reads the console to check its change. Kai's tab opens only pages on your computer (localhost), and you can turn this off in the pane's menu (Let Kai use the browser).
+- In the desktop app, Kai can start your app in its own copy of the repository and open it in the Browser pane, so it checks its own change: save the command that starts it for each folder in Settings → Browser. The command runs without a sandbox, gets none of your keys or tokens, and stops when the turn ends.
 - Settings → Browser (in the desktop app) turns the Browser pane on or off for this computer, and holds Kai's use of it, keeping cookies, and clearing browsing data.
 - dotrix chat: /plans lists the conversation's saved plans, and /build [version] builds the one you pick.
 - dotrix code --plan-only and dotrix codes follow --plan-only ask Kai for a plan first; --plan TURN builds from that plan.
