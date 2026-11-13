@@ -2258,6 +2258,125 @@ section.side-panel-body[hidden] {
 .side-panel.panes > .pane + .pane {
   border-top: 1px solid var(--border);
 }
+/* The Browser pane (components/BrowserPane.tsx, the desktop app only): tabs, an address bar, and the pages. */
+.browser {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.browser-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.browser-tab {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 180px;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.browser-tab.on {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.browser-tab-name,
+.browser-tab-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.browser-tab-name {
+  padding: 0 2px 0 10px;
+}
+.browser-tab-close {
+  padding: 0 7px 0 4px;
+  color: var(--text-3);
+  flex: none;
+}
+.browser-tab-close:hover {
+  color: var(--text);
+}
+.browser-busy {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+.browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin-left: 4px;
+  font-size: 12.5px;
+}
+.browser-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--red);
+  font-size: 12.5px;
+}
+.browser-pages {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  background: var(--surface);
+}
+/* A hidden tab keeps its page: display: none would drop a webview's contents, so it is only made invisible. */
+.browser-slot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  visibility: hidden;
+}
+.browser-slot.on {
+  visibility: visible;
+}
+.browser-page {
+  flex: 1;
+  border: 0;
+  background: #fff; /* a page without a background of its own expects a browser's white */
+}
+.browser-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+.browser-empty p {
+  margin: 0;
+  max-width: 320px;
+}
 .side-panel-branch {
   max-width: 260px;
   overflow: hidden;

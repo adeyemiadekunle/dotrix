@@ -4,6 +4,7 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent, Notification, shell } from "electron";
 import path from "node:path";
 
+import { Browser } from "./browser";
 import { readChangelog } from "./changelog";
 import { webUrl } from "./config";
 import { opensOutside, staysInside } from "./links";
@@ -17,6 +18,7 @@ const WEB_URL = webUrl();
 const API_URL = process.env.DOTRIX_API_URL ?? new URL(WEB_URL).origin;
 
 const runners = new Runners(API_URL, WEB_URL);
+let browser: Browser; // the Browser pane's profile and rules (made once the app is ready)
 let stopped = false; // the runners were stopped for quitting (or restarting into an update)
 // A turn coding here is stopped (the tool with it) before the app restarts into a new version.
 const updates = new Updates(async () => {
@@ -33,7 +35,14 @@ function createWindow(): void {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       sandbox: true,
+      // The Browser pane's tabs (browser.ts): each is checked in will-attach-webview below.
+      webviewTag: true,
     },
+  });
+
+  // A tab of the Browser pane: only from the app's own page, and only in the pane's own profile.
+  win.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    if (!sameOrigin(win.webContents.getURL(), WEB_URL) || !browser.attach(webPreferences, params)) event.preventDefault();
   });
 
   // Open external links in the system browser, never inside the app window.
@@ -92,9 +101,16 @@ function bridge(): void {
   handle("dotrix:updates:install", () => updates.install());
   handle("dotrix:notify:show", (event, notice: unknown) => notify(event.sender, notice));
   handle("dotrix:notify:supported", () => Notification.isSupported());
+  handle("dotrix:browser:settings", () => browser.settings);
+  handle("dotrix:browser:keep-cookies", (_e, keep: unknown) => browser.setKeepCookies(keep === true));
+  handle("dotrix:browser:clear", () => browser.clear());
 }
 
 app.whenReady().then(() => {
+  browser = new Browser();
+  app.on("web-contents-created", (_event, contents) => {
+    if (contents.getType() === "webview") browser.watch(contents);
+  });
   bridge();
   createWindow();
   runners.resume();

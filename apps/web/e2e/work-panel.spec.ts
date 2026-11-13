@@ -167,7 +167,7 @@ test("the session bar opens panes beside it, stacked, and Juno's findings show o
   const terminal = pane(page, "Terminal");
   await expect(terminal.getByText("Recorded output · read-only")).toBeVisible();
   await expect(terminal.getByText("24 tests passed")).toBeVisible();
-  await expect(page.getByRole("menuitemcheckbox", { name: /^Browser/ })).toHaveCount(0); // a live browser comes later
+  await expect(page.getByRole("menuitemcheckbox", { name: /^Browser/ })).toHaveCount(0); // the Browser pane is in the desktop app only
   await expect(review.getByText("Keyboard focus is difficult to see")).toBeVisible();
   // Juno's review details are keyboard tabs.
   await review.getByRole("tab", { name: /^Findings/ }).click();

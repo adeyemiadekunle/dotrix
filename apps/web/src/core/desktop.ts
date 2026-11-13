@@ -99,6 +99,27 @@ export function desktopNotify(): NotifyBridge["notify"] | null {
   return (globalThis as { dotrixDesktop?: Partial<NotifyBridge> }).dotrixDesktop?.notify ?? null;
 }
 
+export interface BrowserSettings {
+  keepCookies: boolean;
+  /** The profile every tab uses: the app refuses a tab with another. */
+  partition: string;
+}
+
+interface BrowserBridge {
+  browser: {
+    settings(): Promise<BrowserSettings>;
+    setKeepCookies(keep: boolean): Promise<BrowserSettings>;
+    clear(): Promise<void>;
+    /** A page in the pane asked for a new window: open it as a tab. */
+    onOpen(listener: (url: string) => void): () => void;
+  };
+}
+
+/** The app's Browser pane (its profile and settings), or null in a browser or an app from before it. */
+export function desktopBrowser(): BrowserBridge["browser"] | null {
+  return (globalThis as { dotrixDesktop?: Partial<BrowserBridge> }).dotrixDesktop?.browser ?? null;
+}
+
 /** The app's version, What's new and updates, or null in a browser or an app from before them. */
 export function desktopApp(): AppBridge | null {
   const found = (globalThis as { dotrixDesktop?: Partial<AppBridge> }).dotrixDesktop;

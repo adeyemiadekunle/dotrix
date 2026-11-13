@@ -1,6 +1,6 @@
 import { ActionButton } from "@dotrix/ui/components/action-button";
 // The right side panel beside one of Kai's sessions in Codes, resizable by its left edge.
-// It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review, picked by the buttons in the
+// It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review (and, in the desktop app, a Browser), picked by the buttons in the
 // session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
 // A turn picker and a close button in its header; on narrow screens the panel floats over the page.
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -22,6 +22,8 @@ import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { TabList, Tab } from "@dotrix/ui/astryx";
 import { toast } from "../ui/toast";
+import { desktopBrowser } from "../core/desktop";
+import { BrowserPane } from "./BrowserPane";
 import { ChangesView, FilesView, TerminalView, type DiffNote } from "./TurnViews";
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
@@ -154,25 +156,39 @@ export function CodingPanes({
   return (
     <aside ref={column} className="side-panel panes" style={{ width }} aria-label="Session panes">
       <Splitter dir="col" className="side-panel-split" label="Resize the panes" size={width} min={320} max={1100} onResize={setWidth} reversed />
-      {shown.map((view) => (
-        <CodingPanel
-          key={view}
-          scope={scope}
-          cs={cs}
-          view={view}
-          onView={(next, extra) => onOpen(next, extra)}
-          onClose={() => {
-            if (expanded === view) setExpanded(null);
-            onClose(view);
-          }}
-          onAskFix={onAskFix}
-          onCloseAll={onCloseAll}
-          fixLabel={fixLabel}
-          stacked
-          expanded={expanded === view}
-          onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
-        />
-      ))}
+      {shown.map((view) =>
+        view === "browser" ? (
+          <BrowserPane
+            key={view}
+            sessionId={cs.session_id}
+            stacked
+            expanded={expanded === view}
+            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
+            onClose={() => {
+              if (expanded === view) setExpanded(null);
+              onClose(view);
+            }}
+          />
+        ) : (
+          <CodingPanel
+            key={view}
+            scope={scope}
+            cs={cs}
+            view={view}
+            onView={(next, extra) => onOpen(next, extra)}
+            onClose={() => {
+              if (expanded === view) setExpanded(null);
+              onClose(view);
+            }}
+            onAskFix={onAskFix}
+            onCloseAll={onCloseAll}
+            fixLabel={fixLabel}
+            stacked
+            expanded={expanded === view}
+            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
+          />
+        ),
+      )}
     </aside>
   );
 }
@@ -202,13 +218,16 @@ function NoTurn({ query }: { query: ReturnType<typeof useCodingSession> }) {
 }
 
 /** What Coding's panel shows; the session header's buttons pick it (screens/Chat.tsx Session). */
-export type CodingView = "changes" | "files" | "terminal" | "review";
-export const CODING_VIEWS: { id: CodingView; label: string; icon: string }[] = [
+export type CodingView = "changes" | "files" | "terminal" | "review" | "browser";
+const VIEWS: { id: CodingView; label: string; icon: string }[] = [
   { id: "changes", label: "Changes", icon: "git-compare" },
   { id: "files", label: "Files", icon: "folder-tree" },
   { id: "terminal", label: "Terminal", icon: "square-terminal" },
   { id: "review", label: "Review", icon: "shield-check" },
+  { id: "browser", label: "Browser", icon: "globe" },
 ];
+/** The panes there are here: Browser only in the desktop app (components/BrowserPane.tsx), whose bridge is set before the page loads. */
+export const CODING_VIEWS = VIEWS.filter((view) => view.id !== "browser" || desktopBrowser());
 
 /** Juno's findings with a `path:line` reference, by path: shown on those lines in Changes. */
 function findingNotes(review: Run | undefined, turn: CodingRun | undefined): Map<string, DiffNote[]> {
@@ -246,7 +265,7 @@ function CodingPanel({
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
-  view: CodingView;
+  view: Exclude<CodingView, "browser">;
   onView: (view: CodingView, extra?: Record<string, string>) => void;
   onClose: () => void;
   onAskFix?: (message: string) => void;

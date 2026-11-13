@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- The desktop app has a Browser pane beside a coding session (Codes → "…" → Browser): tabs for your running app or any web page, in a profile apart from dotrix and your everyday browser. Cookies are cleared when you quit unless you choose to keep them, and you can clear browsing data at any time.
 - dotrix chat: /plans lists the conversation's saved plans, and /build [version] builds the one you pick.
 - dotrix code --plan-only and dotrix codes follow --plan-only ask Kai for a plan first; --plan TURN builds from that plan.
 - dotrix codes show prints a Plan turn's plan and a turn's parallel tasks; --details adds its skills and unavailable capabilities.
