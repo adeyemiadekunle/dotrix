@@ -23,6 +23,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Fixed
 
 - When the platform refuses an agent's tool call (Plan mode allowing only read-only specialist tasks, wrong arguments, a permission it doesn't have), the agent is told why and carries on, instead of seeing "Tool failed." on fx or ending the whole run on DeepAgents.
+- Stopping a coding turn now also ends what Kai started during it, such as a test run or dev server, instead of leaving those processes running in the sandbox.
 - dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
 - Kai's session now says when a tool call wasn't allowed ("Not allowed to run …") instead of the call disappearing, without showing the coding engine's own refusal text; its own checklist updates are no longer listed as steps.
 - Agents see your project.md and current-state.md as written, up to 1,500 characters, instead of a single line cut at 200.
