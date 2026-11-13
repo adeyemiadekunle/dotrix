@@ -28,7 +28,7 @@ export interface RunnerStatus {
   name?: string;
   isolation?: string;
   tools?: string[];
-  turn?: { runId: string; issueKey: string; turn: number; worktree: string };
+  turn?: { runId: string; sessionId?: string; issueKey: string; turn: number; worktree: string };
   message?: string; // why it stopped or failed, or the last thing it said
 }
 
@@ -243,7 +243,13 @@ export class Runners {
         this.failures.delete(folder);
       } else if (event.event === "turn") {
         status.state = "coding";
-        status.turn = { runId: String(event.run_id), issueKey: String(event.issue_key), turn: Number(event.turn), worktree: String(event.worktree) };
+        status.turn = {
+          runId: String(event.run_id),
+          sessionId: event.session_id ? String(event.session_id) : undefined,
+          issueKey: String(event.issue_key),
+          turn: Number(event.turn),
+          worktree: String(event.worktree),
+        };
       } else if (event.event === "done") {
         status.state = "waiting";
         status.turn = undefined;
@@ -290,6 +296,7 @@ interface CliEvent {
   isolation?: string;
   tools?: string[];
   run_id?: string;
+  session_id?: string;
   issue_key?: string;
   turn?: number;
   worktree?: string;

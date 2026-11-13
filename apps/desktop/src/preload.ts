@@ -47,10 +47,10 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
     clear: () => ipcRenderer.invoke("dotrix:browser:clear"),
     setEnabled: (enabled: boolean) => ipcRenderer.invoke("dotrix:browser:enabled", enabled),
     setKaiAllowed: (allowed: boolean) => ipcRenderer.invoke("dotrix:browser:kai-allowed", allowed),
-    kaiRequest: () => ipcRenderer.invoke("dotrix:browser:kai-request"),
+    kaiRequests: () => ipcRenderer.invoke("dotrix:browser:kai-request"),
     kaiReady: (id: number, contentsId: number) => ipcRenderer.invoke("dotrix:browser:kai-ready", id, contentsId),
-    onKai: (listener: (request: { id: number; url: string }) => void) => {
-      const wrapped = (_event: unknown, request: { id: number; url: string }) => listener(request);
+    onKai: (listener: (request: { id: number; url: string; sessionId: string; issueKey: string }) => void) => {
+      const wrapped = (_event: unknown, request: { id: number; url: string; sessionId: string; issueKey: string }) => listener(request);
       ipcRenderer.on("dotrix:browser:kai", wrapped);
       return () => ipcRenderer.removeListener("dotrix:browser:kai", wrapped);
     },

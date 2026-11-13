@@ -31,6 +31,11 @@ const runners = new Runners(
   (folder): Record<string, string> => (kaiTools?.url ? { DOTRIX_BROWSER_MCP_URL: kaiTools.url, DOTRIX_BROWSER_MCP_TOKEN: kaiTools.tokenFor(folder) } : {}),
   (folder) => void devServers?.stop(folder),
 );
+/** The coding session and issue of the turn a folder's runner is coding now, or null. */
+const turnOf = (folder: string) => {
+  const turn = runners.list().find((runner) => runner.folder === folder)?.turn;
+  return turn?.sessionId ? { sessionId: turn.sessionId, issueKey: turn.issueKey } : null;
+};
 /** The worktree a folder's runner is coding in now (one the runner made), or null. */
 const worktreeOf = (folder: string) => ownWorktree(runners.list().find((runner) => runner.folder === folder)?.turn?.worktree);
 /** The app's own page, where the pane lives. */
@@ -128,7 +133,7 @@ function bridge(): void {
     return devServers.save(folder, given && typeof given === "object" ? (given as { command?: unknown; port?: unknown }) : null);
   });
   handle("dotrix:browser:kai-allowed", (_e, allowed: unknown) => browser.setKaiAllowed(allowed === true));
-  handle("dotrix:browser:kai-request", () => kai.request);
+  handle("dotrix:browser:kai-request", () => kai.requests);
   handle("dotrix:browser:kai-ready", (event, id: unknown, contentsId: unknown) => kai.ready(event.sender, id, contentsId));
 }
 
@@ -138,6 +143,7 @@ app.whenReady().then(async () => {
     appPage,
     () => browser.settings.enabled && browser.settings.kaiAllowed,
     () => browser.settings.partition,
+    turnOf,
   );
   browser.kais = (tab) => kai.owns(tab);
   devServers = new DevServers();
@@ -145,7 +151,7 @@ app.whenReady().then(async () => {
   // The pane's tools, and the app's for a folder with a saved command.
   const tools: ToolSet = {
     list: (folder) => [...kai.list(), ...kaiApp.list(folder)],
-    call: (name, args, folder) => (name.startsWith("app_") ? kaiApp.call(name, folder) : kai.call(name, args)),
+    call: (name, args, folder) => (name.startsWith("app_") ? kaiApp.call(name, folder) : kai.call(name, args, folder)),
   };
   kaiTools = new McpServer("dotrix-browser", app.getVersion(), tools);
   // Without it the app works as before: Kai's local turns just have no browser.

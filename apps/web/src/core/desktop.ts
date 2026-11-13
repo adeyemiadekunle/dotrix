@@ -112,6 +112,9 @@ export interface BrowserSettings {
 export interface KaiTabRequest {
   id: number;
   url: string;
+  /** The coding session whose turn asks: its Browser pane makes the tab. */
+  sessionId: string;
+  issueKey: string;
 }
 
 interface BrowserBridge {
@@ -125,8 +128,8 @@ interface BrowserBridge {
     setKaiAllowed(allowed: boolean): Promise<BrowserSettings>;
     /** Kai, coding on this computer, asks for its tab at an address there: the pane opens and makes it. */
     onKai(listener: (request: KaiTabRequest) => void): () => void;
-    /** The request still waiting, for a pane that opened after it was sent. */
-    kaiRequest(): Promise<KaiTabRequest | null>;
+    /** The requests still waiting, for a page or pane that opened after they were sent. */
+    kaiRequests(): Promise<KaiTabRequest[]>;
     /** Which page the pane made for a request (the app checks it before Kai may use it). */
     kaiReady(id: number, contentsId: number): Promise<void>;
   };

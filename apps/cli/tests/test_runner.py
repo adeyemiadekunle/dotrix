@@ -133,6 +133,37 @@ def test_claude_code_with_the_desktop_apps_browser_gets_only_its_tools(tmp_path:
     assert describe("mcp__browser__app_start", {}) == "Started the app on this computer"
 
 
+def test_opencode_on_a_turn_nothing_isolates_runs_no_commands() -> None:
+    """Checked against OpenCode 2.3.0 with a scripted model: a shell call is refused even when the person's own
+    config allows it on an agent, and `fetch` inside `execute` is refused with `webfetch`."""
+    from dotrix_cli.runner import opencode_settings
+
+    argv = Tool.named("opencode").argv
+    assert argv[:2] == ["opencode", "run"] and "--standalone" in argv and "--auto" in argv
+    assert argv[argv.index("--agent") + 1] == "build"
+    assert Tool.named("opencode", isolated=True).argv == ["opencode", "run", "--format", "json"]
+
+    mine = json.dumps({"model": "nvidia/x", "permission": {"bash": "allow", "edit": "allow"},
+                       "agent": {"build": {"permission": {"bash": {"*": "allow"}}, "model": "nvidia/y"}},
+                       "mcp": {"mine": {"type": "remote", "url": "https://example.test/mcp"}}})
+    env = opencode_settings({"OPENCODE_CONFIG_CONTENT": mine})
+    assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1" and env["OPENCODE_DISABLE_AUTOUPDATE"] == "1"
+    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    denied = ("bash", "webfetch", "websearch", "question", "subagent", "task", "skill")
+    assert all(config["permission"][tool] == "deny" for tool in denied) and config["permission"]["edit"] == "allow"
+    assert all(config["agent"]["build"]["permission"][tool] == "deny" for tool in denied)
+    assert config["agent"]["build"]["model"] == "nvidia/y" and config["model"] == "nvidia/x"  # the person's own kept
+    assert "browser" not in config["mcp"] and config["mcp"]["mine"]["url"] == "https://example.test/mcp"
+
+    with_pane = json.loads(opencode_settings({}, ("http://127.0.0.1:4411/mcp", "secret"))["OPENCODE_CONFIG_CONTENT"])
+    assert with_pane["mcp"]["browser"] == {"type": "remote", "url": "http://127.0.0.1:4411/mcp", "headers": {"Authorization": "Bearer secret"}}
+    assert json.loads(opencode_settings({"OPENCODE_CONFIG_CONTENT": "not json"})["OPENCODE_CONFIG_CONTENT"])["permission"]["bash"] == "deny"
+
+    from dotrix_cli.runner import describe
+    assert describe("execute", {"code": 'return await tools.browser["browser_snapshot"]({})'}) == "Used the browser"
+    assert describe("execute", {"code": "return 1 + 1"}) == "Ran a script"
+
+
 def test_claude_code_in_a_sandbox_still_ignores_the_repositorys_configuration() -> None:
     claude = Tool.named("claude-code", isolated=True).argv
     assert "--dangerously-skip-permissions" in claude and "--tools" not in claude  # it may run commands in the VM
@@ -221,7 +252,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
                          command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
                          worktrees=tmp_path / "trees", echo=lambda _: None, notify=notified.append)
-    await runner.work({"run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
+    await runner.work({"run_id": "run-000001", "session_id": "session-1", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
                        "issue_key": "KUN-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
                        "tool": "claude-code", "brief": "x"})
     beats = [(at, body) for at, kind, body in calls if kind == "heartbeat"]
@@ -232,7 +263,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     # Where the turn's worktree is: to the platform (the desktop app opens it) and to whatever runs this.
     tree = beats[0][1]["worktree"]
     assert Path(tree).is_relative_to(tmp_path / "trees") and notified == [
-        {"event": "turn", "run_id": "run-000001", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
+        {"event": "turn", "run_id": "run-000001", "session_id": "session-1", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
 
 
 async def test_a_tool_that_fails_before_changing_anything_is_shown_as_failed(tmp_path: Path) -> None:

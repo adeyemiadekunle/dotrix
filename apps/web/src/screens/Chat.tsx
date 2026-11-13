@@ -2076,10 +2076,10 @@ export function Session({ cs }: { cs: CodingSession }) {
     setDetailsPop(false);
     openPane("changes", turnId ? { turn: turnId } : {});
   };
-  // In the desktop app, Kai asking for its browser tab opens the Browser pane (components/BrowserPane.tsx makes the tab).
+  // In the desktop app, Kai asking for its browser tab in this session opens the Browser pane (components/BrowserPane.tsx makes the tab).
   const showBrowser = useRef(openPane);
   showBrowser.current = openPane;
-  useEffect(() => desktopBrowser()?.onKai(() => showBrowser.current("browser")), []);
+  useEffect(() => desktopBrowser()?.onKai((request) => request.sessionId === cs.session_id && showBrowser.current("browser")), [cs.session_id]);
   // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panes, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
   const keys = useRef({ panes, togglePane, setPanes });
   keys.current = { panes, togglePane, setPanes };
