@@ -1,3 +1,9 @@
+import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { Switch, Selector, SegmentedControl, SegmentedControlItem } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
 // GitHub, What members can do, Audit log; and Devices and tokens (the CLI) under Security.
@@ -145,7 +151,7 @@ function SRow({ t, d, children }: { t: ReactNode; d?: ReactNode; children?: Reac
   );
 }
 function Tog({ on, set, label, disabled }: { on: boolean; set: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
+  return <Switch value={on} onChange={set} label={label} isLabelHidden isDisabled={disabled} />;
 }
 const PTog = ({ k, def = true }: { k: string; def?: boolean }) => <Tog on={P()[k] === undefined ? def : Boolean(P()[k])} set={(v) => setP(k, v)} label={k} />;
 const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
@@ -153,37 +159,30 @@ const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
 );
 function Sel({ k, opts, v }: { k: string; opts: (string | [string, string])[]; v: unknown }) {
   return (
-    <select
-      className="select"
-      style={{ width: "auto", minWidth: 180 }}
+    <Selector
+      label={k}
+      isLabelHidden
       value={String(v)}
-      onChange={(e) => setP(k, k === "weekStart" ? +e.target.value : e.target.value)}
-      aria-label={k}
-    >
-      {opts.map((o) => {
-        const [val, n] = Array.isArray(o) ? o : [o, o];
-        return (
-          <option key={val} value={val}>
-            {n}
-          </option>
-        );
+      onChange={(value) => setP(k, k === "weekStart" ? Number(value) : value)}
+      options={opts.map((o) => {
+        const [value, label] = Array.isArray(o) ? o : [o, o];
+        return { value, label };
       })}
-    </select>
+    />
   );
 }
 function Seg({ k, opts }: { k: "side" | "density"; opts: string[] }) {
   return (
-    <div className="seg">
-      {opts.map((o) => (
-        <button key={o} className={S.prefs[k] === o ? "on" : ""} onClick={() => setPref(k, o)}>
-          {o[0]!.toUpperCase() + o.slice(1)}
-        </button>
+    <SegmentedControl label={k} value={S.prefs[k]} onChange={(value) => setPref(k, value)}>
+      {opts.map((value) => (
+        <SegmentedControlItem key={value} value={value} label={value[0]!.toUpperCase() + value.slice(1)} />
       ))}
-    </div>
+    </SegmentedControl>
   );
 }
 
 const ACCENTS: [string, string][] = [
+  ["astryx", "#15110C"],
   ["indigo", "#4B5BD6"],
   ["blue", "#2F6CD4"],
   ["violet", "#7348CC"],
@@ -193,8 +192,8 @@ const ACCENTS: [string, string][] = [
 ];
 
 function ThemeCards() {
-  const L = { bg: "#FBFAF8", s: "#F2F1EE", t: "#1D1C1A", b: "#E3E1DC", a: "#4B5BD6" };
-  const Dk = { bg: "#1D1D1C", s: "#151514", t: "#ECEAE5", b: "#333230", a: "#8E9AF3" };
+  const L = { bg: "#F8F4ED", s: "#FFFFFF", t: "#15110C", b: "#DFE2E5", a: "#15110C" };
+  const Dk = { bg: "#111112", s: "#202124", t: "#DFE2E5", b: "#383B3E", a: "#DFE2E5" };
   const pv = (c: typeof L) => (
     <>
       <div className="s" style={{ background: c.s }}>
@@ -372,7 +371,7 @@ function Workspace() {
               <label className="label" htmlFor="ws-name">
                 Workspace name
               </label>
-              <input className="input" id="ws-name" value={name} onChange={(e) => setName(e.target.value)} />
+              <DesignInput aria-label="Workspace name" className="input" id="ws-name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="field">
               <label className="label" htmlFor="ws-url">
@@ -393,7 +392,8 @@ function Workspace() {
                 >
                   dotrix.app/w/
                 </span>
-                <input
+                <DesignInput
+                  aria-label="Workspace URL"
                   className="input"
                   id="ws-url"
                   value={url}
@@ -405,9 +405,9 @@ function Workspace() {
               <span className="hint">{isLive() ? "The address is fixed when the workspace is created." : "Changing the URL will break existing links."}</span>
             </div>
             <div>
-              <button className="btn btn-primary" type="submit">
+              <ActionButton className="btn btn-primary" type="submit">
                 Save changes
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>
@@ -422,9 +422,9 @@ function Workspace() {
                 Create organisation workspace
               </a>
             ) : (
-              <button className="btn btn-secondary" onClick={() => toast("Sample workspace setup is read-only")}>
+              <ActionButton className="btn btn-secondary" onClick={() => toast("Sample workspace setup is read-only")}>
                 Create organisation workspace
-              </button>
+              </ActionButton>
             )}
           </SRow>
         </div>
@@ -432,13 +432,13 @@ function Workspace() {
       <div className="sblock">
         <h2 style={{ color: "var(--red)" }}>Danger zone</h2>
         <SRow t="Delete workspace" d="Permanently delete this workspace, its projects, tasks, documents, and files. This cannot be undone.">
-          <button
+          <ActionButton
             className="btn btn-danger-ghost"
             style={{ border: "1px solid color-mix(in srgb,var(--red) 35%,transparent)" }}
             onClick={() => toast("Deleting a workspace isn't available yet", { kind: "info" })}
           >
             Delete workspace
-          </button>
+          </ActionButton>
         </SRow>
       </div>
     </>
@@ -496,10 +496,10 @@ function LiveAgent({ handle }: { handle: string }) {
   const toggleTool = (id: string) => set({ tools: v.tools.includes(id) ? v.tools.filter((t) => t !== id) : [...v.tools, id] });
   return (
     <>
-      <button className="btn btn-sm btn-ghost" onClick={back} style={{ margin: "-4px 0 12px -8px" }}>
+      <ActionButton className="btn btn-sm btn-ghost" onClick={back} style={{ margin: "-4px 0 12px -8px" }}>
         <Ic n="arrow-left" s={14} />
         All agents
-      </button>
+      </ActionButton>
       <div className="row" style={{ gap: 12, marginBottom: 16 }}>
         <Face c={look?.c ?? "#57544E"} size={36} mood={moodOf(handle)} />
         <div className="grow" style={{ minWidth: 0 }}>
@@ -516,16 +516,16 @@ function LiveAgent({ handle }: { handle: string }) {
         {ag.version != null && <span className="badge mono">v{ag.version}</span>}
       </div>
       <SRow t="Name">
-        <input className="input" style={{ width: 220 }} value={v.name} readOnly aria-label="Name" />
+        <DesignInput className="input" style={{ width: 220 }} value={v.name} readOnly aria-label="Name" />
       </SRow>
       <SRow t="Description" d="One line, shown in Chat's agent picker.">
-        <input className="input" style={{ width: 320 }} value={v.description} readOnly aria-label="Description" />
+        <DesignInput className="input" style={{ width: 320 }} value={v.description} readOnly aria-label="Description" />
       </SRow>
       {handle === "coding-agent" ? (
         <SRow t="Coding tool and model" d="Kai uses your coding preferences and credentials.">
-          <button className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+          <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
             Your models
-          </button>
+          </ActionButton>
         </SRow>
       ) : (
         <SRow t="Model" d="Which model this agent uses. Specialists use the project's specialist model when unset.">
@@ -549,7 +549,7 @@ function LiveAgent({ handle }: { handle: string }) {
       {handle !== "coding-agent" && (
         <>
           <SRow t="Token budget" d="Tokens one run it leads may use; empty uses the project's.">
-            <input
+            <DesignInput
               className="input"
               inputMode="numeric"
               style={{ width: 140 }}
@@ -619,9 +619,9 @@ function LiveAgent({ handle }: { handle: string }) {
       )}
       <div className="sblock">
         <h2>Built-in instructions</h2>
-        <textarea className="textarea" rows={6} value={ag.instructions} readOnly aria-label="Built-in instructions" />
+        <DesignTextarea className="textarea" rows={6} value={ag.instructions} readOnly aria-label="Built-in instructions" />
         <h2>Additional instructions</h2>
-        <textarea
+        <DesignTextarea
           className="textarea"
           rows={10}
           value={v.additional_instructions ?? ""}
@@ -630,19 +630,19 @@ function LiveAgent({ handle }: { handle: string }) {
           aria-label="Additional instructions"
         />
         <div className="row" style={{ marginTop: 10, gap: 6 }}>
-          <button className="btn btn-primary" onClick={save} disabled={busy || !f}>
+          <ActionButton className="btn btn-primary" onClick={save} disabled={busy || !f}>
             Save
-          </button>
+          </ActionButton>
           {f && (
-            <button className="btn btn-ghost" onClick={() => setF(null)}>
+            <ActionButton className="btn btn-ghost" onClick={() => setF(null)}>
               Discard
-            </button>
+            </ActionButton>
           )}
           <span className="sp" />
           {ag.source === "customised" && (
-            <button className="btn btn-secondary" onClick={reset}>
+            <ActionButton className="btn btn-secondary" onClick={reset}>
               Reset to default
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
@@ -660,10 +660,10 @@ function Agents() {
   if (!isLive() && S.ui.agentSel === "coding-agent")
     return (
       <>
-        <button className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())}>
           <Ic n="arrow-left" s={14} />
           All agents
-        </button>
+        </ActionButton>
         <h2>
           Kai <span className="badge">Built-in</span>
           {kaiGuidance && <span className="badge">Customised</span>}
@@ -671,21 +671,21 @@ function Agents() {
         <p className="muted">Implements instructed work through Nova in Build mode.</p>
         <div className="sblock">
           <h2>Built-in instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             readOnly
             value="You are Kai, the built-in coding agent. Work only on the instructed change."
             aria-label="Built-in instructions"
           />
           <h2>Additional instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             value={guidance["coding-agent"] ?? kaiGuidance}
             onChange={(event) => setGuidance({ ...guidance, "coding-agent": event.target.value })}
             aria-label="Additional instructions"
           />
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
-            <button
+            <ActionButton
               className="btn btn-primary"
               onClick={() => {
                 setKaiGuidance(guidance["coding-agent"] ?? kaiGuidance);
@@ -693,9 +693,9 @@ function Agents() {
               }}
             >
               Save
-            </button>
+            </ActionButton>
             {kaiGuidance && (
-              <button
+              <ActionButton
                 className="btn btn-secondary"
                 onClick={() => {
                   setKaiGuidance("");
@@ -704,7 +704,7 @@ function Agents() {
                 }}
               >
                 Reset to default
-              </button>
+              </ActionButton>
             )}
           </div>
         </div>
@@ -713,10 +713,10 @@ function Agents() {
   if (sel)
     return (
       <>
-        <button className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())} style={{ margin: "-4px 0 12px -8px" }}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())} style={{ margin: "-4px 0 12px -8px" }}>
           <Ic n="arrow-left" s={14} />
           All agents
-        </button>
+        </ActionButton>
         <div className="row" style={{ gap: 12, marginBottom: 16 }}>
           <Face c={sel.c} size={36} />
           <div>
@@ -786,7 +786,7 @@ function Agents() {
         </div>
         <div className="sblock">
           <h2>Built-in instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             rows={3}
             readOnly
@@ -794,7 +794,7 @@ function Agents() {
             aria-label="Built-in instructions"
           />
           <h2>Additional instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             rows={6}
             value={guidance[sel.handle] ?? sel.additionalInstructions ?? ""}
@@ -803,7 +803,7 @@ function Agents() {
             aria-label="Additional instructions"
           />
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
-            <button
+            <ActionButton
               className="btn btn-primary"
               onClick={() => (
                 mutate(() => {
@@ -814,9 +814,9 @@ function Agents() {
               )}
             >
               Save
-            </button>
+            </ActionButton>
             {sel.customised && (
-              <button
+              <ActionButton
                 className="btn btn-secondary"
                 onClick={() => {
                   mutate(() => {
@@ -829,7 +829,7 @@ function Agents() {
                 }}
               >
                 Reset to default
-              </button>
+              </ActionButton>
             )}
           </div>
         </div>
@@ -993,19 +993,19 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
         {canEdit && !editing && (
           <span className="row" style={{ gap: 6 }}>
             {k.connected && (
-              <button className="btn btn-sm btn-ghost" onClick={onRemove}>
+              <ActionButton className="btn btn-sm btn-ghost" onClick={onRemove}>
                 Remove
-              </button>
+              </ActionButton>
             )}
-            <button className="btn btn-sm btn-secondary" onClick={() => setEditing(true)}>
+            <ActionButton className="btn btn-sm btn-secondary" onClick={() => setEditing(true)}>
               {k.connected ? "Replace" : "Connect"}
-            </button>
+            </ActionButton>
           </span>
         )}
       </SRow>
       {editing && (
         <div className="row" style={{ gap: 6, marginTop: 6 }}>
-          <input
+          <DesignInput
             className="input"
             type="password"
             autoComplete="off"
@@ -1017,12 +1017,12 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
             autoFocus
             style={{ flex: 1 }}
           />
-          <button className="btn btn-sm btn-ghost" onClick={() => (setEditing(false), setValue(""))}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => (setEditing(false), setValue(""))}>
             Cancel
-          </button>
-          <button className="btn btn-sm btn-primary" onClick={save} disabled={busy || !value.trim()}>
+          </ActionButton>
+          <ActionButton className="btn btn-sm btn-primary" onClick={save} disabled={busy || !value.trim()}>
             Save key
-          </button>
+          </ActionButton>
         </div>
       )}
       {k.limit_reached_at && (
@@ -1168,7 +1168,7 @@ function MyAgentRow({
       <p className="muted" style={{ fontSize: 13 }}>
         {a.desc}
       </p>
-      <textarea
+      <DesignTextarea
         className="textarea"
         rows={3}
         maxLength={2000}
@@ -1179,9 +1179,9 @@ function MyAgentRow({
       />
       <div className="row" style={{ gap: 8, marginTop: 8 }}>
         {a.handle === "coding-agent" ? (
-          <button className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "my-models" })}>
+          <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "my-models" })}>
             Coding tool and model
-          </button>
+          </ActionButton>
         ) : (
           <select
             className="select"
@@ -1202,13 +1202,13 @@ function MyAgentRow({
           {text.length}/2000
         </span>
         <span className="sp" />
-        <button
+        <ActionButton
           className="btn btn-primary btn-sm"
           disabled={!changed || busy}
           onClick={() => (setBusy(true), void onSave(text, model || null).finally(() => setBusy(false)))}
         >
           Save
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -1265,9 +1265,16 @@ function VersionedText({
   const changed = text !== content;
   return (
     <>
-      <textarea className="textarea mono" rows={rows} value={text} onChange={(e) => setText(e.target.value)} style={{ fontSize: 12.5 }} aria-label={title} />
+      <DesignTextarea
+        className="textarea mono"
+        rows={rows}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        style={{ fontSize: 12.5 }}
+        aria-label={title}
+      />
       <div className="row" style={{ marginTop: 10, gap: 6 }}>
-        <button
+        <ActionButton
           className="btn btn-primary"
           disabled={busy || !changed}
           onClick={() => {
@@ -1282,7 +1289,7 @@ function VersionedText({
           }}
         >
           Save
-        </button>
+        </ActionButton>
         {ver > 0 && (
           <span className="faint mono" style={{ fontSize: 12 }}>
             v{ver}
@@ -1345,9 +1352,9 @@ function RulesEditor({
               }
               d={x.description}
             >
-              <button className="btn btn-secondary btn-sm" onClick={() => setOpen(open === x.name ? null : x.name)}>
+              <ActionButton className="btn btn-secondary btn-sm" onClick={() => setOpen(open === x.name ? null : x.name)}>
                 {open === x.name ? "Close" : "Edit"}
-              </button>
+              </ActionButton>
             </SRow>
             {open === x.name && (
               <div style={{ padding: "4px 0 14px" }}>
@@ -1358,7 +1365,7 @@ function RulesEditor({
         ))}
         {!items.length && <p className="faint">No workspace skills yet. Each project starts with its own in agent-rules/skills/.</p>}
         <div style={{ marginTop: 12 }}>
-          <button
+          <ActionButton
             className="btn btn-secondary btn-sm"
             onClick={() =>
               promptDlg({
@@ -1381,7 +1388,7 @@ function RulesEditor({
           >
             <Ic n="plus" s={13} />
             New skill
-          </button>
+          </ActionButton>
         </div>
       </div>
     </>
@@ -1458,7 +1465,8 @@ function Automations() {
                   style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }}
                   title="Its runs may make the changes the agent's contract allows without approval; off: they ask"
                 >
-                  <input
+                  <SelectionInput
+                    aria-label="Without approval"
                     type="checkbox"
                     checked={!!a.unattended}
                     disabled={isLive() && live.ws?.role !== "owner" && !a.unattended}
@@ -1616,7 +1624,7 @@ function GitHubContent({
             d={`${i.account_type === "Organization" ? "Organisation" : "Personal account"} · added ${fmtDate(i.created_at.slice(0, 10), true)}`}
           >
             {admin && (
-              <button
+              <ActionButton
                 className="btn btn-secondary btn-sm"
                 onClick={() =>
                   confirmDlg({
@@ -1632,7 +1640,7 @@ function GitHubContent({
                 }
               >
                 Remove
-              </button>
+              </ActionButton>
             )}
           </SRow>
         ))}
@@ -1641,10 +1649,10 @@ function GitHubContent({
         )}
         {admin && s.install_url && (
           <div style={{ marginTop: 12 }}>
-            <button className="btn btn-secondary" onClick={onInstall}>
+            <ActionButton className="btn btn-secondary" onClick={onInstall}>
               <Ic n="plus" s={14} />
               Add a GitHub account
-            </button>
+            </ActionButton>
           </div>
         )}
       </div>
@@ -1770,7 +1778,7 @@ function SandboxNetworkSettings() {
           One per line: an exact name such as <span className="mono">api.example.com</span>, or <span className="mono">*.example.com</span> for that domain's
           hosts. HTTPS only.
         </p>
-        <textarea
+        <DesignTextarea
           className="textarea mono"
           rows={5}
           value={typed}
@@ -1780,13 +1788,13 @@ function SandboxNetworkSettings() {
           style={{ maxWidth: 520 }}
         />
         <div className="row" style={{ gap: 8, marginTop: 12 }}>
-          <button className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={save}>
+          <ActionButton className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={save}>
             Save
-          </button>
+          </ActionButton>
           {changed && (
-            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (setPresets(null), setHosts(null))}>
+            <ActionButton className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (setPresets(null), setHosts(null))}>
               Discard
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
@@ -1937,7 +1945,7 @@ function Profile() {
         <label className="label" htmlFor="pf-name">
           Full name
         </label>
-        <input className={`input ${err ? "is-error" : ""}`} id="pf-name" value={name} onChange={(e) => setName(e.target.value)} />
+        <DesignInput aria-label="Full name" className={`input ${err ? "is-error" : ""}`} id="pf-name" value={name} onChange={(e) => setName(e.target.value)} />
         {err && (
           <span className="err">
             <Ic n="circle-alert" s={12} />
@@ -1949,21 +1957,21 @@ function Profile() {
         <label className="label" htmlFor="pf-title">
           What you do
         </label>
-        <input className="input" id="pf-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <DesignInput aria-label="What you do" className="input" id="pf-title" value={title} onChange={(e) => setTitle(e.target.value)} />
       </div>
       <div className="field">
         <label className="label" htmlFor="pf-email">
           Email
         </label>
-        <input className="input" id="pf-email" value={me()!.email} disabled />
+        <DesignInput aria-label="Email" className="input" id="pf-email" value={me()!.email} disabled />
         <span className="hint">Verified. Contact a workspace owner to change your sign-in email.</span>
       </div>
       <div className="sblock" style={{ marginTop: 4 }}>
         <h2>Sign-in methods</h2>
         <SRow t="Password" d={!isLive() || methods.data?.password ? "Set" : "Not set: you sign in with an email link or GitHub"}>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "password" })}>
+          <ActionButton type="button" className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "password" })}>
             {!isLive() || methods.data?.password ? "Change" : "Set one"}
-          </button>
+          </ActionButton>
         </SRow>
         <SRow
           t={
@@ -1975,7 +1983,7 @@ function Profile() {
           d={gh ? `Linked${gh.login ? ` as ${gh.login}` : ""}` : "Not linked"}
         >
           {gh ? (
-            <button
+            <ActionButton
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() =>
@@ -1985,22 +1993,22 @@ function Profile() {
               }
             >
               Unlink
-            </button>
+            </ActionButton>
           ) : (
-            <button
+            <ActionButton
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() => (isLive() ? linkGitHub() : toast("Linking opens GitHub", { kind: "info" }))}
             >
               Link
-            </button>
+            </ActionButton>
           )}
         </SRow>
       </div>
       <div>
-        <button className="btn btn-primary" type="submit">
+        <ActionButton className="btn btn-primary" type="submit">
           Save profile
-        </button>
+        </ActionButton>
       </div>
     </form>
   );
@@ -2067,7 +2075,8 @@ function Password() {
             <label className="label" htmlFor="pw-cur">
               Current password
             </label>
-            <input
+            <DesignInput
+              aria-label="Current password"
               type="password"
               className={`input ${errs.cur ? "is-error" : ""}`}
               id="pw-cur"
@@ -2087,7 +2096,8 @@ function Password() {
           <label className="label" htmlFor="pw-new">
             New password
           </label>
-          <input
+          <DesignInput
+            aria-label="New password"
             type="password"
             className={`input ${errs.pw ? "is-error" : ""}`}
             id="pw-new"
@@ -2102,7 +2112,8 @@ function Password() {
           <label className="label" htmlFor="pw-conf">
             Confirm new password
           </label>
-          <input
+          <DesignInput
+            aria-label="Confirm new password"
             type="password"
             className={`input ${errs.conf ? "is-error" : ""}`}
             id="pw-conf"
@@ -2113,13 +2124,13 @@ function Password() {
           <Err k="conf" />
         </div>
         <div>
-          <button className="btn btn-primary" type="submit" disabled={busy}>
+          <ActionButton className="btn btn-primary" type="submit" disabled={busy}>
             {hasPassword ? "Update password" : "Set password"}
-          </button>
+          </ActionButton>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start", marginLeft: -8 }} onClick={forgot}>
+        <ActionButton type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start", marginLeft: -8 }} onClick={forgot}>
           Forgot it? Email me a link
-        </button>
+        </ActionButton>
       </form>
     </>
   );
@@ -2257,14 +2268,14 @@ function LiveSessions() {
           d={`${x.ip ? `${x.ip} · ` : ""}last used ${ago(new Date(x.last_used_at).getTime())} · signed in ${fmtDate(x.created_at.slice(0, 10), true)}`}
         >
           {!x.current && (
-            <button className="btn btn-secondary btn-sm" onClick={() => void out(x.id)}>
+            <ActionButton className="btn btn-secondary btn-sm" onClick={() => void out(x.id)}>
               Sign out
-            </button>
+            </ActionButton>
           )}
         </SRow>
       ))}
       <div style={{ marginTop: 16 }}>
-        <button
+        <ActionButton
           className="btn btn-danger-ghost"
           disabled={r.data.length < 2}
           onClick={() =>
@@ -2274,19 +2285,19 @@ function LiveSessions() {
           }
         >
           Sign out of all other sessions
-        </button>
+        </ActionButton>
       </div>
       <div className="sblock">
         <h2>Tokens</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           Let something other than this browser act as you: the CLI gets one when you run{" "}
-          <button
+          <ActionButton
             className="btn btn-ghost btn-sm mono"
             style={{ padding: "0 4px", height: "auto" }}
             onClick={() => void copy("dotrix login", "Command copied")}
           >
             dotrix login
-          </button>
+          </ActionButton>
           , and a script or CI job uses one in <span className="mono">DOTRIX_TOKEN</span>. A token can do what you can, and expires after 90 days.
         </p>
         {made && (
@@ -2295,12 +2306,12 @@ function LiveSessions() {
             <div className="grow" style={{ minWidth: 0 }}>
               <b>{made.name}</b>: copy it now, it isn't shown again.
               <div className="row" style={{ gap: 6, marginTop: 6 }}>
-                <code className="mono grow trunc" style={{ fontSize: 12 }}>
+                <InlineCode className="mono grow trunc" style={{ fontSize: 12 }}>
                   {made.token}
-                </code>
-                <button className="btn btn-secondary btn-sm" onClick={() => void copy(made.token, "Token copied")}>
+                </InlineCode>
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => void copy(made.token, "Token copied")}>
                   Copy
-                </button>
+                </ActionButton>
               </div>
             </div>
           </div>
@@ -2317,17 +2328,17 @@ function LiveSessions() {
             }
             d={`${t.last_used_at ? `last used ${ago(new Date(t.last_used_at).getTime())}` : "never used"} · created ${fmtDate(t.created_at.slice(0, 10), true)}${t.expires_at ? ` · expires ${fmtDate(t.expires_at.slice(0, 10), true)}` : ""}`}
           >
-            <button className="btn btn-secondary btn-sm" onClick={() => void revoke(t.id)}>
+            <ActionButton className="btn btn-secondary btn-sm" onClick={() => void revoke(t.id)}>
               Revoke
-            </button>
+            </ActionButton>
           </SRow>
         ))}
         {cli.data && !cli.data.length && <p className="faint">No tokens. Nothing but your browsers is signed in as you.</p>}
         <div style={{ marginTop: 12 }}>
-          <button className="btn btn-secondary btn-sm" onClick={create}>
+          <ActionButton className="btn btn-secondary btn-sm" onClick={create}>
             <Ic n="plus" s={13} />
             New token
-          </button>
+          </ActionButton>
         </div>
       </div>
     </>
@@ -2354,7 +2365,7 @@ function LivePermissions() {
         </p>
         {GRANTABLE.map(([perm, t, d]) => (
           <SRow key={perm} t={t} d={d}>
-            <input
+            <SelectionInput
               type="checkbox"
               className="toggle"
               checked={grants.includes(perm)}
@@ -2447,14 +2458,14 @@ function Body({ sec }: { sec: string }) {
         <>
           <div className="row" style={{ marginBottom: 12 }}>
             {canInvite() && (
-              <button className="btn btn-primary" onClick={invite}>
+              <ActionButton className="btn btn-primary" onClick={invite}>
                 <Ic n="user-plus" s={14} />
                 Invite member
-              </button>
+              </ActionButton>
             )}
-            <button className="btn btn-secondary" onClick={() => go("members")}>
+            <ActionButton className="btn btn-secondary" onClick={() => go("members")}>
               Open member directory
-            </button>
+            </ActionButton>
           </div>
           <div className="panel" style={{ overflow: "hidden" }}>
             {d.members.map((m) => (
@@ -2478,9 +2489,9 @@ function Body({ sec }: { sec: string }) {
                     <Ic n="chevron-down" s={12} />
                   </button>
                 )}
-                <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "member", id: m.id })} aria-label="Options">
+                <ActionButton className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "member", id: m.id })} aria-label="Options">
                   <Ic n="ellipsis" s={14} />
-                </button>
+                </ActionButton>
               </div>
             ))}
           </div>
@@ -2514,9 +2525,9 @@ function Body({ sec }: { sec: string }) {
                     <b style={{ fontWeight: 500 }}>{p.name}</b>
                   </div>
                   <div className="row">
-                    <button className="btn btn-secondary btn-sm" onClick={() => restoreProject(p.id)}>
+                    <ActionButton className="btn btn-secondary btn-sm" onClick={() => restoreProject(p.id)}>
                       Restore
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               ))
@@ -2773,23 +2784,23 @@ function Body({ sec }: { sec: string }) {
               d={`${s.loc} · ${s.at}`}
             >
               {!s.cur && (
-                <button
+                <ActionButton
                   className="btn btn-secondary btn-sm"
                   onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x !== s))), toast("Signed out"))}
                 >
                   Sign out
-                </button>
+                </ActionButton>
               )}
             </SRow>
           ))}
           <div style={{ marginTop: 16 }}>
-            <button
+            <ActionButton
               className="btn btn-danger-ghost"
               disabled={d.sessions.length < 2}
               onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x.cur))), toast("Signed out of all other sessions"))}
             >
               Sign out of all other sessions
-            </button>
+            </ActionButton>
           </div>
           <div className="sblock">
             <h2>Tokens</h2>
@@ -2810,9 +2821,9 @@ function Body({ sec }: { sec: string }) {
                 }
                 d={dd}
               >
-                <button className="btn btn-secondary btn-sm" onClick={() => toast("Revoked")}>
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => toast("Revoked")}>
                   Revoke
-                </button>
+                </ActionButton>
               </SRow>
             ))}
           </div>

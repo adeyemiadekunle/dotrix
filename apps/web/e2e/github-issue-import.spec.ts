@@ -82,7 +82,7 @@ test("GitHub import requires reviewed selections and retains retry identity afte
   await expect(panel.getByRole("alert")).toBeVisible();
   await expect(panel.getByRole("checkbox", { name: "Select GitHub issue 1", exact: true })).toBeChecked();
   await confirm.click();
-  await expect(panel.getByRole("status")).toContainText("1 created");
+  await expect(panel.getByRole("status").filter({ hasText: "Import finished." })).toContainText("1 created");
   expect(requests).toHaveLength(2);
   expect(requests[0]).toEqual(requests[1]);
   await panel.getByRole("button", { name: "Back to board", exact: true }).click();

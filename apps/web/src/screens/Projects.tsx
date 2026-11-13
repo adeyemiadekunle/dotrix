@@ -1,3 +1,6 @@
+import { TabList, Tab } from "@dotrix/ui/astryx";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Projects. The workspace Overview folded into Home.
 
 import { openPop } from "../core/actions";
@@ -81,14 +84,14 @@ function ProjectCard({ p }: { p: Project }) {
         <span className="sp" />
         {!personal() && <AvStack ids={p.members} max={3} />}
       </div>
-      <button
+      <ActionButton
         className="ibtn ibtn-sm more"
         onClick={more(p)}
         aria-label="Project options"
         style={{ background: "var(--surface)", boxShadow: "0 0 0 1px var(--border)" }}
       >
         <Ic n="ellipsis" s={14} />
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -118,10 +121,10 @@ export function Projects() {
       <div className="panel">
         <Empty icon="folder-kanban" title="No projects yet" text="Create your first project to start organizing your work.">
           {allowed("projects:manage") && (
-            <button className="btn btn-primary btn-sm" onClick={newProject}>
+            <ActionButton className="btn btn-primary btn-sm" onClick={newProject}>
               <Ic n="plus" s={14} />
               Create project
-            </button>
+            </ActionButton>
           )}
         </Empty>
       </div>
@@ -130,9 +133,9 @@ export function Projects() {
     body = (
       <div className="panel">
         <Empty icon="search-x" title="No results found" text="No projects match your search or filters. Try a different term.">
-          <button className="btn btn-secondary btn-sm" onClick={() => ((u.projQ = ""), (u.projStatus = "all"), render())}>
+          <ActionButton className="btn btn-secondary btn-sm" onClick={() => ((u.projQ = ""), (u.projStatus = "all"), render())}>
             Clear filters
-          </button>
+          </ActionButton>
         </Empty>
       </div>
     );
@@ -174,9 +177,9 @@ export function Projects() {
                 {fmtDate(p.due)}
               </span>
               {!personal() && <AvStack ids={p.members} max={3} />}
-              <button className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
+              <ActionButton className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
                 <Ic n="ellipsis" s={14} />
-              </button>
+              </ActionButton>
             </div>
           );
         })}
@@ -240,9 +243,9 @@ export function Projects() {
                     {ago(minsAgo(p.last))}
                   </td>
                   <td>
-                    <button className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
+                    <ActionButton className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
                       <Ic n="ellipsis" s={14} />
-                    </button>
+                    </ActionButton>
                   </td>
                 </tr>
               );
@@ -262,17 +265,17 @@ export function Projects() {
         </div>
         <div className="acts">
           {allowed("projects:manage") && (
-            <button className="btn btn-primary" onClick={newProject}>
+            <ActionButton className="btn btn-primary" onClick={newProject}>
               <Ic n="plus" s={14} />
               New project
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
       <div className="row" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input
+          <DesignInput
             className="input search-sm"
             placeholder="Search projects"
             value={u.projQ}
@@ -313,20 +316,25 @@ export function Projects() {
           ))}
         </select>
         <span className="sp" />
-        <div className="seg" role="tablist" aria-label="Layout">
+        <TabList
+          aria-label="Layout"
+          value={view}
+          onChange={(value) => {
+            u.projView = value as typeof view;
+            render();
+          }}
+          size="sm"
+        >
           {(
             [
               ["grid", "Grid", "layout-grid"],
               ["list", "List", "list"],
               ["table", "Table", "table-2"],
             ] as const
-          ).map(([k, n, i]) => (
-            <button key={k} className={view === k ? "on" : ""} onClick={() => ((u.projView = k), render())} aria-label={n}>
-              <Ic n={i} s={13} />
-              <span className="hide-m">{n}</span>
-            </button>
+          ).map(([key, label, icon]) => (
+            <Tab key={key} value={key} label={label} icon={<Ic n={icon} s={13} />} />
           ))}
-        </div>
+        </TabList>
       </div>
       {body}
     </div>

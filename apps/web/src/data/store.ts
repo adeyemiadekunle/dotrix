@@ -14,7 +14,7 @@ import type { Data, Filter, Project, Task } from "./types";
 const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix
 export const DEFAULT_PREFS = {
   theme: "system" as "system" | "light" | "dark",
-  accent: "graphite",
+  accent: "astryx",
   side: "comfortable",
   density: "comfortable",
   weekStart: 1,

@@ -1,7 +1,7 @@
 // Conversations across projects (or about none): read-only, private to whoever started them.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@dotrix/ui/lib/toast";
 
 import { isActive, type Run, type RunStreamState } from "@/lib/agent";
 import { api, errorMessage, unwrap } from "@/lib/api";

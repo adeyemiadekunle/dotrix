@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Members and profiles. dotrix's roles table
 // adds what each role may do with the agents (approving changes, editing documents, coding).
 import { openPop } from "../core/actions";
@@ -30,9 +32,9 @@ function NotFound() {
   return (
     <div className="page">
       <Empty icon="file-question" title="Page not found" text="The page you're looking for doesn't exist or was moved.">
-        <button className="btn btn-secondary btn-sm" onClick={() => go("members")}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("members")}>
           Back to members
-        </button>
+        </ActionButton>
       </Empty>
     </div>
   );
@@ -118,10 +120,10 @@ export function Members() {
         </div>
         <div className="acts">
           {canInvite() && (
-            <button className="btn btn-primary" onClick={invite}>
+            <ActionButton className="btn btn-primary" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
@@ -142,7 +144,7 @@ export function Members() {
           <div className="row" style={{ marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
             <div className="inwrap">
               <Ic n="search" s={13} />
-              <input
+              <DesignInput
                 className="input search-sm"
                 id="mem-q"
                 placeholder="Search by name or email"
@@ -232,9 +234,9 @@ export function Members() {
                           )}
                         </td>
                         <td>
-                          <button className="ibtn ibtn-sm" onClick={ctx(m.id)} aria-label="Member options">
+                          <ActionButton className="ibtn ibtn-sm" onClick={ctx(m.id)} aria-label="Member options">
                             <Ic n="ellipsis" s={14} />
-                          </button>
+                          </ActionButton>
                         </td>
                       </tr>
                     );
@@ -298,17 +300,17 @@ export function MemberPage() {
           </div>
         </div>
         <div className="row">
-          <button className="btn btn-secondary" onClick={() => copyEmail(m.id)}>
+          <ActionButton className="btn btn-secondary" onClick={() => copyEmail(m.id)}>
             <Ic n="copy" s={14} />
             Copy email
-          </button>
-          <button className="btn btn-primary" onClick={() => newTask({ assignee: m.id })}>
+          </ActionButton>
+          <ActionButton className="btn btn-primary" onClick={() => newTask({ assignee: m.id })}>
             <Ic n="plus" s={14} />
             Assign task
-          </button>
-          <button className="ibtn" onClick={ctx(m.id)} aria-label="More">
+          </ActionButton>
+          <ActionButton className="ibtn" onClick={ctx(m.id)} aria-label="More">
             <Ic n="ellipsis" s={16} />
-          </button>
+          </ActionButton>
         </div>
       </div>
       <div className="stats" style={{ marginBottom: 18 }}>

@@ -1,7 +1,7 @@
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { toast } from "sonner";
+import { toast } from "@dotrix/ui/lib/toast";
 
 import { api, ensureSession, errorMessage, unwrap } from "@/lib/api";
 import { issueQueriesOf, type Scope } from "@/lib/issues";

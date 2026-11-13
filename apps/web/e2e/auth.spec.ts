@@ -14,12 +14,12 @@ test("sign up, then sign in: a wrong password is refused, the right one opens th
   await page.context().clearCookies();
 
   await page.goto("/login");
-  await page.getByLabel("Email").fill(user.email);
-  await page.getByLabel("Password").fill("not-the-password");
+  await page.getByLabel("Email", { exact: true }).fill(user.email);
+  await page.getByLabel("Password", { exact: true }).fill("not-the-password");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText("Invalid email or password")).toBeVisible();
 
-  await page.getByLabel("Password").fill(user.password);
+  await page.getByLabel("Password", { exact: true }).fill(user.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/w\/[^/]+$/);
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
@@ -38,8 +38,8 @@ test("the theme follows the choice in settings and survives a reload", async ({ 
 test("ask for a sign-in link, and a used or made-up link is refused", async ({ page }) => {
   await page.goto("/login");
   await page.getByRole("button", { name: "Email me a sign-in link instead" }).click();
-  await expect(page.getByLabel("Password")).toHaveCount(0);
-  await page.getByLabel("Email").fill("someone@example.com");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Email", { exact: true }).fill("someone@example.com");
   await page.getByRole("button", { name: "Email me a sign-in link", exact: true }).click();
   await expect(page.getByText("Check your email")).toBeVisible();
   await expect(page.getByText("We sent a link to someone@example.com. It signs you in, or creates your account")).toBeVisible();
@@ -48,7 +48,7 @@ test("ask for a sign-in link, and a used or made-up link is refused", async ({ p
   await page.goto("/signup");
   await page.getByRole("link", { name: "Sign up with an email link instead" }).click();
   await expect(page.getByText("Sign in or sign up by email")).toBeVisible();
-  await expect(page.getByLabel("Password")).toHaveCount(0);
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
 
   // A sign-up link that isn't real (or was used, or expired) is explained.
   await page.goto("/signup/finish?token=not-a-real-token");

@@ -1,19 +1,7 @@
+import { EmptyState as AstryxEmptyState } from "@dotrix/ui/astryx";
 import { type Icon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 export function EmptyState({ icon: Icon, title, description, action }: { icon: Icon; title: string; description: string; action?: ReactNode }) {
-  return (
-    // Sized to its content and placed where the page's content starts, so the action is where
-    // the eye lands (not floating in the middle of a full-height box).
-    <div className="bg-card flex w-full flex-col items-center gap-3 self-start rounded-xl border px-6 py-10 text-center">
-      <div className="bg-brand-muted text-brand-muted-foreground flex size-10 items-center justify-center rounded-lg">
-        <Icon className="size-5" />
-      </div>
-      <div className="grid gap-1">
-        <h2 className="font-semibold">{title}</h2>
-        <p className="text-muted-foreground max-w-md text-sm text-balance">{description}</p>
-      </div>
-      {action}
-    </div>
-  );
+  return <AstryxEmptyState icon={<Icon size={24} />} title={title} description={description} actions={action} headingLevel={2} />;
 }
 /** Also shown for things you can't see: the API answers 404 rather than revealing they exist. */

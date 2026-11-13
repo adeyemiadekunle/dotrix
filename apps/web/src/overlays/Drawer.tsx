@@ -1,3 +1,7 @@
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { Drawer as AstryxDrawer } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Task drawer: a side panel or
 // full page with the task's fields, description, subtasks (each with its own view), attachments,
 // comments (@mentions, reactions), and activity. dotrix adds the issue type, and coding: "Start
@@ -153,7 +157,7 @@ export function CommentItem({ c }: { c: Comment }) {
             <>
               <span className="sp" />
               {mine && !editing && (
-                <button
+                <ActionButton
                   className="ibtn ibtn-xs"
                   aria-label="Edit comment"
                   data-tip="Edit"
@@ -163,9 +167,9 @@ export function CommentItem({ c }: { c: Comment }) {
                   }}
                 >
                   <Ic n="pencil" s={12} />
-                </button>
+                </ActionButton>
               )}
-              <button
+              <ActionButton
                 className="ibtn ibtn-xs"
                 aria-label="Delete comment"
                 data-tip="Delete"
@@ -181,13 +185,13 @@ export function CommentItem({ c }: { c: Comment }) {
                 }}
               >
                 <Ic n="trash-2" s={12} />
-              </button>
+              </ActionButton>
             </>
           )}
         </div>
         {editing ? (
           <div className="txt">
-            <textarea
+            <DesignTextarea
               className="input"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -204,12 +208,12 @@ export function CommentItem({ c }: { c: Comment }) {
               style={{ width: "100%", resize: "vertical" }}
             />
             <div className="row" style={{ gap: 6, marginTop: 6 }}>
-              <button className="btn btn-primary btn-sm" onClick={saveEdit}>
+              <ActionButton className="btn btn-primary btn-sm" onClick={saveEdit}>
                 Save
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
+              </ActionButton>
+              <ActionButton className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
                 Cancel
-              </button>
+              </ActionButton>
             </div>
           </div>
         ) : (
@@ -299,7 +303,7 @@ export function CommentBox({
           rows={2}
         />
         <div className="row">
-          <button
+          <ActionButton
             className="ibtn ibtn-xs"
             data-tip="Mention someone"
             aria-label="Mention"
@@ -311,7 +315,7 @@ export function CommentBox({
             }}
           >
             <Ic n="at-sign" s={14} />
-          </button>
+          </ActionButton>
           <label className="ibtn ibtn-xs" data-tip="Attach file" style={{ cursor: "pointer" }}>
             <Ic n="paperclip" s={14} />
             <input type="file" multiple hidden onChange={(e) => handleFiles(e.target.files, { project: t.project, task: t.id })} />
@@ -320,9 +324,9 @@ export function CommentBox({
           <span className="faint hide-m" style={{ fontSize: 11 }}>
             {MOD}+Enter
           </span>
-          <button className="btn btn-primary btn-sm" onClick={() => postComment(t.id)}>
+          <ActionButton className="btn btn-primary btn-sm" onClick={() => postComment(t.id)}>
             Comment
-          </button>
+          </ActionButton>
         </div>
       </div>
       {ment.length > 0 && (
@@ -372,9 +376,9 @@ function Rte({ t, desc, md }: { t: Task; desc: string; md?: string }) {
                 ["createLink", "link", "Link"],
               ] as const
             ).map(([c, i, n]) => (
-              <button key={c} className="ibtn ibtn-xs" data-tip={n} aria-label={n} onMouseDown={(e) => (e.preventDefault(), cmd(c))}>
+              <ActionButton key={c} className="ibtn ibtn-xs" data-tip={n} aria-label={n} onMouseDown={(e) => (e.preventDefault(), cmd(c))}>
                 <Ic n={i} s={13} />
-              </button>
+              </ActionButton>
             ))}
           </div>
         )}
@@ -453,7 +457,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         </span>
       </button>
       <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-        <input
+        <SelectionInput
           type="checkbox"
           className="check round"
           style={{ marginTop: 9 }}
@@ -518,7 +522,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         <div className="dsec-h">
           <h3 id="s-note-l">Notes</h3>
         </div>
-        <textarea
+        <DesignTextarea
           className="textarea"
           rows={4}
           defaultValue={s.note || ""}
@@ -531,20 +535,20 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         />
       </div>
       <div className="dsec row" style={{ gap: 6, flexWrap: "wrap" }}>
-        <button className="btn btn-secondary btn-sm" onClick={promote}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={promote}>
           <Ic n="arrow-up-right" s={13} />
           Convert to task
-        </button>
+        </ActionButton>
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => nav(-1)} disabled={i === 0} aria-label="Previous subtask">
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => nav(-1)} disabled={i === 0} aria-label="Previous subtask">
           <Ic n="chevron-left" s={14} />
           Previous
-        </button>
-        <button className="btn btn-sm btn-ghost" onClick={() => nav(1)} disabled={i === t.subtasks.length - 1} aria-label="Next subtask">
+        </ActionButton>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => nav(1)} disabled={i === t.subtasks.length - 1} aria-label="Next subtask">
           Next
           <Ic n="chevron-right" s={14} />
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           className="btn btn-sm btn-danger-ghost"
           onClick={() => {
             S.ui.subOpen = null;
@@ -556,7 +560,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         >
           <Ic n="trash-2" s={13} />
           Delete
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -608,10 +612,10 @@ function CodingSection({ t }: { t: Task }) {
         <h3>Coding</h3>
         {sessions.length > 0 && <span className="cnt">{sessions.length}</span>}
         <div className="acts">
-          <button className="btn btn-sm btn-ghost" onClick={start}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={start}>
             <Ic n="bot" s={13} />
             Start coding
-          </button>
+          </ActionButton>
         </div>
       </div>
       {latest ? (
@@ -637,10 +641,10 @@ function CodingSection({ t }: { t: Task }) {
                 PR #{latest.pr.number} · {latest.pr.state}
               </a>
             )}
-            <button className="btn btn-sm btn-ghost" onClick={() => openInCoding(`session=${latest.id}&from=issue`)}>
+            <ActionButton className="btn btn-sm btn-ghost" onClick={() => openInCoding(`session=${latest.id}&from=issue`)}>
               <Ic n="arrow-up-right" s={13} />
               Open the session
-            </button>
+            </ActionButton>
           </div>
         </div>
       ) : (
@@ -658,18 +662,7 @@ export function Drawer() {
   const id = S.ui.drawer;
   const { task: t, find } = useTask(id);
   const detail = useTaskDetail(t);
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (t && ref.current && !ref.current.contains(document.activeElement)) ref.current.focus({ preventScroll: true });
-  }, [id]);
-  useEffect(() => {
-    if (!t) return;
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !S.ui.pop && !S.ui.modals.length) closeDrawer();
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [id]);
+  const ref = useRef<HTMLDialogElement>(null);
   if (!t) return null;
   const p = proj(t.project)!;
   const u = S.ui;
@@ -689,8 +682,18 @@ export function Drawer() {
   );
   return (
     <>
-      {u.drawerFull && <div className="drawer-scrim full enter" onClick={closeDrawer} />}
-      <aside ref={ref} className={`drawer enter ${u.drawerFull ? "full" : ""}`} role="dialog" aria-modal={u.drawerFull} aria-labelledby="d-h" tabIndex={-1}>
+      <AstryxDrawer
+        ref={ref}
+        className="dotrix-task-drawer"
+        isOpen
+        onOpenChange={(open) => {
+          if (!open) closeDrawer();
+        }}
+        label={sub ? `Subtask: ${sub.title}` : `Task: ${t.title}`}
+        width={u.drawerFull ? "min(960px, 100vw)" : 520}
+        hasScrim={u.drawerFull}
+        padding={0}
+      >
         <h2 className="sr" id="d-h">
           {sub ? "Subtask: " + sub.title : "Task: " + t.title}
         </h2>
@@ -704,15 +707,15 @@ export function Drawer() {
             {t.key}
           </span>
           <span className="sp" />
-          <button
+          <ActionButton
             className={`btn btn-sm ${t.status === "done" ? "btn-secondary" : "btn-ghost"}`}
             onClick={() => toggleDone(t.id)}
             style={t.status === "done" ? { color: "var(--green)" } : undefined}
           >
             <Ic n={t.status === "done" ? "circle-check" : "circle"} s={14} />
             <span className="hide-m">{t.status === "done" ? "Completed" : "Mark complete"}</span>
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             className="ibtn ibtn-sm"
             onClick={() => toggleFavTask(t.id)}
             data-tip={t.fav ? "Unfavorite" : "Favorite"}
@@ -721,29 +724,29 @@ export function Drawer() {
             style={t.fav ? { color: "var(--amber)" } : undefined}
           >
             <Ic n="star" s={15} />
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             className="ibtn ibtn-sm"
             onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/board?task=${t.key}`)}
             data-tip="Copy link"
             aria-label="Copy link"
           >
             <Ic n="link" s={15} />
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             className="ibtn ibtn-sm hide-m"
             onClick={() => ((u.drawerFull = !u.drawerFull), render())}
             data-tip={u.drawerFull ? "Side panel" : "Full page"}
             aria-label="Toggle full page"
           >
             <Ic n={u.drawerFull ? "minimize-2" : "maximize-2"} s={15} />
-          </button>
-          <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More">
+          </ActionButton>
+          <ActionButton className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More">
             <Ic n="ellipsis" s={15} />
-          </button>
-          <button className="ibtn ibtn-sm" onClick={closeDrawer} data-tip="Close  Esc" aria-label="Close">
+          </ActionButton>
+          <ActionButton className="ibtn ibtn-sm" onClick={closeDrawer} data-tip="Close  Esc" aria-label="Close">
             <Ic n="x" s={16} />
-          </button>
+          </ActionButton>
         </div>
         <div className="drawer-b">
           {sub ? (
@@ -871,9 +874,9 @@ export function Drawer() {
                   {detail.state === "error" ? (
                     <div className="muted">
                       The description didn't load.{" "}
-                      <button className="btn btn-link" onClick={detail.retry}>
+                      <ActionButton className="btn btn-link" onClick={detail.retry}>
                         Try again
-                      </button>
+                      </ActionButton>
                     </div>
                   ) : (
                     <div className="muted">Loading…</div>
@@ -927,7 +930,7 @@ export function Drawer() {
                             {FT[f.type]?.n || "File"} · {f.size}
                           </div>
                         </div>
-                        <button
+                        <ActionButton
                           className="ibtn ibtn-xs x"
                           aria-label="Remove attachment"
                           onClick={(e) => {
@@ -941,7 +944,7 @@ export function Drawer() {
                           }}
                         >
                           <Ic n="x" s={12} />
-                        </button>
+                        </ActionButton>
                       </div>
                     ))}
                   </div>
@@ -1023,7 +1026,7 @@ export function Drawer() {
             </>
           )}
         </div>
-      </aside>
+      </AstryxDrawer>
     </>
   );
 }
@@ -1066,7 +1069,7 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
       </div>
       {t.subtasks.map((s) => (
         <div key={s.id} className={`subt ${s.done ? "done" : ""}`}>
-          <input
+          <SelectionInput
             type="checkbox"
             className="check"
             checked={s.done}
@@ -1083,14 +1086,14 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
             </span>
           )}
           {s.assignee && <Av id={s.assignee} cls="sm" />}
-          <button
+          <ActionButton
             className="ibtn ibtn-xs x"
             onClick={() => ((S.ui.subOpen = { tid: t.id, sid: s.id }), render())}
             aria-label="Open subtask details"
             tabIndex={-1}
           >
             <Ic n="chevron-right" s={14} />
-          </button>
+          </ActionButton>
         </div>
       ))}
       <div className="subt" style={{ color: "var(--text-3)" }}>

@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import type { Scope } from "@/lib/issues";
 import { useSharedCodingOutcomes } from "@/lib/coding";
 import { closeDrawer } from "../core/actions";
@@ -58,7 +59,7 @@ export function SharedCodingOutcomes({ scope, issueKey }: { scope: Scope | undef
               </a>
             )}
             {outcome.session_id && (
-              <button
+              <ActionButton
                 className="btn btn-sm btn-ghost"
                 onClick={() => {
                   closeDrawer();
@@ -66,7 +67,7 @@ export function SharedCodingOutcomes({ scope, issueKey }: { scope: Scope | undef
                 }}
               >
                 Open your coding session
-              </button>
+              </ActionButton>
             )}
           </div>
         </article>

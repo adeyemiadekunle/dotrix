@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // The desktop app's own parts of the shell (core/desktop.ts): a bar when a new version is ready
 // ("dotrix 0.2.0 is ready", Restart), and What's new, the releases in the app's CHANGELOG.md, opened from
 // the sidebar or the bar and once on its own after the app updated. In a browser none of it shows.
@@ -53,12 +54,12 @@ export function UpdateBar() {
       <span className="grow">
         <b>dotrix {update.version} is ready.</b> <span className="muted">Restart to use it, or it installs when you quit. A turn coding here stops first.</span>
       </span>
-      <button className="btn btn-sm btn-ghost hide-m" onClick={() => setLater(update.version)}>
+      <ActionButton className="btn btn-sm btn-ghost hide-m" onClick={() => setLater(update.version)}>
         Later
-      </button>
-      <button className="btn btn-sm btn-primary" onClick={restart} disabled={restarting}>
+      </ActionButton>
+      <ActionButton className="btn btn-sm btn-primary" onClick={restart} disabled={restarting}>
         {restarting ? "Restarting…" : "Restart"}
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -89,9 +90,9 @@ export function WhatsNew({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </div>
-        <button className="ibtn ibtn-sm" onClick={onClose} aria-label="Close">
+        <ActionButton className="ibtn ibtn-sm" onClick={onClose} aria-label="Close">
           <Ic n="x" s={16} />
-        </button>
+        </ActionButton>
       </div>
       <div className="modal-b wn">
         {releases === null && <p className="muted">Loading…</p>}

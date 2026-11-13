@@ -1,23 +1,24 @@
+import { CommandPalette, CommandPaletteInput, TabList, Tab } from "@dotrix/ui/astryx";
 // Command palette: commands, then search over
 // everything (Tab switches), and the workspace switcher. dotrix adds Chat, the agents (Chat opens
 // with that agent picked), documents, and "Ask the agents" with what you typed.
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 
 import { openTask, setPref, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
-import { Ic, Logo, WsLogo } from "../core/icons";
+import { Ic, WsLogo } from "../core/icons";
 import { allowed, canInvite } from "../core/can";
 import { personal, tasksLabel } from "../core/features";
 import { invite, newProject, newTask, openModal, shortcuts, signOut, switchWs } from "../core/more";
 import { go } from "../core/nav";
 import { effectiveDark } from "../core/theme";
-import { MOD, clamp } from "../core/utils";
+import { MOD } from "../core/utils";
 import { D, S, allTasks, pColor, proj, render, save, task } from "../data/store";
 import { searchAll } from "../screens/Search";
 import { goTasks } from "../screens/Home";
 import { setPaletteOpener } from "../shell/Shell";
 import { sortTasks } from "../shell/viewEngine";
-import { Av, FT, Hl, StIcon } from "../ui/helpers";
+import { Av, FT, StIcon } from "../ui/helpers";
 import { Face } from "../ui/face";
 
 type Item = { icon?: string; html?: ReactNode; name: string; sub?: string; r?: string; kbd?: string; run: () => void };
@@ -227,148 +228,95 @@ function items(): Group[] {
   return out;
 }
 
-let flat: Item[] = [];
-export function palMove(d: number) {
-  const pl = S.ui.palette!;
-  pl.hl = (pl.hl + d + flat.length) % Math.max(flat.length, 1);
-  render();
-  requestAnimationFrame(() => document.querySelector(".pi.hl")?.scrollIntoView({ block: "nearest" }));
-}
-export function palRun(i = S.ui.palette?.hl ?? 0) {
-  const it = flat[i];
-  if (!it) return;
-  S.ui.palette = null;
-  render();
-  it.run();
-}
-
 export function Palette() {
   const pl = S.ui.palette;
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (pl && !S.ui.pop) ref.current?.focus();
-  });
+  const mode = pl?.mode;
+  const scope = pl?.scope;
+  const source = useMemo(() => {
+    const search = (query: string) => {
+      if (!S.ui.palette || S.ui.palette.mode !== mode || S.ui.palette.scope !== scope) return [];
+      S.ui.palette.q = query;
+      return items().flatMap((group, gi) =>
+        group.items.map((item, i) => ({
+          id: `${gi}-${i}`,
+          label: item.name,
+          auxiliaryData: { ...item, group: group.name },
+        })),
+      );
+    };
+    return { search, bootstrap: () => search(S.ui.palette?.q ?? "") };
+  }, [mode, scope]);
   if (!pl) return null;
-  const groups = items();
-  flat = groups.flatMap((g) => g.items);
-  pl.hl = clamp(pl.hl, 0, Math.max(flat.length - 1, 0));
-  let idx = 0;
-  const ph =
+  const placeholder =
     pl.mode === "search" ? "Search tasks, projects, documents, people, files, comments…" : pl.mode === "ws" ? "Find a workspace…" : "Type a command or search…";
   return (
-    <>
-      <div className="scrim" onClick={closePalette} style={{ zIndex: 89 }} />
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Command menu">
-        <div className="pal-in">
-          <Ic n={pl.mode === "search" ? "search" : "command"} s={17} />
-          {pl.mode !== "cmd" && (
-            <span className="badge" style={{ flexShrink: 0 }}>
-              {pl.mode === "search" ? "Search" : "Workspace"}
-            </span>
-          )}
-          <input
-            ref={ref}
-            id="pal-in"
-            value={pl.q}
-            onChange={(e) => ((pl.q = e.target.value), (pl.hl = 0), render())}
-            placeholder={ph}
-            autoComplete="off"
-            role="combobox"
-            aria-expanded="true"
-            aria-controls="pal-list"
-            aria-activedescendant={`pi-${pl.hl}`}
-          />
-          <kbd>Esc</kbd>
-        </div>
-        {pl.mode === "search" && (
-          <div className="pal-scope" role="tablist">
-            {[
-              ["all", "All", "layers"],
-              ["tasks", "Tasks", "circle-check"],
-              ["projects", "Projects", "folder"],
-              ["documents", "Documents", "book-open"],
-              ["people", "People", "users"],
-              ["files", "Files", "paperclip"],
-              ["comments", "Comments", "message-square"],
-            ].map(([k, n, i]) => (
-              <button key={k} role="tab" className={pl.scope === k ? "on" : ""} onClick={() => ((pl.scope = k!), (pl.hl = 0), render(), ref.current?.focus())}>
-                <Ic n={i!} s={12} />
-                {n}
-              </button>
-            ))}
+    <CommandPalette
+      key={`${pl.mode}:${pl.scope}`}
+      isOpen
+      label="Command menu"
+      width={640}
+      maxHeight="80dvh"
+      onOpenChange={(open) => {
+        if (!open) closePalette();
+      }}
+      searchSource={source}
+      onValueChange={(id) => {
+        const action = source.bootstrap().find((item) => item.id === id)?.auxiliaryData.run;
+        queueMicrotask(() => action?.());
+      }}
+      input={
+        <>
+          <div
+            onKeyDownCapture={(e) => {
+              if (e.key === "Tab" && pl.mode === "cmd") {
+                e.preventDefault();
+                pl.mode = "search";
+                render();
+              }
+              if (e.key === "Backspace" && !pl.q && pl.mode !== "cmd") {
+                e.preventDefault();
+                pl.mode = "cmd";
+                render();
+              }
+            }}
+          >
+            <CommandPaletteInput label="Search commands" placeholder={placeholder} />
           </div>
-        )}
-        <div className="pal-list" id="pal-list" role="listbox">
-          {flat.length ? (
-            groups.map((g, gi) => (
-              <div key={gi} className="pal-group">
-                {g.name && <div className="pal-sec">{g.name}</div>}
-                {g.items.map((it) => {
-                  const i = idx++;
-                  return (
-                    <div
-                      key={i}
-                      className={`pi ${i === pl.hl ? "hl" : ""}`}
-                      id={`pi-${i}`}
-                      role="option"
-                      aria-selected={i === pl.hl}
-                      onClick={() => palRun(i)}
-                      onMouseMove={() => {
-                        if (pl.hl !== i) {
-                          pl.hl = i;
-                          render();
-                        }
-                      }}
-                    >
-                      {it.html ?? <Ic n={it.icon || "circle"} s={15} />}
-                      <span className="trunc">
-                        <Hl text={it.name} q={pl.q.trim()} />
-                      </span>
-                      {it.sub && <span className="sub">{it.sub}</span>}
-                      <span className="r">
-                        {it.r && <span className="mono">{it.r}</span>}
-                        {it.kbd?.split(" ").map((k, j) => (
-                          <kbd key={j}>{k}</kbd>
-                        ))}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ))
-          ) : (
-            <div className="empty-state sm">
-              <div className="glyph">
-                <Ic n="search-x" s={18} />
-              </div>
-              <h2 className="es-h">No results found</h2>
-              <p>Try a different keyword, or press Tab to search everything.</p>
-            </div>
+          {pl.mode === "search" && (
+            <TabList
+              aria-label="Search scope"
+              value={pl.scope}
+              onChange={(scope) => {
+                pl.scope = scope;
+                render();
+              }}
+              size="sm"
+            >
+              {[
+                ["all", "All"],
+                ["tasks", "Tasks"],
+                ["projects", "Projects"],
+                ["documents", "Documents"],
+                ["people", "People"],
+                ["files", "Files"],
+                ["comments", "Comments"],
+              ].map(([value, label]) => (
+                <Tab key={value} value={value!} label={label!} />
+              ))}
+            </TabList>
           )}
-        </div>
-        <div className="pal-f">
-          <span>
-            <kbd>↑</kbd>
-            <kbd>↓</kbd>navigate
-          </span>
-          <span>
-            <kbd>↵</kbd>select
-          </span>
-          {pl.mode === "cmd" ? (
-            <span>
-              <kbd>Tab</kbd>search mode
-            </span>
-          ) : (
-            <span>
-              <kbd>⌫</kbd>back to commands
-            </span>
-          )}
-          <span className="sp" style={{ flex: 1 }} />
-          <span>
-            <Logo h={12} />
-          </span>
-        </div>
-      </div>
-    </>
+        </>
+      }
+      emptySearchText="No results found. Try a different keyword."
+      renderItem={(item) => (
+        <>
+          <span>{item.auxiliaryData.html ?? <Ic n={item.auxiliaryData.icon ?? "circle"} s={16} />}</span>
+          <span className="grow">{item.label}</span>
+          {item.auxiliaryData.sub && <span className="muted">{item.auxiliaryData.sub}</span>}
+          <span className="mono muted">{item.auxiliaryData.kbd ?? item.auxiliaryData.r}</span>
+        </>
+      )}
+      aria-description={placeholder}
+    />
   );
 }

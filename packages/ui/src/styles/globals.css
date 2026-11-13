@@ -1,5 +1,12 @@
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
+
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "../theme/dotrix.css";
+@import "../theme/dotrix-reduced.css";
+@import "../theme/dotrix-compat.css";
 /* The design's stylesheet (see below). */
 @import "./design.css";
 
@@ -9,18 +16,19 @@
 @source "../../../../apps/web/components";
 @source "../../../../apps/web/lib";
 @source "../../../../apps/admin/src";
+@source "../../../../apps/site/src";
 @source "../**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 
 /* The design (design.css) owns the colours, type, and spacing. The names
    dotrix's components and pages use (shadcn's, and ours) read its tokens, so there is one source.
-   Dark mode and accents come from it too: .dark on <html> (next-themes), data-accent (Settings →
+   Dark mode and accents use the saved document preferences: .dark on <html>, data-accent (Settings →
    Appearance). */
 :root {
   /* dotrix's Blocked status */
   --st-blocked: var(--red);
-  --radius: 0.625rem;
+  --radius: var(--radius-element);
   --background: var(--bg);
   --foreground: var(--text);
   --card: var(--surface);
@@ -73,8 +81,8 @@
   --elevation-pop: var(--shadow-pop);
 }
 
-@theme inline {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+@theme reference inline {
+  --font-sans: var(--font-family-body);
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -169,14 +177,6 @@
   }
 }
 
-/* CodeBlock: Shiki writes both themes' colours as variables; pick the one for this theme. */
-.code-block-shiki span {
-  color: var(--shiki-light);
-}
-.dark .code-block-shiki span {
-  color: var(--shiki-dark);
-}
-
 /* The menu button shows only where the sidebar is a drawer. */
 .mnav-btn {
   display: none;
@@ -243,4 +243,125 @@
 @utility shimmer-none {
   --shimmer-image: none;
   --shimmer-text-fill: currentColor;
+}
+
+/* Product-owned motion preference also covers Astryx's CSS transitions. */
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+@layer components {
+  .workspace-shell {
+    height: 100dvh;
+  }
+  .workspace-shell .astryx-layout-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .workspace-shell > .astryx-layout {
+    min-height: 0;
+  }
+  .workspace-navigation {
+    --side-w: 252px;
+  }
+  .workspace-topbar {
+    min-height: 48px;
+  }
+  .workspace-shell .content {
+    display: flex;
+    flex-direction: column;
+  }
+  .workspace-shell .content > .page {
+    flex: 1;
+  }
+  .workspace-shell .bottomnav {
+    display: none;
+  }
+  .btn {
+    border-radius: var(--radius-full);
+  }
+  @media (width < 768px) {
+    .workspace-shell .bottomnav {
+      display: flex;
+    }
+    .workspace-shell .content {
+      padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    }
+  }
+}
+@layer components {
+  .dotrix-chat-layout {
+    min-height: 0;
+    flex: 1;
+  }
+  .dotrix-chat-layout .chat-col {
+    width: 100%;
+    padding: 16px 0;
+  }
+  .dotrix-chat-layout .chat-input {
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+  }
+  .dotrix-message {
+    min-width: 0;
+  }
+  .dotrix-user-bubble {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .dotrix-message .who {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: var(--fs-sm);
+  }
+  .dotrix-message .who .role,
+  .dotrix-message .who time {
+    color: var(--text-2);
+    font-size: var(--fs-xs);
+  }
+  .dotrix-composer textarea {
+    width: 100%;
+    resize: none;
+    background: transparent;
+    border: 0;
+    outline: none;
+    min-height: 40px;
+  }
+}
+@layer components {
+  .dotrix-modal {
+    color: var(--text);
+  }
+  .dotrix-task-drawer .drawer-b {
+    overflow: visible;
+  }
+  .dotrix-task-drawer {
+    color: var(--text);
+  }
+}
+.dotrix-action-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+}
+@layer components {
+  .workspace-shell .content {
+    min-width: 0;
+  }
+  .workspace-shell .content > .page {
+    width: 100%;
+    min-width: 0;
+  }
+  .workspace-shell .content .panel {
+    min-width: 0;
+  }
 }

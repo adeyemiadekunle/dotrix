@@ -1,3 +1,6 @@
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useRef, useState } from "react";
 import type { Schemas } from "@/lib/api";
 import { errorMessage } from "@/lib/api";
@@ -24,9 +27,9 @@ export function BaselineReview({ scope, projectKey }: { scope: Scope | undefined
     <section className="panel" aria-label="Repository baseline" style={{ marginBottom: 16 }}>
       <div className="panel-h">
         <h2>Review the repository baseline</h2>
-        <button className="btn btn-sm btn-ghost" disabled={query.isFetching || save.isPending} onClick={() => void query.refetch()}>
+        <ActionButton className="btn btn-sm btn-ghost" disabled={query.isFetching || save.isPending} onClick={() => void query.refetch()}>
           Reload baseline
-        </button>
+        </ActionButton>
       </div>
       <div className="panel-b">
         <p>1. Take an inventory. 2. Explain the repository. 3. Read the cited wiki pages and add project context. 4. Review before planning changes.</p>
@@ -70,14 +73,22 @@ export function BaselineReview({ scope, projectKey }: { scope: Scope | undefined
               <>
                 <label className="field">
                   Shared goals, constraints, corrections and open questions
-                  <textarea className="textarea" maxLength={8000} value={notes} disabled={save.isPending} onChange={(e) => setNotes(e.target.value)} />
+                  <DesignTextarea
+                    aria-label="Shared goals, constraints, corrections and open questions"
+                    className="textarea"
+                    maxLength={8000}
+                    value={notes}
+                    disabled={save.isPending}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
                 </label>
                 <p className="faint">
                   Leave blank to keep the current shared context. Enter a revised version to replace it. These notes are shared with people who can see this
                   project. Your private conversations stay private. Existing requirements and decisions are not overwritten.
                 </p>
                 <label>
-                  <input
+                  <SelectionInput
+                    aria-label="I reviewed the cited pages, coverage gaps and exclusions; this confirms the reviewed scope, not complete understanding."
                     type="checkbox"
                     checked={ackDigest === baseline.digest}
                     disabled={save.isPending || query.isFetching}
@@ -86,26 +97,26 @@ export function BaselineReview({ scope, projectKey }: { scope: Scope | undefined
                   I reviewed the cited pages, coverage gaps and exclusions; this confirms the reviewed scope, not complete understanding.
                 </label>
                 <div className="row" style={{ marginTop: 12, gap: 8 }}>
-                  <button
+                  <ActionButton
                     className="btn btn-primary"
                     disabled={save.isPending || query.isFetching || query.isError || !baseline.can_confirm || ackDigest !== baseline.digest}
                     onClick={() => submit("confirmed")}
                   >
                     Confirm reviewed baseline
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     className="btn btn-secondary"
                     disabled={save.isPending || query.isFetching || query.isError || !notes.trim()}
                     onClick={() => submit("corrections")}
                   >
                     Save corrections and context
-                  </button>
+                  </ActionButton>
                 </div>
                 {save.isError && <p role="alert">{errorMessage(save.error)} The draft is retained; reload the evidence before retrying a changed baseline.</p>}
               </>
             )}
             {baseline.current && !query.isError && !query.isFetching && (
-              <button
+              <ActionButton
                 className="btn btn-secondary"
                 style={{ marginTop: 12 }}
                 onClick={() =>
@@ -123,7 +134,7 @@ export function BaselineReview({ scope, projectKey }: { scope: Scope | undefined
                 }
               >
                 Plan from reviewed baseline
-              </button>
+              </ActionButton>
             )}
           </>
         )}

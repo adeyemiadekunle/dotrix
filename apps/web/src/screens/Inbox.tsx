@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // The Inbox: what people send you (mentions, assignments, comments) and what the agents need
 // (changes to approve, plans to steer, findings, decisions), with the change itself in the detail.
 import { useEffect, useRef, type CSSProperties } from "react";
@@ -19,7 +20,7 @@ import { useIssue } from "../../lib/issues";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
 import { Av, CommentText, Empty } from "../ui/helpers";
-import { tabKeys } from "../ui/tabs";
+import { TabList, Tab } from "@dotrix/ui/astryx";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -123,7 +124,7 @@ function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) =
           <span>{ago(n.at)}</span>
         </div>
       </div>
-      <button
+      <ActionButton
         className="ibtn ibtn-xs"
         onClick={(e) => {
           e.stopPropagation();
@@ -133,7 +134,7 @@ function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) =
         aria-label={n.read ? "Mark as unread" : "Mark as read"}
       >
         <Ic n={n.read ? "mail" : "mail-open"} s={13} />
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -163,10 +164,10 @@ function TaskPreview({ n, onBack }: { n: Notif; onBack: () => void }) {
   if (!t)
     return (
       <div style={{ padding: "24px 28px" }}>
-        <button className="btn btn-sm btn-ghost" onClick={onBack} style={{ margin: "-4px 0 12px -8px" }}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={onBack} style={{ margin: "-4px 0 12px -8px" }}>
           <Ic n="arrow-left" s={14} />
           Back
-        </button>
+        </ActionButton>
         <div className="alert danger">
           <Ic n="triangle-alert" s={16} />
           <div>
@@ -178,9 +179,9 @@ function TaskPreview({ n, onBack }: { n: Notif; onBack: () => void }) {
         </div>
         {p && (
           <div style={{ marginTop: 14 }}>
-            <button className="btn btn-secondary" onClick={() => go("project", { id: p.key, tab: "overview" })}>
+            <ActionButton className="btn btn-secondary" onClick={() => go("project", { id: p.key, tab: "overview" })}>
               Open project
-            </button>
+            </ActionButton>
           </div>
         )}
       </div>
@@ -189,19 +190,19 @@ function TaskPreview({ n, onBack }: { n: Notif; onBack: () => void }) {
   return (
     <>
       <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-        <button className="ibtn ibtn-sm" onClick={onBack} aria-label="Back">
+        <ActionButton className="ibtn ibtn-sm" onClick={onBack} aria-label="Back">
           <Ic n="arrow-left" s={15} />
-        </button>
+        </ActionButton>
         <span className="pdot" style={css({ "--c": pColor(p!) })} />
         <span className="muted" style={{ fontSize: 12.5 }}>
           {p?.name}
         </span>
         <span className="faint mono">{t.key}</span>
         <span className="sp" />
-        <button className="btn btn-sm btn-secondary" onClick={() => openTask(t.id)}>
+        <ActionButton className="btn btn-sm btn-secondary" onClick={() => openTask(t.id)}>
           <Ic n="panel-right-open" s={14} />
           Open task
-        </button>
+        </ActionButton>
       </div>
       <div style={{ padding: "24px 28px", maxWidth: 720, width: "100%" }}>
         <h2 style={{ fontSize: "var(--fs-xl)", margin: "0 0 10px", fontWeight: 600, letterSpacing: "-.015em" }}>{t.title}</h2>
@@ -241,9 +242,9 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
   return (
     <>
       <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-        <button className="ibtn ibtn-sm" onClick={onBack} aria-label="Back">
+        <ActionButton className="ibtn ibtn-sm" onClick={onBack} aria-label="Back">
           <Ic n="arrow-left" s={15} />
-        </button>
+        </ActionButton>
         {p && (
           <>
             <span className="pdot" style={css({ "--c": pColor(p) })} />
@@ -254,28 +255,28 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
         )}
         <span className="sp" />
         {th && (
-          <button className="btn btn-sm btn-secondary" onClick={() => go("chat", {}, { search: `thread=${th.id}` })}>
+          <ActionButton className="btn btn-sm btn-secondary" onClick={() => go("chat", {}, { search: `thread=${th.id}` })}>
             <Ic n="message-square" s={14} />
             Open the conversation
-          </button>
+          </ActionButton>
         )}
         {cs && (
-          <button className="btn btn-sm btn-secondary" onClick={() => go("codes", {}, { search: `session=${cs.id}` })}>
+          <ActionButton className="btn btn-sm btn-secondary" onClick={() => go("codes", {}, { search: `session=${cs.id}` })}>
             <Ic n="code" s={14} />
             Open the session
-          </button>
+          </ActionButton>
         )}
         {n.type === "stale" && p && (
-          <button className="btn btn-sm btn-secondary" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=coverage" })}>
+          <ActionButton className="btn btn-sm btn-secondary" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=coverage" })}>
             <Ic n="book-open" s={14} />
             Open coverage
-          </button>
+          </ActionButton>
         )}
         {t && (
-          <button className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => openTask(t.id)}>
             <Ic n="panel-right-open" s={14} />
             Open task
-          </button>
+          </ActionButton>
         )}
       </div>
       <div style={{ padding: "24px 28px", maxWidth: 760, width: "100%" }}>
@@ -326,13 +327,13 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
                   It works on a branch and opens a pull request; a person merges.
                 </span>
                 <span className="sp" />
-                <button className="btn btn-sm btn-secondary" onClick={() => decideCoding(cs, false)}>
+                <ActionButton className="btn btn-sm btn-secondary" onClick={() => decideCoding(cs, false)}>
                   Reject
-                </button>
-                <button className="btn btn-sm btn-primary" onClick={() => decideCoding(cs, true)}>
+                </ActionButton>
+                <ActionButton className="btn btn-sm btn-primary" onClick={() => decideCoding(cs, true)}>
                   <Ic n="check" s={13} />
                   Approve
-                </button>
+                </ActionButton>
               </div>
             ) : (
               <div className="change-f">
@@ -349,9 +350,9 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
               <CommentText text={n.snippet} />
               {t && (
                 <div style={{ marginTop: 8 }}>
-                  <button className="btn btn-sm btn-secondary" onClick={() => openTask(t.id)}>
+                  <ActionButton className="btn btn-sm btn-secondary" onClick={() => openTask(t.id)}>
                     Open {t.key}
-                  </button>
+                  </ActionButton>
                 </div>
               )}
             </div>
@@ -381,9 +382,9 @@ function CodingDecision({ workspaceId, projectId, runId }: { workspaceId: string
           {r.issue_key} · turn {r.turn}
         </b>
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => go("codes", {}, { search: `session=${r.session_id}` })}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("codes", {}, { search: `session=${r.session_id}` })}>
           Open the session
-        </button>
+        </ActionButton>
       </div>
       {r.note && <div className="change-b">{r.note}</div>}
       {r.status === "changes_ready" && r.files_changed.length > 0 && (
@@ -411,13 +412,13 @@ function CodingDecision({ workspaceId, projectId, runId }: { workspaceId: string
         <span className="sp" />
         {waiting && r.can_decide && (
           <>
-            <button className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
+            <ActionButton className="btn btn-sm btn-secondary" disabled={decide.isPending} onClick={() => decision(false)}>
               {r.status === "changes_ready" ? "Discard" : "Reject"}
-            </button>
-            <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
+            </ActionButton>
+            <ActionButton className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decision(true)}>
               <Ic n="check" s={13} />
               {r.status === "changes_ready" ? "Accept and push" : "Approve and start Kai"}
-            </button>
+            </ActionButton>
           </>
         )}
       </div>
@@ -504,40 +505,36 @@ export function Inbox() {
                 </button>
               ))}
             </div>
-            <button
+            <ActionButton
               className="ibtn ibtn-sm"
               onClick={() => markAllRead((typesOf(tab) ?? ALL_TYPES).filter((t) => !staysUnread(t)))}
               data-tip="Mark all as read (approvals stay until decided)"
               aria-label="Mark all as read"
             >
               <Ic n="check-check" s={15} />
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               className="ibtn ibtn-sm"
               onClick={() => go("settings", { sec: "notif-email" })}
               data-tip="Notification preferences"
               aria-label="Notification preferences"
             >
               <Ic n="settings-2" s={15} />
-            </button>
+            </ActionButton>
           </div>
-          <div className="tabs inbox-tabs" role="tablist" aria-label="Inbox categories" onKeyDown={tabKeys}>
-            {TABS.map(([k, n]) => (
-              <button
-                key={k}
-                id={`inbox-tab-${k}`}
-                role="tab"
-                aria-selected={tab === k}
+          <TabList role="tablist" className="inbox-tabs" aria-label="Inbox categories" value={tab} onChange={(value) => openTab(value as typeof tab)} size="sm">
+            {TABS.map(([key, label]) => (
+              <Tab
+                key={key}
+                id={`inbox-tab-${key}`}
+                value={key}
+                onFocus={() => openTab(key)}
+                label={label}
+                endContent={count(key) > 0 ? <span className="cnt">{count(key)}</span> : undefined}
                 aria-controls="inbox-list"
-                tabIndex={tab === k ? 0 : -1}
-                className={`tab ${tab === k ? "on" : ""}`}
-                onClick={() => openTab(k)}
-              >
-                {n}
-                {count(k) > 0 && <span className="cnt">{count(k)}</span>}
-              </button>
+              />
             ))}
-          </div>
+          </TabList>
           <div className="inbox-list" id="inbox-list" role="tabpanel" aria-labelledby={`inbox-tab-${tab}`}>
             {ns.length ? (
               Object.entries(buckets).map(([b, list]) => (
@@ -558,9 +555,9 @@ export function Inbox() {
                 cls="sm"
               >
                 {S.ui.inboxUnread && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => ((S.ui.inboxUnread = false), render())}>
+                  <ActionButton className="btn btn-secondary btn-sm" onClick={() => ((S.ui.inboxUnread = false), render())}>
                     Show all
-                  </button>
+                  </ActionButton>
                 )}
               </Empty>
             )}

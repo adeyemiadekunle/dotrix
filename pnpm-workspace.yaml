@@ -5,11 +5,17 @@ packages:
 # Install scripts dependencies may run. electron-winstaller (electron-builder's Squirrel target) isn't
 # used: the Windows installer is NSIS.
 allowBuilds:
+  "@astryxdesign/cli": false
+  "@astryxdesign/core": false
   electron-winstaller: false
 
 # One TypeScript for typecheck and ESLint: the newest typescript-eslint supports (<6.1).
 catalog:
   typescript: ~6.0.3
+
+minimumReleaseAgeExclude:
+  - "@astryxdesign/core@0.7.15"
+  - "@astryxdesign/cli@0.7.15"
 
 # seroval (via @tanstack/react-router) below 1.6.11 has GHSA-9wx9-5pv9-3349 and GHSA-f86p-h4j2-7qgj.
 overrides:

@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix's Codes: Kai's sessions, apart from Chat's conversations. The list holds every coding session
 // you can see in one list (pinned first, then the latest); one started from a conversation is marked,
 // links back to it, and still shows as a card there. Stopping, archiving, or deleting a session here leaves the
@@ -55,7 +57,7 @@ export function Coding() {
         <aside className={`chat-side ${listMin ? "min" : ""}`}>
           {listMin ? (
             <div className="chat-rail">
-              <button
+              <ActionButton
                 className="ibtn"
                 onClick={() => (listMinSet ? setListMin(false) : setKeepList(true))}
                 aria-label="Show the list"
@@ -63,18 +65,18 @@ export function Coding() {
                 data-tip-pos="right"
               >
                 <Ic n="panel-left-open" s={16} />
-              </button>
-              <button className="ibtn" onClick={() => openCoding("new=1")} aria-label="New session" data-tip="New session" data-tip-pos="right">
+              </ActionButton>
+              <ActionButton className="ibtn" onClick={() => openCoding("new=1")} aria-label="New session" data-tip="New session" data-tip-pos="right">
                 <Ic n="square-pen" s={16} />
-              </button>
+              </ActionButton>
             </div>
           ) : (
             <>
-              <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
+              <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={220} max={480} onResize={setListW} />
               <div style={{ padding: "18px 16px 8px" }} className="row">
                 <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Codes</h1>
                 <span className="sp" />
-                <button
+                <ActionButton
                   className="ibtn ibtn-sm chat-fold"
                   onClick={() => {
                     setListMin(true);
@@ -84,17 +86,17 @@ export function Coding() {
                   data-tip="Hide the list"
                 >
                   <Ic n="panel-left-close" s={15} />
-                </button>
+                </ActionButton>
               </div>
               <div className="chat-new">
-                <button className="btn btn-secondary" onClick={() => openCoding("new=1")}>
+                <ActionButton className="btn btn-secondary" onClick={() => openCoding("new=1")}>
                   <Ic n="square-pen" s={14} /> New session
-                </button>
+                </ActionButton>
               </div>
               <div style={{ padding: "0 14px 8px" }}>
                 <div className="inwrap">
                   <Ic n="search" s={13} />
-                  <input
+                  <DesignInput
                     className="input search-sm"
                     style={{ width: "100%" }}
                     placeholder="Find a session"
@@ -222,9 +224,9 @@ function DemoSession({ id }: { id: string }) {
                   </p>
                   {opened ? (
                     <>
-                      <button className="btn btn-ghost" onClick={() => setOpened(null)}>
+                      <ActionButton className="btn btn-ghost" onClick={() => setOpened(null)}>
                         Back to the files
-                      </button>
+                      </ActionButton>
                       <p className="mono">{opened}</p>
                       {files.some((file) => file.path === opened) ? (
                         <ChangeList files={files.filter((file) => file.path === opened)} turn={{ status: session.status, turn: turn + 1 }} loading={false} />

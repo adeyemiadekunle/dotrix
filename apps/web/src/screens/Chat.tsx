@@ -1,3 +1,22 @@
+import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import {
+  ChatLayout,
+  ChatMessageList,
+  ChatMessage,
+  ChatMessageBubble,
+  ChatComposer,
+  ChatComposerInput,
+  ChatSendButton,
+  type ChatComposerInputHandle,
+  Lightbox,
+  Selector,
+  ComplexSelector,
+  type ComplexSelectorHandle,
+  Button as DesignButton,
+} from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix's workspace Chat: conversations grouped by project (and
 // "General"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
@@ -81,7 +100,6 @@ import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePa
 import { BackgroundTasks } from "../components/BackgroundTasks";
 import { SessionDetails, modeName, sessionModel } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
-import { useAtPicker } from "../components/AtPicker";
 import { ChoiceCard, type Choice } from "../components/ChoiceCard";
 import {
   ChainOfThought,
@@ -258,14 +276,14 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
           {label}
         </span>
       </button>
-      <button
+      <ActionButton
         className="ibtn ibtn-xs cs-more"
         onClick={(e) => openPop(e.currentTarget, "session", { id: cs.session_id, session: cs })}
         aria-label={`More for ${cs.issue_key}`}
         aria-haspopup="menu"
       >
         <Ic n="ellipsis" s={14} />
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -301,7 +319,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         {cs.branch && (
           <span className="row" style={{ gap: 4 }}>
             <Ic n="git-branch" s={12} />
-            <code>{cs.branch}</code>
+            <InlineCode>{cs.branch}</InlineCode>
           </span>
         )}
         {cs.pr_url && cs.pr_number && (
@@ -335,34 +353,38 @@ function SessionCard({ cs }: { cs: CodingSession }) {
       <div className="change-f row" style={{ gap: 6 }}>
         {latest?.can_decide && (
           <>
-            <button className="btn btn-sm btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}>
+            <ActionButton className="btn btn-sm btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}>
               {ready ? "Discard changes" : "Reject"}
-            </button>
-            <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}>
+            </ActionButton>
+            <ActionButton
+              className="btn btn-sm btn-primary"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+            >
               {ready ? "Accept and push" : "Approve"}
-            </button>
+            </ActionButton>
           </>
         )}
         {latest?.can_revert && (
-          <button className="btn btn-sm btn-ghost" disabled={revert.isPending} onClick={() => revert.mutate(latest.id)}>
+          <ActionButton className="btn btn-sm btn-ghost" disabled={revert.isPending} onClick={() => revert.mutate(latest.id)}>
             Revert this turn
-          </button>
+          </ActionButton>
         )}
         {latest?.can_stop && (
-          <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+          <ActionButton className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
             Stop
-          </button>
+          </ActionButton>
         )}
         {latest?.can_recover && (
-          <button className="btn btn-sm btn-secondary" disabled={recover.isPending} onClick={() => recover.mutate({ runId: latest.id, action: "check" })}>
+          <ActionButton className="btn btn-sm btn-secondary" disabled={recover.isPending} onClick={() => recover.mutate({ runId: latest.id, action: "check" })}>
             Check and recover
-          </button>
+          </ActionButton>
         )}
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
           Open in Codes
           <Ic n="arrow-right" s={12} />
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -434,22 +456,22 @@ export function Message({
   // the message box's; an agent's reply under its face and name, flush with the message box's left edge.
   if (m.role === "user")
     return (
-      <div className="chat-msg user">
-        <div className="chat-bubble">{m.text}</div>
+      <ChatMessage data-sender="user" sender="user" className="dotrix-message">
+        <ChatMessageBubble className="dotrix-user-bubble">{m.text}</ChatMessageBubble>
         <div className="chat-ask-meta">
           {tag && <span className="badge">{tag}</span>}
           {m.by !== D().me && <span>{w?.name ?? "Someone"} ·</span>}
           <time>{ago(m.at)}</time>
-          <button className="ibtn ibtn-xs" onClick={() => copyText(m.text)} aria-label="Copy what you wrote" data-tip="Copy">
+          <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(m.text)} aria-label="Copy what you wrote" data-tip="Copy">
             <Ic n="copy" s={13} />
-          </button>
+          </ActionButton>
           <Av id={m.by} cls="sm" tip={false} />
         </div>
         {children}
-      </div>
+      </ChatMessage>
     );
   return (
-    <div className="chat-msg agent">
+    <ChatMessage data-sender="assistant" sender="assistant" className="dotrix-message">
       <div className="who">
         <Face c={agent?.c ?? "#57544E"} size={22} mood="idle" />
         <b>{agent?.name ?? agentName(m.by)}</b>
@@ -500,7 +522,7 @@ export function Message({
         )}
         {children}
       </div>
-    </div>
+    </ChatMessage>
   );
 }
 
@@ -569,10 +591,10 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
               <span className="muted" style={{ fontSize: 12.5 }}>
                 It goes on from where it stopped; any change it repeats waits for your approval.
               </span>
-              <button className="btn btn-sm btn-secondary" disabled={cont.isPending} onClick={() => cont.mutate({ runId: run.id, whenReset: false })}>
+              <ActionButton className="btn btn-sm btn-secondary" disabled={cont.isPending} onClick={() => cont.mutate({ runId: run.id, whenReset: false })}>
                 <Ic n="play" s={12} />
                 Continue
-              </button>
+              </ActionButton>
             </div>
           )}
         </Message>
@@ -658,10 +680,10 @@ function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean
             Building asks for your approval before anything changes, and Kai's coding before it starts.
           </span>
           <span className="sp" />
-          <button className="btn btn-sm btn-primary" disabled={busy} onClick={onBuild}>
+          <ActionButton className="btn btn-sm btn-primary" disabled={busy} onClick={onBuild}>
             <Ic n="hammer" s={12} />
             Build this plan
-          </button>
+          </ActionButton>
         </div>
       )}
     </div>
@@ -687,65 +709,16 @@ function Pick({
   /** Options under headings (the Model Selector's providers): each option's group, "" for none. */
   groupOf?: (value: string) => string;
 }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const name = options.find(([v]) => v === value)?.[1] ?? value;
+  const grouped = groupsOf(options, groupOf);
+  const choices = grouped.map(([title, rows]) => ({
+    type: "section" as const,
+    title: title || undefined,
+    options: rows.map(([value, label]) => ({ value, label })),
+  }));
   return (
-    <span
-      className={plain ? "fpick" : "cpill pick"}
-      onKeyDown={(e) => {
-        if (e.key === "Escape" && open) {
-          e.stopPropagation();
-          setOpen(false);
-          btnRef.current?.focus();
-        }
-      }}
-    >
-      <button
-        ref={btnRef}
-        type="button"
-        className="pick-open"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={`${label}: ${name}`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        {lead}
-        <span className="trunc">{name}</span>
-        {!plain && <Ic n="chevron-down" s={11} />}
-      </button>
-      {open && (
-        <>
-          <span className="pick-veil" aria-hidden onClick={() => setOpen(false)} />
-          <span className="cmenu" role="listbox" aria-label={label}>
-            {groupsOf(options, groupOf).map(([group, opts]) => {
-              const items = opts.map(([v, l]) => (
-                <button
-                  key={v}
-                  type="button"
-                  role="option"
-                  aria-selected={v === value}
-                  className={`mi ${v === value ? "on" : ""}`}
-                  onClick={() => (onChange(v), setOpen(false))}
-                >
-                  <span className="trunc">{l}</span>
-                  {v === value && <Ic n="check" s={13} />}
-                </button>
-              ));
-              return group ? (
-                <span key={group} role="group" aria-label={group} className="cmenu-group">
-                  <span className="cmenu-h" aria-hidden>
-                    {group}
-                  </span>
-                  {items}
-                </span>
-              ) : (
-                <Fragment key="">{items}</Fragment>
-              );
-            })}
-          </span>
-        </>
-      )}
+    <span className={plain ? "dotrix-inline-picker" : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {lead}
+      <Selector label={label} isLabelHidden value={value} onChange={onChange} options={choices} hasSearch={options.length > 8} size="sm" />
     </span>
   );
 }
@@ -845,7 +818,7 @@ function WhereItCodes({
             ) : (
               !canAdd && (
                 <span className="env-note faint" title={localWhy ?? undefined}>
-                  Run <code>dotrix runner</code> in your checkout, or use the desktop app
+                  Run <InlineCode>dotrix runner</InlineCode> in your checkout, or use the desktop app
                 </span>
               )
             )}
@@ -899,7 +872,6 @@ function Composer({
   models,
   autoFocus,
   initial = "",
-  context,
   contexts,
   setContext,
   mode,
@@ -939,10 +911,34 @@ function Composer({
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<ChatComposerInputHandle>(null);
+  const picker = useRef<ComplexSelectorHandle>(null);
   const a = useAgents().items.find((x) => x.handle === agent);
   // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
-  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, modes: modeOptions, mode, onMode: setMode });
+  const choices = useMemo(
+    () => [
+      ...(contexts && setContext ? contexts.map(([id, label]) => ({ id: `project:${id}`, label, auxiliaryData: { group: "Projects" } })) : []),
+      ...(setMode ? modeOptions.map(([id, label]) => ({ id: `mode:${id}`, label, auxiliaryData: { group: "Modes" } })) : []),
+    ],
+    [contexts, setContext, setMode, modeOptions],
+  );
+  const choose = (id: string) => {
+    if (id.startsWith("project:")) setContext?.(id.slice(8));
+    else if (id.startsWith("mode:")) setMode?.(id.slice(5) as WorkMode);
+    return "";
+  };
+  const triggers = [
+    {
+      character: "@",
+      searchSource: {
+        search: (query: string) => choices.filter((choice) => choice.label.toLowerCase().includes(query.toLowerCase())),
+        bootstrap: () => choices,
+      },
+      onSelect: (item: { id: string }) => choose(item.id),
+      menuLabel: contexts ? "Projects and modes" : "Modes",
+    },
+  ];
+
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
@@ -960,69 +956,94 @@ function Composer({
       setSubmitting(false);
     }
   };
-  // The box grows with what's typed, up to about eight lines.
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [text]);
   const plus = Boolean(contexts || (mode && setMode));
   return (
     <div style={{ position: "relative" }}>
-      <div className={`kt-box cmp-box ${disabled ? "off" : ""}`}>
-        {plus && (
-          <button
-            type="button"
-            className="cmp-plus"
-            onClick={at.start}
-            aria-label={contexts ? "Project and mode" : "Mode"}
-            aria-haspopup="listbox"
-            aria-expanded={at.open}
-            data-tip={contexts ? "Pick a project or a mode (or type @)" : "Pick a mode (or type @)"}
-          >
-            <Ic n="plus" s={18} />
-          </button>
-        )}
-        {mode && setMode && mode !== "discuss" && (
-          <span className="cmp-chip cmp-mode" data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
-            <button type="button" className="cmp-mode-pick" onClick={at.start} aria-label={`Mode: ${WORK_MODES.find(([v]) => v === mode)?.[1]}`}>
-              <Ic n={MODE_ICONS[mode]} s={12} />
-              {WORK_MODES.find(([v]) => v === mode)?.[1]}
-            </button>
-            <button className="ibtn ibtn-xs" onClick={() => setMode("discuss")} aria-label="Back to Discuss">
-              <Ic n="x" s={11} />
-            </button>
-          </span>
-        )}
-        <textarea
-          ref={ref}
-          rows={1}
-          placeholder={placeholder}
-          value={text}
-          disabled={submitting}
-          onChange={(e) => at.onChange(e.target)}
-          onKeyDown={(e) => {
-            if (at.onKeyDown(e)) return;
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          aria-label="Message"
-          aria-expanded={at.open}
-        />
-        {(!onStop || text.trim()) && (
-          <button className="kt-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled || submitting} aria-label="Send" data-tip="Send">
-            <Ic n="arrow-up" s={15} />
-          </button>
-        )}
-        {onStop && (
-          <button type="button" className="kt-send kt-stop" onClick={onStop} disabled={stopDisabled} aria-label="Stop run" data-tip="Stop this turn">
-            <Ic n="square" s={12} />
-          </button>
-        )}
-      </div>
+      <ChatComposer
+        className="dotrix-composer"
+        onSubmit={() => {
+          void send();
+        }}
+        value={text}
+        isDisabled={disabled || submitting}
+        input={
+          <ChatComposerInput
+            handleRef={ref}
+            value={text}
+            onChange={setText}
+            placeholder={placeholder}
+            label="Message"
+            triggers={triggers}
+            pasteAsToken={false}
+            hasHistory={false}
+            onKeyDown={(event) => {
+              // Astryx's default Enter clears synchronously. Dotrix clears only
+              // after the server accepts the message, retaining failed drafts.
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+            isDisabled={submitting || disabled}
+            onSubmit={() => {
+              void send();
+            }}
+          />
+        }
+        headerActions={
+          <>
+            {plus && (
+              <ComplexSelector handleRef={picker} label={contexts ? "Project and mode" : "Mode"} isLabelHidden value="" triggerLabel={<Ic n="plus" s={18} />}>
+                {(_value, _change, close) => (
+                  <div style={{ display: "grid", gap: 4, padding: 8 }}>
+                    {choices.map((choice) => (
+                      <DesignButton
+                        key={choice.id}
+                        label={choice.label}
+                        variant="ghost"
+                        onClick={() => {
+                          choose(choice.id);
+                          close();
+                          ref.current?.focus();
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </ComplexSelector>
+            )}
+            {mode && setMode && mode !== "discuss" && (
+              <span className="cmp-chip cmp-mode" data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
+                <button
+                  type="button"
+                  className="cmp-mode-pick"
+                  onClick={() => picker.current?.open()}
+                  aria-label={`Mode: ${WORK_MODES.find(([v]) => v === mode)?.[1]}`}
+                >
+                  <Ic n={MODE_ICONS[mode]} s={12} />
+                  {WORK_MODES.find(([v]) => v === mode)?.[1]}
+                </button>
+                <ActionButton className="ibtn ibtn-xs" onClick={() => setMode("discuss")} aria-label="Back to Discuss">
+                  <Ic n="x" s={11} />
+                </ActionButton>
+              </span>
+            )}
+          </>
+        }
+        sendButton={
+          <>
+            {(!onStop || text.trim()) && (
+              <ChatSendButton
+                onSend={() => {
+                  void send();
+                }}
+                isDisabled={!text.trim() || S.ui.offline || disabled || submitting}
+              />
+            )}
+            {onStop && <ChatSendButton isStopShown onStop={onStop} isDisabled={stopDisabled} aria-label="Stop run" />}
+          </>
+        }
+      />
       <div className="kt-foot cmp-foot">
         <div className="cmp-controls cmp-controls-left">
           {agent !== "auto" && a && setAgent && (
@@ -1068,7 +1089,6 @@ function Composer({
             ))}
         </div>
       </div>
-      {at.menu}
     </div>
   );
 }
@@ -1115,11 +1135,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const coded = (useCodingSessions(ws, Boolean(projectId)).data ?? []).filter((c) => c.thread_id === id);
   const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
   const latestPlan = plans.at(-1);
-  const end = useRef<HTMLDivElement>(null);
-  const busy = active && !stream.text;
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [id, runs.length, busy, stream.text]);
   const say = (message: string, m: WorkMode = mode) => {
     if (inputBusy) {
       const kind = awaitingApproval ? "queue" : inputKind;
@@ -1159,9 +1174,9 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
     <div className="conv">
       <div className="conv-main">
         <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-          <button className="ibtn ibtn-sm" onClick={() => open("")} aria-label="Back to conversations">
+          <ActionButton className="ibtn ibtn-sm" onClick={() => open("")} aria-label="Back to conversations">
             <Ic n="arrow-left" s={15} />
-          </button>
+          </ActionButton>
           <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
             {title || (runs[0] ? (runs[0].title ?? runTitle(runs[0])) : "")}
           </b>
@@ -1188,110 +1203,116 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             })}
           </span>
         </div>
-        <div className="chat-scroll">
-          <div className="chat-col">
-            {runs.map((r) => (
-              <div key={r.id}>
-                <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
-                <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} />
-                {plans
-                  .filter((pl) => pl.run_id === r.id)
-                  .map((pl) => (
-                    <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
-                  ))}
-                {coded
-                  .filter((c) => anchorOf(c) === r.id)
-                  .map((c) => (
-                    <SessionCard key={c.session_id} cs={c} />
-                  ))}
-              </div>
-            ))}
-            {active && (
-              <div className="chat-msg agent working">
-                <div className="who">
-                  <Face c={agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
-                  <b>{agents.find((a) => a.handle === agent)?.name ?? agent}</b>
-                  <span className="role">{agents.find((a) => a.handle === agent)?.role}</span>
+        <ChatLayout
+          className="dotrix-chat-layout"
+          density={S.prefs.density === "compact" ? "compact" : "balanced"}
+          composer={
+            <div className="chat-input">
+              {inputBusy && (
+                <div className="chat-delivery-row">
+                  <label htmlFor="chat-delivery-kind">Send as</label>
+                  <select
+                    id="chat-delivery-kind"
+                    aria-label="Delivery action"
+                    value={awaitingApproval ? "queue" : inputKind}
+                    onChange={(event) => setInputKind(event.target.value as "queue" | "steer")}
+                  >
+                    <option value="queue">Queue after this turn</option>
+                    {!awaitingApproval && <option value="steer">Steer this turn</option>}
+                  </select>
                 </div>
-                <div className="body">
-                  <Trace className="agent-trace" aria-live="polite">
-                    <TraceLine status="running">
-                      <TraceIcon>
-                        <Ic n="spinner-gap" cls="animate-spin" />
-                      </TraceIcon>
-                      <TraceTitle>{stream.activity ?? `${agentName(agent)} is thinking…`}</TraceTitle>
-                    </TraceLine>
-                  </Trace>
-                  {stream.thinking && !stream.text && <Reasoning text={stream.thinking} live />}
-                </div>
-              </div>
-            )}
-            <div ref={end} />
-          </div>
-        </div>
-        <div className="chat-input">
-          {inputBusy && (
-            <div className="chat-delivery-row">
-              <label htmlFor="chat-delivery-kind">Send as</label>
-              <select
-                id="chat-delivery-kind"
-                aria-label="Delivery action"
-                value={awaitingApproval ? "queue" : inputKind}
-                onChange={(event) => setInputKind(event.target.value as "queue" | "steer")}
-              >
-                <option value="queue">Queue after this turn</option>
-                {!awaitingApproval && <option value="steer">Steer this turn</option>}
-              </select>
+              )}
+              <Queue
+                entries={chatInputs
+                  .filter(
+                    (item) =>
+                      item.status === "pending" ||
+                      item.status === "sending" ||
+                      item.status === "rejected" ||
+                      (item.status === "accepted" && item.run_id === working?.id),
+                  )
+                  .slice(0, 20)
+                  .reverse()
+                  .map((item) => ({
+                    id: item.id,
+                    kind: item.kind,
+                    message: item.message,
+                    status: item.status,
+                    error: item.error,
+                    said:
+                      item.status === "accepted"
+                        ? item.kind === "steer"
+                          ? "Accepted for the next safe point"
+                          : "Queued after this turn"
+                        : item.status === "rejected"
+                          ? "Not delivered"
+                          : item.status === "sending"
+                            ? "Sending…"
+                            : "Waiting to send",
+                    onCancel: item.status === "pending" ? () => cancelInput.mutate(item.id) : undefined,
+                    cancelling: cancelInput.isPending,
+                  }))}
+              />
+              <Composer
+                placeholder="Ask Nova, or type @ to pick a mode"
+                agent={agent}
+                model={modelName(last?.conversation_model) || undefined}
+                context={p?.name ?? "General"}
+                onSend={(q) => say(q)}
+                mode={projectId ? mode : undefined}
+                setMode={projectId ? setMode : undefined}
+                modeOptions={WORK_MODES}
+                runtime={fxPreview ? "fx" : undefined}
+                approval={projectId ? approval : undefined}
+                setApproval={projectId ? setApproval : undefined}
+                onStop={active ? halt : undefined}
+                stopDisabled={stop.isPending || stopCross.isPending}
+                autoFocus
+              />
             </div>
-          )}
-          <Queue
-            entries={chatInputs
-              .filter(
-                (item) =>
-                  item.status === "pending" ||
-                  item.status === "sending" ||
-                  item.status === "rejected" ||
-                  (item.status === "accepted" && item.run_id === working?.id),
-              )
-              .slice(0, 20)
-              .reverse()
-              .map((item) => ({
-                id: item.id,
-                kind: item.kind,
-                message: item.message,
-                status: item.status,
-                error: item.error,
-                said:
-                  item.status === "accepted"
-                    ? item.kind === "steer"
-                      ? "Accepted for the next safe point"
-                      : "Queued after this turn"
-                    : item.status === "rejected"
-                      ? "Not delivered"
-                      : item.status === "sending"
-                        ? "Sending…"
-                        : "Waiting to send",
-                onCancel: item.status === "pending" ? () => cancelInput.mutate(item.id) : undefined,
-                cancelling: cancelInput.isPending,
-              }))}
-          />
-          <Composer
-            placeholder="Ask Nova, or type @ to pick a mode"
-            agent={agent}
-            model={modelName(last?.conversation_model) || undefined}
-            context={p?.name ?? "General"}
-            onSend={(q) => say(q)}
-            mode={projectId ? mode : undefined}
-            setMode={projectId ? setMode : undefined}
-            modeOptions={WORK_MODES}
-            runtime={fxPreview ? "fx" : undefined}
-            approval={projectId ? approval : undefined}
-            setApproval={projectId ? setApproval : undefined}
-            onStop={active ? halt : undefined}
-            stopDisabled={stop.isPending || stopCross.isPending}
-            autoFocus
-          />
-        </div>
+          }
+        >
+          <ChatMessageList>
+            <div className="chat-col">
+              {runs.map((r) => (
+                <div key={r.id}>
+                  <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
+                  <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} />
+                  {plans
+                    .filter((pl) => pl.run_id === r.id)
+                    .map((pl) => (
+                      <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
+                    ))}
+                  {coded
+                    .filter((c) => anchorOf(c) === r.id)
+                    .map((c) => (
+                      <SessionCard key={c.session_id} cs={c} />
+                    ))}
+                </div>
+              ))}
+              {active && (
+                <div className="chat-msg agent working">
+                  <div className="who">
+                    <Face c={agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
+                    <b>{agents.find((a) => a.handle === agent)?.name ?? agent}</b>
+                    <span className="role">{agents.find((a) => a.handle === agent)?.role}</span>
+                  </div>
+                  <div className="body">
+                    <Trace className="agent-trace" aria-live="polite">
+                      <TraceLine status="running">
+                        <TraceIcon>
+                          <Ic n="spinner-gap" cls="animate-spin" />
+                        </TraceIcon>
+                        <TraceTitle>{stream.activity ?? `${agentName(agent)} is thinking…`}</TraceTitle>
+                      </TraceLine>
+                    </Trace>
+                    {stream.thinking && !stream.text && <Reasoning text={stream.thinking} live />}
+                  </div>
+                </div>
+              )}
+            </div>
+          </ChatMessageList>
+        </ChatLayout>
       </div>
     </div>
   );
@@ -1338,9 +1359,9 @@ function NewChat({
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
     <div className="conv">
-      <button className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
+      <ActionButton className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
         <Ic n="arrow-left" s={16} />
-      </button>
+      </ActionButton>
       <div className="ns">
         <div className="ns-mid">
           <h2 className="ns-title">
@@ -1366,10 +1387,10 @@ function NewChat({
         <div className="ns-bottom">
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12, justifyContent: "center" }}>
             {sugg.map(([i, s]) => (
-              <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable}>
+              <ActionButton key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable}>
                 <Ic n={i!} s={13} />
                 {s}
-              </button>
+              </ActionButton>
             ))}
           </div>
           <Composer
@@ -1587,7 +1608,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 </option>
               </select>
             </label>
-            <textarea
+            <DesignTextarea
               ref={ref}
               rows={1}
               value={note}
@@ -1642,9 +1663,9 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 <span className="trunc">
                   {t.key} {t.title}
                 </span>
-                <button className="ibtn ibtn-xs" onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
+                <ActionButton className="ibtn ibtn-xs" onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
                   <Ic n="x" s={11} />
-                </button>
+                </ActionButton>
               </span>
             )}
             {!t && <span className="faint">Pick an issue, then where and on which model</span>}
@@ -1820,10 +1841,10 @@ function CiCard({ turn, scope, canFix, onFix }: { turn: CodingRun; scope: Scope 
           A follow-up turn on the same branch, approved like the first.
         </span>
         <span className="sp" />
-        <button className="btn btn-sm btn-primary" disabled={!canFix} onClick={fix}>
+        <ActionButton className="btn btn-sm btn-primary" disabled={!canFix} onClick={fix}>
           <Ic n="wrench" s={13} />
           Ask {CODING_AGENT.name} to fix
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -1893,9 +1914,9 @@ function KaiTurn({
         <div className="kt-meta">
           {!mine && <span>{who(turn.requested_by_id ?? "")?.name ?? "Someone"} ·</span>}
           <span>{ago(ms(turn.created_at))}</span>
-          <button className="ibtn ibtn-xs" onClick={() => copyText(asked)} aria-label="Copy the request" data-tip="Copy">
+          <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(asked)} aria-label="Copy the request" data-tip="Copy">
             <Ic n="copy" s={13} />
-          </button>
+          </ActionButton>
         </div>
       </div>
       {(steps.length > 0 || turn.summary || turn.error) && (
@@ -1952,9 +1973,9 @@ function KaiTurn({
           )}
           <div className="kt-actions">
             {turn.summary && (
-              <button className="ibtn ibtn-xs" onClick={() => copyText(turn.summary ?? "")} aria-label="Copy Kai's reply" data-tip="Copy">
+              <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(turn.summary ?? "")} aria-label="Copy Kai's reply" data-tip="Copy">
                 <Ic n="copy" s={13} />
-              </button>
+              </ActionButton>
             )}
             {turn.finished_at && <span className="faint">{ago(ms(turn.finished_at))}</span>}
             {mine && (
@@ -2090,7 +2111,7 @@ export function Session({ cs }: { cs: CodingSession }) {
     if (!shot && !menu && !detailsPop) return;
     const esc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      setShot(null);
+      if (shot) return;
       setMenu(null);
       setDetailsPop(false);
     };
@@ -2142,9 +2163,9 @@ export function Session({ cs }: { cs: CodingSession }) {
     <div className="conv" ref={convRef}>
       <div className="conv-main">
         <div className="row cs-head" ref={headRef}>
-          <button className="ibtn ibtn-sm cs-back" onClick={() => openCoding("")} aria-label="Back to sessions" data-tip="Sessions">
+          <ActionButton className="ibtn ibtn-sm cs-back" onClick={() => openCoding("")} aria-label="Back to sessions" data-tip="Sessions">
             <Ic n="arrow-left" s={15} />
-          </button>
+          </ActionButton>
           <div className="cs-title-wrap">
             <button
               className={`cs-title ${menu === "title" ? "on" : ""}`}
@@ -2252,275 +2273,285 @@ export function Session({ cs }: { cs: CodingSession }) {
           </div>
         </div>
         {shot && (
-          <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
-            <img src={shot.src} alt={`Screenshot: ${shot.name}`} />
-            <span>{shot.name}</span>
-          </div>
+          <Lightbox
+            isOpen
+            hasZoom
+            onOpenChange={(open) => {
+              if (!open) setShot(null);
+            }}
+            media={{ src: shot.src, alt: `Screenshot: ${shot.name}`, caption: shot.name }}
+          />
         )}
         {detailsPop && (
           <div className="pop cs-details-pop" role="dialog" aria-label="Session details">
             {details}
           </div>
         )}
-        <div className="chat-scroll">
-          <div className="chat-col kt-col">
-            {turns.map((turn) => (
-              <Fragment key={turn.id}>
-                <KaiTurn
-                  turn={turn}
-                  issueTitle={cs.issue_title}
-                  busy={busy}
-                  revert={revert}
-                  onPath={openPath}
-                  onChanges={openChanges}
-                  onShot={(src, name) => setShot({ src, name })}
-                  shotSrc={shotSrc}
-                />
-                <BackgroundTasks scope={scope} run={turn} />
-              </Fragment>
-            ))}
-            {latest?.plan_result && (
-              <div className="change" aria-label="Kai's saved plan">
-                <h3>{String(latest.plan_result.title ?? "Implementation plan")}</h3>
-                <p>{String(latest.plan_result.summary ?? "")}</p>
-                <ol>
-                  {(Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks : []).map((task, index) => (
-                    <li key={index}>
-                      <b>{String(task.title)}</b>
-                      <p>{String(task.detail ?? "")}</p>
-                    </li>
-                  ))}
-                </ol>
-                <TraceList
-                  title="Acceptance criteria"
-                  items={Array.isArray(latest.plan_result.acceptance_criteria) ? latest.plan_result.acceptance_criteria.map(String) : []}
-                  icon="check-square"
-                />
-                <TraceList
-                  title="Open questions"
-                  items={Array.isArray(latest.plan_result.open_questions) ? latest.plan_result.open_questions.map(String) : []}
-                  icon="question"
-                />
-                <button
-                  className="btn btn-primary"
-                  disabled={busy || follow.isPending}
-                  onClick={() =>
-                    follow.mutate({
-                      message: "Build the selected plan",
-                      work_mode: "build",
-                      source_plan_id: latest.id,
-                    })
-                  }
-                >
-                  Build this plan
-                </button>
-              </div>
-            )}
-            {latest?.status === "awaiting_approval" && (
-              <div className="change">
-                <div className="change-h">
-                  <Ic n="shield-check" s={14} />
-                  <b style={{ fontWeight: 500 }}>Waiting for someone who may approve agent changes</b>
-                </div>
-                <div className="change-f">
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    It works on its own branch and opens a pull request; a person merges.
-                  </span>
-                  <span className="sp" />
-                  {latest.can_decide && (
-                    <>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
-                      >
-                        Reject
-                      </button>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
-                      >
-                        <Ic n="check" s={13} />
-                        Approve
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-            {latest?.status === "changes_ready" && (
-              <div className="change" role="group" aria-label="Changes waiting to be accepted">
-                <div className="change-h">
-                  <Ic n="shield-check" s={14} />
-                  <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
-                  <span className="sp" />
-                  <LineCounts files={latest.files_changed} onClick={() => openChanges(latest.id)} tip="Open the changes" />
-                </div>
-                {latest.files_changed.length > 0 && (
-                  <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                    {latest.files_changed.map((f) => (
-                      <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
-                        <button className="path-link trunc grow" onClick={() => openPath(fileOf(f), latest.id)} data-tip="Open in Files">
-                          {fileOf(f)}
-                        </button>
-                        <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
-                        <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(latest.ci_sensitive ?? []).length > 0 && <CiSensitiveNote files={latest.ci_sensitive ?? []} />}
-                <div className="change-f">
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    Accepted, they're pushed to {latest.branch ? <code>{latest.branch}</code> : "a new branch"} and the pull request is opened or updated.
-                  </span>
-                  <span className="sp" />
-                  {latest.can_stop && !latest.can_decide && (
-                    <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
-                      Discard
-                    </button>
-                  )}
-                  {latest.can_decide && (
-                    <>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
-                      >
-                        Discard
-                      </button>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
-                      >
-                        <Ic n="check" s={13} />
-                        Accept and push
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-            {pushed?.ci_state && <CiCard turn={pushed} scope={scope} canFix={!busy && !follow.isPending} onFix={(message) => follow.mutate(message)} />}
-            {(latest?.status === "running" || latest?.status === "queued") && (
-              <div className="row" style={{ gap: 8 }}>
-                <span className="chat-typing">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className="muted" style={{ fontSize: 12.5 }}>
-                  {latest.status === "queued" ? `${kai} starts soon` : `${kai} is working`}
-                </span>
-              </div>
-            )}
-            {latest?.status === "recovery_required" && (
-              <div className="change" role="status">
-                <div className="change-h">
-                  <Ic n="shield-check" s={14} />
-                  <b style={{ fontWeight: 500 }}>This turn was cut off before it finished</b>
-                </div>
-                <div className="change-f">
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    {latest.error || "Check GitHub to see what it published before another turn."}
-                  </span>
-                  <span className="sp" />
-                  {latest.can_recover && (
-                    <>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={recover.isPending}
-                        onClick={() => recover.mutate({ runId: latest.id, action: "discard" })}
-                      >
-                        Discard
-                      </button>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={recover.isPending}
-                        onClick={() => recover.mutate({ runId: latest.id, action: "check" })}
-                      >
-                        <Ic n="refresh-cw" s={12} />
-                        Check and recover
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="chat-input kt-input">
-          <label>
-            Mode{" "}
-            <select aria-label="Follow-up mode" disabled={busy} value={codingMode} onChange={(e) => setCodingMode(e.target.value as "plan" | "build")}>
-              <option value="build">Build</option>
-              <option value="plan" disabled={latest?.location === "local"}>
-                Plan (read only)
-              </option>
-            </select>
-          </label>
-          <div className={`kt-box ${busy ? "off" : ""}`}>
-            <textarea
-              ref={box}
-              rows={1}
-              placeholder={
-                cs.state === "closed"
-                  ? "This session is closed"
-                  : cs.status === "recovery_required"
-                    ? "Recover the previous turn before continuing"
-                    : busy
-                      ? "A turn is waiting or working…"
-                      : `Ask ${kai} for a follow-up on the same branch`
-              }
-              value={ask}
-              disabled={busy}
-              onChange={(e) => setAsk(e.target.value)}
-              aria-label="Follow-up"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
-            {latest?.can_stop && (latest.status === "running" || latest.status === "queued") ? (
-              <button
-                type="button"
-                className="kt-send kt-stop"
-                disabled={stop.isPending}
-                onClick={() => stop.mutate(latest.id)}
-                aria-label="Stop coding turn"
-                data-tip="Stop this turn"
-              >
-                <Ic n="square" s={12} />
-              </button>
-            ) : (
-              <button className="kt-send" disabled={busy || !ask.trim() || follow.isPending} onClick={send} aria-label="Send" data-tip="Send">
-                <Ic n="arrow-up" s={15} />
-              </button>
-            )}
-          </div>
-          <div className="kt-foot">
-            <span>{sessionModel(latest?.model)}</span>
-            <span>{modeName(latest?.approval_mode)}</span>
-            <span className="sp" />
-            {cs.location !== "local" && cs.sandbox && (
-              <span
-                className={`sd-state ${cs.sandbox}`}
-                data-tip={
-                  cs.sandbox === "warm"
-                    ? "Sandbox ready"
-                    : cs.sandbox === "asleep"
-                      ? "Sandbox asleep: it wakes on the next turn"
-                      : "No sandbox: the next turn starts one"
-                }
-                aria-label={`Sandbox ${cs.sandbox}`}
+        <ChatLayout
+          className="dotrix-chat-layout"
+          density={S.prefs.density === "compact" ? "compact" : "balanced"}
+          composer={
+            <div className="chat-input kt-input">
+              <Selector
+                label="Follow-up mode"
+                value={codingMode}
+                isDisabled={busy}
+                onChange={(value) => setCodingMode(value as "plan" | "build")}
+                options={[
+                  { value: "build", label: "Build" },
+                  { value: "plan", label: "Plan (read only)", isDisabled: latest?.location === "local" },
+                ]}
               />
-            )}
-          </div>
-        </div>
+              <ChatComposer
+                className="dotrix-composer"
+                value={ask}
+                isDisabled={busy}
+                onSubmit={send}
+                input={
+                  <DesignTextarea
+                    ref={box}
+                    rows={1}
+                    placeholder={
+                      cs.state === "closed"
+                        ? "This session is closed"
+                        : cs.status === "recovery_required"
+                          ? "Recover the previous turn before continuing"
+                          : busy
+                            ? "A turn is waiting or working…"
+                            : `Ask ${kai} for a follow-up on the same branch`
+                    }
+                    value={ask}
+                    disabled={busy}
+                    onChange={(e) => setAsk(e.target.value)}
+                    aria-label="Follow-up"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        send();
+                      }
+                    }}
+                  />
+                }
+                sendButton={
+                  latest?.can_stop && (latest.status === "running" || latest.status === "queued") ? (
+                    <ChatSendButton isStopShown isDisabled={stop.isPending} onStop={() => stop.mutate(latest.id)} aria-label="Stop coding turn" />
+                  ) : (
+                    <ChatSendButton isDisabled={busy || !ask.trim() || follow.isPending} onSend={send} />
+                  )
+                }
+              />
+              <div className="kt-foot">
+                <span>{sessionModel(latest?.model)}</span>
+                <span>{modeName(latest?.approval_mode)}</span>
+                <span className="sp" />
+                {cs.location !== "local" && cs.sandbox && (
+                  <span
+                    className={`sd-state ${cs.sandbox}`}
+                    data-tip={
+                      cs.sandbox === "warm"
+                        ? "Sandbox ready"
+                        : cs.sandbox === "asleep"
+                          ? "Sandbox asleep: it wakes on the next turn"
+                          : "No sandbox: the next turn starts one"
+                    }
+                    aria-label={`Sandbox ${cs.sandbox}`}
+                  />
+                )}
+              </div>
+            </div>
+          }
+        >
+          <ChatMessageList>
+            <div className="chat-col kt-col">
+              {turns.map((turn) => (
+                <Fragment key={turn.id}>
+                  <KaiTurn
+                    turn={turn}
+                    issueTitle={cs.issue_title}
+                    busy={busy}
+                    revert={revert}
+                    onPath={openPath}
+                    onChanges={openChanges}
+                    onShot={(src, name) => setShot({ src, name })}
+                    shotSrc={shotSrc}
+                  />
+                  <BackgroundTasks scope={scope} run={turn} />
+                </Fragment>
+              ))}
+              {latest?.plan_result && (
+                <div className="change" aria-label="Kai's saved plan">
+                  <h3>{String(latest.plan_result.title ?? "Implementation plan")}</h3>
+                  <p>{String(latest.plan_result.summary ?? "")}</p>
+                  <ol>
+                    {(Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks : []).map((task, index) => (
+                      <li key={index}>
+                        <b>{String(task.title)}</b>
+                        <p>{String(task.detail ?? "")}</p>
+                      </li>
+                    ))}
+                  </ol>
+                  <TraceList
+                    title="Acceptance criteria"
+                    items={Array.isArray(latest.plan_result.acceptance_criteria) ? latest.plan_result.acceptance_criteria.map(String) : []}
+                    icon="check-square"
+                  />
+                  <TraceList
+                    title="Open questions"
+                    items={Array.isArray(latest.plan_result.open_questions) ? latest.plan_result.open_questions.map(String) : []}
+                    icon="question"
+                  />
+                  <ActionButton
+                    className="btn btn-primary"
+                    disabled={busy || follow.isPending}
+                    onClick={() =>
+                      follow.mutate({
+                        message: "Build the selected plan",
+                        work_mode: "build",
+                        source_plan_id: latest.id,
+                      })
+                    }
+                  >
+                    Build this plan
+                  </ActionButton>
+                </div>
+              )}
+              {latest?.status === "awaiting_approval" && (
+                <div className="change">
+                  <div className="change-h">
+                    <Ic n="shield-check" s={14} />
+                    <b style={{ fontWeight: 500 }}>Waiting for someone who may approve agent changes</b>
+                  </div>
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      It works on its own branch and opens a pull request; a person merges.
+                    </span>
+                    <span className="sp" />
+                    {latest.can_decide && (
+                      <>
+                        <ActionButton
+                          className="btn btn-sm btn-secondary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                        >
+                          Reject
+                        </ActionButton>
+                        <ActionButton
+                          className="btn btn-sm btn-primary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                        >
+                          <Ic n="check" s={13} />
+                          Approve
+                        </ActionButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {latest?.status === "changes_ready" && (
+                <div className="change" role="group" aria-label="Changes waiting to be accepted">
+                  <div className="change-h">
+                    <Ic n="shield-check" s={14} />
+                    <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
+                    <span className="sp" />
+                    <LineCounts files={latest.files_changed} onClick={() => openChanges(latest.id)} tip="Open the changes" />
+                  </div>
+                  {latest.files_changed.length > 0 && (
+                    <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+                      {latest.files_changed.map((f) => (
+                        <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
+                          <button className="path-link trunc grow" onClick={() => openPath(fileOf(f), latest.id)} data-tip="Open in Files">
+                            {fileOf(f)}
+                          </button>
+                          <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
+                          <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(latest.ci_sensitive ?? []).length > 0 && <CiSensitiveNote files={latest.ci_sensitive ?? []} />}
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      Accepted, they're pushed to {latest.branch ? <InlineCode>{latest.branch}</InlineCode> : "a new branch"} and the pull request is opened or
+                      updated.
+                    </span>
+                    <span className="sp" />
+                    {latest.can_stop && !latest.can_decide && (
+                      <ActionButton className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+                        Discard
+                      </ActionButton>
+                    )}
+                    {latest.can_decide && (
+                      <>
+                        <ActionButton
+                          className="btn btn-sm btn-secondary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                        >
+                          Discard
+                        </ActionButton>
+                        <ActionButton
+                          className="btn btn-sm btn-primary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                        >
+                          <Ic n="check" s={13} />
+                          Accept and push
+                        </ActionButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {pushed?.ci_state && <CiCard turn={pushed} scope={scope} canFix={!busy && !follow.isPending} onFix={(message) => follow.mutate(message)} />}
+              {(latest?.status === "running" || latest?.status === "queued") && (
+                <div className="row" style={{ gap: 8 }}>
+                  <span className="chat-typing">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span className="muted" style={{ fontSize: 12.5 }}>
+                    {latest.status === "queued" ? `${kai} starts soon` : `${kai} is working`}
+                  </span>
+                </div>
+              )}
+              {latest?.status === "recovery_required" && (
+                <div className="change" role="status">
+                  <div className="change-h">
+                    <Ic n="shield-check" s={14} />
+                    <b style={{ fontWeight: 500 }}>This turn was cut off before it finished</b>
+                  </div>
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      {latest.error || "Check GitHub to see what it published before another turn."}
+                    </span>
+                    <span className="sp" />
+                    {latest.can_recover && (
+                      <>
+                        <ActionButton
+                          className="btn btn-sm btn-secondary"
+                          disabled={recover.isPending}
+                          onClick={() => recover.mutate({ runId: latest.id, action: "discard" })}
+                        >
+                          Discard
+                        </ActionButton>
+                        <ActionButton
+                          className="btn btn-sm btn-primary"
+                          disabled={recover.isPending}
+                          onClick={() => recover.mutate({ runId: latest.id, action: "check" })}
+                        >
+                          <Ic n="refresh-cw" s={12} />
+                          Check and recover
+                        </ActionButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </ChatMessageList>
+        </ChatLayout>
       </div>
       {panes.length > 0 && (
         <CodingPanes
@@ -2575,19 +2606,19 @@ export const Pending = ({
       {loading && <DotsLoader px={44} />}
       <span>{text}</span>
       {onRetry && (
-        <button className="btn btn-secondary btn-sm" onClick={onRetry}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={onRetry}>
           Try again
-        </button>
+        </ActionButton>
       )}
       {inbox && (
-        <button className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
           Open Inbox
-        </button>
+        </ActionButton>
       )}
       {!loading && (
-        <button className="btn btn-ghost btn-sm" onClick={back[1]}>
+        <ActionButton className="btn btn-ghost btn-sm" onClick={back[1]}>
           {back[0]}
-        </button>
+        </ActionButton>
       )}
     </div>
   </div>
@@ -2661,32 +2692,32 @@ function Conversations({ search }: { search: URLSearchParams }) {
         <aside className={`chat-side ${listMin ? "min" : ""}`}>
           {listMin ? (
             <div className="chat-rail">
-              <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
+              <ActionButton className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
                 <Ic n="sidebar-simple" s={18} />
-              </button>
-              <button className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
+              </ActionButton>
+              <ActionButton className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
                 <Ic n="square-pen" s={16} />
-              </button>
+              </ActionButton>
             </div>
           ) : (
             <>
-              <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
+              <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={220} max={480} onResize={setListW} />
               <div style={{ padding: "18px 16px 8px" }} className="row">
                 <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
                 <span className="sp" />
-                <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">
+                <ActionButton className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">
                   <Ic n="panel-left-close" s={15} />
-                </button>
+                </ActionButton>
               </div>
               <div className="chat-new">
-                <button className="btn btn-secondary" onClick={() => open("new=1")}>
+                <ActionButton className="btn btn-secondary" onClick={() => open("new=1")}>
                   <Ic n="square-pen" s={14} /> New chat
-                </button>
+                </ActionButton>
               </div>
               <div style={{ padding: "0 14px 8px" }}>
                 <div className="inwrap">
                   <Ic n="search" s={13} />
-                  <input
+                  <DesignInput
                     className="input search-sm"
                     style={{ width: "100%" }}
                     placeholder="Find a conversation"

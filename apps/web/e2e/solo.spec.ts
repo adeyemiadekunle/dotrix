@@ -24,16 +24,16 @@ test("in a personal workspace every task is yours: Tasks lists unassigned work a
 
   await page.goto(`/w/${slug}`);
   const nav = page.getByRole("navigation", { name: "Main", exact: true });
-  await expect(nav.getByRole("button", { name: /^Tasks/ })).toBeVisible();
-  await expect(nav.getByRole("button", { name: /^My Tasks/ })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: /^Tasks/ })).toBeVisible();
+  await expect(nav.getByRole("link", { name: /^My Tasks/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-  await expect(page.getByRole("tabpanel").getByText("Unassigned groundwork")).toBeVisible();
+  await expect(page.getByRole("tabpanel").getByText("Unassigned groundwork", { exact: true })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Team" })).toHaveCount(0);
   await expect(page.getByText(/assigned to you/)).toHaveCount(0);
 
-  await nav.getByRole("button", { name: /^Tasks/ }).click();
+  await nav.getByRole("link", { name: /^Tasks/ }).click();
   await expect(page.locator("#main-content h1").first()).toHaveText("Tasks");
-  await expect(page.getByText("Unassigned groundwork")).toBeVisible();
+  await expect(page.getByText("Unassigned groundwork", { exact: true })).toBeVisible();
 
   // A project has no members to show, add or share with, and no lead to pick.
   await page.goto(`/w/${slug}/p/SOLO/overview`);

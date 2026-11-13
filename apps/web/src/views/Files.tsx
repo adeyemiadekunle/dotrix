@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // A project's uploaded files, under Knowledge: search, type, sort, grid or list, drop to upload.
 // Documents are also converted to Markdown into the project's knowledge, for the agents.
 import type { CSSProperties, ReactNode } from "react";
@@ -33,7 +35,7 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
         {lead}
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input
+          <DesignInput
             className="input search-sm"
             placeholder="Search files"
             value={u.fileQ}
@@ -150,13 +152,13 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
                     {f.size} · {mem(f.by)?.name.split(" ")[0]} · {ago(f.at)}
                   </span>
                 </div>
-                <button
+                <ActionButton
                   className="ibtn ibtn-xs more"
                   onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id }))}
                   aria-label="File options"
                 >
                   <Ic n="ellipsis" s={13} />
-                </button>
+                </ActionButton>
               </div>
             ))}
           </div>
@@ -206,9 +208,13 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
                       {ago(f.at)}
                     </td>
                     <td>
-                      <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id })} aria-label="File options">
+                      <ActionButton
+                        className="ibtn ibtn-sm"
+                        onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id })}
+                        aria-label="File options"
+                      >
                         <Ic n="ellipsis" s={14} />
-                      </button>
+                      </ActionButton>
                     </td>
                   </tr>
                 ))}

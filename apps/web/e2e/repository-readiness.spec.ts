@@ -68,6 +68,6 @@ test("an empty repository gives a prerequisite and a fresh check unlocks an edit
   expect(checks).toBe(4);
   await starter.click();
   await expect(page.getByRole("button", { name: "Mode: Plan", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Message", { exact: true })).toHaveValue(/Plan the first useful implementation/);
+  await expect(page.getByLabel("Message", { exact: true })).toHaveText(/Plan the first useful implementation/);
   expect(agentCalls).toEqual([]);
 });

@@ -1,20 +1,66 @@
-import * as React from "react";
-import { cn } from "@dotrix/ui/lib/utils";
+import { useState, type ComponentProps } from "react";
+import { TextInput, type TextInputType } from "@astryxdesign/core/TextInput";
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+export function Input({
+  className,
+  type = "text",
+  onChange,
+  disabled,
+  readOnly,
+  required,
+  autoFocus,
+  name,
+  size: _size,
+  autoCapitalize,
+  style,
+  value,
+  defaultValue,
+  ...props
+}: ComponentProps<"input">) {
+  const [draft, setDraft] = useState(String(defaultValue ?? ""));
+  // File/date/number inputs retain the browser's native value and validation contract.
+  if (!["text", "email", "password", "search", "tel", "url"].includes(type))
+    return (
+      <input
+        {...props}
+        className={className ? `input ${className}` : "input"}
+        type={type}
+        value={value}
+        defaultValue={defaultValue}
+        onChange={onChange}
+        disabled={disabled}
+        readOnly={readOnly}
+        required={required}
+        autoFocus={autoFocus}
+        name={name}
+        style={style}
+      />
+    );
   return (
-    <input
-      type={type}
-      data-slot="input"
-      className={cn(
-        // Text field (design.css .input).
-        "input min-w-0 file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-[12.5px] file:font-medium",
-        "aria-invalid:border-destructive aria-invalid:shadow-[0_0_0_3px_var(--red-soft)]",
-        className,
-      )}
+    <TextInput
       {...props}
+      data-dotrix-control
+      value={value === undefined ? draft : String(value)}
+      type={type as TextInputType}
+      label={props["aria-label"] ?? props.placeholder ?? name ?? "Text"}
+      isLabelHidden
+      htmlName={name}
+      isDisabled={disabled}
+      isReadOnly={readOnly}
+      isRequired={required}
+      hasAutoFocus={autoFocus}
+      autoCapitalize={
+        autoCapitalize === "characters" ? "characters" : autoCapitalize === "words" ? "words" : autoCapitalize === "sentences" ? "sentences" : "none"
+      }
+      onChange={(next, event) => {
+        if (value === undefined) setDraft(next);
+        onChange?.(event);
+      }}
+      containerStyle={style}
+      controlClassName={className
+        ?.split(/\s+/)
+        .filter((c) => c !== "input")
+        .join(" ")}
     />
   );
 }
-
-export { Input };

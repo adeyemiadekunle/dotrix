@@ -1,3 +1,6 @@
+import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // The console's pages: Overview (is it working), Runs, Failures, Coding, Workspaces, Audit log.
 // Everything is read-only, across every workspace, and never shows what people wrote.
 import {
@@ -801,7 +804,7 @@ export function WorkspacesPage() {
   return (
     <>
       <PageHead title="Workspaces" sub="Workspaces by how much they used dotrix: runs, failures, tokens and coding cost. Click a heading to sort.">
-        <input
+        <DesignInput
           className="input"
           type="search"
           placeholder="Find a workspace"
@@ -885,14 +888,14 @@ export function AuditPage() {
   return (
     <>
       <PageHead title="Audit log" sub="What happened, by whom and in which workspace. Details stay in the workspace: they can carry what people wrote.">
-        <input
+        <DesignInput
           className="input mono"
           placeholder="Action starts with…"
           value={action}
           onChange={(e) => filter(setAction)(e.target.value.trim())}
           aria-label="Filter by action"
         />
-        <input
+        <DesignInput
           className="input mono"
           placeholder="Workspace slug"
           value={workspace}
@@ -905,8 +908,15 @@ export function AuditPage() {
           <option value="agent">Agents</option>
           <option value="system">System</option>
         </select>
-        <input className="input" type="date" value={since} max={until || undefined} onChange={(e) => filter(setSince)(e.target.value)} aria-label="From date" />
-        <input
+        <DesignInput
+          className="input"
+          type="date"
+          value={since}
+          max={until || undefined}
+          onChange={(e) => filter(setSince)(e.target.value)}
+          aria-label="From date"
+        />
+        <DesignInput
           className="input"
           type="date"
           value={until}
@@ -1000,7 +1010,7 @@ export function AdminsPage({ meId }: { meId: string }) {
             invite.mutate();
           }}
         >
-          <input
+          <DesignInput
             className="input"
             type="email"
             placeholder="Email address"
@@ -1013,9 +1023,9 @@ export function AdminsPage({ meId }: { meId: string }) {
             <option value="viewer">Viewer: reads only</option>
             <option value="owner">Owner: manages admins</option>
           </select>
-          <button type="submit" className="btn btn-primary" disabled={invite.isPending}>
+          <ActionButton type="submit" className="btn btn-primary" disabled={invite.isPending}>
             {invite.isPending ? "Inviting…" : "Send invite"}
-          </button>
+          </ActionButton>
         </form>
         {made && (
           <p className="ad-note" role="status">
@@ -1023,7 +1033,7 @@ export function AdminsPage({ meId }: { meId: string }) {
             {made.link_path && (
               <>
                 {" "}
-                <code className="mono">{`${location.origin}${made.link_path}`}</code>
+                <InlineCode className="mono">{`${location.origin}${made.link_path}`}</InlineCode>
               </>
             )}
           </p>
@@ -1217,7 +1227,7 @@ export function TrailPage() {
   return (
     <>
       <PageHead title="Admin activity" sub="Who signed in to this console, who failed to, and what changed on admin accounts. Never passwords or links.">
-        <input
+        <DesignInput
           className="input mono"
           placeholder="Action starts with…"
           value={action}

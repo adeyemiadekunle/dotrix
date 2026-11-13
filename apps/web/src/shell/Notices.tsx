@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Corner notices (after Orbit's): only what needs a person, with the action in the notice. An
 // agent's changes waiting for approval, a plan to steer, a coding turn waiting to start or with
 // checked changes to push, or one that couldn't finish. On Home only (elsewhere they'd cover the
@@ -214,17 +215,17 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
               done={() => shut(n.key)}
             />
           ) : n.act ? (
-            <button className="btn btn-sm btn-primary" onClick={n.act.run}>
+            <ActionButton className="btn btn-sm btn-primary" onClick={n.act.run}>
               {n.act.label}
-            </button>
+            </ActionButton>
           ) : (
-            <button className="btn btn-sm btn-secondary" onClick={n.open}>
+            <ActionButton className="btn btn-sm btn-secondary" onClick={n.open}>
               Open
-            </button>
+            </ActionButton>
           )}
-          <button className="ibtn ibtn-xs" onClick={() => shut(n.key)} aria-label={`Close the notice from ${n.name}`}>
+          <ActionButton className="ibtn ibtn-xs" onClick={() => shut(n.key)} aria-label={`Close the notice from ${n.name}`}>
             <Ic n="x" s={13} />
-          </button>
+          </ActionButton>
         </div>
       ))}
     </div>
@@ -242,12 +243,12 @@ function Decide({ approve, reject, done }: { approve: () => Promise<boolean>; re
   };
   return (
     <>
-      <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => run(reject)}>
+      <ActionButton className="btn btn-sm btn-secondary" disabled={busy} onClick={() => run(reject)}>
         Reject
-      </button>
-      <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(approve)}>
+      </ActionButton>
+      <ActionButton className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(approve)}>
         Approve
-      </button>
+      </ActionButton>
     </>
   );
 }
@@ -269,9 +270,9 @@ function CodingNoticeActions({
   const r = useCodingRun({ workspaceId, projectId }, runId).data;
   if (!r || !(r.status === "awaiting_approval" || r.status === "changes_ready") || !r.can_decide)
     return (
-      <button className="btn btn-sm btn-secondary" onClick={open}>
+      <ActionButton className="btn btn-sm btn-secondary" onClick={open}>
         Open
-      </button>
+      </ActionButton>
     );
   return <Decide approve={() => codingRunDecided(projectId, runId, true)} reject={() => codingRunDecided(projectId, runId, false)} done={done} />;
 }
@@ -294,9 +295,9 @@ function ChangeNoticeActions({
   const pending = (approvals.data ?? []).filter((a) => a.run_id === runId && a.status === "pending");
   if (!pending.length)
     return (
-      <button className="btn btn-sm btn-secondary" onClick={open}>
+      <ActionButton className="btn btn-sm btn-secondary" onClick={open}>
         Open
-      </button>
+      </ActionButton>
     );
   return <Decide approve={() => runChangesDecided(projectId, runId, true)} reject={() => runChangesDecided(projectId, runId, false)} done={done} />;
 }

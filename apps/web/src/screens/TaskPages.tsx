@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Task pages: the same views over every project you can see.
 import { Ic } from "../core/icons";
 import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from "../core/more";
@@ -88,10 +89,10 @@ export function MyTasks() {
           </p>
         </div>
         <div className="acts">
-          <button className="btn btn-primary" onClick={() => newTask({ assignee: D().me })}>
+          <ActionButton className="btn btn-primary" onClick={() => newTask({ assignee: D().me })}>
             <Ic n="plus" s={14} />
             New task
-          </button>
+          </ActionButton>
         </div>
       </div>
       <div className="tabs" style={{ margin: "0 24px 10px" }}>
@@ -189,11 +190,11 @@ function Archived() {
                 <span className="faint hide-m" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
                   {at ? "Archived " + ago(at) : "Archived"}
                 </span>
-                <button className="btn btn-secondary btn-sm" onClick={() => restoreTask(t.id)}>
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => restoreTask(t.id)}>
                   <Ic n="rotate-ccw" s={13} />
                   Restore
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   className="ibtn ibtn-sm"
                   onClick={() => purgeTask(t.id)}
                   data-tip="Delete permanently"
@@ -201,7 +202,7 @@ function Archived() {
                   style={{ color: "var(--red)" }}
                 >
                   <Ic n="trash-2" s={15} />
-                </button>
+                </ActionButton>
               </div>
             );
           })}

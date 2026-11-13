@@ -44,11 +44,12 @@ test("approve a coding run from the Inbox", async ({ page }) => {
 
 test("the command palette finds an agent and opens Chat with it", async ({ page }) => {
   await page.goto("/w/dotrix");
+  await expect(page.getByRole("button", { name: "Search and commands", exact: true })).toBeVisible();
   await page.keyboard.press("Control+k");
   await page.getByRole("dialog", { name: "Command menu" }).getByRole("combobox").fill("research");
   await page.getByRole("option", { name: /Vega/ }).click();
   await expect(page).toHaveURL(/\/chat\?new=1&agent=research/);
-  await expect(page.getByRole("button", { name: "Project and mode" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Project and mode" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
 });
 
@@ -88,8 +89,11 @@ test("a conversation stopped at its model's limit offers to continue from the In
 
 test("a project's files live under Knowledge, and old Files links open them there", async ({ page }) => {
   await page.goto("/w/dotrix/p/WEB/files");
-  await expect(page.getByRole("tab", { name: /^Files/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("navigation", { name: "Knowledge", exact: true }).getByRole("button", { name: /^Files/ })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
   await expect(page.getByPlaceholder("Search files")).toBeVisible();
-  await page.getByRole("tab", { name: "Documents" }).click();
+  await page.getByRole("navigation", { name: "Knowledge", exact: true }).getByRole("button", { name: "Documents", exact: true }).click();
   await expect(page.getByPlaceholder("Find a document")).toBeVisible();
 });

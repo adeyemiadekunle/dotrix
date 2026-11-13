@@ -18,10 +18,21 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Load the workspace and its heavy Chat, Codes, Settings, Inbox and Project screens on demand, reducing the initial web JavaScript by 45% gzipped. Add a reproducible browser benchmark for route loading and transferred scripts.
+
+- Inline code across the workspace and admin uses Astryx Code while retaining file-path actions; fenced code uses Astryx CodeBlock. Added code, clipboard, file/diff, theme and mobile-pane regression checks.
+
+- Adopted Astryx 0.7.15 across the workspace, Chat/Codes, forms and overlays, authentication, admin and public site, with the paper/ink website theme, self-hosted Figtree, preserved saved preferences and matching email colors.
+- Added accessible composer suggestions, searchable selectors, setup progress, document outlines, coding file navigation, screenshot lightboxes and keyboard-resizable panes; documented every published Astryx component and deferred capability.
+
 - Consolidated product, release-readiness and agent design documentation into two current guides, replacing obsolete proposals and updating navigation.
 - Kai's coding engines are updated: Claude Code 2.1.323, Codex 0.169.0, OpenCode 2.3.0, and the browser's Playwright MCP 0.0.85.
 
 ### Fixed
+
+- Preserve the Astryx palette in Firefox ESR without CSS scope support through generated root-theme compatibility CSS.
+
+- Member-permission toggles use Astryx Switch without the legacy CSS overlay, keeping pointer and keyboard changes available.
 
 - When the platform refuses an agent's tool call (Plan mode allowing only read-only specialist tasks, wrong arguments, a permission it doesn't have), the agent is told why and carries on, instead of seeing "Tool failed." on fx or ending the whole run on DeepAgents.
 - Stopping a coding turn now also ends what Kai started during it, such as a test run or dev server, instead of leaving those processes running in the sandbox.
@@ -35,8 +46,6 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - Local coding (dotrix runner and the desktop app) no longer runs a repository's own Claude Code hooks, permission rules, plugins or MCP servers. Without Docker Sandboxes, Claude Code there gets only its file tools (no shell commands) and none of the repository's CLAUDE.md or skills.
 - A cloud coding turn whose changes or summary contain your model key, as written or base64-encoded, is refused before anything is committed or pushed.
-
-### Security
 
 - Kai on Codex no longer takes a repository's AGENTS.md as instructions, and no longer applies a repository's own Codex settings (.codex/config.toml).
 

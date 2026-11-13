@@ -4,10 +4,10 @@ test("new chat is visible and preserves the full approval mode", async ({ page }
   await page.goto("/w/dotrix/chat");
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page).toHaveURL(/\/chat\?new=1$/);
-  await page.getByRole("option", { name: "Website Redesign", exact: true }).click();
-  const approval = page.getByRole("button", { name: "Approvals: Manual" });
+  await page.getByRole("radio", { name: "Website Redesign", exact: true }).check();
+  const approval = page.getByRole("combobox", { name: "Approvals" });
   await expect(approval).toBeVisible();
-  expect(await approval.locator("span").evaluate((el) => el.clientWidth >= el.scrollWidth)).toBe(true);
+  expect(await approval.evaluate((el) => el.clientWidth >= el.scrollWidth)).toBe(true);
   await page.getByRole("button", { name: "Hide the list" }).click();
   await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
 });
@@ -23,13 +23,13 @@ test("mobile Home keeps decisions and notices visible, and keyboard navigation w
   await expect(decision).toBeVisible();
   expect((await notice.boundingBox())!.y + (await notice.boundingBox())!.height).toBeLessThanOrEqual((await heading.boundingBox())!.y);
   expect((await decision.boundingBox())!.y).toBeLessThan((await stats.boundingBox())!.y);
-  await expect(page.locator("nav.side")).toHaveAttribute("inert", "");
+  await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeHidden();
   const opener = page.getByRole("button", { name: "Open navigation" });
   await opener.click();
-  await expect(page.getByRole("button", { name: "Close menu" })).toBeFocused();
+  await expect.poll(() => page.getByRole("dialog").evaluate((el) => el.contains(document.activeElement))).toBe(true);
   await page.keyboard.press("Escape");
   await expect(opener).toBeFocused();
-  await expect(page.locator("nav.side")).toHaveAttribute("inert", "");
+  await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeHidden();
   const upcoming = page.getByRole("tab", { name: /Upcoming/ });
   await upcoming.focus();
   await page.keyboard.press("ArrowRight");
@@ -39,7 +39,7 @@ test("mobile Home keeps decisions and notices visible, and keyboard navigation w
   await expect(page).toHaveURL(/\/inbox\?n=na1/);
   await page.goto("/w/dotrix/chat");
   await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await expect(page.getByLabel("Message")).toBeVisible();
+  await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Back to conversations" }).click();
   await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
 });
@@ -51,7 +51,7 @@ test("demo decisions open Inbox details and their sample conversations are reada
   await expect(page.getByText("requirements/navigation.md").first()).toBeVisible();
   await page.goto("/w/dotrix/chat?thread=th1");
   await expect(page.getByText("Sample conversation · Sign in to work with Nova.")).toBeVisible();
-  await expect(page.locator(".chat-msg.agent").first()).toBeVisible();
+  await expect(page.locator(".dotrix-message").first()).toBeVisible();
   await page.goto("/w/dotrix/inbox?tab=needs");
   await expect(page).toHaveURL(/\/inbox\?tab=needs/);
   const needs = page.getByRole("tab", { name: /Needs you/ });

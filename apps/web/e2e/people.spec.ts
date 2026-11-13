@@ -19,17 +19,17 @@ test("a personal workspace stays private and a separate organisation invites", a
   await page.goto(`/w/${slugOf(page)}/members`);
   await page.getByRole("button", { name: "Invite member" }).click();
   const email = newUser().email;
-  await page.getByLabel("Email addresses").fill(email);
+  await page.getByLabel("Email addresses", { exact: true }).fill(email);
   await page.getByRole("button", { name: "Send invites" }).click();
-  await expect(page.getByText("1 invitation sent")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("1 invitation sent")).toBeVisible();
   const row = page.locator("tr", { hasText: email });
   await expect(row.getByText("Invited")).toBeVisible();
 
   // Revoking it: gone from the list, and still gone after a reload.
-  await row.getByLabel("Member options").click();
+  await row.getByLabel("Member options", { exact: true }).click();
   await page.locator(".mi", { hasText: "Revoke invite" }).click();
-  await page.locator(".modal").getByRole("button", { name: "Revoke invite" }).click();
-  await expect(page.getByText(`Revoked the invite to ${email}`)).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Revoke invite" }).click();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(`Revoked the invite to ${email}`)).toBeVisible();
   await page.reload();
   await expect(page.getByText(email)).toHaveCount(0);
 });
@@ -57,7 +57,7 @@ test("join by link, see a restricted project once added, then become the owner; 
   await page.goto(`/w/${slug}/members`);
   await page.getByRole("button", { name: "Invite member" }).click();
   await page.getByRole("button", { name: "Copy invite link" }).click();
-  await expect(page.getByText(/Invite link copied/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(/Invite link copied/)).toBeVisible();
   const link = await page.evaluate(() => navigator.clipboard.readText());
   expect(link).toContain("/invites/accept");
 
@@ -88,30 +88,30 @@ test("join by link, see a restricted project once added, then become the owner; 
   await page.getByRole("button", { name: "Share" }).click();
   // Added people only count once the project is restricted on the server: wait for that save.
   const restricted = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/projects\/[^/]+$/.test(new URL(r.url()).pathname));
-  await page.getByLabel("General access").selectOption("private");
+  await page.getByLabel("General access", { exact: true }).selectOption("private");
   expect((await restricted).status()).toBe(200);
   await expect(page.getByText("Owners, admins, and the people added")).toBeVisible();
   await page.getByPlaceholder(/Add people/).fill("Bob");
-  await page.locator(".modal .mi", { hasText: "Bob Member" }).click();
-  await expect(page.locator(".modal").getByText("Added to this project")).toBeVisible();
+  await page.getByRole("dialog").locator(".mi", { hasText: "Bob Member" }).click();
+  await expect(page.getByRole("dialog").getByText("Added to this project")).toBeVisible();
   await page.keyboard.press("Escape");
 
   // Hand over the workspace.
   await page.goto(`/w/${slug}/members`);
   const row = page.locator("tr", { hasText: "Bob Member" });
-  await row.getByLabel("Member options").click();
+  await row.getByLabel("Member options", { exact: true }).click();
   await page.locator(".mi", { hasText: "Make owner" }).click();
-  await page.locator(".modal").getByRole("button", { name: "Transfer ownership" }).click();
-  await expect(page.getByText("Bob Member owns the workspace now")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Transfer ownership" }).click();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Bob Member owns the workspace now")).toBeVisible();
   await expect(row.getByText("Owner", { exact: true })).toBeVisible();
 
   // Bob, now the owner, removes Ada.
   await bob.goto(`/w/${slug}/members`);
   const ada = bob.locator("tr", { hasText: "Ada Owner" });
-  await ada.getByLabel("Member options").click();
+  await ada.getByLabel("Member options", { exact: true }).click();
   await bob.locator(".mi", { hasText: "Remove from workspace" }).click();
-  await bob.locator(".modal").getByRole("button", { name: "Remove member" }).click();
-  await expect(bob.getByText("Removed Ada Owner")).toBeVisible();
+  await bob.getByRole("dialog").getByRole("button", { name: "Remove member" }).click();
+  await expect(bob.getByRole("region", { name: "Notifications" }).getByText("Removed Ada Owner")).toBeVisible();
   await bob.reload();
   await expect(bob.getByText("Ada Owner")).toHaveCount(0);
   await other.close();
@@ -121,8 +121,8 @@ test("what members can do: an owner grants approving agents' changes", async ({ 
   await signUp(page);
   await createOrganisation(page);
   await page.goto(`/w/${slugOf(page)}/settings/permissions`);
-  await page.getByLabel("Approve agents' changes").check();
+  await page.getByLabel("Approve agents' changes", { exact: true }).check();
   await page.reload();
-  await expect(page.getByLabel("Approve agents' changes")).toBeChecked();
-  await expect(page.getByLabel("Edit documents")).not.toBeChecked();
+  await expect(page.getByLabel("Approve agents' changes", { exact: true })).toBeChecked();
+  await expect(page.getByLabel("Edit documents", { exact: true })).not.toBeChecked();
 });

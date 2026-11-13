@@ -1,3 +1,4 @@
+import { MetadataList, MetadataListItem } from "@dotrix/ui/astryx";
 // A coding session's details, as Claude Code's session column shows them: where Kai works (cloud sandbox or
 // your computer, the repository and branch), what the turns used, what they made (files and screenshots), and
 // the pull request with its checks. A column beside the session on wide screens; a popover on narrow ones.
@@ -112,17 +113,11 @@ export function SessionDetails({
       </Section>
 
       <Section title="Usage">
-        <div className="sd-usage">
-          <span>
-            <b>{num(tokens)}</b> tokens
-          </span>
-          <span>
-            <b>{cost ? `$${cost.toFixed(2)}` : "—"}</b> on your key
-          </span>
-          <span>
-            <b>{turns.length}</b> turn{turns.length === 1 ? "" : "s"}
-          </span>
-        </div>
+        <MetadataList columns="single">
+          <MetadataListItem label="Tokens">{num(tokens)}</MetadataListItem>
+          <MetadataListItem label="On your key">{cost ? `$${cost.toFixed(2)}` : "—"}</MetadataListItem>
+          <MetadataListItem label="Turns">{turns.length}</MetadataListItem>
+        </MetadataList>
         <div className="sd-row faint">
           <Ic n="sparkles" s={15} />
           <span className="grow trunc">

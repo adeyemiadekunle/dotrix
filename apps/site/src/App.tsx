@@ -1,3 +1,5 @@
+import { AppShell, TopNav, TopNavItem, Button } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix.cc: what dotrix is, the team, how approvals work, and where to start (the cloud app, the
 // desktop app, or the CLI). Everything here is something dotrix does today.
 import {
@@ -75,29 +77,35 @@ function Section({ id, children, className = "" }: { id?: string; children: Reac
 
 function Nav() {
   return (
-    <header className="nav">
-      <div className="wrap nav-in">
+    <TopNav
+      label="Sections"
+      className="site-navigation"
+      heading={
         <a href="/" className="brand" aria-label="dotrix home">
           <Mark />
           <span>dotrix</span>
         </a>
-        <nav className="nav-links" aria-label="Sections">
-          <a href="#team">Team</a>
-          <a href="#approvals">Approvals</a>
-          <a href="#keys">Your keys</a>
-          <a href="#start">Getting started</a>
-          <a href="#download">Download</a>
-        </nav>
-        <div className="nav-cta">
-          <a href={SIGN_IN} className="btn btn-ghost">
-            Sign in
-          </a>
-          <a href={SIGN_UP} className="btn btn-primary btn-sm">
-            Get started
-          </a>
+      }
+      startContent={
+        <div className="nav-links">
+          {[
+            ["team", "Team"],
+            ["approvals", "Approvals"],
+            ["keys", "Your keys"],
+            ["start", "Getting started"],
+            ["download", "Download"],
+          ].map(([id, label]) => (
+            <TopNavItem key={id} label={label!} href={`#${id}`} />
+          ))}
         </div>
-      </div>
-    </header>
+      }
+      endContent={
+        <div className="nav-cta">
+          <Button label="Sign in" variant="ghost" href={SIGN_IN} />
+          <Button label="Get started" variant="primary" href={SIGN_UP} />
+        </div>
+      }
+    />
   );
 }
 
@@ -214,13 +222,13 @@ function ApprovalCard() {
       <div className="mock-f">
         <span className="muted">Nothing is pushed until someone accepts.</span>
         <span className="grow" />
-        <button type="button" className="btn btn-ghost btn-sm" tabIndex={-1}>
+        <ActionButton type="button" className="btn btn-ghost btn-sm" tabIndex={-1}>
           Discard
-        </button>
-        <button type="button" className="btn btn-light btn-sm" tabIndex={-1}>
+        </ActionButton>
+        <ActionButton type="button" className="btn btn-light btn-sm" tabIndex={-1}>
           <CheckIcon size={14} weight="bold" />
           Accept and push
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -611,9 +619,8 @@ function Footer() {
 
 export function App() {
   return (
-    <>
-      <Nav />
-      <main>
+    <AppShell height="auto" variant="wash" contentPadding={0} topNav={<Nav />} mobileNav={false} className="dotrix-site">
+      <div>
         <Hero />
         <Team />
         <Approvals />
@@ -625,8 +632,8 @@ export function App() {
         <GettingStarted />
         <Download />
         <Final />
-      </main>
+      </div>
       <Footer />
-    </>
+    </AppShell>
   );
 }

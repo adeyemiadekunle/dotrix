@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Home, with dotrix's "Waiting for a decision": what the
 // agents ask you to approve or steer, first in the right column. The workspace's Overview and
 // Activity pages folded into this: its stats, workload, and milestones sit here, and the
@@ -19,7 +20,7 @@ import { STATUSES } from "../core/constants";
 import { MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar, StIcon } from "../ui/helpers";
-import { tabKeys } from "../ui/tabs";
+import { TabList, Tab } from "@dotrix/ui/astryx";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -77,9 +78,9 @@ function DecisionPanel({ waiting }: { waiting: Notif[] }) {
         <h2>Waiting for a decision</h2>
         <span className="badge amber">{waiting.length}</span>
         <div className="acts">
-          <button className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
             View all
-          </button>
+          </ActionButton>
         </div>
       </div>
       <div className="panel-b" style={{ paddingBottom: 6 }}>
@@ -168,21 +169,21 @@ export function Home() {
         </div>
         <div className="acts">
           {canInvite() && !personal && (
-            <button className="btn btn-secondary hide-m" onClick={invite}>
+            <ActionButton className="btn btn-secondary hide-m" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
-            </button>
+            </ActionButton>
           )}
           {allowed("projects:manage") && (
-            <button className="btn btn-secondary hide-m" onClick={newProject}>
+            <ActionButton className="btn btn-secondary hide-m" onClick={newProject}>
               <Ic n="folder-plus" s={14} />
               New project
-            </button>
+            </ActionButton>
           )}
-          <button className="btn btn-primary" onClick={() => newTask()}>
+          <ActionButton className="btn btn-primary" onClick={() => newTask()}>
             <Ic n="plus" s={14} />
             New task
-          </button>
+          </ActionButton>
         </div>
       </div>
       {waiting.length > 0 && (
@@ -232,31 +233,28 @@ export function Home() {
             <div className="panel-h">
               <h2 id="h-mytasks">{personal ? "Tasks" : "My tasks"}</h2>
               <div className="acts">
-                <div className="seg" role="tablist" aria-label={personal ? "Tasks" : "My tasks"} onKeyDown={tabKeys}>
+                <TabList role="tablist" aria-label={personal ? "Tasks" : "My tasks"} value={tab} onChange={(value) => setTab(value as typeof tab)} size="sm">
                   {(
                     [
                       ["upcoming", "Upcoming"],
                       ["overdue", "Overdue"],
                       ["completed", "Completed"],
                     ] as const
-                  ).map(([k, n]) => (
-                    <button
-                      key={k}
-                      id={`home-tab-${k}`}
-                      role="tab"
-                      aria-selected={tab === k}
+                  ).map(([key, label]) => (
+                    <Tab
+                      key={key}
+                      id={`home-tab-${key}`}
+                      value={key}
+                      onFocus={() => setTab(key)}
+                      label={label}
+                      endContent={<span className="faint">{lists[key].length}</span>}
                       aria-controls="home-task-panel"
-                      tabIndex={tab === k ? 0 : -1}
-                      className={tab === k ? "on" : ""}
-                      onClick={() => setTab(k)}
-                    >
-                      {n} <span className="faint">{lists[k].length}</span>
-                    </button>
+                    />
                   ))}
-                </div>
-                <button className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip={`Open ${tasksLabel()}`} aria-label={`Open ${tasksLabel()}`}>
+                </TabList>
+                <ActionButton className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip={`Open ${tasksLabel()}`} aria-label={`Open ${tasksLabel()}`}>
                   <Ic n="arrow-up-right" s={15} />
-                </button>
+                </ActionButton>
               </div>
             </div>
             <div id="home-task-panel" role="tabpanel" aria-labelledby={`home-tab-${tab}`}>
@@ -287,9 +285,9 @@ export function Home() {
             <div className="panel-h">
               <h2>Project progress</h2>
               <div className="acts">
-                <button className="btn btn-sm btn-ghost" onClick={() => go("projects")}>
+                <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("projects")}>
                   All projects
-                </button>
+                </ActionButton>
               </div>
             </div>
             {tableOverflow && (

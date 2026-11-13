@@ -17,7 +17,9 @@ export function applyPrefs() {
   setDateFormat(p.dateFmt);
   r.classList.toggle("dark", effectiveDark());
   r.style.colorScheme = effectiveDark() ? "dark" : "light";
-  if (p.accent === "indigo") r.removeAttribute("data-accent");
+  r.dataset.theme = effectiveDark() ? "dark" : "light";
+  r.dataset.astryxTheme = p.motion === "reduce" ? "dotrix-reduced" : "dotrix";
+  if (p.accent === "astryx") r.removeAttribute("data-accent");
   else r.setAttribute("data-accent", p.accent);
   r.setAttribute("data-side", p.side);
   r.setAttribute("data-density", p.density);

@@ -1,3 +1,6 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { AppShell, SideNav, SideNavItem, TopNav } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix admin: the console for whoever operates dotrix. It has its own accounts and sign-in
 // (/v1/admin/*, never the web app's session) and reads the whole platform's health and use, across
 // every workspace, without what people wrote.
@@ -129,18 +132,25 @@ function Login({ onAuth }: { onAuth: () => void }) {
         {first && (
           <label>
             Name
-            <input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
+            <DesignInput className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
           </label>
         )}
         {first && boot.data?.token_required && (
           <label>
             Setup token
-            <input className="input" type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} required autoComplete="off" />
+            <DesignInput
+              className="input"
+              type="password"
+              value={f.token}
+              onChange={(e) => setF({ ...f, token: e.target.value })}
+              required
+              autoComplete="off"
+            />
           </label>
         )}
         <label>
           Email
-          <input
+          <DesignInput
             className="input"
             type="email"
             value={f.email}
@@ -153,7 +163,7 @@ function Login({ onAuth }: { onAuth: () => void }) {
         <label>
           {first ? "Password (at least 8 characters)" : "Password"}
           <span className="ad-pw">
-            <input
+            <DesignInput
               className="input"
               type={show ? "text" : "password"}
               value={f.password}
@@ -162,14 +172,20 @@ function Login({ onAuth }: { onAuth: () => void }) {
               minLength={first ? 8 : 1}
               autoComplete={first ? "new-password" : "current-password"}
             />
-            <button type="button" className="icon-btn" onClick={() => setShow(!show)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show}>
+            <ActionButton
+              type="button"
+              className="icon-btn"
+              onClick={() => setShow(!show)}
+              aria-label={show ? "Hide password" : "Show password"}
+              aria-pressed={show}
+            >
               {show ? <EyeSlashIcon size={16} /> : <EyeIcon size={16} />}
-            </button>
+            </ActionButton>
           </span>
         </label>
-        <button type="submit" className="btn btn-primary" disabled={auth.isPending}>
+        <ActionButton type="submit" className="btn btn-primary" disabled={auth.isPending}>
           {auth.isPending ? "Signing in…" : first ? "Create and sign in" : "Sign in"}
-        </button>
+        </ActionButton>
         <p className="ad-auth-foot">
           <LockKeyIcon size={13} />
           Sessions last 12 hours.
@@ -218,7 +234,7 @@ function SecondFactor({ challenge, onAuth, onBack }: { challenge: string; onAuth
         )}
         <label>
           {recovery ? "Recovery code" : "Code"}
-          <input
+          <DesignInput
             className="input"
             value={code}
             onChange={(e) => setCode(e.target.value)}
@@ -231,9 +247,9 @@ function SecondFactor({ challenge, onAuth, onBack }: { challenge: string; onAuth
             pattern={recovery ? undefined : "[0-9]{6}"}
           />
         </label>
-        <button type="submit" className="btn btn-primary" disabled={verify.isPending}>
+        <ActionButton type="submit" className="btn btn-primary" disabled={verify.isPending}>
           {verify.isPending ? "Checking…" : "Sign in"}
-        </button>
+        </ActionButton>
         <p className="ad-auth-foot">
           <button
             type="button"
@@ -287,9 +303,9 @@ function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => voi
                 <li key={c}>{c}</li>
               ))}
             </ul>
-            <button type="button" className="btn btn-primary" onClick={onDone}>
+            <ActionButton type="button" className="btn btn-primary" onClick={onDone}>
               I&apos;ve saved these
-            </button>
+            </ActionButton>
           </>
         ) : !start.data ? (
           <>
@@ -300,9 +316,9 @@ function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => voi
                 {start.error.message}
               </p>
             )}
-            <button type="button" className="btn btn-primary" disabled={start.isPending} onClick={() => start.mutate()}>
+            <ActionButton type="button" className="btn btn-primary" disabled={start.isPending} onClick={() => start.mutate()}>
               {start.isPending ? "Starting…" : "Set up an authenticator app"}
-            </button>
+            </ActionButton>
           </>
         ) : (
           <>
@@ -321,7 +337,7 @@ function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => voi
             )}
             <label>
               Code from the app
-              <input
+              <DesignInput
                 className="input"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
@@ -333,9 +349,9 @@ function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => voi
                 pattern="[0-9]{6}"
               />
             </label>
-            <button type="submit" className="btn btn-primary" disabled={confirm.isPending}>
+            <ActionButton type="submit" className="btn btn-primary" disabled={confirm.isPending}>
               {confirm.isPending ? "Checking…" : "Turn on two-factor sign-in"}
-            </button>
+            </ActionButton>
           </>
         )}
         {!confirm.data && (
@@ -417,11 +433,11 @@ function Accept({ token, onAuth }: { token: string; onAuth: () => void }) {
             )}
             <label>
               Name
-              <input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
+              <DesignInput className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
             </label>
             <label>
               Password (at least 12 characters)
-              <input
+              <DesignInput
                 className="input"
                 type="password"
                 value={f.password}
@@ -433,7 +449,7 @@ function Accept({ token, onAuth }: { token: string; onAuth: () => void }) {
             </label>
             <label>
               Repeat the password
-              <input
+              <DesignInput
                 className="input"
                 type="password"
                 value={f.again}
@@ -443,9 +459,9 @@ function Accept({ token, onAuth }: { token: string; onAuth: () => void }) {
               />
             </label>
             {mismatch && <p className="ad-auth-error">The passwords don&apos;t match.</p>}
-            <button type="submit" className="btn btn-primary" disabled={accept.isPending || mismatch}>
+            <ActionButton type="submit" className="btn btn-primary" disabled={accept.isPending || mismatch}>
               {accept.isPending ? "Creating…" : "Create my account"}
-            </button>
+            </ActionButton>
           </>
         )}
       </form>
@@ -472,9 +488,9 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
         {change.isSuccess ? (
           <>
             <p className="ad-auth-sub">Done. Your other sessions were signed out.</p>
-            <button type="button" className="btn" onClick={onClose}>
+            <ActionButton type="button" className="btn" onClick={onClose}>
               Close
-            </button>
+            </ActionButton>
           </>
         ) : (
           <>
@@ -486,7 +502,7 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
             )}
             <label>
               Current password
-              <input
+              <DesignInput
                 className="input"
                 type="password"
                 value={f.current}
@@ -498,7 +514,7 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
             </label>
             <label>
               New password (at least 12 characters)
-              <input
+              <DesignInput
                 className="input"
                 type="password"
                 value={f.next}
@@ -510,7 +526,7 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
             </label>
             <label>
               Repeat the new password
-              <input
+              <DesignInput
                 className="input"
                 type="password"
                 value={f.again}
@@ -521,12 +537,12 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
             </label>
             {mismatch && <p className="ad-auth-error">The passwords don&apos;t match.</p>}
             <div className="ad-actions">
-              <button type="button" className="btn" onClick={onClose}>
+              <ActionButton type="button" className="btn" onClick={onClose}>
                 Cancel
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={change.isPending || mismatch}>
+              </ActionButton>
+              <ActionButton type="submit" className="btn btn-primary" disabled={change.isPending || mismatch}>
                 {change.isPending ? "Saving…" : "Change password"}
-              </button>
+              </ActionButton>
             </div>
           </>
         )}
@@ -583,34 +599,54 @@ export function App() {
   if (me.data.must_enrol) return <Enrol onDone={() => void qc.invalidateQueries({ queryKey: ["me"] })} onSignOut={signOut} />;
 
   return (
-    <div className="ad-shell">
-      <aside className="ad-side">
-        <span className="ad-brand">
-          <Mark />
-          dotrix <em>admin</em>
-        </span>
-        <nav aria-label="Pages">
+    <AppShell
+      height="auto"
+      variant="elevated"
+      contentPadding={0}
+      className="dotrix-admin-shell"
+      topNav={
+        <TopNav
+          label="Admin navigation"
+          heading={
+            <span className="ad-brand">
+              <Mark />
+              dotrix admin
+            </span>
+          }
+        />
+      }
+      sideNav={
+        <SideNav
+          aria-label="Pages"
+          collapsible
+          header={
+            <span className="ad-brand">
+              <Mark />
+              dotrix <em>admin</em>
+            </span>
+          }
+          footer={
+            <div className="ad-side-foot">
+              <span className="ad-who">
+                <b>{me.data.name}</b>
+                <span>{me.data.email}</span>
+              </span>
+              <ActionButton className="icon-btn" onClick={() => setChanging(true)} aria-label="Change password">
+                <LockKeyIcon size={17} />
+              </ActionButton>
+              <ActionButton className="icon-btn" onClick={signOut} aria-label="Sign out">
+                <SignOutIcon size={17} />
+              </ActionButton>
+            </div>
+          }
+        >
           {PAGES.filter((p) => !p.owner || me.data.role === "owner").map(({ id, label, icon: I }) => (
-            <a key={id} href={`#/${id}`} className={page === id ? "on" : undefined} aria-current={page === id ? "page" : undefined}>
-              <I size={17} weight={page === id ? "fill" : "regular"} />
-              <span>{label}</span>
-            </a>
+            <SideNavItem key={id} label={label} href={`#/${id}`} isSelected={page === id} icon={<I size={18} />} />
           ))}
-        </nav>
-        <div className="ad-side-foot">
-          <span className="ad-who">
-            <b>{me.data.name}</b>
-            <span>{me.data.email}</span>
-          </span>
-          <button type="button" className="icon-btn" onClick={() => setChanging(true)} title="Change password" aria-label="Change password">
-            <LockKeyIcon size={17} />
-          </button>
-          <button type="button" className="icon-btn" onClick={signOut} title="Sign out" aria-label="Sign out">
-            <SignOutIcon size={17} />
-          </button>
-        </div>
-      </aside>
-      <main className="ad-main">
+        </SideNav>
+      }
+    >
+      <div className="ad-main">
         <Suspense fallback={<p className="state">Loading…</p>}>
           {page === "overview" && <Overview go={go} />}
           {page === "runs" && <Runs />}
@@ -622,8 +658,8 @@ export function App() {
           {page === "trail" && me.data.role === "owner" && <TrailPage />}
           {page === "admins" && me.data.role === "owner" && <AdminsPage meId={me.data.id} />}
         </Suspense>
-      </main>
+      </div>
       {changing && <ChangePassword onClose={() => setChanging(false)} />}
-    </div>
+    </AppShell>
   );
 }

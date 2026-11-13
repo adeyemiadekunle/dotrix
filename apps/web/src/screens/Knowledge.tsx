@@ -1,3 +1,7 @@
+import { TabList, Tab } from "@dotrix/ui/astryx";
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix's Knowledge tab: the project's documents (.dotrix/), by folder; read one
 // (Markdown), edit it with a note, see who wrote it (a person or an agent). Agents' edits arrive
 // as changes to approve in Chat and the Inbox.
@@ -112,25 +116,16 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
   // The uploaded originals sit beside the documents made from them.
   const nFiles = useProjectFiles(p.id).items.length;
   const seg = (
-    <div className="seg" role="tablist" aria-label="Knowledge">
-      {(
-        [
-          ["docs", "Documents", undefined],
-          ["files", nFiles ? `Files ${nFiles}` : "Files", "view=files"],
-          ...(isLive() ? [["coverage", "Coverage", "view=coverage"] as const] : []),
-        ] as const
-      ).map(([k, n, search]) => (
-        <button
-          key={k}
-          role="tab"
-          aria-selected={view === k}
-          className={view === k ? "on" : ""}
-          onClick={() => go("project", { id: p.key, tab: "knowledge" }, { replace: true, search })}
-        >
-          {n}
-        </button>
-      ))}
-    </div>
+    <TabList
+      aria-label="Knowledge"
+      value={view}
+      onChange={(value) => go("project", { id: p.key, tab: "knowledge" }, { replace: true, search: value === "docs" ? undefined : `view=${value}` })}
+      size="sm"
+    >
+      <Tab value="docs" label="Documents" />
+      <Tab value="files" label={nFiles ? `Files ${nFiles}` : "Files"} />
+      {isLive() && <Tab value="coverage" label="Coverage" />}
+    </TabList>
   );
   if (view === "files") return <Files pid={p.id} lead={seg} />;
   if (view === "coverage" && isLive()) return <Coverage pid={p.id} lead={seg} openPage={(path) => openDocument(p, path)} />;
@@ -149,7 +144,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
             <aside className="panel" style={{ padding: 6 }}>
               <div className="inwrap" style={{ margin: "2px 2px 6px" }}>
                 <Ic n="search" s={13} />
-                <input
+                <DesignInput
                   className="input search-sm"
                   style={{ width: "100%" }}
                   placeholder="Find a document"
@@ -203,20 +198,20 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                   <div className="acts">
                     {open.editing ? (
                       <>
-                        <button className="btn btn-sm btn-ghost" onClick={() => ((open.editing = false), render())}>
+                        <ActionButton className="btn btn-sm btn-ghost" onClick={() => ((open.editing = false), render())}>
                           Cancel
-                        </button>
-                        <button className="btn btn-sm btn-primary" onClick={save} disabled={draft === cur.content}>
+                        </ActionButton>
+                        <ActionButton className="btn btn-sm btn-primary" onClick={save} disabled={draft === cur.content}>
                           Save
-                        </button>
+                        </ActionButton>
                       </>
                     ) : (
                       <>
-                        <button className="btn btn-sm btn-ghost" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
+                        <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
                           <Ic n="sparkles" s={13} />
                           Ask an agent to update
-                        </button>
-                        <button
+                        </ActionButton>
+                        <ActionButton
                           className="btn btn-sm btn-secondary"
                           onClick={() => {
                             setDraft(cur.content);
@@ -227,7 +222,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                         >
                           <Ic n="pencil" s={13} />
                           Edit
-                        </button>
+                        </ActionButton>
                       </>
                     )}
                   </div>
@@ -238,7 +233,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                       <b>Related project work</b>
                       <div className="col" style={{ gap: 6, marginTop: 6 }}>
                         {visibleLinks.map((link) => (
-                          <button
+                          <ActionButton
                             key={link.id}
                             className="btn btn-sm btn-ghost"
                             style={{ justifyContent: "flex-start" }}
@@ -251,14 +246,14 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                             }}
                           >
                             {relationshipLabel(link.kind, link.direction)} · {link.node.ref} · {link.node.title}
-                          </button>
+                          </ActionButton>
                         ))}
                       </div>
                     </section>
                   )}
                   {open.editing ? (
                     <div className="col" style={{ gap: 10 }}>
-                      <textarea
+                      <DesignTextarea
                         className="textarea mono"
                         rows={18}
                         value={draft}
@@ -266,7 +261,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                         aria-label="Document"
                         style={{ fontSize: 12.5 }}
                       />
-                      <input
+                      <DesignInput
                         className="input"
                         placeholder="What changed? (optional)"
                         value={note}
@@ -275,7 +270,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                       />
                     </div>
                   ) : (
-                    <Markdown>{cur.content}</Markdown>
+                    <Markdown outline>{cur.content}</Markdown>
                   )}
                 </div>
               </section>

@@ -50,3 +50,6 @@ apps/desktop/release/
 # Local Redis snapshots
 dump.rdb
 *.rdb
+
+# Independent frontend presentation checks
+**/.playwright-design-results/

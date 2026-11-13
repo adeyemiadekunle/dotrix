@@ -22,31 +22,31 @@ test("project agent models can be saved and reset", async ({ page }) => {
   await expect(dialog.getByLabel("Project model", { exact: true })).toHaveValue("e2e:rules");
   await expect(dialog.getByLabel("Automatic model routing", { exact: true })).not.toBeChecked();
   await dialog.getByLabel("Automatic model routing", { exact: true }).check();
-  await dialog.getByLabel("Specialist model").fill("openai:cheap-model");
-  await expect(dialog.getByLabel("Default token limit per agent run")).toHaveCount(0); // no project budget
+  await dialog.getByLabel("Specialist model", { exact: true }).fill("openai:cheap-model");
+  await expect(dialog.getByLabel("Default token limit per agent run", { exact: true })).toHaveCount(0); // no project budget
   const saved = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
   await dialog.getByRole("button", { name: "Save agent models" }).click();
   expect((await saved).status()).toBe(200);
-  await expect(page.getByText("Agent model settings saved")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Agent model settings saved")).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
   await expect(dialog.getByLabel("Automatic model routing", { exact: true })).toBeChecked();
-  await expect(dialog.getByLabel("Specialist model")).toHaveValue("openai:cheap-model");
-  await dialog.getByLabel("Specialist model").fill("openai:other-model");
-  await dialog.getByLabel("Specialist model").press("Enter");
+  await expect(dialog.getByLabel("Specialist model", { exact: true })).toHaveValue("openai:cheap-model");
+  await dialog.getByLabel("Specialist model", { exact: true }).fill("openai:other-model");
+  await dialog.getByLabel("Specialist model", { exact: true }).press("Enter");
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
-  await expect(dialog.getByLabel("Specialist model")).toHaveValue("openai:other-model");
-  await dialog.getByLabel("Specialist model").fill("unsupported-model");
+  await expect(dialog.getByLabel("Specialist model", { exact: true })).toHaveValue("openai:other-model");
+  await dialog.getByLabel("Specialist model", { exact: true }).fill("unsupported-model");
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await expect(dialog.getByRole("alert")).toContainText(/provider/i);
   await dialog.getByLabel("Automatic model routing", { exact: true }).uncheck();
-  await dialog.getByLabel("Specialist model").fill("");
+  await dialog.getByLabel("Specialist model", { exact: true }).fill("");
   const reset = page.waitForResponse((r) => r.url().includes("/projects/") && r.request().method() === "PATCH");
   await dialog.getByRole("button", { name: "Save agent models" }).click();
   expect((await reset).status()).toBe(200);
   await expect(dialog.getByLabel("Automatic model routing", { exact: true })).not.toBeChecked();
-  await expect(dialog.getByLabel("Specialist model")).toHaveValue("");
+  await expect(dialog.getByLabel("Specialist model", { exact: true })).toHaveValue("");
 });
 
 test("a missing provider preserves workspace navigation and requires a key for agents", async ({ page }) => {
@@ -63,27 +63,27 @@ test("a missing provider preserves workspace navigation and requires a key for a
   );
   await signUp(page);
   await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect and continue" })).toBeDisabled();
-  await page.getByLabel("Model provider").selectOption("xai");
+  await page.getByLabel("Model provider", { exact: true }).selectOption("xai");
   const fakeKey = "test-provider-key-for-setup-only";
-  await page.getByLabel("Model API key").fill(fakeKey);
+  await page.getByLabel("Model API key", { exact: true }).fill(fakeKey);
   const saved = page.waitForResponse((r) => r.url().endsWith("/me/model-keys/xai") && r.request().method() === "PUT");
   // Only readiness is simulated: saving and encrypted-key metadata use the real API.
   ready = true;
   await page.getByRole("button", { name: "Connect and continue" }).click();
   expect((await saved).status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toHaveCount(0);
-  await expect(page.getByLabel("Model API key")).toHaveCount(0);
+  await expect(page.getByLabel("Model API key", { exact: true })).toHaveCount(0);
   const slug = new URL(page.url()).pathname.split("/")[2]!;
   await page.goto(`/w/${slug}/settings/my-models`);
   await expect(page.getByText("xAI (Grok)", { exact: true })).toBeVisible();
   await expect(page.getByText(fakeKey, { exact: true })).toHaveCount(0);
-  await page.getByLabel("Kai's coding engine").selectOption("opencode");
-  await expect(page.getByText("Coding engine saved")).toBeVisible();
+  await page.getByLabel("Kai's coding engine", { exact: true }).selectOption("opencode");
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Coding engine saved")).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Kai's coding engine")).toHaveValue("opencode");
+  await expect(page.getByLabel("Kai's coding engine", { exact: true })).toHaveValue("opencode");
 });
 
 test("every user connects a personal key without shared-key controls", async ({ page }) => {
@@ -93,8 +93,8 @@ test("every user connects a personal key without shared-key controls", async ({ 
     }),
   );
   await signUp(page);
-  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
-  await expect(page.getByLabel("Model API key")).toBeVisible();
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.getByLabel("Model API key", { exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await expect(page.getByText("Connect a workspace key for everyone")).toHaveCount(0);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -123,7 +123,7 @@ test("saving a personal key in Settings refreshes the mounted setup gate", async
   });
   await signUp(page);
   await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toBeVisible();
   await page.getByRole("button", { name: "Model settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/my-models$/);
@@ -132,9 +132,9 @@ test("saving a personal key in Settings refreshes the mounted setup gate", async
   await page.getByLabel("OpenAI API key", { exact: true }).fill("test-personal-provider-key-only");
   const beforeSave = accessChecks;
   await openai.getByRole("button", { name: "Save key", exact: true }).click();
-  await expect(page.getByText("Your OpenAI key is saved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Your OpenAI key is saved", { exact: true })).toBeVisible();
   // Client navigation keeps ModelGate mounted: no reload or focus event can rescue a stale query.
-  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Home", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("link", { name: "Home", exact: true }).click();
   await expect.poll(() => accessChecks).toBeGreaterThan(beforeSave);
   await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Main", exact: true })).toBeVisible();
@@ -176,7 +176,7 @@ test("a new coding session picks a model, starting from your default, and leaves
   await page.route("**/coding/issues/*/runs", (route) => route.fulfill({ status: 409, json: { detail: "Test request captured" } }));
   await page.goto(`/w/${slug}/codes?new=1&issue=${issueKey}`);
   await expect(page.getByRole("button", { name: /Coding tool/ })).toHaveCount(0); // the engine is in Settings, not here
-  await page.getByRole("button", { name: "Model: GPT-5.5", exact: true }).click();
+  await page.getByRole("combobox", { name: "Model", exact: true }).click();
   await page.getByRole("option", { name: "grok-4.7", exact: true }).click();
   const sent = page.waitForRequest((r) => r.method() === "POST" && /\/coding\/issues\/[^/]+\/runs$/.test(r.url()));
   await page.getByRole("button", { name: "Start coding", exact: true }).click();

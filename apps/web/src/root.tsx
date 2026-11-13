@@ -1,3 +1,4 @@
+import { LinkProvider } from "@dotrix/ui/astryx";
 import { Button } from "@dotrix/ui/components/button";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { MagnifyingGlassMinusIcon } from "@phosphor-icons/react";
@@ -22,7 +23,11 @@ export function RootLayout() {
   useEffect(() => {
     if (title) document.title = `${title} · ${APP_NAME}`;
   }, [title]);
-  return <Outlet />;
+  return (
+    <LinkProvider component={Link}>
+      <Outlet />
+    </LinkProvider>
+  );
 }
 
 /** An address that's no page of the app. */

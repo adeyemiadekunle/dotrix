@@ -5,7 +5,7 @@ test("skipping the first step keeps Personal even after choosing to set up for a
   await signUp(page);
   await page.goto("/onboarding");
   await expect(page.getByLabel("Organisation name", { exact: true })).toHaveCount(0);
-  const progress = page.getByRole("navigation", { name: "Onboarding progress", exact: true });
+  const progress = page.getByRole("list", { name: "Onboarding progress", exact: true });
   await expect(progress.locator('[aria-current="step"]')).toHaveText(/Profile/);
   await page.getByRole("button", { name: "Setting up for a team?", exact: true }).click();
   await expect(page.getByLabel("Organisation name", { exact: true })).toBeVisible();
@@ -48,7 +48,7 @@ test("an organisation save recovers a lost response and the stepper preserves it
   await expect(page.getByRole("heading", { name: "Your workspace is saved", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("radio", { name: "Explore an idea", exact: true }).check();
-  await expect(page.getByRole("navigation", { name: "Onboarding progress", exact: true })).not.toContainText("GitHub");
+  await expect(page.getByRole("list", { name: "Onboarding progress", exact: true })).not.toContainText("GitHub");
   expect(calls).toBe(1);
 });
 

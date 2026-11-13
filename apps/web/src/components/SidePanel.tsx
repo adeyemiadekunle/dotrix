@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // The right side panel beside one of Kai's sessions in Codes, resizable by its left edge.
 // It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review, picked by the buttons in the
 // session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
@@ -19,7 +20,7 @@ import { go, useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
 import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
-import { tabKeys } from "../ui/tabs";
+import { TabList, Tab } from "@dotrix/ui/astryx";
 import { toast } from "../ui/toast";
 import { ChangesView, FilesView, TerminalView, type DiffNote } from "./TurnViews";
 
@@ -76,18 +77,18 @@ export function PanelFrame({
       <span className="sp" />
       {tools}
       {onExpand && (
-        <button
+        <ActionButton
           className="ibtn ibtn-sm"
           onClick={onExpand}
           aria-label={expanded ? `Show the other panes` : `Expand ${label}`}
           data-tip={expanded ? "Restore" : "Expand"}
         >
           <Ic n={expanded ? "arrows-in" : "arrows-out"} s={14} />
-        </button>
+        </ActionButton>
       )}
-      <button ref={closeButton} className="ibtn ibtn-sm" onClick={onClose} aria-label={closeLabel} data-tip="Close">
+      <ActionButton ref={closeButton} className="ibtn ibtn-sm" onClick={onClose} aria-label={closeLabel} data-tip="Close">
         <Ic n="x" s={14} />
-      </button>
+      </ActionButton>
     </div>
   );
   if (stacked)
@@ -99,7 +100,7 @@ export function PanelFrame({
     );
   return (
     <aside className="side-panel" style={{ width }} aria-label={label}>
-      <Splitter dir="col" className="side-panel-split" label="Resize the panel" onDrag={(delta) => setWidth((w) => w - delta)} />
+      <Splitter dir="col" className="side-panel-split" label="Resize the panel" size={width} min={300} max={960} onResize={setWidth} reversed />
       {head}
       {children}
     </aside>
@@ -152,7 +153,7 @@ export function CodingPanes({
   }, []);
   return (
     <aside ref={column} className="side-panel panes" style={{ width }} aria-label="Session panes">
-      <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setWidth((w) => w - delta)} />
+      <Splitter dir="col" className="side-panel-split" label="Resize the panes" size={width} min={320} max={1100} onResize={setWidth} reversed />
       {shown.map((view) => (
         <CodingPanel
           key={view}
@@ -192,9 +193,9 @@ function NoTurn({ query }: { query: ReturnType<typeof useCodingSession> }) {
     <p className="muted">
       {query.isLoading ? "Loading the coding turn…" : query.isError ? "The coding turns couldn't be loaded." : "No coding turns yet."}
       {query.isError && (
-        <button className="btn btn-sm btn-ghost" onClick={() => void query.refetch()}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => void query.refetch()}>
           Try again
-        </button>
+        </ActionButton>
       )}
     </p>
   );
@@ -494,30 +495,33 @@ function ReviewPanel({
           ))}
         </select>
       )}
-      <div className="seg work-panel-nav" role="tablist" aria-label="Review details" onKeyDown={tabKeys}>
+      <TabList
+        role="tablist"
+        className="work-panel-nav"
+        aria-label="Review details"
+        value={detailTab}
+        onChange={(value) => setTab(value as typeof detailTab)}
+        size="sm"
+      >
         {(["summary", "findings", "evidence"] as const).map((value) => (
-          <button
+          <Tab
             key={value}
             id={`${id}-${value}-tab`}
-            role="tab"
-            aria-selected={detailTab === value}
+            value={value}
+            onFocus={() => setTab(value)}
+            label={value[0].toUpperCase() + value.slice(1)}
+            endContent={value === "findings" && findings.length ? String(findings.length) : undefined}
             aria-controls={`${id}-panel`}
-            tabIndex={detailTab === value ? 0 : -1}
-            className={detailTab === value ? "on" : ""}
-            onClick={() => setTab(value)}
-          >
-            {value[0].toUpperCase() + value.slice(1)}
-            {value === "findings" && findings.length ? ` ${findings.length}` : ""}
-          </button>
+          />
         ))}
-      </div>
+      </TabList>
       <div className="review-panel-body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${detailTab}-tab`}>
         {failed && (
           <p className="muted">
             Some reviews couldn't be loaded.{" "}
-            <button className="btn btn-sm btn-ghost" onClick={onRetry}>
+            <ActionButton className="btn btn-sm btn-ghost" onClick={onRetry}>
               Try again
-            </button>
+            </ActionButton>
           </p>
         )}
         {!run ? (
@@ -566,9 +570,9 @@ function ReviewPanel({
                           {finding.refs.map((ref, i) => (
                             <li className="mono" key={i}>
                               {context?.coding_run_id ? (
-                                <button className="btn btn-sm btn-ghost" onClick={() => onReference(text(ref), run)}>
+                                <ActionButton className="btn btn-sm btn-ghost" onClick={() => onReference(text(ref), run)}>
                                   {text(ref)}
-                                </button>
+                                </ActionButton>
                               ) : (
                                 text(ref)
                               )}
@@ -578,18 +582,22 @@ function ReviewPanel({
                       )}
                       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                         {canCreate && scope && item.state === "open" && (
-                          <button className="btn btn-sm" disabled={saving} onClick={() => void createFromFinding(outputId, item.index, title, detail, fix)}>
+                          <ActionButton
+                            className="btn btn-sm"
+                            disabled={saving}
+                            onClick={() => void createFromFinding(outputId, item.index, title, detail, fix)}
+                          >
                             Create issue
-                          </button>
+                          </ActionButton>
                         )}
                         {canCreate && scope && isLive() && context?.coding_run_id && item.state === "open" && (
-                          <button className="btn btn-sm" disabled={saving} onClick={() => void openOnGitHub(outputId, item.index)}>
+                          <ActionButton className="btn btn-sm" disabled={saving} onClick={() => void openOnGitHub(outputId, item.index)}>
                             <Ic n="github" s={13} />
                             Open on GitHub
-                          </button>
+                          </ActionButton>
                         )}
                         {onAskFix && allowed("agents:code") && (
-                          <button
+                          <ActionButton
                             className="btn btn-sm"
                             onClick={() =>
                               onAskFix(
@@ -598,7 +606,7 @@ function ReviewPanel({
                             }
                           >
                             {fixLabel}
-                          </button>
+                          </ActionButton>
                         )}
                       </div>
                     </section>

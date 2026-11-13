@@ -13,7 +13,9 @@ test("new accounts save a first project, resume setup and connect a personal mod
   await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toBeVisible();
   await expect(page.getByLabel("Your name", { exact: true })).toHaveValue(person.name);
   await expect(page.getByRole("button", { name: "Setting up for a team?", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Onboarding progress", exact: true })).toContainText("Step 1 of 6: Profile");
+  const steps = page.getByRole("list", { name: "Onboarding progress", exact: true });
+  await expect(steps.getByRole("listitem")).toHaveCount(6);
+  await expect(steps.locator('[aria-current="step"]')).toContainText("Profile");
   await page.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(page.getByRole("heading", { name: "How do you want to start?" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
@@ -270,7 +272,7 @@ test("an idea skips GitHub and a new codebase needs its goal, each with optional
   await page.getByRole("button", { name: "Skip", exact: true }).click();
   await page.getByRole("radio", { name: "Explore an idea", exact: true }).check();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  const progress = page.getByRole("navigation", { name: "Onboarding progress", exact: true });
+  const progress = page.getByRole("list", { name: "Onboarding progress", exact: true });
   await expect(progress).not.toContainText("GitHub");
   await page.getByLabel("Project name", { exact: true }).fill("Recipe app");
   await expect(page.getByLabel("Project key", { exact: true })).toHaveValue("RECIPEAPP");

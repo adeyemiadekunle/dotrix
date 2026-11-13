@@ -11,11 +11,11 @@ test("sample Chat and Codes use the shared lists and message presentation withou
   await page.goto("/w/dotrix/chat");
   await page.locator(".chat-list .sitem").first().click();
   await expect(page.getByText("Sample conversation · Sign in to work with Nova.")).toBeVisible();
-  await expect(page.locator(".chat-msg").first()).toBeVisible();
+  await expect(page.locator(".dotrix-message, .chat-msg").first()).toBeVisible();
   await page.goto("/w/dotrix/codes");
   await page.getByRole("button", { name: /WEB-154 Fix broken anchor links/ }).click();
   await expect(page.getByText("Sample session · Sign in to work with Kai.")).toBeVisible();
-  await expect(page.locator(".chat-msg").first()).toBeVisible();
+  await expect(page.locator(".dotrix-message, .chat-msg").first()).toBeVisible();
   await page.getByRole("button", { name: "Changes", exact: true }).click();
   await expect(page.getByRole("table", { name: "Diff" })).toHaveCount(3);
   await page.getByRole("button", { name: "Files", exact: true }).click();
@@ -28,14 +28,16 @@ test("sample Chat and Codes use the shared lists and message presentation withou
   await expect(page.getByRole("heading", { name: "Rules for every project" })).toBeVisible();
   await page.getByLabel("Rules", { exact: true }).fill("Sample rules only");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText("Rules saved (v2)", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Rules saved (v2)", { exact: true })).toBeVisible();
   for (const skill of ["write-an-adr", "triage-a-bug", "break-down-a-feature", "scope-a-failing-build"]) {
     await expect(page.getByText(skill, { exact: true })).toBeVisible();
   }
   await page.goto("/w/dotrix/settings/github");
   await expect(page.getByRole("heading", { name: "Connected repositories", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Add a GitHub account", exact: true }).click();
-  await expect(page.getByText("Sign in to connect your GitHub account. Sample connections are read-only.", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Notifications" }).getByText("Sign in to connect your GitHub account. Sample connections are read-only.", { exact: true }),
+  ).toBeVisible();
   await page.goto("/w/dotrix");
   await expect(page.locator(".ph h1")).toBeVisible();
   expect(await page.locator(".ph h1").evaluate((element) => getComputedStyle(element).fontFamily)).not.toContain("Serif");
@@ -49,7 +51,7 @@ test("a live account uses the same navigation and typography without inheriting 
   const font = await page.locator(".chat-side h1").evaluate((element) => getComputedStyle(element).fontFamily);
   await signUp(page);
   const slug = new URL(page.url()).pathname.split("/")[2]!;
-  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.locator(".chat-list .sitem")).toHaveCount(0);
   await expect(page.getByText("Sample conversation · Sign in to work with Nova.")).toHaveCount(0);
   await page.goto(`/w/${slug}/codes`);

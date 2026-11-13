@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Project page: header and a tab per view, saved views as
 // extra tabs. dotrix adds Knowledge (the project's documents the agents read and keep current).
 import type { CSSProperties } from "react";
@@ -33,9 +34,9 @@ function Denied({ p }: { p: P }) {
   return (
     <div className="page">
       <Empty icon="lock" title="You don't have access" text={`${p.name} is restricted. Ask its lead to add you.`}>
-        <button className="btn btn-secondary btn-sm" onClick={() => go("projects")}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("projects")}>
           Back to projects
-        </button>
+        </ActionButton>
       </Empty>
     </div>
   );
@@ -50,14 +51,14 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const addBtn = (
     <div className="row" style={{ gap: 8 }}>
       {isLive() && live.ws?.permissions?.includes("issues:write") && (
-        <button className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "import" })}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "import" })}>
           Import from GitHub
-        </button>
+        </ActionButton>
       )}
-      <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+      <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
         <Ic n="plus" s={13} />
         New task
-      </button>
+      </ActionButton>
     </div>
   );
   // Still loading isn't empty: the toolbar shows alone until the tasks arrive.
@@ -66,10 +67,10 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
     <>
       <ProjectReadiness workspaceId={isLive() ? live.ws?.id : undefined} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} compact />
       <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
-        <button className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+        <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
           <Ic n="plus" s={14} />
           Add task
-        </button>
+        </ActionButton>
       </Empty>
     </>
   );
@@ -135,7 +136,7 @@ export function Project() {
         <div className="t">
           <PIcon p={p} cls="lg" s={18} />
           <h1>{p.name}</h1>
-          <button
+          <ActionButton
             className="ibtn ibtn-sm"
             onClick={() => toggleFavProj(p.id)}
             data-tip={p.fav ? "Remove from favorites" : "Add to favorites"}
@@ -144,7 +145,7 @@ export function Project() {
             style={p.fav ? { color: "var(--amber)" } : undefined}
           >
             <Ic n="star" s={15} />
-          </button>
+          </ActionButton>
           <button
             className="pillbtn bordered"
             onClick={(e) => openPop(e.currentTarget, "pstatus", { id: p.id })}
@@ -157,30 +158,30 @@ export function Project() {
           </button>
           <span className="sp" />
           <div className="row" style={{ gap: 4 }}>
-            <button className="btn btn-secondary btn-sm hide-m" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
+            <ActionButton className="btn btn-secondary btn-sm hide-m" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
               <Ic n="message-square" s={13} />
               Ask in Chat
-            </button>
+            </ActionButton>
             {!personal() && (
               <>
                 <button className="row" onClick={() => share(p.id)} aria-label="Members" style={{ gap: 0 }}>
                   <AvStack ids={p.members} max={5} cls="md" />
                 </button>
-                <button className="ibtn ibtn-sm" onClick={() => share(p.id)} data-tip="Add member" aria-label="Add member">
+                <ActionButton className="ibtn ibtn-sm" onClick={() => share(p.id)} data-tip="Add member" aria-label="Add member">
                   <Ic n="user-plus" s={15} />
-                </button>
-                <button className="btn btn-secondary btn-sm hide-m" onClick={() => share(p.id)}>
+                </ActionButton>
+                <ActionButton className="btn btn-secondary btn-sm hide-m" onClick={() => share(p.id)}>
                   <Ic n="share-2" s={13} />
                   Share
-                </button>
+                </ActionButton>
               </>
             )}
-            <button className="ibtn ibtn-sm" onClick={() => editProject(p.id)} data-tip="Project settings" aria-label="Project settings">
+            <ActionButton className="ibtn ibtn-sm" onClick={() => editProject(p.id)} data-tip="Project settings" aria-label="Project settings">
               <Ic n="settings" s={15} />
-            </button>
-            <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "project", id: p.id })} aria-label="More">
+            </ActionButton>
+            <ActionButton className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "project", id: p.id })} aria-label="More">
               <Ic n="ellipsis" s={15} />
-            </button>
+            </ActionButton>
           </div>
         </div>
         <nav className="tabs" aria-label="Project views">
