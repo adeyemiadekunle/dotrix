@@ -29,6 +29,8 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import tls from "node:tls";
 
+import { answers, notStarted } from "./mcp-check.mjs";
+
 const args = process.argv.slice(2);
 const arg = (name) => {
   const at = args.indexOf(name);
@@ -88,43 +90,11 @@ function mcpServersFrom(raw) {
     return { name, command, args: serverArgs, env };
   });
 }
-/** Whether an MCP server starts and answers `initialize` (fx 0.0.16 says nothing when one doesn't, and goes on without it). */
-function answers(server) {
-  return new Promise((resolve) => {
-    let done = false;
-    const child = spawn(server.command, server.args, {
-      stdio: ["pipe", "pipe", "ignore"],
-      env: { ...process.env, ...Object.fromEntries(server.env.map(({ name, value }) => [name, value])) },
-    });
-    const finish = (ok) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      child.kill("SIGTERM");
-      resolve(ok);
-    };
-    const timer = setTimeout(() => finish(false), 10_000);
-    child.on("error", () => finish(false));
-    child.on("exit", () => finish(false));
-    createInterface({ input: child.stdout }).on("line", (line) => {
-      try {
-        if (JSON.parse(line)?.id === 1) finish(true);
-      } catch {
-        // Not a JSON-RPC line: the server's own output.
-      }
-    });
-    child.stdin.on("error", () => finish(false));
-    child.stdin.write(
-      `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "dotrix", version: "1" } } })}\n`,
-    );
-  });
-}
-
 // Only the servers that start go to fx; one that doesn't is said, and the turn goes on without it.
 const mcpServers = [];
 for (const server of mcpServersFrom(mcpConfig)) {
   if (await answers(server)) mcpServers.push(server);
-  else emit({ type: "warning", message: server.name === "browser" ? "The browser didn't start" : `The ${server.name} tool didn't start` });
+  else emit({ type: "warning", message: notStarted(server.name) });
 }
 
 const brief = readFileSync(0, "utf8");

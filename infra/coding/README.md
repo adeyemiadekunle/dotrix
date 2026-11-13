@@ -95,10 +95,16 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   a refusal ends the turn at once ("The sandbox doesn't allow this model provider"). fx gets the browser as
   Claude Code does: the driver passes `--mcp-config` (Playwright MCP) to every session it starts, resumes or loads
   (ACP's `mcpServers`, each command resolved to an absolute path, which fx 0.0.16 requires), after checking each server
-  answers `initialize`; one that doesn't is left out and said ("The browser didn't start"), since fx would go on silently.
+  answers `initialize` (`mcp-check.mjs`); one that doesn't is left out and said ("The browser didn't start"), since fx
+  would go on silently.
+- **Codex gets the same browser** as `-c mcp_servers.browser.command/args`. It calls it without asking
+  (`danger-full-access`) and reports its calls as `mcp_tool_call` items. Codex (0.169.0) also goes on silently when a
+  server doesn't start, and `required = true` would fail the whole turn instead, so its command runs `mcp-check.mjs`
+  first (`sh -c 'node /opt/dotrix/mcp-check.mjs --mcp-config …; exec codex …'`), which only prints the warning.
 - **The browser writes only to /tmp/playwright.** Playwright MCP runs in that folder with `--ignore-roots`, so it is
   its only workspace root: started in the repository, it saved a screenshot the agent named into the repository, and
-  the turn committed it (Playwright MCP 0.0.85). People only ever see Kai: no step, failure, commit message or PR names the engine. Which engine ran is on the run, in the audit log, and in the worker's log; a session picks a model and the engine follows it (a preferred engine in Account → Your models).
+  the turn committed it (Playwright MCP 0.0.85).
+- **People only ever see Kai.** No step, failure, commit message or PR names the engine. Which engine ran is on the run, in the audit log, and in the worker's log; a session picks a model and the engine follows it (a preferred engine in Account → Your models).
 - **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
   the image's unprivileged `sandbox` user (uid 1500).
 - **Limits.** Personal BYOK has no platform token-budget setting or coding token-cap enforcement.

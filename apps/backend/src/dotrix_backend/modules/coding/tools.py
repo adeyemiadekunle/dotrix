@@ -34,7 +34,7 @@ CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
 # to everything else. Only the platform's MCP servers load (--strict-mcp-config), never a repo's.
 # It runs in its output folder with --ignore-roots, so that folder is the only one it writes to: started in the
 # repository, it would save a screenshot the agent names ("page.png") there, and the turn would commit it
-# (checked on Playwright MCP 0.0.85, 2026-11-13). Claude Code and fx (through fx-acp.mjs) both get it.
+# (checked on Playwright MCP 0.0.85, 2026-11-13). Claude Code, fx (through fx-acp.mjs) and Codex all get it.
 BROWSER_SERVER = "browser"
 BROWSER_OUTPUT = "/tmp/playwright"
 _BROWSER_ARGS = ["--headless", "--isolated", "--ignore-roots", "--browser", "chromium", "--no-sandbox", "--output-dir", BROWSER_OUTPUT]
@@ -46,6 +46,9 @@ BROWSER_MCP = {
         }
     }
 }
+# fx 0.0.16 and Codex 0.169.0 go on silently when an MCP server doesn't start, so the image's mcp-check.mjs checks it
+# first and prints {"type":"warning","message":"The browser didn't start"} (fx-acp.mjs imports it; Codex runs it).
+MCP_CHECK = "/opt/dotrix/mcp-check.mjs"
 BROWSER_RULE = """\
 - You have a headless browser (the `browser` tools). When the change shows in a web page, start
   the app's dev server in the background on localhost and note its process id (for example
@@ -350,7 +353,7 @@ class Codex(_NoUsageCommand):
     provider_type = "dotrix-codex"
     api_host = "api.openai.com"
     resumes = False  # `--ephemeral`: each turn starts afresh
-    browser = False  # not yet
+    browser = True  # Playwright MCP as `mcp_servers.browser` (checked on Codex 0.169.0, 2026-11-13)
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return []
@@ -372,7 +375,16 @@ class Codex(_NoUsageCommand):
         # otherwise reach the model as `<INSTRUCTIONS>`; checked on 0.166.0 and 0.169.0 against a scripted model).
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral",
                 "-c", "project_doc_max_bytes=0"]
-        return argv + (["-c", f'model="{_bare(model)}"'] if model else []) + ["-"]
+        argv += ["-c", f'model="{_bare(model)}"'] if model else []
+        if not browser:
+            return argv + ["-"]
+        # The browser as a Codex MCP server (`-c` takes TOML values, which these JSON strings and arrays are). Codex
+        # calls it without asking (danger-full-access) and goes on silently if it doesn't start, so mcp-check.mjs says
+        # so first; it never fails the turn, and a missing check (an older image) only goes unsaid.
+        server = BROWSER_MCP["mcpServers"][BROWSER_SERVER]
+        argv += ["-c", f"mcp_servers.{BROWSER_SERVER}.command={json.dumps(server['command'])}",
+                 "-c", f"mcp_servers.{BROWSER_SERVER}.args={json.dumps(server['args'])}", "-"]
+        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(BROWSER_MCP), *argv]
 
     def parse(self, line: str, usage: Usage) -> Parsed:
         out = Parsed()
@@ -383,6 +395,17 @@ class Codex(_NoUsageCommand):
         item = event.get("item") or {}
         if kind == "thread.started":
             out.steps.append(Step("step", "Started"))
+        elif kind == "warning" and str(event.get("message", "")).strip():  # mcp-check.mjs: the browser didn't start
+            out.steps.append(Step("error", _clip(str(event["message"]))))
+        elif kind == "item.started" and item.get("type") == "mcp_tool_call":
+            args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+            tool = str(item.get("tool") or "")
+            said = _describe_browser(tool, args) if item.get("server") == BROWSER_SERVER else f"Used {tool}"
+            out.steps.append(Step("tool", said))
+        elif kind == "item.completed" and item.get("type") == "mcp_tool_call" and (item.get("error") or item.get("status") == "failed"):
+            error = item.get("error")
+            detail = error.get("message") if isinstance(error, dict) else error
+            out.steps.append(Step("error", _clip(f"The browser: {detail or 'failed'}" if item.get("server") == BROWSER_SERVER else str(detail or "A tool failed"))))
         elif kind == "item.started" and item.get("type") == "command_execution":
             out.steps.append(Step("tool", f"Ran {_clip(str(item.get('command', '')), 160)}", item.get("id")))
         elif kind == "item.completed":

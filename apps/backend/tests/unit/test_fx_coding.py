@@ -372,3 +372,18 @@ def test_a_resumed_conversation_has_the_browser_too(fake_fx, tmp_path: Path) -> 
     _drive(fake_fx, "And the docs", "--resume", "--mcp-config", config)
     resumed = next(c for c in reversed(_calls(fake_fx)) if c["method"] == "session/resume")
     assert [s["name"] for s in resumed["params"]["mcpServers"]] == ["browser"]
+
+
+def test_the_check_codex_runs_first_says_which_servers_didnt_start(tmp_path: Path) -> None:
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    server = tmp_path / "browser-mcp"
+    server.write_text(f"#!{sys.executable}\n{FAKE_MCP}")
+    server.chmod(0o755)
+    config = {"mcpServers": {"browser": {"command": "sh", "args": ["-c", "exit 1"]}, "ok": {"command": str(server)},
+                             "missing": {"command": "/nonexistent/server"}}}
+    done = subprocess.run(["node", str(DRIVER.parent / "mcp-check.mjs"), "--mcp-config", json.dumps(config)],
+                          capture_output=True, text=True, timeout=30)
+    assert done.returncode == 0  # never fails the turn
+    assert [json.loads(line) for line in done.stdout.splitlines()] == [
+        {"type": "warning", "message": "The browser didn't start"}, {"type": "warning", "message": "The missing tool didn't start"}]

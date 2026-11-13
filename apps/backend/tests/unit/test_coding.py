@@ -152,7 +152,7 @@ def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
     assert claude.session_args(session, resumed=False) == ["--session-id", str(session)]
     assert claude.session_args(session, resumed=True) == ["--resume", str(session)]
     assert claude.resumes and claude.browser and ".claude" in claude.save_state(session)
-    assert codex.session_args(session, resumed=True) == [] and not codex.resumes and not codex.browser
+    assert codex.session_args(session, resumed=True) == [] and not codex.resumes and codex.browser
     assert claude.sandbox_env("k") == {"ANTHROPIC_API_KEY": "k"}
     assert codex.sandbox_env("k") == {"OPENAI_API_KEY": "k", "CODEX_API_KEY": "k"}
     keys = _settings(anthropic_api_key=SecretStr("a"), coding_claude_model="m1", coding_codex_model="m2")
@@ -273,6 +273,40 @@ def test_claude_code_gets_a_browser_only_from_the_platform() -> None:
     assert script.startswith("mkdir -p /tmp/playwright && cd /tmp/playwright && exec playwright-mcp ")
     assert "--headless" in script and "--ignore-roots" in script and "--output-dir /tmp/playwright" in script
     assert "mcp__browser" in with_browser[with_browser.index("--allowedTools") + 1]
+
+
+def test_codex_gets_the_browser_and_says_when_it_didnt_start() -> None:
+    """Checked on Codex 0.169.0 with the real Playwright MCP 0.0.85 against a scripted Responses API: it calls the
+    browser without asking, and goes on silently when it doesn't start, so mcp-check.mjs runs first."""
+    from dotrix_backend.modules.coding.tools import BROWSER_MCP, MCP_CHECK, Codex, Usage
+
+    tool = Codex()
+    assert tool.browser
+    plain = tool.command("openai:gpt-5.5")
+    assert plain[0] == "codex" and plain[-1] == "-" and not any("mcp_servers" in arg for arg in plain)
+    argv = tool.command("openai:gpt-5.5", browser=True)
+    assert argv[:4] == ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh"]
+    assert argv[4] == MCP_CHECK and json.loads(argv[5]) == BROWSER_MCP
+    codex = argv[6:]
+    assert codex[0] == "codex" and codex[-1] == "-"  # the brief still on stdin
+    server = BROWSER_MCP["mcpServers"]["browser"]
+    assert f"mcp_servers.browser.command={json.dumps(server['command'])}" in codex
+    assert f"mcp_servers.browser.args={json.dumps(server['args'])}" in codex
+    assert "project_doc_max_bytes=0" in codex  # the repository's AGENTS.md is still never its instructions
+
+    usage = Usage()
+    lines = [
+        {"type": "warning", "message": "The browser didn't start"},
+        {"type": "item.started", "item": {"id": "i1", "type": "mcp_tool_call", "server": "browser", "tool": "browser_navigate",
+                                          "arguments": {"url": "http://localhost:8080/"}, "status": "in_progress"}},
+        {"type": "item.completed", "item": {"id": "i1", "type": "mcp_tool_call", "server": "browser", "tool": "browser_navigate",
+                                            "arguments": {"url": "http://localhost:8080/"}, "status": "completed", "error": None}},
+        {"type": "item.completed", "item": {"id": "i2", "type": "mcp_tool_call", "server": "browser", "tool": "browser_click",
+                                            "arguments": {}, "status": "failed", "error": {"message": "No such element"}}},
+    ]
+    steps = [(s.kind, s.text) for line in lines for s in tool.parse(json.dumps(line), usage).steps]
+    assert steps == [("error", "The browser didn't start"), ("tool", "Opened http://localhost:8080/ in the browser"),
+                     ("error", "The browser: No such element")]
 
 
 def test_the_browser_s_steps_read_like_the_rest() -> None:
