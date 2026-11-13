@@ -2,7 +2,7 @@
 // refreshes the board, backlog, epics, and any open issue after a change.
 import type { Schemas } from "@dotrix/api-client";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@dotrix/ui/lib/toast";
 
 import { api, errorMessage, unwrap } from "./api";
 export type Issue = Schemas["IssueRead"];

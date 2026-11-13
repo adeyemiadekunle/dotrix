@@ -1,22 +1,15 @@
 /* The admin console, on the design's tokens (design.css through @dotrix/ui/globals.css). */
-@font-face {
-  font-family: "Geist Serif Variable";
-  src: url("./fonts/GeistSerifVF.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-
 :root {
-  --font-geist-sans: "Geist Variable";
+  --font-geist-sans: "Figtree Variable";
   --font-geist-mono: "Geist Mono Variable";
-  --brand: #3d8b5c;
+  --brand: var(--color-accent);
   /* Chart series, checked for colour-blind separation and contrast on each surface. */
   --chart-ok: #4b5bd6;
   --chart-bad: #b23c30;
   --side-w: 224px;
 }
 .dark {
-  --brand: #5cba86;
+  --brand: var(--color-accent);
   --chart-ok: #7d8af0;
   --chart-bad: #e5566f;
 }
@@ -929,4 +922,18 @@ body {
   gap: 4px;
   font-size: 12px;
   user-select: all;
+}
+
+/* Astryx controls own their native input and focus ring. */
+.ad-pw > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.ad-pw .astryx-text-input {
+  padding-inline-end: 36px;
+}
+.ad-pw .astryx-button {
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 0;
 }

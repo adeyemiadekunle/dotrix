@@ -144,7 +144,7 @@ test("tasks selected in List change status together, and it's saved", async ({ p
   await page.goto(page.url().replace(/\/board$/, "/list"));
   await expect(page).toHaveURL(new RegExp(`/p/${key}/list`));
 
-  await page.getByLabel("Select all").first().check();
+  await page.getByLabel("Select all", { exact: true }).first().check();
   const bar = page.getByRole("toolbar", { name: "Bulk actions" });
   await expect(bar).toContainText("2 selected");
   const saved = Promise.all(

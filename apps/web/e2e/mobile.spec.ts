@@ -30,12 +30,12 @@ test("on a phone the board, a task and Chat fit the screen, and the sidebar open
   await expect(drawer).toBeHidden();
 
   // The sidebar is a sheet: opened from the top bar, it takes you to Chat and closes.
-  const nav = page.getByRole("navigation", { name: "Main", exact: true });
-  await expect(nav.getByRole("button", { name: "Chat", exact: true })).not.toBeInViewport();
+  const nav = page.getByRole("dialog", { name: "Navigation", exact: true });
+  await expect(nav).toBeHidden();
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(nav.getByRole("button", { name: "Chat", exact: true })).toBeInViewport();
-  await nav.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect(nav.getByRole("link", { name: "Chat", exact: true })).toBeInViewport();
+  await nav.getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page).toHaveURL(/\/chat/);
-  await expect(nav.getByRole("button", { name: "Chat", exact: true })).not.toBeInViewport();
+  await expect(nav).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

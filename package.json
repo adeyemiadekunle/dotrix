@@ -27,7 +27,9 @@
     "lint:fix": "eslint . --fix && uv run ruff check apps packages --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "design:audit": "node scripts/design/audit-astryx.mjs",
+    "design:benchmark": "node apps/web/scripts/design-benchmark.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // The agents panel (after Orbit's): who needs you, who is working and on what, and who is free,
 // each with a face and a "now" line; today's replies and tokens at the foot. It opens over the page
 // from the launcher at the bottom right (a chat button, with the faces of whoever needs you or is
@@ -62,7 +63,7 @@ function Row({ p }: { p: Presence }) {
         {p.approve && (
           <span className="ap-acts">
             {p.reject && (
-              <button
+              <ActionButton
                 className="btn btn-sm btn-secondary"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -70,9 +71,9 @@ function Row({ p }: { p: Presence }) {
                 }}
               >
                 Reject
-              </button>
+              </ActionButton>
             )}
-            <button
+            <ActionButton
               className="btn btn-sm btn-primary"
               onClick={(e) => {
                 e.stopPropagation();
@@ -80,8 +81,8 @@ function Row({ p }: { p: Presence }) {
               }}
             >
               Approve
-            </button>
-            <button className="btn btn-sm btn-ghost">Open</button>
+            </ActionButton>
+            <ActionButton className="btn btn-sm btn-ghost">Open</ActionButton>
           </span>
         )}
       </span>
@@ -169,9 +170,9 @@ export function AgentsPanel() {
           {all.length - by(["idle"]).length} active · {by(["idle"]).length} free
         </span>
         <span className="sp" />
-        <button className="ibtn ibtn-sm" onClick={toggleAgents} aria-label="Hide the agents panel" data-tip="Hide">
+        <ActionButton className="ibtn ibtn-sm" onClick={toggleAgents} aria-label="Hide the agents panel" data-tip="Hide">
           <Ic n="chevron-down" s={15} />
-        </button>
+        </ActionButton>
       </div>
       <div className="ap-body">
         <p className="ap-team-note">7 built-in agents · Nova leads the team</p>

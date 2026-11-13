@@ -1,3 +1,4 @@
+import { Badge, Card as AstryxCard, SegmentedControl, SegmentedControlItem, ProgressBar, Banner, Spinner } from "@dotrix/ui/astryx";
 // The console's building blocks, on the design's tokens (design.css) and admin.css.
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -62,7 +63,7 @@ export function PageHead({ title, sub, children }: { title: string; sub?: ReactN
 
 export function Card({ title, aside, children, flush }: { title?: ReactNode; aside?: ReactNode; children: ReactNode; flush?: boolean }) {
   return (
-    <section className={`card${flush ? " flush" : ""}`}>
+    <AstryxCard padding={0} className={`card${flush ? " flush" : ""}`}>
       {(title || aside) && (
         <div className="card-head">
           {title && <h2>{title}</h2>}
@@ -70,14 +71,19 @@ export function Card({ title, aside, children, flush }: { title?: ReactNode; asi
         </div>
       )}
       {children}
-    </section>
+    </AstryxCard>
   );
 }
 
 export type Tone = "good" | "warn" | "bad" | "info" | "muted";
 
 export function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return <span className={`pill ${tone}`}>{children}</span>;
+  return (
+    <Badge
+      variant={tone === "good" ? "success" : tone === "bad" ? "error" : tone === "warn" ? "warning" : tone === "info" ? "info" : "neutral"}
+      label={children}
+    />
+  );
 }
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -124,20 +130,18 @@ export function Segmented<T extends string | number>({
   label: string;
 }) {
   return (
-    <div className="seg" role="radiogroup" aria-label={label}>
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={o.value === value}
-          className={o.value === value ? "on" : ""}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
+    <SegmentedControl
+      label={label}
+      value={String(value)}
+      onChange={(next) => {
+        const option = options.find((o) => String(o.value) === next);
+        if (option) onChange(option.value);
+      }}
+    >
+      {options.map((option) => (
+        <SegmentedControlItem key={option.value} value={String(option.value)} label={option.label} />
       ))}
-    </div>
+    </SegmentedControl>
   );
 }
 
@@ -148,11 +152,15 @@ export const DAYS = [
 ];
 
 export function Loading({ what = "Loading" }: { what?: string }) {
-  return <p className="state">{what}…</p>;
+  return (
+    <div className="state" role="status">
+      <Spinner /> {what}…
+    </div>
+  );
 }
 
 export function Failed({ error }: { error: Error }) {
-  return <p className="state bad">{error.message}</p>;
+  return <Banner status="error" title="Could not load" description={error.message} />;
 }
 
 export function Empty({ children }: { children: ReactNode }) {
@@ -163,11 +171,6 @@ export function Empty({ children }: { children: ReactNode }) {
 export function Meter({ part, whole, tone = "info" }: { part: number; whole: number; tone?: Tone }) {
   const share = whole ? Math.min(1, part / whole) : 0;
   return (
-    <span className="meter">
-      <span className={`meter-bar ${tone}`}>
-        <i style={{ width: `${share * 100}%` }} />
-      </span>
-      <span className="meter-n">{pct(part, whole)}</span>
-    </span>
+    <ProgressBar label="Share" isLabelHidden value={share * 100} hasValueLabel variant={tone === "bad" ? "error" : tone === "good" ? "success" : "accent"} />
   );
 }

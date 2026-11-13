@@ -81,7 +81,7 @@ test("a corner notice approves Kai's checked changes in place", async ({ page })
   await expect(notice).toContainText("needs your approval");
   await notice.getByRole("button", { name: "Approve" }).click();
   expect((await decided).postDataJSON()).toEqual({ decision: "approve", reason: null });
-  await expect(page.getByText(`Pushing Kai's changes on ${key}-1`)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(`Pushing Kai's changes on ${key}-1`)).toBeVisible();
 });
 
 test("the agents panel rejects a Kai session waiting to start, without opening it", async ({ page }) => {
@@ -134,6 +134,6 @@ test("the agents panel rejects a Kai session waiting to start, without opening i
   await expect(panel).toContainText(`Waiting for approval to code ${key}-1`);
   await panel.getByRole("button", { name: "Reject", exact: true }).click();
   expect((await decided).postDataJSON()).toEqual({ decision: "reject", reason: null });
-  await expect(page.getByText(`Rejected Kai's turn on ${key}-1`)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(`Rejected Kai's turn on ${key}-1`)).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/w/${p.slug}/projects$`));
 });

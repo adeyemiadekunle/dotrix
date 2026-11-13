@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // What an agent run waits on, from the API: changes to approve or reject, and checkpoints (a plan
 // to continue, change, or stop). A run resumes once, with every decision, so with several changes
 // waiting the choices are sent together when the last one is made.
@@ -55,9 +57,9 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
         </b>
         <span className="sp" />
         {!pending && <Decided a={a} />}
-        <button className="ibtn ibtn-xs" onClick={() => setOpen(!open)} aria-label={open ? "Hide details" : "Show details"} aria-expanded={open}>
+        <ActionButton className="ibtn ibtn-xs" onClick={() => setOpen(!open)} aria-label={open ? "Hide details" : "Show details"} aria-expanded={open}>
           <Ic n={open ? "chevron-up" : "chevron-down"} s={13} />
-        </button>
+        </ActionButton>
       </div>
       {open && (a.diff || fields.length > 0) && (
         <div className="change-b">
@@ -83,13 +85,13 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
       {pending && !choice && !rejecting ? (
         <div className="change-f change-confirm">
           <Confirmation icon="hand-palm" title={`${label}?`} description="Waiting for your decision">
-            <button className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)} disabled={busy}>
+            <ActionButton className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)} disabled={busy}>
               Reject
-            </button>
-            <button className="btn btn-sm btn-primary" onClick={() => onChoose({ decision: "approve", reason: "" })} disabled={busy}>
+            </ActionButton>
+            <ActionButton className="btn btn-sm btn-primary" onClick={() => onChoose({ decision: "approve", reason: "" })} disabled={busy}>
               <Ic n="check" s={13} />
               Approve
-            </button>
+            </ActionButton>
           </Confirmation>
         </div>
       ) : pending ? (
@@ -100,13 +102,13 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
                 {choice.decision === "approve" ? "You approve this" : "You reject this"}; sent with the others
               </span>
               <span className="sp" />
-              <button className="btn btn-sm btn-ghost" onClick={() => onChoose(undefined)} disabled={busy}>
+              <ActionButton className="btn btn-sm btn-ghost" onClick={() => onChoose(undefined)} disabled={busy}>
                 Undo
-              </button>
+              </ActionButton>
             </>
           ) : (
             <>
-              <input
+              <DesignInput
                 className="input"
                 style={{ height: 28, flex: 1 }}
                 placeholder="Why? The agent learns from it (optional)"
@@ -116,12 +118,12 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
                 autoFocus
                 aria-label="Reason"
               />
-              <button className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
+              <ActionButton className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
                 Cancel
-              </button>
-              <button className="btn btn-sm btn-danger" onClick={() => onChoose({ decision: "reject", reason })} disabled={busy}>
+              </ActionButton>
+              <ActionButton className="btn btn-sm btn-danger" onClick={() => onChoose({ decision: "reject", reason })} disabled={busy}>
                 Reject
-              </button>
+              </ActionButton>
             </>
           )}
         </div>
@@ -153,7 +155,7 @@ function Checkpoint({ a, onAnswer, busy }: { a: Approval; onAnswer: (c: Choice) 
       )}
       {pending && (
         <div className="change-f">
-          <input
+          <DesignInput
             className="input"
             style={{ height: 28, flex: 1 }}
             placeholder="Change something? Say what, then Change plan"
@@ -162,15 +164,19 @@ function Checkpoint({ a, onAnswer, busy }: { a: Approval; onAnswer: (c: Choice) 
             onKeyDown={(e) => e.key === "Enter" && note.trim() && onAnswer({ decision: "steer", reason: note.trim() })}
             aria-label="What to change"
           />
-          <button className="btn btn-sm btn-secondary" disabled={busy || !note.trim()} onClick={() => onAnswer({ decision: "steer", reason: note.trim() })}>
+          <ActionButton
+            className="btn btn-sm btn-secondary"
+            disabled={busy || !note.trim()}
+            onClick={() => onAnswer({ decision: "steer", reason: note.trim() })}
+          >
             Change plan
-          </button>
-          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => onAnswer({ decision: "reject", reason: "" })}>
+          </ActionButton>
+          <ActionButton className="btn btn-sm btn-ghost" disabled={busy} onClick={() => onAnswer({ decision: "reject", reason: "" })}>
             Stop
-          </button>
-          <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => onAnswer({ decision: "approve", reason: "" })}>
+          </ActionButton>
+          <ActionButton className="btn btn-sm btn-primary" disabled={busy} onClick={() => onAnswer({ decision: "approve", reason: "" })}>
             Continue
-          </button>
+          </ActionButton>
         </div>
       )}
     </div>
@@ -213,13 +219,13 @@ export function RunApprovals({ run, scope }: { run: Run; scope: Scope | undefine
       )}
       {waiting.length > 1 && (
         <div className="row" style={{ justifyContent: "flex-end", gap: 6, marginTop: 8 }}>
-          <button className="btn btn-sm btn-ghost" onClick={() => all("reject")} disabled={decide.isPending}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => all("reject")} disabled={decide.isPending}>
             Reject all
-          </button>
-          <button className="btn btn-sm btn-secondary" onClick={() => all("approve")} disabled={decide.isPending}>
+          </ActionButton>
+          <ActionButton className="btn btn-sm btn-secondary" onClick={() => all("approve")} disabled={decide.isPending}>
             <Ic n="check-check" s={13} />
             Approve all {waiting.length}
-          </button>
+          </ActionButton>
         </div>
       )}
     </div>

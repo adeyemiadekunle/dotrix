@@ -7,7 +7,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { WS, setRouter } from "./core/nav";
 import { homeSlug } from "./data/live";
 import { NotFoundPage, RootLayout } from "./root";
-import { Studio } from "./shell/Studio";
 import AuthLayout from "../pages/(auth)/layout";
 
 declare module "@tanstack/react-router" {
@@ -21,6 +20,8 @@ declare module "@tanstack/react-router" {
 }
 
 const page = (load: () => Promise<{ default: () => ReactNode }>) => lazyRouteComponent(load);
+
+const Studio = page(() => import("./shell/Studio").then((module) => ({ default: module.Studio })));
 
 const rootRoute = createRootRoute({ component: RootLayout, notFoundComponent: NotFoundPage });
 

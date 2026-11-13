@@ -10,14 +10,14 @@ const settings = (page: Page, sec: string) => page.goto(`/w/${slugOf(page)}/sett
 test("your profile: name and what you do are saved, and your profile page shows them", async ({ page }) => {
   await signUp(page);
   await settings(page, "profile");
-  await page.getByLabel("Full name").fill("Ada Lovelace");
-  await page.getByLabel("What you do").fill("Analyst");
+  await page.getByLabel("Full name", { exact: true }).fill("Ada Lovelace");
+  await page.getByLabel("What you do", { exact: true }).fill("Analyst");
   await page.getByRole("button", { name: "Save profile" }).click();
-  await expect(page.getByText("Profile saved")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Profile saved")).toBeVisible();
   await expect(page.getByText("Not linked")).toBeVisible(); // GitHub, from the sign-in methods
 
   await page.reload();
-  await expect(page.getByLabel("What you do")).toHaveValue("Analyst");
+  await expect(page.getByLabel("What you do", { exact: true })).toHaveValue("Analyst");
   // A personal workspace has no Members page; your own profile page (the account menu's View profile) shows you.
   await page
     .getByRole("button", { name: /Ada Lovelace/ })
@@ -33,8 +33,8 @@ test("where you're signed in: each browser is listed, and another one can be sig
   const other = await browser.newContext();
   const second = await other.newPage();
   await second.goto("/login");
-  await second.getByLabel("Email").fill(user.email);
-  await second.getByLabel("Password").fill(user.password);
+  await second.getByLabel("Email", { exact: true }).fill(user.email);
+  await second.getByLabel("Password", { exact: true }).fill(user.password);
   await second.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(second).toHaveURL(/\/w\//);
 
@@ -42,7 +42,7 @@ test("where you're signed in: each browser is listed, and another one can be sig
   await expect(page.getByText("This browser", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(page.getByText("Signed out", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Signed out", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
   await other.close();
 });
@@ -50,23 +50,23 @@ test("where you're signed in: each browser is listed, and another one can be sig
 test("change your password (a wrong current one is refused), and choose which notifications you get", async ({ page }) => {
   await signUp(page);
   await settings(page, "password");
-  await page.getByLabel("Current password").fill("not-my-password-1");
+  await page.getByLabel("Current password", { exact: true }).fill("not-my-password-1");
   await page.getByLabel("New password", { exact: true }).fill("a-new-password-2026!");
-  await page.getByLabel("Confirm new password").fill("a-new-password-2026!");
+  await page.getByLabel("Confirm new password", { exact: true }).fill("a-new-password-2026!");
   await page.getByRole("button", { name: "Update password" }).click();
   await expect(page.getByText("That isn't your current password")).toBeVisible();
-  await page.getByLabel("Current password").fill(PASSWORD);
+  await page.getByLabel("Current password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Update password" }).click();
   await expect(page.getByText("Password updated")).toBeVisible();
 
   await settings(page, "notif-email");
-  await page.getByLabel("Email me").selectOption("daily");
+  await page.getByLabel("Email me", { exact: true }).selectOption("daily");
   await settings(page, "notif-mentions");
-  await page.getByLabel("Mentions").uncheck();
+  await page.getByLabel("Mentions", { exact: true }).uncheck();
   await page.reload();
-  await expect(page.getByLabel("Mentions")).not.toBeChecked();
+  await expect(page.getByLabel("Mentions", { exact: true })).not.toBeChecked();
   await settings(page, "notif-email");
-  await expect(page.getByLabel("Email me")).toHaveValue("daily");
+  await expect(page.getByLabel("Email me", { exact: true })).toHaveValue("daily");
 });
 
 test("tokens under Sessions: the CLI's sign-in is listed, a new one is shown once, both revoke; the old Devices address opens Sessions", async ({ page }) => {
@@ -85,8 +85,8 @@ test("tokens under Sessions: the CLI's sign-in is listed, a new one is shown onc
   await expect(page.locator(".srow", { hasText: "dotrix CLI on laptop" })).toBeVisible();
 
   await page.getByRole("button", { name: "New token" }).click();
-  await page.locator(".modal input").fill("CI");
-  await page.locator(".modal input").press("Enter");
+  await page.getByRole("dialog").locator("input").fill("CI");
+  await page.getByRole("dialog").locator("input").press("Enter");
   await expect(page.getByText("copy it now, it isn't shown again")).toBeVisible();
   await expect(page.locator("code", { hasText: /^dtx_/ })).toBeVisible();
 
@@ -99,38 +99,38 @@ test("agents: change a built-in's contract, then reset it; workspace rules are s
   await signUp(page);
   await settings(page, "agents");
   await page.locator("#main-content .mini", { hasText: "@research" }).click();
-  await page.getByLabel("Additional instructions").fill("Finds and checks sources on the web.");
+  await page.getByLabel("Additional instructions", { exact: true }).fill("Finds and checks sources on the web.");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(/Saved as version \d+/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(/Saved as version \d+/)).toBeVisible();
   await expect(page.getByText("Customised").first()).toBeVisible();
   await page.getByRole("button", { name: "Reset to default" }).click();
-  await page.locator(".modal").getByRole("button", { name: "Reset to default" }).click();
-  await expect(page.getByText("Reset to default", { exact: true }).last()).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Reset to default" }).click();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Reset to default", { exact: true })).toBeVisible();
   await expect(page.getByText("Built-in").first()).toBeVisible();
 
   await settings(page, "rules");
-  await page.getByLabel("Rules").fill("- Write in plain English.");
+  await page.getByLabel("Rules", { exact: true }).fill("- Write in plain English.");
   await page.getByRole("button", { name: "Save", exact: true }).first().click();
-  await expect(page.getByText("Rules saved (v1)")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Rules saved (v1)")).toBeVisible();
 });
 
 test("agents: an owner lets one write documents without asking, and the workspace can pause it", async ({ page }) => {
   await signUp(page);
   await settings(page, "agents");
   await page.locator("#main-content .mini", { hasText: "@product" }).click();
-  await page.getByLabel("Write documents without asking").selectOption("allow");
+  await page.getByLabel("Write documents without asking", { exact: true }).selectOption("allow");
   await expect(page.getByText("Changes go through without anyone approving them.")).toBeVisible();
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(/Saved as version \d+/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(/Saved as version \d+/)).toBeVisible();
   await page.reload();
   await page.locator("#main-content .mini", { hasText: "@product" }).click();
-  await expect(page.getByLabel("Write documents without asking")).toHaveValue("allow");
+  await expect(page.getByLabel("Write documents without asking", { exact: true })).toHaveValue("allow");
 
   await settings(page, "agents");
-  await page.getByLabel("Pause changes without approval").check();
-  await expect(page.getByText("Agents ask before every change")).toBeVisible();
+  await page.getByLabel("Pause changes without approval", { exact: true }).check();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Agents ask before every change")).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Pause changes without approval")).toBeChecked();
+  await expect(page.getByLabel("Pause changes without approval", { exact: true })).toBeChecked();
 });
 
 test("legacy model settings connects only your own key, and an agent can use a smaller model", async ({ page }) => {
@@ -139,9 +139,9 @@ test("legacy model settings connects only your own key, and an agent can use a s
   await expect(page.locator(".set-in h1")).toHaveText("Your models");
   const anthropic = page.locator(".srow-wrap", { hasText: "Anthropic" });
   await anthropic.getByRole("button", { name: "Connect" }).click();
-  await page.getByLabel("Anthropic API key").fill("sk-ant-e2e-" + "x".repeat(30) + "AB12");
+  await page.getByLabel("Anthropic API key", { exact: true }).fill("sk-ant-e2e-" + "x".repeat(30) + "AB12");
   await page.getByRole("button", { name: "Save key" }).click();
-  await expect(page.getByText("Your Anthropic key is saved")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Your Anthropic key is saved")).toBeVisible();
   await expect(anthropic.getByText(/Connected · key ending AB12/)).toBeVisible();
   await expect(page.getByText("sk-ant-e2e")).toHaveCount(0);
 
@@ -150,14 +150,14 @@ test("legacy model settings connects only your own key, and an agent can use a s
   await page.locator("#main-content .mini", { hasText: "@documentation" }).click();
   await page.getByLabel("Model", { exact: true }).selectOption("anthropic:claude-haiku-5-5");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(/Saved as version \d+/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText(/Saved as version \d+/)).toBeVisible();
   await page.reload();
   await page.locator("#main-content .mini", { hasText: "@documentation" }).click();
   await expect(page.getByLabel("Model", { exact: true })).toHaveValue("anthropic:claude-haiku-5-5");
 
   await settings(page, "my-models");
   await page.locator(".srow-wrap", { hasText: "Anthropic" }).getByRole("button", { name: "Remove" }).click();
-  await expect(page.getByText("Your Anthropic key is removed")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Your Anthropic key is removed")).toBeVisible();
   await page.reload();
   await expect(anthropic.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 });
@@ -167,21 +167,21 @@ test("your own models and agents: a key of your own, a default model, and how yo
   await settings(page, "my-models");
   const anthropic = page.locator(".srow-wrap", { hasText: "Anthropic" });
   await anthropic.getByRole("button", { name: "Connect" }).click();
-  await page.getByLabel("Anthropic API key").fill("sk-ant-mine-" + "m".repeat(30) + "ME42");
+  await page.getByLabel("Anthropic API key", { exact: true }).fill("sk-ant-mine-" + "m".repeat(30) + "ME42");
   await page.getByRole("button", { name: "Save key" }).click();
-  await expect(page.getByText("Your Anthropic key is saved")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Your Anthropic key is saved")).toBeVisible();
   await expect(anthropic.getByText(/key ending ME42/)).toBeVisible();
-  await page.getByLabel("Your default model").selectOption("anthropic:claude-haiku-5-5");
-  await expect(page.getByText("Default model saved")).toBeVisible();
+  await page.getByLabel("Your default model", { exact: true }).selectOption("anthropic:claude-haiku-5-5");
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Default model saved")).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Your default model")).toHaveValue("anthropic:claude-haiku-5-5");
+  await expect(page.getByLabel("Your default model", { exact: true })).toHaveValue("anthropic:claude-haiku-5-5");
 
   await settings(page, "my-agents");
-  await page.getByLabel("How you like Lyra to work").fill("Short stories, British English.");
+  await page.getByLabel("How you like Lyra to work", { exact: true }).fill("Short stories, British English.");
   await page.locator(".sblock", { hasText: "@product" }).getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Lyra saved for you")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Lyra saved for you")).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("How you like Lyra to work")).toHaveValue("Short stories, British English.");
+  await expect(page.getByLabel("How you like Lyra to work", { exact: true })).toHaveValue("Short stories, British English.");
 });
 
 test("GitHub says when the app isn't set up on this server", async ({ page }) => {

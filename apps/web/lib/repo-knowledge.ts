@@ -2,7 +2,7 @@
 // classified without running anything, and each required domain's coverage or named gap.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@dotrix/ui/lib/toast";
 
 import { api, errorMessage, unwrap } from "./api";
 import type { Scope } from "./issues";

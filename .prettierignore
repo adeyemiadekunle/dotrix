@@ -20,3 +20,8 @@ packages/ui/src/styles/design.css
 **/*.py
 **/*.md
 docs/
+
+# Astryx CLI outputs are verified by theme:check.
+packages/ui/src/theme/dotrix*.css
+packages/ui/src/theme/dotrix*.js
+packages/ui/src/theme/dotrix*.d.ts

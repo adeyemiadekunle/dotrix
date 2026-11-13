@@ -1,46 +1,29 @@
-// shadcn/ui's table (https://ui.shadcn.com/docs/components/table), on the design's tokens.
-import * as React from "react";
+import {
+  Table as AstryxTable,
+  TableHeader as Header,
+  TableBody as Body,
+  TableRow as Row,
+  TableHeaderCell as Head,
+  TableCell as Cell,
+} from "@astryxdesign/core/Table";
+import type { ComponentProps } from "react";
 
-import { cn } from "@dotrix/ui/lib/utils";
-
-function Table({ className, ...props }: React.ComponentProps<"table">) {
-  return (
-    <div data-slot="table-container" className="relative w-full overflow-x-auto">
-      <table data-slot="table" className={cn("w-full caption-bottom text-sm", className)} {...props} />
-    </div>
-  );
+// Keep the product's children-mode table API and data ownership.
+export function Table(props: ComponentProps<"table">) {
+  return <AstryxTable {...props} />;
 }
-
-function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
-  return <thead data-slot="table-header" className={cn("[&_tr]:border-b", className)} {...props} />;
+export function TableHeader(props: ComponentProps<typeof Header>) {
+  return <Header {...props} />;
 }
-
-function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
-  return <tbody data-slot="table-body" className={cn("[&_tr:last-child]:border-0", className)} {...props} />;
+export function TableBody(props: ComponentProps<typeof Body>) {
+  return <Body {...props} />;
 }
-
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
-  return (
-    <tr
-      data-slot="table-row"
-      className={cn("border-b border-border transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted", className)}
-      {...props}
-    />
-  );
+export function TableRow(props: ComponentProps<typeof Row>) {
+  return <Row {...props} />;
 }
-
-function TableHead({ className, ...props }: React.ComponentProps<"th">) {
-  return (
-    <th
-      data-slot="table-head"
-      className={cn("h-10 px-3 text-left align-middle font-medium whitespace-nowrap text-muted-foreground [&:has([role=checkbox])]:pr-0", className)}
-      {...props}
-    />
-  );
+export function TableHead(props: ComponentProps<typeof Head>) {
+  return <Head {...props} />;
 }
-
-function TableCell({ className, ...props }: React.ComponentProps<"td">) {
-  return <td data-slot="table-cell" className={cn("px-3 py-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0", className)} {...props} />;
+export function TableCell(props: ComponentProps<typeof Cell>) {
+  return <Cell {...props} />;
 }
-
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell };

@@ -34,8 +34,8 @@ test("an idea needs only a working title and opens an editable Nova discussion w
   });
   expect(project).toMatchObject({ name: "Booking concept", source: "docs_only", description: "", repo_url: null });
   await page.getByRole("link", { name: "Explore with Nova", exact: true }).click();
-  await expect(page.getByLabel("Message", { exact: true })).toHaveValue(/clarifying the problem, intended users, constraints and uncertainties/);
-  await expect(page.getByRole("button", { name: "Project and mode", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveText(/clarifying the problem, intended users, constraints and uncertainties/);
+  await expect(page.getByRole("combobox", { name: "Project and mode", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Mode:/ })).toHaveCount(0); // Discuss: no mode chip
   expect(githubRequests).toEqual([]);
   expect(agentRequests).toEqual([]);

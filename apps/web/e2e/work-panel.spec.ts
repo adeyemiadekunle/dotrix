@@ -310,3 +310,73 @@ test("a working turn is followed over a stream: what Kai does appears without po
   // The finished turn came over the stream: the page didn't ask for the session again.
   expect(reads).toBe(1);
 });
+
+test("file/diff text, line annotations, syntax colors and path copying survive both themes", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseURL! });
+  await page.emulateMedia({ colorScheme: "light" });
+  await mockWorkspace(page, context, baseURL!);
+  const changes = pane(page, "Changes");
+  await expect(changes.locator(".kp-line.del .kp-text")).toHaveText("const href = '/plans';");
+  await expect(changes.locator(".kp-line.add .kp-text")).toHaveText("const href = '#plans';");
+  await expect(changes.locator(".kp-line.add .kp-no")).toHaveText(["", "2"]);
+  await expect(changes.locator(".kp-line.del .kp-no")).toHaveText(["2", ""]);
+  const finding = changes.getByRole("button", { name: /Juno's finding on line 2:/ });
+  await expect(finding).toBeVisible();
+  expect(await finding.evaluate((el) => el.previousElementSibling?.classList.contains("add"))).toBe(true);
+  const token = changes.locator(".kp-line.add .kp-tok").first();
+  await expect(token).toBeVisible();
+  const light = await token.evaluate((el) => getComputedStyle(el).color);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(token).not.toHaveCSS("color", light);
+  await barButton(page, "Files").click();
+  const files = pane(page, "Files");
+  await files.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
+  await expect(files.locator(".kp-source .kp-text")).toHaveText(["const nav = true;", "const href = '#plans';"]);
+  await expect(files.getByRole("rowheader")).toHaveText(["1", "2"]);
+  await files.getByRole("button", { name: "Copy the path", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+});
+
+test("unknown-language files keep whitespace/escaped text and scroll inside the mobile pane", async ({ page, context, baseURL }) => {
+  const source = '\t<not-an-element> & "literal"\n' + "long_" + "x".repeat(700) + "\n";
+  const rawPath = "raw.unknown-dotrix-language";
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockWorkspace(page, context, baseURL!, `codes?session=session1&file=${rawPath}&line=2`, false, undefined, async () => {
+    await page.route("**/coding/runs/*/file?**", (route) =>
+      route.fulfill({ json: { path: rawPath, status: "modified", after: source, binary: false, too_large: false } }),
+    );
+  });
+  const files = pane(page, "Files");
+  const viewer = files.locator(".kp-source");
+  await expect.poll(() => viewer.locator(".kp-text").allTextContents()).toEqual(source.split("\n").slice(0, -1));
+  await expect(viewer.locator("not-an-element, .kp-tok")).toHaveCount(0);
+  await expect(viewer.locator(".kp-line-reference")).toContainText("long_");
+  expect(await viewer.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+for (const state of ["binary", "too_large", "deleted"] as const) {
+  test(`file viewer protects the ${state} state without displaying hidden content`, async ({ page, context, baseURL }) => {
+    await mockWorkspace(page, context, baseURL!, `codes?session=session1&file=${path}`, false, undefined, async () => {
+      await page.route("**/coding/runs/*/file?**", (route) =>
+        route.fulfill({
+          json: {
+            path,
+            status: state === "deleted" ? "deleted" : "modified",
+            after: "must not be rendered",
+            binary: state === "binary",
+            too_large: state === "too_large",
+          },
+        }),
+      );
+    });
+    const files = pane(page, "Files");
+    await expect(
+      files.getByText(state === "binary" ? "A binary file: not shown." : state === "too_large" ? "Over 1 MB: not shown." : "The turn deleted this file.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(files.locator(".kp-source")).toHaveCount(0);
+    await expect(files.getByText("must not be rendered")).toHaveCount(0);
+  });
+}

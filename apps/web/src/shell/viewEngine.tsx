@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Filter engine: each view's filters (is / is not),
 // search, sort, grouping, and the toolbar every task view shares.
 import type { ReactNode } from "react";
@@ -218,21 +220,21 @@ function FilterChips({ k }: { k: string }) {
                 <Ic n={F.icon} s={12} />
                 <b>{F.name}</b> {f.op === "not" ? "is not" : "is"} <span>{val}</span>
               </button>
-              <button className="ibtn" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
+              <ActionButton className="ibtn" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
                 <Ic n="x" s={12} />
-              </button>
+              </ActionButton>
             </span>
           </span>
         );
       })}
-      <button className="btn btn-sm btn-ghost" onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
+      <ActionButton className="btn btn-sm btn-ghost" onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
         <Ic n="plus" s={12} />
         Add
-      </button>
+      </ActionButton>
       <span className="sp" />
-      <button className="btn btn-sm btn-ghost" onClick={() => clearFilters(k)}>
+      <ActionButton className="btn btn-sm btn-ghost" onClick={() => clearFilters(k)}>
         Clear all
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -272,7 +274,7 @@ export function ViewToolbar({
       <div className="toolbar" role="toolbar">
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input
+          <DesignInput
             className="input search-sm"
             id={`vq-${k}`}
             placeholder="Search tasks"
@@ -281,7 +283,7 @@ export function ViewToolbar({
             aria-label="Search tasks"
           />
         </div>
-        <button className={`btn btn-ghost ${v.filters.length ? "on" : ""}`} onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
+        <ActionButton className={`btn btn-ghost ${v.filters.length ? "on" : ""}`} onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
           <Ic n="list-filter" s={14} />
           Filter
           {v.filters.length > 0 && (
@@ -289,22 +291,22 @@ export function ViewToolbar({
               {v.filters.length}
             </span>
           )}
-        </button>
-        <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "sort", { key: k })}>
+        </ActionButton>
+        <ActionButton className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "sort", { key: k })}>
           <Ic n="arrow-up-down" s={14} />
           <span className="hide-m">Sort:</span> {SORT_NAMES[v.sort.f]}
-        </button>
+        </ActionButton>
         {group && (
-          <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "group", { key: k })}>
+          <ActionButton className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "group", { key: k })}>
             <Ic n="rows-3" s={14} />
             <span className="hide-m">Group:</span> {GROUP_NAMES[v.group]}
-          </button>
+          </ActionButton>
         )}
         {cols && (
-          <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "cols", { key: k, list: Array.isArray(cols) ? cols : undefined })}>
+          <ActionButton className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "cols", { key: k, list: Array.isArray(cols) ? cols : undefined })}>
             <Ic n="columns-3" s={14} />
             Columns
-          </button>
+          </ActionButton>
         )}
         {extra}
         <span className="sp" />

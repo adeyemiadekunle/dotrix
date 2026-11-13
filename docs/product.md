@@ -119,7 +119,7 @@ The earlier feature audit was a repository assessment, not a removal approval or
 
 ## Demo and live presentation
 
-Demo and live share Shell, session/message rows, coding panels and Settings presentation, with Geist Sans/Mono typography. Demo history is labelled sample data; edits stay local and connections are read-only. Missing sample files/reviews remain missing. Live accounts use workspace-scoped data and real empty states. Never replace an empty live account with fabricated seed history. Browser tests of samples, onboarding and model gates do not establish real GitHub installation or production readiness.
+Demo and live share Shell, session/message rows, coding panels and Settings presentation, with Figtree/Geist Mono typography. Demo history is labelled sample data; edits stay local and connections are read-only. Missing sample files/reviews remain missing. Live accounts use workspace-scoped data and real empty states. Never replace an empty live account with fabricated seed history. Browser tests of samples, onboarding and model gates do not establish real GitHub installation or production readiness.
 
 ## Supported configuration
 

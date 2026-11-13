@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // A run that stopped at its model's limit (the person's key, or the workspace's): what happened,
 // when it resets if the provider said, and Continue now or when it resets. In Chat under the
 // reply where it stopped, and in the Inbox.
@@ -36,13 +37,13 @@ export function LimitNotice({
             </span>
           ) : (
             <>
-              <button className="btn btn-sm btn-primary" onClick={() => onContinue(false)}>
+              <ActionButton className="btn btn-sm btn-primary" onClick={() => onContinue(false)}>
                 Continue now
-              </button>
+              </ActionButton>
               {(later || resetsAt == null) && (
-                <button className="btn btn-sm btn-secondary" onClick={() => onContinue(true)}>
+                <ActionButton className="btn btn-sm btn-secondary" onClick={() => onContinue(true)}>
                   Continue when it resets
-                </button>
+                </ActionButton>
               )}
             </>
           )}

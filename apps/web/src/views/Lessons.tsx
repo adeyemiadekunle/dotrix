@@ -1,3 +1,5 @@
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Lessons the agents could learn from people's decisions. Rejecting an agent's proposed change or
 // dismissing a finding, with a reason, proposes a lesson; a project manager accepts it (in their own
 // words if they edit it first) and it lands in agent-rules/lessons/<agent>.md, which the agent reads
@@ -31,7 +33,7 @@ function Proposed({ p, l }: { p: Project; l: Lesson }) {
           {l.source === "rejection" ? "a change was rejected" : "an item was dismissed"} by {personName(l.proposed_by_id)} · {ago(Date.parse(l.created_at))}
         </span>
       </div>
-      <textarea
+      <DesignTextarea
         className="input"
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -44,7 +46,7 @@ function Proposed({ p, l }: { p: Project; l: Lesson }) {
         Reason: “{l.reason}”
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <button
+        <ActionButton
           className="btn btn-sm"
           disabled={busy || !text.trim()}
           onClick={() =>
@@ -55,10 +57,10 @@ function Proposed({ p, l }: { p: Project; l: Lesson }) {
           }
         >
           <Ic n="check" s={13} /> Teach {agentName(l.agent)}
-        </button>
-        <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => decline.mutate(l.id, { onSuccess: () => toast("Lesson declined") })}>
+        </ActionButton>
+        <ActionButton className="btn btn-sm btn-ghost" disabled={busy} onClick={() => decline.mutate(l.id, { onSuccess: () => toast("Lesson declined") })}>
           Decline
-        </button>
+        </ActionButton>
       </div>
     </div>
   );

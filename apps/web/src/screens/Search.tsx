@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Search results. dotrix adds the projects' documents.
 import type { CSSProperties, ReactNode } from "react";
 
@@ -72,7 +74,7 @@ export function Search() {
     <div className="page" style={{ maxWidth: 860 }}>
       <div className="inwrap" style={{ marginBottom: 14 }}>
         <Ic n="search" s={16} />
-        <input
+        <DesignInput
           className="input input-lg"
           id="search-page-q"
           placeholder="Search tasks, projects, people, files, documents, and comments"
@@ -212,9 +214,9 @@ export function Search() {
       ) : (
         <div className="panel">
           <Empty icon="search-x" title="No results found" text={`Nothing matches “${q}”. Check the spelling or try a broader term.`}>
-            <button className="btn btn-secondary btn-sm" onClick={() => setSearch("")}>
+            <ActionButton className="btn btn-secondary btn-sm" onClick={() => setSearch("")}>
               Clear search
-            </button>
+            </ActionButton>
           </Empty>
         </div>
       )}

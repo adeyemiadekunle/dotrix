@@ -1,178 +1,81 @@
-/* The design: tokens and component classes. Change it in place. The accent is --acc (shadcn
-   uses --accent for hover backgrounds); dark mode is the .dark class (next-themes); fonts are the
-   bundled Geist; only the app shell stops the page scrolling. In @layer components,
-   so Tailwind utilities on a page can still adjust it. */
+/* Dotrix domain compositions on Astryx semantic tokens. */
 @layer components {
-
-/* ---- tokens.css ---- */
-/* ============================================================
-   QUIRE — DESIGN TOKENS
-   Light palette on bare :root; dark redefined (not inverted).
-   ============================================================ */
+/* Compatibility names for domain views; Astryx owns the underlying values. */
 :root {
-  /* surfaces */
-  --bg: #fbfaf8;
-  --bg-side: #f4f3f0;
-  --surface: #ffffff;
-  --surface-2: #f6f5f2;
-  --surface-3: #eeede9;
-  --sunken: #f7f6f3;
-  --overlay: rgba(24, 22, 19, 0.28);
-  /* lines */
-  --border: #e9e7e2;
-  --border-strong: #dad7d0;
-  --divider: #f0eeea;
-  /* text */
-  --text: #1d1c1a;
-  --text-2: #57544e;
-  --text-3: #6b6760;
-  --text-4: #8c8880;
-  --text-inv: #ffffff;
-  /* accent (swappable) */
-  --acc-l: #4b5bd6;
-  --acc-d: #8e9af3;
-  --acc: var(--acc-l);
-  --on-accent: #ffffff;
-  --accent-soft: color-mix(in srgb, var(--acc) 10%, transparent);
+  --bg: var(--color-background-body);
+  --bg-side: var(--color-background-body);
+  --surface: var(--color-background-surface);
+  --surface-2: var(--color-background-muted);
+  --surface-3: var(--color-overlay-hover);
+  --sunken: var(--color-background-muted);
+  --overlay: light-dark(rgba(21,17,12,.28), rgba(0,0,0,.55));
+  --border: var(--color-border);
+  --border-strong: var(--color-border-emphasized);
+  --divider: var(--color-border);
+  --text: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --text-3: var(--color-text-secondary);
+  --text-4: var(--color-text-disabled);
+  --text-inv: var(--color-background-inverted);
+  --acc: var(--color-accent);
+  --on-accent: var(--color-on-accent);
+  --accent-soft: var(--color-accent-muted);
   --accent-line: color-mix(in srgb, var(--acc) 38%, transparent);
-  /* semantic */
-  --green: #25754b;
-  --amber: #8f5e0e;
-  --red: #b23c30;
-  --blue: #3570c4;
-  --violet: #7652c2;
-  --teal: #1e8580;
-  --rose: #bc4270;
-  --orange: #c0612b;
-  --gray: #8a867e;
-  --green-soft: color-mix(in srgb, var(--green) 11%, transparent);
-  --amber-soft: color-mix(in srgb, var(--amber) 12%, transparent);
-  --red-soft: color-mix(in srgb, var(--red) 10%, transparent);
-  /* status */
-  --st-backlog: #a29e96;
-  --st-todo: #7c7870;
-  --st-progress: #c88a14;
-  --st-review: #7652c2;
-  --st-done: #2e8456;
-  /* elevation */
-  --shadow-sm: 0 1px 2px rgba(28, 25, 20, 0.05);
-  --shadow-card: 0 1px 2px rgba(28, 25, 20, 0.04), 0 0 0 1px var(--border);
-  --shadow-pop: 0 12px 32px -8px rgba(28, 25, 20, 0.16), 0 2px 6px -2px rgba(28, 25, 20, 0.06), 0 0 0 1px var(--border);
-  --shadow-drag: 0 16px 36px -10px rgba(28, 25, 20, 0.28), 0 0 0 1px var(--border-strong);
-  /* radius */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r: 8px;
-  --r-lg: 10px;
-  --r-full: 999px;
-  /* spacing (4pt scale) */
-  --s-1: 4px;
-  --s-2: 8px;
-  --s-3: 12px;
-  --s-4: 16px;
-  --s-5: 20px;
-  --s-6: 24px;
-  --s-8: 32px;
-  --s-10: 40px;
-  --s-12: 48px;
-  /* type */
-  --font: 'Geist Variable', 'Geist', ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  /* Compatibility token for surfaces using the shared heading family. */
-  --serif: var(--font);
-  --fs-2xs: 11px;
-  --fs-xs: 12px;
-  --fs-sm: 12.5px;
-  --fs: 13.5px;
-  --fs-md: 14.5px;
-  --fs-lg: 16px;
-  --fs-xl: 19px;
-  --fs-2xl: 23px;
-  /* component sizes */
-  --h-xs: 22px;
-  --h-sm: 26px;
-  --h-md: 30px;
-  --h-lg: 36px;
-  --side-w: 252px;
-  --side-row: 30px;
-  --row-h: 40px;
-  --card-pad: 10px;
-  --topbar-h: 46px;
-  /* one horizontal content edge shared by breadcrumb, page headers, toolbars, lists, tables and boards */
-  --gutter: 24px;
-  --ease: cubic-bezier(0.23, 1, 0.32, 1);
-  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --dur: 140ms;
-  color-scheme: light;
+  --green: var(--color-text-success);
+  --amber: var(--color-text-warning);
+  --red: var(--color-text-error);
+  --blue: var(--color-text-info);
+  --violet: var(--color-text-purple);
+  --teal: var(--color-text-teal);
+  --rose: var(--color-text-pink);
+  --orange: var(--color-text-orange);
+  --gray: var(--color-text-secondary);
+  --green-soft: var(--color-success-muted);
+  --amber-soft: var(--color-warning-muted);
+  --red-soft: var(--color-error-muted);
+  --st-backlog: var(--color-text-disabled);
+  --st-todo: var(--color-text-secondary);
+  --st-progress: var(--color-text-warning);
+  --st-review: var(--color-text-purple);
+  --st-done: var(--color-text-success);
+  --shadow-sm: var(--shadow-low);
+  --shadow-card: var(--shadow-low);
+  --shadow-pop: var(--shadow-high);
+  --shadow-drag: var(--shadow-high);
+  --r-xs: var(--radius-inner);
+  --r-sm: var(--radius-inner);
+  --r: var(--radius-element);
+  --r-lg: var(--radius-container);
+  --r-full: var(--radius-full);
+  --s-1: var(--spacing-1); --s-2: var(--spacing-2); --s-3: var(--spacing-3);
+  --s-4: var(--spacing-4); --s-5: var(--spacing-5); --s-6: var(--spacing-6);
+  --s-8: var(--spacing-8); --s-10: var(--spacing-10); --s-12: var(--spacing-12);
+  --font: var(--font-family-body);
+  --mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --serif: var(--font-family-heading);
+  --fs-2xs: 11px; --fs-xs: 12px; --fs-sm: 13px; --fs: 14px;
+  --fs-md: 15px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 24px;
+  --h-xs: 24px; --h-sm: 28px; --h-md: 32px; --h-lg: 36px;
+  --side-w: 252px; --side-row: 32px; --row-h: 44px; --card-pad: 12px;
+  --topbar-h: 48px; --gutter: 24px;
+  --ease: var(--ease-standard); --spring: var(--ease-standard);
+  --ease-drawer: var(--ease-standard); --dur: var(--duration-fast);
 }
-.dark {
-  --bg: #1a1a19;
-  --bg-side: #151514;
-  --surface: #1d1d1c;
-  --surface-2: #252524;
-  --surface-3: #2d2d2b;
-  --sunken: #181817;
-  --overlay: rgba(0, 0, 0, 0.55);
-  --border: #2c2b29;
-  --border-strong: #3a3936;
-  --divider: #252523;
-  --text: #eceae5;
-  --text-2: #b5b2ab;
-  --text-3: #9a968f;
-  --text-4: #6f6c66;
-  --text-inv: #151514;
-  --acc: var(--acc-d);
-  --on-accent: #12131c;
-  --green: #5cba86;
-  --amber: #d8a443;
-  --red: #e5566f;
-  --blue: #72a5ea;
-  --violet: #a98deb;
-  --teal: #58c0b6;
-  --rose: #e68aab;
-  --orange: #e3925f;
-  --gray: #8f8b84;
-  --pc-mix: 72%;
-  --st-backlog: #6f6c66;
-  --st-todo: #a6a39c;
-  --st-progress: #d8a443;
-  --st-review: #a98deb;
-  --st-done: #5cba86;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-card: 0 0 0 1px var(--border);
-  --shadow-pop: 0 16px 40px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border-strong);
-  --shadow-drag: 0 18px 40px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--border-strong);
-  color-scheme: dark;
+:root[data-accent], :root[data-accent] [data-astryx-theme^="dotrix"] {
+  --color-accent: light-dark(var(--acc-l), var(--acc-d));
+  --color-text-accent: var(--color-accent);
+  --color-icon-accent: var(--color-accent);
+  --color-accent-muted: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --color-on-accent: light-dark(#fff, #15110c);
 }
-/* accent variants */
-:root[data-accent='blue'] {
-  --acc-l: #2f6cd4;
-  --acc-d: #74a7f0;
-}
-:root[data-accent='violet'] {
-  --acc-l: #7348cc;
-  --acc-d: #ae93f0;
-}
-:root[data-accent='teal'] {
-  --acc-l: #1a7f7a;
-  --acc-d: #5cc4ba;
-}
-:root[data-accent='rose'] {
-  --acc-l: #b93d68;
-  --acc-d: #ec8dae;
-}
-:root[data-accent='graphite'] {
-  --acc-l: #34332f;
-  --acc-d: #d9d6cf;
-}
-:root[data-side='compact'] {
-  --side-row: 26px;
-}
-:root[data-density='compact'] {
-  --row-h: 34px;
-  --card-pad: 8px;
-}
+:root[data-accent='indigo'] { --acc-l: #4b5bd6; --acc-d: #8e9af3; }
+:root[data-accent='blue'] { --acc-l: #2f6cd4; --acc-d: #74a7f0; }
+:root[data-accent='violet'] { --acc-l: #7348cc; --acc-d: #ae93f0; }
+:root[data-accent='teal'] { --acc-l: #1a7f7a; --acc-d: #5cc4ba; }
+:root[data-accent='rose'] { --acc-l: #b93d68; --acc-d: #ec8dae; }
+:root[data-accent='graphite'] { --acc-l: #34332f; --acc-d: #d9d6cf; }
+:root[data-side='compact'] { --side-row: 28px; }
+:root[data-density='compact'] { --row-h: 36px; --card-pad: 8px; }
 
 /* ---- base.css ---- */
 /* ============================================================
@@ -195,22 +98,22 @@ body {
   font-size: var(--fs);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: 'ss01', 'cv11';
+  font-feature-settings: normal;
 }
-button,
-input,
-select,
-textarea {
+button:not([class*='astryx-']),
+input:not([class*='astryx-']):not([data-dotrix-control]),
+select:not([class*='astryx-']),
+textarea:not([class*='astryx-']):not([data-dotrix-control]) {
   font: inherit;
   color: inherit;
 }
-button {
+button:not([class*='astryx-']) {
   cursor: pointer;
   background: none;
   border: 0;
   padding: 0;
 }
-a {
+a:not([class*='astryx-']) {
   color: inherit;
   text-decoration: none;
 }
@@ -239,13 +142,13 @@ textarea,
   font-weight: 500;
   transition: top 0.15s var(--ease);
 }
-.skip:focus {
+.skip:focus:not([class*="astryx-"]):not([data-dotrix-control]):not([contenteditable="true"]) {
   top: calc(8px + env(safe-area-inset-top, 0px));
 }
-:focus {
+:focus:not([class*="astryx-"]):not([data-dotrix-control]):not([contenteditable="true"]) {
   outline: none;
 }
-:focus-visible {
+:focus-visible:not([class*="astryx-"]):not([data-dotrix-control]):not([contenteditable="true"]) {
   outline: 2px solid var(--acc);
   outline-offset: 1px;
   border-radius: var(--r-xs);
@@ -578,7 +481,7 @@ kbd,
 }
 .input:focus,
 .select:focus,
-.textarea:focus {
+.textarea:focus:not([class*="astryx-"]):not([data-dotrix-control]):not([contenteditable="true"]) {
   border-color: var(--acc);
   outline: 2px solid var(--accent-line);
   outline-offset: 1px;
@@ -665,36 +568,6 @@ kbd,
   border-radius: 50%;
   width: 16px;
   height: 16px;
-}
-.toggle {
-  appearance: none;
-  width: 30px;
-  height: 18px;
-  border-radius: 9px;
-  background: var(--border-strong);
-  position: relative;
-  cursor: pointer;
-  transition: background var(--dur);
-  flex-shrink: 0;
-  margin: 0;
-}
-.toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: transform var(--dur) var(--ease);
-}
-.toggle:checked {
-  background: var(--acc);
-}
-.toggle:checked::after {
-  transform: translateX(12px);
 }
 .radio {
   appearance: none;
@@ -1401,10 +1274,10 @@ svg.logo {
   min-height: 0;
   position: relative;
 }
-.content:focus {
+.content:focus:not([class*="astryx-"]):not([data-dotrix-control]):not([contenteditable="true"]) {
   outline: none;
 }
-.drawer:focus {
+.drawer:focus:not([class*="astryx-"]):not([data-dotrix-control]):not([contenteditable="true"]) {
   outline: none;
 }
 /* Content pages with a max width sit centred in the main area; full-bleed views use .page.flush. */
@@ -2750,7 +2623,7 @@ table.tbl {
 .ttl-edit:hover {
   background: var(--surface-2);
 }
-.ttl-edit:focus {
+.ttl-edit:focus:not([class*="astryx-"]):not([data-dotrix-control]):not([contenteditable="true"]) {
   background: var(--surface-2);
   box-shadow: 0 0 0 1px var(--border-strong);
 }

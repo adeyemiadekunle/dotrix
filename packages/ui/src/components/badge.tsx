@@ -1,3 +1,4 @@
+import { Badge as AstryxBadge } from "@astryxdesign/core/Badge";
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@dotrix/ui/lib/utils";
@@ -33,9 +34,10 @@ function Badge({
   asChild = false,
   ...props
 }: React.ComponentProps<"span"> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
-  const Comp = asChild ? Slot.Root : "span";
-
-  return <Comp data-slot="badge" data-variant={variant} className={cn(badgeVariants({ variant }), className)} {...props} />;
+  if (asChild) return <Slot.Root data-slot="badge" className={cn(badgeVariants({ variant }), className)} {...props} />;
+  const { children, ...rest } = props;
+  const tone = variant === "success" ? "success" : variant === "warning" ? "warning" : variant === "destructive" || variant === "danger" ? "error" : "neutral";
+  return <AstryxBadge {...rest} label={children} variant={tone} className={className} />;
 }
 
 export { Badge, badgeVariants };

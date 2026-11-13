@@ -1,7 +1,11 @@
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { createPortal } from "react-dom";
+import { useLayer, useLayerDismissal, LayerDepthProvider, Calendar, type ISODateString } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Popovers: one floating menu at a
 // time (S.ui.pop), placed under what opened it and kept on screen; Escape or a click outside
 // closes it. Picks apply to a task, or to the open New task form ("__form").
-import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
 import {
   applyPatch,
@@ -61,7 +65,7 @@ import {
   toggleOffline,
 } from "../core/more";
 import { currentSlug, go } from "../core/nav";
-import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
+import { MOD, TODAY, dOff, fmtDate, iso } from "../core/utils";
 import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, people } from "../data/store";
 import { useMembers, useProjects } from "../data/lists";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
@@ -88,13 +92,6 @@ function setField(p: P, patch: Partial<Task>) {
     return;
   }
   updateTask(p.id as string, patch);
-}
-
-function startOfWeek(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  const diff = (x.getDay() - S.prefs.weekStart + 7) % 7;
-  return addD(x, -diff);
 }
 
 interface Item {
@@ -141,63 +138,18 @@ function PopList({ p, items, search, onPick }: { p: P; items: Item[]; search?: s
 }
 
 function MiniCal({ p, val, onPick }: { p: P; val: string | null | undefined; onPick: (v: string) => void }) {
-  const m = parse(p.m as string)!;
-  const start = startOfWeek(new Date(m.getFullYear(), m.getMonth(), 1));
-  const cells = Array.from({ length: 42 }, (_, i) => addD(start, i));
-  const wdn = Array.from({ length: 7 }, (_, i) => WD[(i + S.prefs.weekStart) % 7]!.slice(0, 2));
-  const month = (d: number) => {
-    p.m = iso(new Date(m.getFullYear(), m.getMonth() + d, 1));
-    render();
-  };
   return (
-    <div style={{ padding: "6px 6px 2px", width: 252 }}>
-      <div className="row" style={{ marginBottom: 6 }}>
-        <b style={{ fontWeight: 600, fontSize: 13, paddingLeft: 4 }}>
-          {MONL[m.getMonth()]} {m.getFullYear()}
-        </b>
-        <span className="sp" />
-        <button className="ibtn ibtn-xs" onClick={() => month(-1)} aria-label="Previous month">
-          <Ic n="chevron-left" s={14} />
-        </button>
-        <button className="ibtn ibtn-xs" onClick={() => month(1)} aria-label="Next month">
-          <Ic n="chevron-right" s={14} />
-        </button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, textAlign: "center", fontSize: 11 }}>
-        {wdn.map((d, i) => (
-          <span key={i} className="faint" style={{ padding: "3px 0" }}>
-            {d}
-          </span>
-        ))}
-        {cells.map((d) => {
-          const ds = iso(d);
-          const on = ds === val;
-          const today = diffD(d, TODAY) === 0;
-          return (
-            <button
-              key={ds}
-              className="num cal-day"
-              onClick={() => onPick(ds)}
-              aria-label={fmtDate(ds, true)}
-              style={{
-                height: 30,
-                borderRadius: 6,
-                fontSize: 12,
-                ...(on
-                  ? { background: "var(--acc)", color: "var(--on-accent)", fontWeight: 600 }
-                  : today
-                    ? { color: "var(--acc)", fontWeight: 600, boxShadow: "inset 0 0 0 1px var(--accent-line)" }
-                    : d.getMonth() !== m.getMonth()
-                      ? { color: "var(--text-3)" }
-                      : {}),
-              }}
-            >
-              {d.getDate()}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <Calendar
+      mode="single"
+      value={(val ?? null) as ISODateString | null}
+      onChange={onPick}
+      focusDate={String(p.m || val || iso(new Date())) as ISODateString}
+      onFocusDateChange={(date) => {
+        p.m = date;
+        render();
+      }}
+      weekStartsOn={S.prefs.weekStart === 1 ? "mon" : "sun"}
+    />
   );
 }
 
@@ -681,7 +633,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <div className="mh">Visible columns</div>
             {(list ?? TCOLS.filter((c) => c[0] !== "title")).map((c) => (
               <label key={c[0]} className="mi" style={{ cursor: "pointer" }}>
-                <input
+                <SelectionInput
                   type="checkbox"
                   className="check"
                   checked={!v.hidden.includes(c[0])}
@@ -714,7 +666,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             </div>
             {FIELDS[f.f]!.opts().map((o) => (
               <label key={o.id} className="mi" style={{ cursor: "pointer" }}>
-                <input
+                <SelectionInput
                   type="checkbox"
                   className="check"
                   checked={f.v.includes(o.id)}
@@ -734,9 +686,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <div className="row" style={{ gap: 2, padding: 2 }}>
             {["👍", "🎉", "❤️", "👀", "🚀", "✅"].map((e) => (
-              <button key={e} className="ibtn" style={{ fontSize: 16 }} aria-label={`React ${e}`} onClick={() => react(p.id as string, e)}>
+              <ActionButton key={e} className="ibtn" style={{ fontSize: 16 }} aria-label={`React ${e}`} onClick={() => react(p.id as string, e)}>
                 {e}
-              </button>
+              </ActionButton>
             ))}
           </div>
         ),
@@ -950,9 +902,9 @@ function FilterBuilder({ p }: { p: P }) {
       <div className="mh fb-h">
         Filter by
         {v.filters.length > 0 && (
-          <button className="btn btn-sm btn-ghost" onClick={() => viewChange(k, (vv) => (vv.filters = []))}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => viewChange(k, (vv) => (vv.filters = []))}>
             Clear all
-          </button>
+          </ActionButton>
         )}
       </div>
       {v.filters.length ? (
@@ -981,15 +933,15 @@ function FilterBuilder({ p }: { p: P }) {
                     <span className="trunc grow">{names.length ? names.join(", ") : <span className="faint">Select…</span>}</span>
                     <Ic n="chevron-down" s={12} />
                   </button>
-                  <button className="ibtn ibtn-xs" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
+                  <ActionButton className="ibtn ibtn-xs" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
                     <Ic n="trash-2" s={13} />
-                  </button>
+                  </ActionButton>
                 </div>
                 {open && (
                   <div style={{ marginLeft: 50, border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 4, maxHeight: 200, overflow: "auto" }}>
                     {opts.map((o) => (
                       <label key={o.id} className="mi" style={{ cursor: "pointer", minHeight: 28 }}>
-                        <input
+                        <SelectionInput
                           type="checkbox"
                           className="check"
                           checked={f.v.includes(o.id)}
@@ -1143,29 +1095,26 @@ export function PopLayer() {
     el.style.left = x + "px";
     el.style.top = y + "px";
   });
-  useEffect(() => {
-    if (!p) return;
-    const down = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) closePop();
-    };
-    const key = (e: KeyboardEvent) => e.key === "Escape" && closePop();
-    // after the click that opened it
-    const t = setTimeout(() => document.addEventListener("mousedown", down), 0);
-    document.addEventListener("keydown", key);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener("mousedown", down);
-      document.removeEventListener("keydown", key);
-    };
-  }, [p]);
+  const layer = useLayer({ mode: "fixed", lightDismiss: true, onHide: closePop });
+  useLayerDismissal({ isActive: Boolean(p), onDismiss: closePop, getContainer: () => ref.current });
+  const { show, hide } = layer;
+  useLayoutEffect(() => {
+    if (p) show();
+    else hide();
+  }, [p, show, hide]);
   if (!p) return null;
   const out = PopInner({ p });
   if (!out) return null;
-  return (
-    <div ref={ref} className={`pop floating enter ${out.cls ?? ""}`} role="menu" style={{ left: p.x as number, top: p.y as number, ...out.style }}>
-      {out.inner}
-    </div>
+  const content = layer.render(
+    <LayerDepthProvider>
+      <div ref={ref} className={`pop floating enter ${out.cls ?? ""}`} role="menu" style={{ left: p.x as number, top: p.y as number, ...out.style }}>
+        {out.inner}
+      </div>
+    </LayerDepthProvider>,
+    { x: p.x as number, y: p.y as number },
   );
+  const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
+  return dialog ? createPortal(content, dialog) : content;
 }
 
 /** The table's columns (views/table): id, name, width. */

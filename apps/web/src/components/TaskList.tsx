@@ -1,3 +1,5 @@
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Shared task list: the editable cells, a row, the
 // grouped list with inline add and bulk selection, an activity line, and the small task row.
 import { Fragment, useState, type CSSProperties, type MouseEvent, type ReactElement } from "react";
@@ -210,7 +212,7 @@ function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Task; cols
         </div>
         <div className="c-check">
           {complete ? (
-            <input
+            <SelectionInput
               type="checkbox"
               className="check round"
               checked={t.status === "done"}
@@ -218,7 +220,7 @@ function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Task; cols
               aria-label={`Mark ${t.title} complete`}
             />
           ) : (
-            <input
+            <SelectionInput
               type="checkbox"
               className="check"
               checked={sel}
@@ -241,16 +243,16 @@ function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Task; cols
           );
         })}
         <div className="c-more">
-          <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More actions">
+          <ActionButton className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More actions">
             <Ic n="ellipsis" s={15} />
-          </button>
+          </ActionButton>
         </div>
       </div>
       {openRows[t.id] && (
         <div className="subrows">
           {t.subtasks.map((s) => (
             <div key={s.id} className={`subrow ${s.done ? "done" : ""}`}>
-              <input type="checkbox" className="check" checked={s.done} onChange={() => toggleSub(t, s.id)} aria-label="Complete subtask" />
+              <SelectionInput type="checkbox" className="check" checked={s.done} onChange={() => toggleSub(t, s.id)} aria-label="Complete subtask" />
               <span>{s.title}</span>
             </div>
           ))}
@@ -312,10 +314,10 @@ export function ListView({
   if (!total)
     return (
       <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
-        <button className="btn btn-primary btn-sm" onClick={() => newTask({ project })}>
+        <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project })}>
           <Ic n="plus" s={14} />
           New task
-        </button>
+        </ActionButton>
       </Empty>
     );
   const v = S.views[k];
@@ -330,7 +332,7 @@ export function ListView({
           <div />
           <div>
             {!complete && (
-              <input
+              <SelectionInput
                 type="checkbox"
                 className="check"
                 checked={nSel > 0 && nSel === total}
@@ -364,7 +366,7 @@ export function ListView({
             <Fragment key={g.key}>
               {(groups.length > 1 || g.key !== "all") && (
                 <div className="grp">
-                  <button
+                  <ActionButton
                     className="ibtn ibtn-xs"
                     onClick={() => {
                       S.ui.collapsedGroups[gk] = !coll;
@@ -374,14 +376,14 @@ export function ListView({
                     aria-label="Toggle group"
                   >
                     <Ic n={coll ? "chevron-right" : "chevron-down"} s={13} />
-                  </button>
+                  </ActionButton>
                   {g.html}
                   <span>{g.name}</span>
                   <span className="cnt">{g.tasks.length}</span>
                   {!noAdd && (
-                    <button className="ibtn ibtn-xs" onClick={() => startComposer(k, g.key, g.set || {})} aria-label={`Add task to ${g.name}`}>
+                    <ActionButton className="ibtn ibtn-xs" onClick={() => startComposer(k, g.key, g.set || {})} aria-label={`Add task to ${g.name}`}>
                       <Ic n="plus" s={13} />
-                    </button>
+                    </ActionButton>
                   )}
                 </div>
               )}
@@ -426,24 +428,24 @@ function BulkBar({ ids }: { ids: string[] }) {
     <div className="bulkbar enter" role="toolbar" aria-label="Bulk actions">
       <b style={{ fontWeight: 600 }}>{n} selected</b>
       <span className="sep" />
-      <button className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-status")}>
+      <ActionButton className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-status")}>
         <Ic n="circle-dot" s={14} />
         Status
-      </button>
-      <button className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-assignee")}>
+      </ActionButton>
+      <ActionButton className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-assignee")}>
         <Ic n="user" s={14} />
         Assignee
-      </button>
-      <button className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-priority")}>
+      </ActionButton>
+      <ActionButton className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-priority")}>
         <Ic n="signal-high" s={14} />
         Priority
-      </button>
-      <button className="btn btn-sm" onClick={del}>
+      </ActionButton>
+      <ActionButton className="btn btn-sm" onClick={del}>
         <Ic n="trash-2" s={14} />
         Delete
-      </button>
+      </ActionButton>
       <span className="sep" />
-      <button
+      <ActionButton
         className="btn btn-sm"
         onClick={() => {
           S.ui.sel.clear();
@@ -452,7 +454,7 @@ function BulkBar({ ids }: { ids: string[] }) {
         aria-label="Clear selection"
       >
         <Ic n="x" s={14} />
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -497,7 +499,7 @@ export function MiniRow({ t, av = true, noProj }: { t: Task; av?: boolean; noPro
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && openTask(t.id)}
     >
-      <input
+      <SelectionInput
         type="checkbox"
         className="check round"
         checked={t.status === "done"}

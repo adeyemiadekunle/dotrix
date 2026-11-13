@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // An agent's work, as shadcn/ui's AI Elements show it (https://ui.shadcn.com/docs/ai-elements), on the shared Trace
 // (@dotrix/ui/components/trace): Reasoning (what the model thought), Chain of Thought (the steps a reply took),
 // Subagent (a specialist's task, its brief, result and evidence), Tool (each of Kai's tool calls, a command
@@ -7,7 +8,7 @@
 // step looks the same wherever it's shown.
 import { useState, type ReactNode } from "react";
 
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@dotrix/ui/components/hover-card";
+import { HoverCard } from "@dotrix/ui/astryx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@dotrix/ui/components/item";
 import { Marker, MarkerContent, MarkerIcon } from "@dotrix/ui/components/marker";
 
@@ -237,9 +238,9 @@ function Output({ text, failed, className = "" }: { text: string; failed: boolea
     <div className={`agent-trace-output${failed ? " bad" : ""} ${className}`}>
       <pre className="mono">{long && !all ? lines.slice(-LONG).join("\n") : text}</pre>
       {long && (
-        <button className="btn btn-xs btn-ghost" onClick={() => setAll(!all)}>
+        <ActionButton className="btn btn-xs btn-ghost" onClick={() => setAll(!all)}>
           {all ? "Show less" : `Show all ${lines.length} lines`}
-        </button>
+        </ActionButton>
       )}
     </div>
   );
@@ -458,22 +459,24 @@ const TIER: Record<Source["tier"], string> = { primary: "Primary source", reputa
 /** Inline Citation: "[S1]" in a reply as a chip naming the site; hovering it shows the page it stands for. */
 export function Citation({ source }: { source: Source }) {
   return (
-    <HoverCard>
-      <HoverCardTrigger asChild>
-        <a className="agent-cite" href={source.url} target="_blank" rel="noreferrer noopener">
-          {source.host || source.label}
-          <span className="sr-only"> ({source.label}, opens in a new tab)</span>
-        </a>
-      </HoverCardTrigger>
-      <HoverCardContent className="agent-cite-card" align="start">
-        <div className="agent-cite-title">{source.title || source.url}</div>
-        <div className="agent-cite-meta">
-          <span className="mono">{source.label}</span>
-          <span>{source.host}</span>
-          <span>{TIER[source.tier]}</span>
-          {source.published && <span>{source.published.slice(0, 10)}</span>}
+    <HoverCard
+      alignment="start"
+      content={
+        <div className="agent-cite-card" data-align="start">
+          <div className="agent-cite-title">{source.title || source.url}</div>
+          <div className="agent-cite-meta">
+            <span className="mono">{source.label}</span>
+            <span>{source.host}</span>
+            <span>{TIER[source.tier]}</span>
+            {source.published && <span>{source.published.slice(0, 10)}</span>}
+          </div>
         </div>
-      </HoverCardContent>
+      }
+    >
+      <a className="agent-cite" href={source.url} target="_blank" rel="noreferrer noopener">
+        {source.host || source.label}
+        <span className="sr-only"> ({source.label}, opens in a new tab)</span>
+      </a>
     </HoverCard>
   );
 }
@@ -657,9 +660,9 @@ export function Queue({ entries }: { entries: QueueEntry[] }) {
                     </TraceDescription>
                   </TraceLine>
                   {e.onCancel && (
-                    <button className="btn btn-xs btn-ghost" disabled={e.cancelling} onClick={e.onCancel}>
+                    <ActionButton className="btn btn-xs btn-ghost" disabled={e.cancelling} onClick={e.onCancel}>
                       Cancel
-                    </button>
+                    </ActionButton>
                   )}
                   {e.error && <span className="chat-input-error">{e.error}</span>}
                 </div>
@@ -742,48 +745,50 @@ export function ContextUsage({ usage }: { usage: Usage }) {
   if (!total) return null;
   const share = total ? Math.round((input / total) * 100) : 0;
   return (
-    <HoverCard>
-      <HoverCardTrigger asChild>
-        <button type="button" className="agent-usage" aria-label={`${k(total)} tokens: details`}>
-          <Ic n="chart-donut" s={12} />
-          {k(total)} tokens
-        </button>
-      </HoverCardTrigger>
-      <HoverCardContent className="agent-usage-card" align="start">
-        <div className="agent-usage-h">
-          <b>Tokens</b>
-          <span className="mono">{total.toLocaleString()}</span>
+    <HoverCard
+      alignment="start"
+      content={
+        <div className="agent-usage-card" data-align="start">
+          <div className="agent-usage-h">
+            <b>Tokens</b>
+            <span className="mono">{total.toLocaleString()}</span>
+          </div>
+          <div className="agent-usage-bar" role="img" aria-label={`${share}% read, ${100 - share}% written`}>
+            <span style={{ width: `${share}%` }} />
+          </div>
+          <dl className="agent-usage-kv">
+            <dt>Read</dt>
+            <dd className="mono">{input.toLocaleString()}</dd>
+            {usage.cached ? (
+              <>
+                <dt>Of which cached</dt>
+                <dd className="mono">{usage.cached.toLocaleString()}</dd>
+              </>
+            ) : null}
+            <dt>Written</dt>
+            <dd className="mono">{output.toLocaleString()}</dd>
+            {usage.calls ? (
+              <>
+                <dt>Model calls</dt>
+                <dd className="mono">{usage.calls}</dd>
+              </>
+            ) : null}
+            {usage.cost != null ? (
+              <>
+                <dt>Cost</dt>
+                <dd className="mono">${usage.cost.toFixed(usage.cost < 1 ? 3 : 2)}</dd>
+              </>
+            ) : null}
+          </dl>
+          {usage.model && <p className="agent-usage-note">{usage.model} · on your key</p>}
+          {usage.complete === false && <p className="agent-usage-note">The provider didn't report all of it: the real use is higher.</p>}
         </div>
-        <div className="agent-usage-bar" role="img" aria-label={`${share}% read, ${100 - share}% written`}>
-          <span style={{ width: `${share}%` }} />
-        </div>
-        <dl className="agent-usage-kv">
-          <dt>Read</dt>
-          <dd className="mono">{input.toLocaleString()}</dd>
-          {usage.cached ? (
-            <>
-              <dt>Of which cached</dt>
-              <dd className="mono">{usage.cached.toLocaleString()}</dd>
-            </>
-          ) : null}
-          <dt>Written</dt>
-          <dd className="mono">{output.toLocaleString()}</dd>
-          {usage.calls ? (
-            <>
-              <dt>Model calls</dt>
-              <dd className="mono">{usage.calls}</dd>
-            </>
-          ) : null}
-          {usage.cost != null ? (
-            <>
-              <dt>Cost</dt>
-              <dd className="mono">${usage.cost.toFixed(usage.cost < 1 ? 3 : 2)}</dd>
-            </>
-          ) : null}
-        </dl>
-        {usage.model && <p className="agent-usage-note">{usage.model} · on your key</p>}
-        {usage.complete === false && <p className="agent-usage-note">The provider didn't report all of it: the real use is higher.</p>}
-      </HoverCardContent>
+      }
+    >
+      <button type="button" className="agent-usage" aria-label={`${k(total)} tokens: details`}>
+        <Ic n="chart-donut" s={12} />
+        {k(total)} tokens
+      </button>
     </HoverCard>
   );
 }

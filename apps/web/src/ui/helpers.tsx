@@ -1,9 +1,10 @@
+import { EmptyState, Avatar, ProgressBar } from "@dotrix/ui/astryx";
 // Small render helpers as components, same markup.
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment } from "react";
 import { LB, PR, PSTAT, ST, TY, type IssueType, type PriorityId, type ProjectStatusId, type StatusId } from "../core/constants";
 import { Ic } from "../core/icons";
-import { TODAY, diffD, initials, parse, relDate } from "../core/utils";
+import { TODAY, diffD, parse, relDate } from "../core/utils";
 import { moodOf } from "../core/presence";
 import { Face } from "./face";
 import { pColor, who } from "../data/store";
@@ -28,11 +29,8 @@ export function Av({ id, cls = "", tip = true }: { id: string | null | undefined
         <Face c={w.c} size={FACE_PX[cls.split(" ").find((k) => k in FACE_PX) ?? ""] ?? 22} mood={moodOf(w.id)} />
       </span>
     );
-  return (
-    <span className={`av ${cls}`} style={css({ "--c": w.c })} data-tip={tip ? w.name : undefined} aria-label={w.name}>
-      {initials(w.name)}
-    </span>
-  );
+  const size = cls.includes("xl") ? 64 : cls.includes("lg") ? 36 : cls.includes("md") ? 24 : 20;
+  return <Avatar name={w.name} size={size} tooltip={tip} className={cls} />;
 }
 export function AvStack({ ids, max = 4, cls = "sm" }: { ids: string[]; max?: number; cls?: string }) {
   return (
@@ -173,24 +171,12 @@ export function Due({ t, icon = true }: { t: Task; icon?: boolean }) {
   );
 }
 export function ProgBar({ v, cls = "" }: { v: number; cls?: string }) {
-  return (
-    <span className={`prog ${cls}`} role="progressbar" aria-valuenow={v} aria-valuemin={0} aria-valuemax={100}>
-      <i style={css({ "--p": v / 100 })} />
-    </span>
-  );
+  return <ProgressBar value={v} label="Progress" isLabelHidden className={cls} />;
 }
 export function Empty({ icon, title, text, children, cls = "" }: { icon: string; title: string; text: string; children?: ReactNode; cls?: string }) {
-  return (
-    <div className={`empty-state ${cls}`}>
-      <div className="glyph">
-        <Ic n={icon} s={20} />
-      </div>
-      <h2 className="es-h">{title}</h2>
-      <p>{text}</p>
-      {children}
-    </div>
-  );
+  return <EmptyState icon={<Ic n={icon} s={24} />} title={title} description={text} actions={children} headingLevel={2} className={cls} />;
 }
+
 /** Highlights the first match of `q` in `text`. */
 export function Hl({ text, q }: { text: string; q: string }) {
   if (!q) return <>{text}</>;

@@ -1,3 +1,5 @@
+import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // What the connected repository's knowledge covers: path coverage and domain coverage, separately.
 // Every required domain shows its evidence or a named gap, and what isn't read says why.
 import { useState, type ReactNode } from "react";
@@ -62,22 +64,22 @@ export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNod
         {lead}
         <span className="sp" />
         {canTake && (
-          <button className="btn btn-sm btn-secondary" disabled={take.isPending} onClick={() => take.mutate()}>
+          <ActionButton className="btn btn-sm btn-secondary" disabled={take.isPending} onClick={() => take.mutate()}>
             <Ic n="refresh-cw" s={12} />
             Take inventory now
-          </button>
+          </ActionButton>
         )}
         {canExplain && c?.snapshot && stale.length > 0 && (
-          <button className="btn btn-sm btn-secondary" disabled={explain.isPending} onClick={() => explain.mutate({ refresh: true })}>
+          <ActionButton className="btn btn-sm btn-secondary" disabled={explain.isPending} onClick={() => explain.mutate({ refresh: true })}>
             <Ic n="refresh-cw" s={12} />
             Refresh {stale.length} stale {stale.length === 1 ? "page" : "pages"}
-          </button>
+          </ActionButton>
         )}
         {canExplain && c?.snapshot && (!c.discovery_complete || pages.length === 0) && (
-          <button className="btn btn-sm btn-primary" disabled={explain.isPending} onClick={() => explain.mutate({})}>
+          <ActionButton className="btn btn-sm btn-primary" disabled={explain.isPending} onClick={() => explain.mutate({})}>
             <Ic n="book-open" s={12} />
             Explain the repository
-          </button>
+          </ActionButton>
         )}
       </div>
       <div className="page wide" style={{ paddingTop: 16 }}>
@@ -97,7 +99,7 @@ export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNod
           <>
             <div className="row muted" style={{ gap: 10, flexWrap: "wrap", fontSize: 12.5, marginBottom: 12 }}>
               <span>
-                <Ic n="git-commit" s={12} /> {c.snapshot.repo_full_name} @ <code>{c.snapshot.commit_sha.slice(0, 7)}</code>
+                <Ic n="git-commit" s={12} /> {c.snapshot.repo_full_name} @ <InlineCode>{c.snapshot.commit_sha.slice(0, 7)}</InlineCode>
               </span>
               <span>{c.snapshot.path_count} paths</span>
               <span>taken {ago(new Date(c.snapshot.created_at).getTime())}</span>
@@ -128,9 +130,9 @@ export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNod
                   <span className={`badge ${STATES[d.status][1]}`} role="cell">
                     {STATES[d.status][0]}
                   </span>
-                  <button className="btn btn-sm btn-ghost" disabled={!d.paths && !d.excluded} onClick={() => setPicked({ domain: d.domain })}>
+                  <ActionButton className="btn btn-sm btn-ghost" disabled={!d.paths && !d.excluded} onClick={() => setPicked({ domain: d.domain })}>
                     Paths
-                  </button>
+                  </ActionButton>
                 </div>
               ))}
             </div>
@@ -140,11 +142,11 @@ export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNod
                   <div key={p.path} className="row" style={{ padding: "8px 14px", gap: 10, borderTop: "1px solid var(--border)" }}>
                     <div className="grow">
                       {openPage ? (
-                        <button className="btn btn-sm btn-ghost" onClick={() => openPage(p.path)}>
+                        <ActionButton className="btn btn-sm btn-ghost" onClick={() => openPage(p.path)}>
                           {p.path}
-                        </button>
+                        </ActionButton>
                       ) : (
-                        <code>{p.path}</code>
+                        <InlineCode>{p.path}</InlineCode>
                       )}
                       <div className="muted" style={{ fontSize: 12 }}>
                         {p.stale.length
@@ -155,13 +157,13 @@ export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNod
                       </div>
                     </div>
                     {canExplain && p.stale.length > 0 && (
-                      <button
+                      <ActionButton
                         className="btn btn-sm btn-secondary"
                         disabled={explain.isPending}
                         onClick={() => explain.mutate({ refresh: true, pages: [p.path] })}
                       >
                         Refresh this page
-                      </button>
+                      </ActionButton>
                     )}
                     <span className={`badge ${p.stale.length || !p.citations ? "amber" : "green"}`}>
                       {p.stale.length ? "Stale" : p.citations ? "Fresh" : "Uncited"}
@@ -179,14 +181,14 @@ export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNod
                     : "From manifests and lockfiles"}
                 </span>
                 <span className="sp" />
-                <button className="btn btn-sm btn-ghost" onClick={() => setShowDeps(!showDeps)}>
+                <ActionButton className="btn btn-sm btn-ghost" onClick={() => setShowDeps(!showDeps)}>
                   {showDeps ? "Hide" : "Show"}
-                </button>
+                </ActionButton>
               </div>
               {showDeps &&
                 deps?.dependencies.slice(0, 200).map((d) => (
                   <div key={`${d.manifest}:${d.name}:${d.scope}`} className="row" style={{ gap: 8, fontSize: 12.5, padding: "3px 0" }}>
-                    <code className="grow trunc">{d.name}</code>
+                    <InlineCode className="grow trunc">{d.name}</InlineCode>
                     <span className="faint">{d.declared}</span>
                     <span>{d.locked ?? "not locked"}</span>
                     <span className="badge">{d.scope}</span>
@@ -209,13 +211,13 @@ export function Coverage({ pid, lead, openPage }: { pid: string; lead?: ReactNod
                     {picked.domain ? (c.domains ?? []).find((d) => d.domain === picked.domain)?.title.split(":")[0] : STATUS_WORDS[picked.status!]}
                   </b>
                   <span className="sp" />
-                  <button className="ibtn ibtn-sm" onClick={() => setPicked(null)} aria-label="Close">
+                  <ActionButton className="ibtn ibtn-sm" onClick={() => setPicked(null)} aria-label="Close">
                     <Ic n="x" s={13} />
-                  </button>
+                  </ActionButton>
                 </div>
                 {(paths.data?.paths ?? []).map((p) => (
                   <div key={p.path} className="row" style={{ gap: 8, fontSize: 12.5, padding: "3px 0" }}>
-                    <code className="grow trunc">{p.path}</code>
+                    <InlineCode className="grow trunc">{p.path}</InlineCode>
                     <span className="faint">{p.reason ?? STATUS_WORDS[p.status]}</span>
                   </div>
                 ))}
