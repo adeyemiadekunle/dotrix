@@ -10,19 +10,20 @@ FROM node:22-bookworm
 
 # The CLIs, installed globally; their binaries are what the provider profiles allow to reach
 # the model APIs (see dotrix-claude-code.yaml and dotrix-codex.yaml). Pinned like OpenCode and fx, because
-# modules/coding/tools.py reads their headless events and passes their flags: Claude Code as checked on a
-# real model (2.1.296, docs/architecture.md#coding-sessions-and-execution-providers); Codex at the release its flags were checked against
-# (0.166.0: `exec --json --skip-git-repo-check --sandbox danger-full-access --ephemeral`; run on GPT-5.5, 2026-10-31).
-# Raise a version only after checking its events and flags.
-ARG CLAUDE_CODE_VERSION=2.1.296
-ARG CODEX_VERSION=0.166.0
+# modules/coding/tools.py reads their headless events and passes their flags. Claude Code 2.1.323 and Codex
+# 0.169.0 (2026-11-13) gave the same parsed steps, output, usage and resume as the versions run on real
+# models (Claude Code 2.1.296 on Claude Haiku 5.5; Codex 0.166.0 on GPT-5.5, 2026-10-31), against a scripted
+# model API with Kai's own commands. Codex 0.166.0 applied a repository's own .codex/config.toml; 0.169.0
+# doesn't. Raise a version only after checking its events and flags the same way.
+ARG CLAUDE_CODE_VERSION=2.1.323
+ARG CODEX_VERSION=0.169.0
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} \
   && claude --version && codex --version
 
 # OpenCode 2 (DOTRIX_CODING_AGENT=opencode): any provider's model. Pinned, because its headless events
-# and session export are what modules/coding/tools.py reads (checked on 2.1.4); its profiles are
-# dotrix-opencode-*.yaml.
-ARG OPENCODE_VERSION=2.1.4
+# and session export are what modules/coding/tools.py reads (checked on 2.1.4, and 2.3.0 against the same
+# scripted model API, 2026-11-13: same steps, usage and resume); its profiles are dotrix-opencode-*.yaml.
+ARG OPENCODE_VERSION=2.3.0
 RUN npm install -g @opencode/cli@${OPENCODE_VERSION} && opencode --version
 # ripgrep on PATH: OpenCode's glob and grep otherwise download it from GitHub at their first use, which
 # the sandbox refuses, and the failed download takes the rest of the turn down with it (seen with GPT-5.5).
@@ -46,7 +47,7 @@ COPY fx-acp.mjs /opt/dotrix/fx-acp.mjs
 # A browser for the agent (the platform passes it as an MCP server, `playwright-mcp`): Playwright's
 # Chromium, headless, in a shared folder the unprivileged user can run. It opens the app the agent
 # serves on localhost inside the sandbox; the sandbox's network rules still apply to everything else.
-ARG PLAYWRIGHT_MCP_VERSION=0.0.83
+ARG PLAYWRIGHT_MCP_VERSION=0.0.85
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} \
   && cd "$(npm root -g)/@playwright/mcp" && npx --no-install playwright install --with-deps chromium \

@@ -18,6 +18,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Changed
 
 - Consolidated product, release-readiness and agent design documentation into two current guides, replacing obsolete proposals and updating navigation.
+- Kai's coding engines are updated: Claude Code 2.1.323, Codex 0.169.0, OpenCode 2.3.0, and the browser's Playwright MCP 0.0.85.
 
 ### Fixed
 
@@ -29,6 +30,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - Local coding (dotrix runner and the desktop app) no longer runs a repository's own Claude Code hooks, permission rules, plugins or MCP servers. Without Docker Sandboxes, Claude Code there gets only its file tools (no shell commands) and none of the repository's CLAUDE.md or skills.
 - A cloud coding turn whose changes or summary contain your model key, as written or base64-encoded, is refused before anything is committed or pushed.
+
+### Security
+
+- Kai on Codex no longer takes a repository's AGENTS.md as instructions, and no longer applies a repository's own Codex settings (.codex/config.toml).
 
 ## [0.2.0] - 2026-11-12
 
