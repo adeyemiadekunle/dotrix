@@ -12,6 +12,8 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
 import { allowed, canInvite, type Perm } from "../core/can";
+import { desktopBrowser, setBrowserSettings, useBrowserSettings, type BrowserSettings } from "../core/desktop";
+import { CODING_AGENT } from "../data/seed-dotrix";
 import { organisations, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
@@ -116,6 +118,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
       ["profile", "Profile", "user"],
       ["my-models", "Your models", "key-round"],
       ["my-agents", "Your agents", "bot"],
+      ["browser", "Browser", "globe"],
       ["preferences", "Preferences", "sliders-horizontal"],
     ],
   ],
@@ -2386,6 +2389,57 @@ function LivePermissions() {
   );
 }
 
+/** The desktop app's Browser pane: on or off, Kai's use of it, and what its pages keep. Saved by the app, for this computer. */
+function BrowserSettingsPage() {
+  const bridge = desktopBrowser();
+  const settings = useBrowserSettings();
+  if (!bridge) return <p className="muted">The Browser pane is part of the dotrix desktop app. Open Settings there to change it.</p>;
+  const change = (send: () => Promise<BrowserSettings>) => () =>
+    void send()
+      .then(setBrowserSettings)
+      .catch(() => toast("The setting couldn't be saved"));
+  const on = settings?.enabled ?? false;
+  return (
+    <>
+      <SRow t="Browser pane" d="Open your running app or any web page beside a coding session, in a profile apart from dotrix and your everyday browser.">
+        <Tog on={on} set={(v) => change(() => bridge.setEnabled(v))()} label="Browser pane" disabled={!settings} />
+      </SRow>
+      <SRow
+        t={`Let ${CODING_AGENT.name} use the browser`}
+        d={`On a turn coding on this computer, ${CODING_AGENT.name} can open your running app in a tab of its own to check its change. Its tab opens only pages on this computer.`}
+      >
+        <Tog
+          on={on && (settings?.kaiAllowed ?? false)}
+          set={(v) => change(() => bridge.setKaiAllowed(v))()}
+          label={`Let ${CODING_AGENT.name} use the browser`}
+          disabled={!on}
+        />
+      </SRow>
+      <SRow t="Keep cookies after quitting" d="Off, pages in the pane are signed out each time you quit dotrix.">
+        <Tog
+          on={on && (settings?.keepCookies ?? false)}
+          set={(v) => change(() => bridge.setKeepCookies(v))()}
+          label="Keep cookies after quitting"
+          disabled={!on}
+        />
+      </SRow>
+      <SRow t="Browsing data" d="Cookies, storage and cache saved by pages in the pane.">
+        <ActionButton
+          className="btn btn-sm"
+          onClick={() =>
+            void bridge.clear().then(
+              () => toast("Browsing data cleared"),
+              () => toast("The browsing data couldn't be cleared"),
+            )
+          }
+        >
+          Clear browsing data
+        </ActionButton>
+      </SRow>
+    </>
+  );
+}
+
 function Body({ sec }: { sec: string }) {
   if (sec === "appearance" || sec === "shortcuts") sec = "preferences";
   const d = D();
@@ -2767,6 +2821,8 @@ function Body({ sec }: { sec: string }) {
       );
     case "password":
       return <Password />;
+    case "browser":
+      return <BrowserSettingsPage />;
     case "sessions":
       if (isLive()) return <LiveSessions />;
       return (
@@ -2853,6 +2909,7 @@ const LEADS: Record<string, string> = {
   "my-agents": "How you like each agent to work, for the conversations you start. Only you see these.",
   password: "Use a long password you don't use anywhere else.",
   sessions: "Browsers and apps signed in to your account, and the tokens that act as you.",
+  browser: "The Browser pane beside a coding session in the desktop app. These settings are this computer's.",
 };
 
 // Old sec ids fold into a page: Agents holds Rules and Automations, Notifications holds the
@@ -2898,7 +2955,9 @@ export function Settings() {
   const sec = personal() && TEAM_ONLY.has(renamed) ? "profile" : renamed;
   const admin = allowed("workspace:manage");
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
-  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k));
+  // The Browser pane is the desktop app's: its page is listed only there.
+  const shown = (k: string) =>
+    (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k)) && (k !== "browser" || Boolean(desktopBrowser()));
   const page = SEC_PAGE[sec] ?? sec;
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
   const lead = sec === "members" ? `${members.length} ${LEADS.members}` : LEADS[page];

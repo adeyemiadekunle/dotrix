@@ -113,6 +113,7 @@ function bridge(): void {
   handle("dotrix:browser:settings", () => browser.settings);
   handle("dotrix:browser:keep-cookies", (_e, keep: unknown) => browser.setKeepCookies(keep === true));
   handle("dotrix:browser:clear", () => browser.clear());
+  handle("dotrix:browser:enabled", (_e, enabled: unknown) => browser.setEnabled(enabled === true));
   handle("dotrix:browser:kai-allowed", (_e, allowed: unknown) => browser.setKaiAllowed(allowed === true));
   handle("dotrix:browser:kai-request", () => kai.request);
   handle("dotrix:browser:kai-ready", (event, id: unknown, contentsId: unknown) => kai.ready(event.sender, id, contentsId));
@@ -122,7 +123,7 @@ app.whenReady().then(async () => {
   browser = new Browser();
   kai = new KaiBrowser(
     appPage,
-    () => browser.settings.kaiAllowed,
+    () => browser.settings.enabled && browser.settings.kaiAllowed,
     () => browser.settings.partition,
   );
   browser.kais = (tab) => kai.owns(tab);

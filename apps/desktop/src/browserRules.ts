@@ -22,13 +22,13 @@ export function browsable(url: string): boolean {
 }
 
 /** The pane's saved settings, from whatever its file holds. */
-export function readSettings(raw: string | null): { keepCookies: boolean; kaiAllowed: boolean } {
+export function readSettings(raw: string | null): { enabled: boolean; keepCookies: boolean; kaiAllowed: boolean } {
   try {
-    const saved = JSON.parse(raw ?? "") as { keepCookies?: unknown; kaiAllowed?: unknown };
-    // Kai may use the pane unless a person turned that off.
-    return { keepCookies: saved.keepCookies === true, kaiAllowed: saved.kaiAllowed !== false };
+    const saved = JSON.parse(raw ?? "") as { enabled?: unknown; keepCookies?: unknown; kaiAllowed?: unknown };
+    // The pane is there, and Kai may use it, unless a person turned that off.
+    return { enabled: saved.enabled !== false, keepCookies: saved.keepCookies === true, kaiAllowed: saved.kaiAllowed !== false };
   } catch {
-    return { keepCookies: false, kaiAllowed: true };
+    return { enabled: true, keepCookies: false, kaiAllowed: true };
   }
 }
 

@@ -11,6 +11,8 @@ import path from "node:path";
 import { browsable, CLEAN_PARTITION, KEPT_PARTITION, loopback, partitionFor, readSettings } from "./browserRules";
 
 export interface BrowserSettings {
+  /** The pane is offered at all (Settings → Browser): off, no tab can be made and Kai has no browser. */
+  enabled: boolean;
   keepCookies: boolean;
   /** Kai may open and act on pages of this computer's dev server in a tab of its own. */
   kaiAllowed: boolean;
@@ -19,6 +21,7 @@ export interface BrowserSettings {
 }
 
 export class Browser {
+  private enabled: boolean;
   private keepCookies: boolean;
   private kaiAllowed: boolean;
   private readonly guarded = new Set<Session>();
@@ -32,16 +35,16 @@ export class Browser {
     } catch {
       // Never saved: a clean profile.
     }
-    ({ keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed } = readSettings(raw));
+    ({ enabled: this.enabled, keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed } = readSettings(raw));
   }
 
   private save(): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(this.file, JSON.stringify({ keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed }));
+    fs.writeFileSync(this.file, JSON.stringify({ enabled: this.enabled, keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed }));
   }
 
   get settings(): BrowserSettings {
-    return { keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed, partition: partitionFor(this.keepCookies) };
+    return { enabled: this.enabled, keepCookies: this.keepCookies, kaiAllowed: this.kaiAllowed, partition: partitionFor(this.keepCookies) };
   }
 
   /** Keep the profile's cookies after the app quits, or not (what was kept is cleared). */
@@ -51,6 +54,13 @@ export class Browser {
       this.save();
       if (!keep) await wipe(session.fromPartition(KEPT_PARTITION));
     }
+    return this.settings;
+  }
+
+  /** Turn the pane on or off for this computer (off: its open tabs go with the pane, and no new one can be made). */
+  setEnabled(enabled: boolean): BrowserSettings {
+    this.enabled = enabled;
+    this.save();
     return this.settings;
   }
 
@@ -68,7 +78,7 @@ export class Browser {
 
   /** A tab the app's page is about to create: forced into the pane's profile, with nothing of the app's. False refuses it. */
   attach(webPreferences: WebPreferences, params: Record<string, string>): boolean {
-    if (params.src && !browsable(params.src)) return false;
+    if (!this.enabled || (params.src && !browsable(params.src))) return false;
     const partition = this.settings.partition;
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;

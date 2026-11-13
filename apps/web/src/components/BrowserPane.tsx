@@ -10,7 +10,7 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { hostOf, toAddress } from "../core/browserUrl";
-import { desktopBrowser, type BrowserSettings, type KaiTabRequest } from "../core/desktop";
+import { desktopBrowser, setBrowserSettings as setSettings, useBrowserSettings, type KaiTabRequest } from "../core/desktop";
 import { Ic } from "../core/icons";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import { toast } from "../ui/toast";
@@ -136,7 +136,7 @@ export function BrowserPane({
   onClose: () => void;
 }) {
   const bridge = desktopBrowser();
-  const [settings, setSettings] = useState<BrowserSettings | null>(null);
+  const settings = useBrowserSettings();
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const saved = kept.get(sessionId);
     return saved?.urls.length ? saved.urls.map((url) => newTab(url)) : [newTab()];
@@ -148,14 +148,6 @@ export function BrowserPane({
   const [menu, setMenu] = useState(false);
   const pages = useRef(new Map<string, Webview>());
   const address = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    let live = true;
-    void bridge?.settings().then((found) => live && setSettings(found));
-    return () => {
-      live = false;
-    };
-  }, [bridge]);
 
   // Remembered for the next time this session's pane opens.
   useEffect(() => {

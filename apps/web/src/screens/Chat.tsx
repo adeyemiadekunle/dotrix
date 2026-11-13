@@ -78,7 +78,7 @@ import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { LimitNotice } from "../components/LimitNotice";
 import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
-import { desktop, desktopBrowser, useDesktopRunners, type DesktopRunner } from "../core/desktop";
+import { desktop, desktopBrowser, useBrowserSettings, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
@@ -2016,8 +2016,7 @@ function KaiTurn({
 }
 
 /** The panes a session can show beside it; the address keeps the open ones (`panel=changes,files`). */
-const PANES = CODING_VIEWS;
-const paneList = (value: string | null): CodingView[] =>
+const paneList = (value: string | null, PANES: typeof CODING_VIEWS): CodingView[] =>
   (value ?? "")
     .split(",")
     .map((v) => (v === "coding" ? "changes" : v))
@@ -2041,7 +2040,10 @@ export function Session({ cs }: { cs: CodingSession }) {
   // The open panes: the address's (`panel=`, Files for a `file=` link), else the ones last open in this browser.
   const [lastPanes, setLastPanes] = useStoredText("dotrix.coding.panes", "");
   const asked = search.get("panel");
-  const panes = paneList(asked ?? (search.has("file") ? "files" : lastPanes));
+  // Browser is a pane only in the desktop app, and only while it's on there (Settings → Browser).
+  const browserOff = useBrowserSettings()?.enabled === false;
+  const PANES = useMemo(() => CODING_VIEWS.filter((view) => view.id !== "browser" || !browserOff), [browserOff]);
+  const panes = paneList(asked ?? (search.has("file") ? "files" : lastPanes), PANES);
   const setPanes = (next: CodingView[], extra: Record<string, string> = {}) => {
     const query = new URLSearchParams(search);
     // Opening a file or a turn sets them; closing the last pane lets them go.

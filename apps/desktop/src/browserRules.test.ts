@@ -19,10 +19,10 @@ test("cookies are kept on disk only when asked", () => {
 });
 
 test("settings default to a clean profile", () => {
-  assert.deepEqual(readSettings(null), { keepCookies: false, kaiAllowed: true });
-  assert.deepEqual(readSettings("not json"), { keepCookies: false, kaiAllowed: true });
-  assert.deepEqual(readSettings('{"keepCookies":"yes"}'), { keepCookies: false, kaiAllowed: true });
-  assert.deepEqual(readSettings('{"keepCookies":true,"kaiAllowed":false}'), { keepCookies: true, kaiAllowed: false });
+  assert.deepEqual(readSettings(null), { enabled: true, keepCookies: false, kaiAllowed: true });
+  assert.deepEqual(readSettings("not json"), { enabled: true, keepCookies: false, kaiAllowed: true });
+  assert.deepEqual(readSettings('{"keepCookies":"yes"}'), { enabled: true, keepCookies: false, kaiAllowed: true });
+  assert.deepEqual(readSettings('{"keepCookies":true,"kaiAllowed":false,"enabled":false}'), { enabled: false, keepCookies: true, kaiAllowed: false });
 });
 
 test("Kai's pages are on this computer only", () => {
