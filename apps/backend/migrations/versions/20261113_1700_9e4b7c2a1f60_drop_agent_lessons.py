@@ -4,7 +4,7 @@ Accepted lessons were written into agent-rules/lessons/<agent>.md, which stay an
 Only the proposals and decisions recorded here go.
 
 Revision ID: 9e4b7c2a1f60
-Revises: b83edb29b95d
+Revises: 6c2f8a1d3e57
 Create Date: 2026-11-13 17:00:00.000000
 """
 from collections.abc import Sequence
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "9e4b7c2a1f60"
-down_revision: str | None = "b83edb29b95d"
+down_revision: str | None = "6c2f8a1d3e57"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
