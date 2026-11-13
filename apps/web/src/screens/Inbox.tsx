@@ -61,6 +61,7 @@ const TYPE_IC: Record<string, string> = {
   decided: "check-check",
   limit: "gauge",
   stale: "file-clock",
+  coding: "code",
 };
 
 // A real workspace marks them read through the save (the cache); the sample edits the store.
@@ -424,7 +425,7 @@ const TABS: [string, string, NotifType[] | null][] = [
   ["all", "All", null],
   ["needs", "Needs you", ["approval", "checkpoint", "limit"]],
   ["mentions", "Mentions", PEOPLE],
-  ["updates", "Updates", ["finding", "decided", "update", "stale"]],
+  ["updates", "Updates", ["finding", "decided", "update", "stale", "coding"]],
 ];
 const ALL_TYPES = TABS.flatMap(([, , ts]) => ts ?? []);
 // Approvals and plans stay unread until decided.

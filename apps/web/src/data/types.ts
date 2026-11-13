@@ -108,7 +108,7 @@ export interface Activity {
   at: number;
   extra: string;
 }
-export type NotifType = "mention" | "assign" | "comment" | "update" | "approval" | "checkpoint" | "finding" | "decided" | "limit" | "stale";
+export type NotifType = "mention" | "assign" | "comment" | "update" | "approval" | "checkpoint" | "finding" | "decided" | "limit" | "stale" | "coding";
 export interface Notif {
   id: string;
   type: NotifType;
