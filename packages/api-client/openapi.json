@@ -35670,7 +35670,8 @@
           "decided",
           "watching",
           "limit",
-          "stale"
+          "stale",
+          "coding"
         ],
         "title": "NotificationKind"
       },
@@ -35875,6 +35876,12 @@
             "type": "boolean",
             "title": "Stale",
             "description": "A push changes code the project's wiki pages cite",
+            "default": true
+          },
+          "coding": {
+            "type": "boolean",
+            "title": "Coding",
+            "description": "A coding turn you asked for opens or updates its pull request, finishes without changes, or fails",
             "default": true
           },
           "email": {

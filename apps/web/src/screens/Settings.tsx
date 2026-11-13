@@ -2142,7 +2142,7 @@ function LiveNotifs({ sec }: { sec: string }) {
         toast(`Your notification settings didn't save: ${errText(e)}`, { kind: "err" });
       });
   };
-  const T = (k: "mention" | "assigned" | "watching" | "finding" | "decided" | "stale", label: string) => (
+  const T = (k: "mention" | "assigned" | "watching" | "finding" | "decided" | "stale" | "coding", label: string) => (
     <Tog on={v[k]} set={(on) => put({ [k]: on })} label={label} />
   );
   const always = (what: string) => <Tog on set={() => toast(`${what} always come through`, { kind: "info" })} label={what} />;
@@ -2202,6 +2202,9 @@ function LiveNotifs({ sec }: { sec: string }) {
           </SRow>
           <SRow t="Decisions on my requests" d="When someone else approves or rejects a change you asked for.">
             {T("decided", "Decisions")}
+          </SRow>
+          <SRow t="Kai's turns" d="When a coding turn you asked for opens or updates its pull request, finishes without changes, or fails.">
+            {T("coding", "Coding turns")}
           </SRow>
           <SRow t="Wiki pages out of date" d="When a push changes code that the project's wiki pages cite (if you edit documents).">
             {T("stale", "Out-of-date pages")}
@@ -2642,6 +2645,9 @@ function Body({ sec }: { sec: string }) {
           </SRow>
           <SRow t="Decisions on my requests" d="When someone else approves or rejects a change you asked for.">
             <NTog k="decided" def />
+          </SRow>
+          <SRow t="Kai's turns" d="When a coding turn you asked for opens or updates its pull request, finishes without changes, or fails.">
+            <NTog k="coding" def />
           </SRow>
         </>
       );

@@ -1268,6 +1268,33 @@ def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *
         details={"run_id": str(run.id), "pr_url": run.pr_url, "error": run.error,
                  "tokens": run.input_tokens + run.output_tokens},
     )
+    turn_ended(session, run)
+
+
+def turn_ended(session: AsyncSession, run: CodingRun, *, by: uuid.UUID | None = None) -> None:
+    """Tell whoever asked for a turn how it ended, as Claude Code does when a background task finishes:
+    its PR, nothing changed, or why it didn't finish. Not for a turn they stopped or discarded themselves
+    (`by`), nor one still waiting on a person (that has its own notification). Not committed."""
+    if run.requested_by_id is None or (by is not None and by == run.requested_by_id):
+        return
+    key = run.issue_key
+    if run.status is CodingRunStatus.PR_OPENED:
+        title = f"{CODING_AGENT_NAME}'s turn on {key} is on PR #{run.pr_number}" if run.pr_number \
+            else f"{CODING_AGENT_NAME} finished {key}"
+        why = None
+    elif run.status is CodingRunStatus.NO_CHANGES:
+        title = (f"{CODING_AGENT_NAME}'s plan for {key} is ready" if run.work_mode == "plan"
+                 else f"{CODING_AGENT_NAME} finished {key} without changing anything")
+        why = None
+    elif run.status is CodingRunStatus.FAILED:
+        title, why = f"{CODING_AGENT_NAME} didn't finish {key}", run.error
+    else:
+        return
+    Notifier(session).coding_done(
+        workspace_id=run.workspace_id, project_id=run.project_id, requester_id=run.requested_by_id,
+        coding_run_id=run.id, issue_id=run.issue_id, title=title, at=run.finished_at or datetime.now(UTC),
+        agent=run.agent.value, why=why,
+    )
 
 
 def _refuse_leaked_key(key: str | None, patch: bytes, summary: str | None) -> None:
