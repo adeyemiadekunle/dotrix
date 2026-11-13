@@ -1366,7 +1366,7 @@ class AgentRunner:
         workspace_id: uuid.UUID | None = None, skill_snapshot: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Each agent's rules, keyed by handle ("base", "product", a custom agent's): the
-        workspace's rules, then the project's agent-rules/*.md and the lessons owners accepted
+        workspace's rules, then the project's agent-rules/*.md and any lessons owners accepted
         (the more specific last); the base also lists the skills and points at the folder
         templates. Default templates and skills are written into projects made before them."""
         from .guidance import project_rules

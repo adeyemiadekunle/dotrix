@@ -35,6 +35,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - Kai on Codex no longer takes a repository's AGENTS.md as instructions, and no longer applies a repository's own Codex settings (.codex/config.toml).
 
+### Removed
+
+- Lessons: a rejection or dismissal with a reason no longer proposes a lesson, and Knowledge has no Lessons tab. Lessons you accepted earlier still apply as part of each agent's rules.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added

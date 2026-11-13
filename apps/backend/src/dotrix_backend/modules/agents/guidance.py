@@ -1,6 +1,5 @@
 """Layered guidance shared by project chat runtimes."""
 from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
-from dotrix_backend.modules.lessons.service import lessons_path
 from dotrix_backend.modules.rules.service import WorkspaceRules, WorkspaceSkills, layered
 from dotrix_engine.layout import AGENTS
 from dotrix_engine.skills import (
@@ -22,7 +21,8 @@ async def project_rules(session, project_id, handles=None, workspace_id=None, sk
     live.update(missing)  # Virtual defaults: reading guidance never mutates the project.
     rules = {name: live[f"agent-rules/{name}.md"] for name in names if f"agent-rules/{name}.md" in live}
     for name in names:
-        lessons = live.get(lessons_path(name), "").strip()
+        # Lessons accepted before lessons were removed (2026-11-13) still apply; nothing adds to them now.
+        lessons = live.get(f"agent-rules/lessons/{name}.md", "").strip()
         if lessons:
             # Owners accepted these; the file's own heading is replaced by ours.
             body = "\n".join(line for line in lessons.splitlines() if not line.startswith("# "))

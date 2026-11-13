@@ -33,7 +33,6 @@ from dotrix_backend.modules.invites.router import workspace_router as workspace_
 from dotrix_backend.modules.issues.router import router as issues
 from dotrix_backend.modules.issues.router import workspace_router as workspace_issues
 from dotrix_backend.modules.knowledge.router import router as knowledge
-from dotrix_backend.modules.lessons.router import router as lessons
 from dotrix_backend.modules.model_keys.router import me_router as my_models
 from dotrix_backend.modules.model_keys.router import router as model_keys
 from dotrix_backend.modules.notifications.router import router as notifications
@@ -70,7 +69,6 @@ for module_router in (
     workspace_threads,
     workspace_agent_usage,
     automations,
-    lessons,
     graph,
     rules,
     audit,
