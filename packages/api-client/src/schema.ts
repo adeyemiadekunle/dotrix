@@ -3207,68 +3207,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/workspaces/{workspace_id}/projects/{project_id}/lessons": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Lessons
-         * @description Lessons proposed from rejected changes and dismissed results (with their reasons), and what
-         *     became of them; newest first. Owners and admins.
-         */
-        get: operations["list_lessons"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/workspaces/{workspace_id}/projects/{project_id}/lessons/{lesson_id}/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Accept Lesson
-         * @description Add it to the agent's rules (`agent-rules/lessons/<agent>.md`, a new version you can
-         *     edit or restore like any file), in your words if you give `text`. Owners and admins.
-         */
-        post: operations["accept_lesson"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/workspaces/{workspace_id}/projects/{project_id}/lessons/{lesson_id}/decline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Decline Lesson
-         * @description Don't teach it; it stays listed as declined. Owners and admins.
-         */
-        post: operations["decline_lesson"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/graph/neighbors": {
         parameters: {
             query?: never;
@@ -8837,65 +8775,6 @@ export interface components {
             /** @description Set when a coding tool (Claude Code, Codex, the coding agent) is acting. It can only work on issues assigned to it: comment, add sub-tasks, and move its issue up to `review`. */
             as_agent?: components["schemas"]["AgentAssignee"] | null;
         };
-        /** LessonAccept */
-        LessonAccept: {
-            /**
-             * Text
-             * @description The lesson in your words (default: as proposed)
-             */
-            text?: string | null;
-        };
-        /** LessonRead */
-        LessonRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Agent
-             * @description The agent it's for (its handle; project-manager is Auto)
-             */
-            agent: string;
-            /**
-             * Text
-             * @description The lesson as the agent will read it
-             */
-            text: string;
-            source: components["schemas"]["LessonSource"];
-            /**
-             * Reason
-             * @description What the person said when rejecting or dismissing
-             */
-            reason: string;
-            /** Run Id */
-            run_id: string | null;
-            status: components["schemas"]["LessonStatus"];
-            /**
-             * Proposed By Id
-             * @description Whose rejection or dismissal it came from
-             */
-            proposed_by_id: string | null;
-            /** Decided By Id */
-            decided_by_id: string | null;
-            /** Decided At */
-            decided_at: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /**
-         * LessonSource
-         * @enum {string}
-         */
-        LessonSource: "rejection" | "dismissal";
-        /**
-         * LessonStatus
-         * @enum {string}
-         */
-        LessonStatus: "proposed" | "accepted" | "declined";
         /** Link */
         Link: {
             /**
@@ -9262,7 +9141,7 @@ export interface components {
          * NotificationKind
          * @enum {string}
          */
-        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided" | "watching" | "limit" | "stale";
+        NotificationKind: "approval" | "checkpoint" | "assigned" | "finding" | "mention" | "decided" | "watching" | "limit" | "stale" | "coding";
         /**
          * NotificationRead
          * @description Something that waits for you or happened to you. `kind` says which: changes waiting for
@@ -9385,6 +9264,12 @@ export interface components {
              * @default true
              */
             stale: boolean;
+            /**
+             * Coding
+             * @description A coding turn you asked for opens or updates its pull request, finishes without changes, or fails
+             * @default true
+             */
+            coding: boolean;
             /**
              * Email
              * @description Emails: as things happen (batched, one per run), a daily digest at 08:00 UTC, or none
@@ -21802,209 +21687,6 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    list_lessons: {
-        parameters: {
-            query?: {
-                status?: components["schemas"]["LessonStatus"] | null;
-            };
-            header?: never;
-            path: {
-                project_id: string;
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LessonRead"][];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    accept_lesson: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                lesson_id: string;
-                project_id: string;
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LessonAccept"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LessonRead"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Request body or parameters failed validation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    decline_lesson: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                lesson_id: string;
-                project_id: string;
-                workspace_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LessonRead"];
-                };
-            };
-            /** @description Missing, invalid, or expired credentials */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Signed in, but your role or token scope doesn't allow this */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Not found, or not visible to you */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Conflicts with the current state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

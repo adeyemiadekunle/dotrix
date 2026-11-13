@@ -12,17 +12,14 @@ import { openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { go } from "../core/nav";
 import { ago, uid } from "../core/utils";
-import { allowed } from "../core/can";
 import { isLive, knowledgeSaved, live } from "../data/live";
 import { useLiveKnowledgeFile, useLiveKnowledgeFiles } from "../../lib/workspace-data";
-import { useLessons } from "../../lib/lessons";
 import { D, S, mutate, render, who } from "../data/store";
 import { useProjectFiles } from "../data/lists";
 import type { KnowledgeFile, Project } from "../data/types";
 import { Markdown } from "@/components/markdown";
 import { Coverage } from "../views/Coverage";
 import { Files } from "../views/Files";
-import { Lessons } from "../views/Lessons";
 import { Av, Empty } from "../ui/helpers";
 import { toast } from "../ui/toast";
 
@@ -55,13 +52,9 @@ function relationshipLabel(kind: string, direction: "in" | "out") {
   return labels[kind]?.[direction === "out" ? 0 : 1] ?? "Related";
 }
 
-export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "files" | "lessons" | "coverage" }) {
+export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "files" | "coverage" }) {
   const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
   const liveFiles = useLiveKnowledgeFiles(scope);
-  // Lessons are decided by project managers; others never see the tab or the query.
-  const manage = isLive() && allowed("projects:manage");
-  const liveLessons = useLessons(manage ? scope : undefined);
-  const nLessons = (liveLessons.data ?? []).filter((l) => l.status === "proposed").length;
   const files = isLive()
     ? (liveFiles ?? [])
     : D()
@@ -131,12 +124,10 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
     >
       <Tab value="docs" label="Documents" />
       <Tab value="files" label={nFiles ? `Files ${nFiles}` : "Files"} />
-      {manage && <Tab value="lessons" label={nLessons ? `Lessons ${nLessons}` : "Lessons"} />}
       {isLive() && <Tab value="coverage" label="Coverage" />}
     </TabList>
   );
   if (view === "files") return <Files pid={p.id} lead={seg} />;
-  if (view === "lessons" && manage) return <Lessons p={p} lead={seg} />;
   if (view === "coverage" && isLive()) return <Coverage pid={p.id} lead={seg} openPage={(path) => openDocument(p, path)} />;
   return (
     <>

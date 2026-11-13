@@ -133,7 +133,7 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             json={"client_id": str(uuid.uuid4()), "kind": "queue", "message": "Compare alternatives afterward"})
         assert queued.status_code == 202, queued.text
         params["input_id"] = queued.json()["id"]
-        # A rejected change with a reason: a proposed lesson.
+        # A rejected change with a reason.
         agent_script.say(
             tool_call("write_file", file_path="/dotrix/vision.md", content="# V\n"), "Fine."
         )
@@ -150,8 +150,6 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
                 ]
             },
         )
-        lessons = (await db_client.get(f"{base}/lessons", headers=h)).json()
-        assert len(lessons) == 1, lessons
         link = await db_client.post(
             f"{base}/graph/links",
             headers=h,
@@ -162,7 +160,6 @@ def build_world(db_client: AsyncClient, signup, create_team, add_member, agent_s
             lk["id"] for lk in link.json()["links"] if lk["origin"] == "person"
         )
         params |= {
-            "lesson_id": lessons[0]["id"],
             "rejected_run_id": other["id"],
         }  # (not a path parameter)
         # A coding run waiting for approval (made directly: starting one needs a connected repo).
@@ -339,7 +336,6 @@ async def test_every_scoped_route_is_covered(db_client: AsyncClient) -> None:
         "index",
         "installation_ref",
         "automation_id",
-        "lesson_id",
         "link_id",
         "name",
         "coding_run_id",

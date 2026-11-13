@@ -283,7 +283,8 @@ input.on("line", (line) => {
     if (!pending) return;
     pendingTools.delete(command.id);
     if (command.ok) pending.resolve({ result: command.result, handoff: command.handoff === true });
-    else pending.reject(new Error("Tool failed."));
+    // A refusal the host says the model may read (RuntimeToolError); anything else stays generic.
+    else pending.reject(new Error(typeof command.error === "string" && command.error ? command.error : "Tool failed."));
     return;
   }
   if (command.op === "storage_reply") {

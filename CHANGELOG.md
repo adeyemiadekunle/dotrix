@@ -14,6 +14,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - dotrix chat: /plans lists the conversation's saved plans, and /build [version] builds the one you pick.
 - dotrix code --plan-only and dotrix codes follow --plan-only ask Kai for a plan first; --plan TURN builds from that plan.
 - dotrix codes show prints a Plan turn's plan and a turn's parallel tasks; --details adds its skills and unavailable capabilities.
+- A notification tells you when a coding turn you asked Kai for opens or updates its pull request, finishes without changes, or fails, with the session to open (Settings → Notifications → Kai's turns).
 
 ### Changed
 
@@ -33,9 +34,13 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - Member-permission toggles use Astryx Switch without the legacy CSS overlay, keeping pointer and keyboard changes available.
 
+- When the platform refuses an agent's tool call (Plan mode allowing only read-only specialist tasks, wrong arguments, a permission it doesn't have), the agent is told why and carries on, instead of seeing "Tool failed." on fx or ending the whole run on DeepAgents.
+- Stopping a coding turn now also ends what Kai started during it, such as a test run or dev server, instead of leaving those processes running in the sandbox.
+- Inbox coding notifications open the session that produced them when a task has several coding sessions.
 - dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
 - Kai's session now says when a tool call wasn't allowed ("Not allowed to run …") instead of the call disappearing, without showing the coding engine's own refusal text; its own checklist updates are no longer listed as steps.
 - Agents see your project.md and current-state.md as written, up to 1,500 characters, instead of a single line cut at 200.
+- An agent's change to a project document no longer overwrites an edit someone made after it read the page, including one made while the change waited for approval: it's told to read the page again.
 
 ### Security
 
@@ -43,6 +48,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - A cloud coding turn whose changes or summary contain your model key, as written or base64-encoded, is refused before anything is committed or pushed.
 
 - Kai on Codex no longer takes a repository's AGENTS.md as instructions, and no longer applies a repository's own Codex settings (.codex/config.toml).
+
+### Removed
+
+- Lessons: a rejection or dismissal with a reason no longer proposes a lesson, and Knowledge has no Lessons tab. Lessons you accepted earlier still apply as part of each agent's rules.
 
 ## [0.2.0] - 2026-11-12
 

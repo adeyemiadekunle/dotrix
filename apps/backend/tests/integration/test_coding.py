@@ -318,6 +318,12 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert {"coding.requested", "coding.approved", "coding.changes_ready", "coding.changes_accepted",
             "coding.pr_opened"} <= set(actions)
 
+    # Ada hears how her turn ended, with its session to open; Cat, who didn't ask, doesn't.
+    [ended] = (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=ada.headers)).json()
+    assert ended["title"] == f"Kai's turn on {story['key']} is on PR #1" and ended["actor_agent"] == "claude-code"
+    assert ended["coding_session_id"] == run["session_id"] and ended["issue_key"] == story["key"]
+    assert (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=cat.headers)).json() == []
+
 
 async def test_an_approver_who_cant_instruct_the_coding_agent_still_approves_its_run(
     db_client: AsyncClient, coding, claude: ScriptedClaude
@@ -392,6 +398,9 @@ async def test_a_turn_that_writes_the_model_key_is_never_pushed(
         assert run["status"] == "failed" and "contain your model key" in run["error"], run
         assert key not in run["error"] and run["branch"] is None
     assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
+    ended = (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=ada.headers)).json()
+    assert len(ended) == 3 and ended[0]["title"] == f"Kai didn't finish {task['key']}"
+    assert "contain your model key" in ended[0]["excerpt"] and key not in ended[0]["excerpt"]
 
 
 async def test_rejecting_stopping_and_when_it_isnt_available(
@@ -461,6 +470,8 @@ async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
     await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "stopped" and run["error"] == "Stopped by a person" and github.pulls == []
+    # She stopped it herself: nothing to tell her.
+    assert (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=ada.headers)).json() == []
 
 
 async def test_with_a_fork_owner_branches_go_to_the_apps_fork(
