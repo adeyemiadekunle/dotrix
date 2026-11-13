@@ -91,6 +91,12 @@ def task_interrupts(result: dict) -> dict[str, str]:
             if isinstance(item.value, dict) and item.value.get("kind") == "delegation"}
 
 
+class DelegationRefused(Forbidden):
+    """A batch the coordinator may correct (who it may call, the work mode, one batch at a time).
+    The tool returns it to the model as its result instead of ending the run, as Claude Code
+    returns a refused tool call; losing the lease or the requester's access still stops the run."""
+
+
 class DelegationService:
     def __init__(self, runner):
         self.runner = runner
@@ -117,9 +123,11 @@ class DelegationService:
             specs = {item.spec.handle: item.spec for item in resolved}
             lead = specs["project-manager"]
             if not lead.can("delegate") or any("*" not in lead.can_call and task.agent not in lead.can_call for task in batch.tasks):
-                raise Forbidden("The coordinator's policy does not allow this delegation")
+                raise DelegationRefused("The coordinator's policy does not allow this delegation: "
+                                        "delegate only to the specialists it may call")
             if parent.work_mode == "plan" and any(task.changes_project for task in batch.tasks):
-                raise Forbidden("Plan mode permits only read-only specialist tasks; switch to Build for changes")
+                raise DelegationRefused("Plan mode permits only read-only specialist tasks; "
+                                        "set changes_project false, or ask the person to switch to Build")
             existing = list(await session.scalars(select(AgentRun).where(
                 AgentRun.workspace_id == workspace_id, AgentRun.parent_run_id == parent.id,
                 AgentRun.delegation_key == key).order_by(AgentRun.created_at, AgentRun.task_key)))
@@ -150,7 +158,8 @@ class DelegationService:
                 AgentRun.workspace_id == workspace_id, AgentRun.parent_run_id == parent.id,
                 AgentRun.delegation_key != key, AgentRun.status.not_in(TERMINAL)).limit(1))
             if unfinished_batch:
-                raise Conflict("Submit independent work in one batch; wait for the current batch before creating another")
+                raise DelegationRefused("Submit independent work in one batch; "
+                                        "wait for the current batch before creating another")
             now = datetime.now(UTC)
             preferences = (await preferences_for(session, workspace_id, parent.requested_by_id)
                            if parent.automation_id is None and parent.requested_by_id else {})
@@ -383,7 +392,10 @@ def delegation_tool(runner, workspace_id: uuid.UUID, run_id: uuid.UUID, token: i
         Supply task-specific context in each brief, dependencies, and the expected result.
         Set changes_project only for explicitly instructed project changes; analysis is read-only.
         """
-        results = await service.submit(workspace_id, run_id, token, tool_call_id, SpecialistBatch(tasks=tasks))
+        try:
+            results = await service.submit(workspace_id, run_id, token, tool_call_id, SpecialistBatch(tasks=tasks))
+        except DelegationRefused as exc:
+            return {"error": exc.detail}
         if results is not None:
             return {"tasks": results}
         interrupt({"kind": "delegation", "delegation_key": tool_call_id})
