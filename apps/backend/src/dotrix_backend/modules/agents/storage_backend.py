@@ -43,11 +43,12 @@ from deepagents.backends.utils import (
     slice_read_response,
 )
 from langgraph.config import get_config
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.errors import DomainError
 from dotrix_backend.modules.audit.service import AuditLog
-from dotrix_backend.modules.knowledge.models import AuthorType
+from dotrix_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from dotrix_backend.modules.knowledge.repository import KnowledgeRepository
 from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
 from dotrix_backend.modules.projects.repository import ProjectRepository
@@ -80,6 +81,8 @@ class PlatformKnowledgeBackend(BackendProtocol):
         unattended: Unattended | None = None,
         write_prefix: str | None = None,
         write_paths: list[str] | None = None,
+        run_id: uuid.UUID | None = None,
+        read_versions: dict[str, int] | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.policy = policy  # the run's agent contracts (built-ins when None)
@@ -92,12 +95,22 @@ class PlatformKnowledgeBackend(BackendProtocol):
         self.unattended = unattended
         self.write_prefix = write_prefix
         self.write_paths = frozenset(write_paths) if write_paths is not None else None
+        # Overwriting a document someone changed after the agent read it would lose their edit,
+        # as Claude Code's Write refuses to. `read_versions` is the version each path's last
+        # read_file saw (shared by the run's backends where a runtime builds several); without
+        # one, a person's change since the run started (`run_id`) refuses the overwrite instead,
+        # which holds across an approval wait, a resume, or a restart.
+        self.run_id = run_id
+        self.read_versions = read_versions if read_versions is not None else {}
+        self._versions: dict[str, int] = {}
+        self._loaded = run_id is None  # what earlier backends of this run saw, read once on first need
 
     # -- reads -------------------------------------------------------------------------
 
     async def _files(self) -> dict[str, FileData]:
         async with self.session_factory() as session:
             files = await KnowledgeRepository(session).list_files(self.project_id)
+        self._versions = {f"/{f.path}": f.version for f in files}
         return {
             f"/{f.path}": {
                 "content": f.content,
@@ -112,6 +125,7 @@ class PlatformKnowledgeBackend(BackendProtocol):
         file = (await self._files()).get(file_path)
         if file is None:
             return ReadResult(error=f"File '{file_path}' not found")
+        await self._saw(file_path, self._versions[file_path])
         return slice_read_response(file, offset, limit)
 
     async def als(self, path: str) -> LsResult:
@@ -162,7 +176,8 @@ class PlatformKnowledgeBackend(BackendProtocol):
     # -- writes ------------------------------------------------------------------------
 
     async def awrite(self, file_path: str, content: str) -> WriteResult:
-        error = await self._write(file_path, content)
+        await self._load_read_versions()
+        error = await self._write(file_path, content, base_version=self.read_versions.get(file_path), overwrite=True)
         return WriteResult(error=error) if error else WriteResult(path=file_path)
 
     async def aedit(
@@ -175,10 +190,13 @@ class PlatformKnowledgeBackend(BackendProtocol):
         if isinstance(replaced, str):
             return EditResult(error=replaced)
         new_content, occurrences = replaced
-        error = await self._write(file_path, new_content)
+        # The version this edit was made against: a change between that read and the write fails.
+        error = await self._write(file_path, new_content, base_version=self._versions[file_path])
         return EditResult(error=error) if error else EditResult(path=file_path, occurrences=int(occurrences))
 
-    async def _write(self, file_path: str, content: str) -> str | None:
+    async def _write(
+        self, file_path: str, content: str, *, base_version: int | None = None, overwrite: bool = False,
+    ) -> str | None:
         """Write through KnowledgeService; returns an error message for the agent, or None."""
         if self.instructed_by_id is None:
             return "Permission denied: writes need a person's instruction and approval"
@@ -205,18 +223,74 @@ class PlatformKnowledgeBackend(BackendProtocol):
             project = await ProjectRepository(session).get(self.workspace_id, self.project_id)
             if project is None:
                 return "Project not found"
+            if overwrite and base_version is None and (changed := await self._changed_by_others(session, path)):
+                return f"Error: {changed}"
             try:
-                await KnowledgeService(session).write(project, path, content, actor)
+                written = await KnowledgeService(session).write(project, path, content, actor, base_version=base_version)
             except DomainError as exc:
                 return f"Error: {exc.detail}"
+            await self._saw(file_path, written.version, session)
             if rule is not None:
                 AuditLog(session).record(
                     workspace_id=self.workspace_id, project_id=self.project_id, action=audit_action("knowledge.write", rule),
                     target=path, actor_type=AuthorType.AGENT, agent=agent, instructed_by_id=self.instructed_by_id,
                     approved_by_id=approved_by_id, details={"rule": rule},
                 )
-                await session.commit()
+            await session.commit()  # the run's record of what it saw, and any rule's audit
         return None
+
+    async def _load_read_versions(self) -> None:
+        """Bring in what this run's earlier backends read (before an approval wait, a resume or a
+        restart). Versions seen here since win: they're newer."""
+        if self._loaded:
+            return
+        self._loaded = True
+        from .models import AgentRun
+
+        async with self.session_factory() as session:
+            saved = await session.scalar(select(AgentRun.read_versions).where(
+                AgentRun.workspace_id == self.workspace_id, AgentRun.id == self.run_id))
+        for path, version in (saved or {}).items():
+            self.read_versions.setdefault(path, int(version))
+
+    async def _saw(self, file_path: str, version: int, session: AsyncSession | None = None) -> None:
+        """Record the version the agent has now seen of `file_path`, here and on the run."""
+        self.read_versions[file_path] = version
+        if self.run_id is None:
+            return
+        from sqlalchemy import func, update
+
+        from .models import AgentRun
+
+        stmt = update(AgentRun).where(AgentRun.workspace_id == self.workspace_id, AgentRun.id == self.run_id).values(
+            read_versions=func.coalesce(AgentRun.read_versions, func.jsonb_build_object()).op("||")(
+                func.jsonb_build_object(file_path, version)))
+        if session is not None:
+            await session.execute(stmt)  # committed with the write it records
+            return
+        async with self.session_factory() as own:
+            await own.execute(stmt)
+            await own.commit()
+
+    async def _changed_by_others(self, session: AsyncSession, path: str) -> str | None:
+        """Why overwriting `path` unread would lose someone else's change since the run started, or None."""
+        if self.run_id is None:
+            return None
+        from .models import AgentRun
+
+        started = await session.scalar(select(AgentRun.created_at).where(
+            AgentRun.workspace_id == self.workspace_id, AgentRun.id == self.run_id))
+        latest = await session.scalar(
+            select(KnowledgeVersion).join(KnowledgeFile, KnowledgeFile.id == KnowledgeVersion.file_id).where(
+                KnowledgeFile.project_id == self.project_id, KnowledgeFile.path == path,
+                KnowledgeFile.deleted.is_(False), KnowledgeVersion.version == KnowledgeFile.version,
+            ))
+        if started is None or latest is None or latest.created_at <= started:
+            return None
+        if latest.author_type is AuthorType.AGENT and latest.instructed_by_id == self.instructed_by_id:
+            return None  # this person's own agents wrote it
+        return (f"/{path} changed since this conversation's turn started (version {latest.version}). "
+                "Read it again and apply your change to what it says now.")
 
     # -- not offered to agents -----------------------------------------------------------
 

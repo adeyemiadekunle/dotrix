@@ -20,6 +20,12 @@ def validate_session(session_id: str, message: str) -> None:
         raise ValueError("Session ID must be 1–128 letters, digits, '.', '_' or '-'; message must be nonempty")
 
 
+class RuntimeToolError(Exception):
+    """A tool call the host refused or couldn't do, said so the model can act on it: wrong
+    arguments, a permission it doesn't have, a page that changed. Its message reaches the model
+    (bounded); any other exception reaches it only as "Tool failed.", since it may carry internals."""
+
+
 @dataclass(frozen=True)
 class RuntimeToolContext:
     """Runtime correlation only; the host must supply and verify authorization separately."""
