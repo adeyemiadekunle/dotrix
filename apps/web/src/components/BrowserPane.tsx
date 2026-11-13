@@ -3,8 +3,8 @@
 // browser. Each tab is a <webview> the app checks before it exists (apps/desktop: browser.ts): web addresses
 // only, no permissions, no downloads, and a page that asks for a new window gets a new tab here.
 // A person chooses whether that profile's cookies outlive the app, and can clear what it saved.
-// Kai, on a turn coding on this computer, gets one tab of its own here (apps/desktop: browserKai.ts): it asks
-// for it at an address on this computer, this pane makes it and says which page it is, and the person
+// Kai, on a turn coding on this computer, gets one tab of its own in its own session's pane (apps/desktop:
+// browserKai.ts): it asks for it at an address on this computer, that session's pane makes it and says which page it is, and the person
 // watches Kai read, click and type there. A person can turn that off in the pane's menu.
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -181,20 +181,20 @@ export function BrowserPane({
   }, []);
   // A page that asks for a new window gets a tab.
   useEffect(() => bridge?.onOpen((url) => open(url)), [bridge, open]);
-  // Kai asks for its tab (now, or before this pane opened): made once per request, and shown.
+  // Kai asks for its tab (now, or before this pane opened): made once per request, and shown, in its own session's pane only.
   const made = useRef(new Set<number>());
   useEffect(() => {
     if (!bridge) return;
-    const make = (request: KaiTabRequest | null) => {
-      if (!request || made.current.has(request.id)) return;
+    const make = (request: KaiTabRequest) => {
+      if (request.sessionId !== sessionId || made.current.has(request.id)) return;
       made.current.add(request.id);
       const tab = newTab(request.url, request.id);
       setTabs((all) => [...all.filter((other) => other.initial !== null), tab]); // in place of an empty new tab
       setActiveId(tab.id);
     };
-    void bridge.kaiRequest().then(make);
+    void bridge.kaiRequests().then((waiting) => waiting.forEach(make));
     return bridge.onKai(make);
-  }, [bridge]);
+  }, [bridge, sessionId]);
 
   const close = (id: string) => {
     const index = tabs.findIndex((tab) => tab.id === id);

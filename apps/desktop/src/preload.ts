@@ -47,10 +47,10 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
     clear: () => ipcRenderer.invoke("dotrix:browser:clear"),
     setEnabled: (enabled: boolean) => ipcRenderer.invoke("dotrix:browser:enabled", enabled),
     setKaiAllowed: (allowed: boolean) => ipcRenderer.invoke("dotrix:browser:kai-allowed", allowed),
-    kaiRequest: () => ipcRenderer.invoke("dotrix:browser:kai-request"),
+    kaiRequests: () => ipcRenderer.invoke("dotrix:browser:kai-request"),
     kaiReady: (id: number, contentsId: number) => ipcRenderer.invoke("dotrix:browser:kai-ready", id, contentsId),
-    onKai: (listener: (request: { id: number; url: string }) => void) => {
-      const wrapped = (_event: unknown, request: { id: number; url: string }) => listener(request);
+    onKai: (listener: (request: { id: number; url: string; sessionId: string; issueKey: string }) => void) => {
+      const wrapped = (_event: unknown, request: { id: number; url: string; sessionId: string; issueKey: string }) => listener(request);
       ipcRenderer.on("dotrix:browser:kai", wrapped);
       return () => ipcRenderer.removeListener("dotrix:browser:kai", wrapped);
     },
@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
       ipcRenderer.on("dotrix:browser:open", wrapped);
       return () => ipcRenderer.removeListener("dotrix:browser:open", wrapped);
     },
+  },
+  devServers: {
+    list: () => ipcRenderer.invoke("dotrix:dev-servers:list"),
+    save: (folder: string, command: { command: string; port: number | null } | null) => ipcRenderer.invoke("dotrix:dev-servers:save", folder, command),
   },
   worktree: {
     tree: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:tree", worktree),

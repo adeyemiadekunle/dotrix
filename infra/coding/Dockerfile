@@ -42,7 +42,7 @@ RUN set -eu; \
   mkdir fx && tar -xzf fx.tar.gz -C fx && install -m 0755 "$(find fx -type f -name fx | head -n1)" /usr/local/bin/fx; \
   rm -rf fx fx.tar.gz fx.tar.gz.sha256; \
   fx --version
-COPY fx-acp.mjs /opt/dotrix/fx-acp.mjs
+COPY fx-acp.mjs mcp-check.mjs /opt/dotrix/
 
 # A browser for the agent (the platform passes it as an MCP server, `playwright-mcp`): Playwright's
 # Chromium, headless, in a shared folder the unprivileged user can run. It opens the app the agent

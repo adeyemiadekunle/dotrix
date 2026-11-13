@@ -32,15 +32,23 @@ CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
 # The agent's browser: Playwright MCP in the sandbox (infra/coding/Dockerfile), headless Chromium with
 # its profile in memory. It opens what the agent serves on localhost; the sandbox's network rules apply
 # to everything else. Only the platform's MCP servers load (--strict-mcp-config), never a repo's.
+# It runs in its output folder with --ignore-roots, so that folder is the only one it writes to: started in the
+# repository, it would save a screenshot the agent names ("page.png") there, and the turn would commit it
+# (checked on Playwright MCP 0.0.85, 2026-11-13). Claude Code, fx (through fx-acp.mjs) and Codex all get it.
 BROWSER_SERVER = "browser"
+BROWSER_OUTPUT = "/tmp/playwright"
+_BROWSER_ARGS = ["--headless", "--isolated", "--ignore-roots", "--browser", "chromium", "--no-sandbox", "--output-dir", BROWSER_OUTPUT]
 BROWSER_MCP = {
     "mcpServers": {
         BROWSER_SERVER: {
-            "command": "playwright-mcp",
-            "args": ["--headless", "--isolated", "--browser", "chromium", "--no-sandbox", "--output-dir", "/tmp/playwright"],
+            "command": "sh",
+            "args": ["-c", f"mkdir -p {BROWSER_OUTPUT} && cd {BROWSER_OUTPUT} && exec playwright-mcp {' '.join(_BROWSER_ARGS)}"],
         }
     }
 }
+# fx 0.0.16 and Codex 0.169.0 go on silently when an MCP server doesn't start, so the image's mcp-check.mjs checks it
+# first and prints {"type":"warning","message":"The browser didn't start"} (fx-acp.mjs imports it; Codex runs it).
+MCP_CHECK = "/opt/dotrix/mcp-check.mjs"
 BROWSER_RULE = """\
 - You have a headless browser (the `browser` tools). When the change shows in a web page, start
   the app's dev server in the background on localhost and note its process id (for example
@@ -345,7 +353,7 @@ class Codex(_NoUsageCommand):
     provider_type = "dotrix-codex"
     api_host = "api.openai.com"
     resumes = False  # `--ephemeral`: each turn starts afresh
-    browser = False  # not yet
+    browser = True  # Playwright MCP as `mcp_servers.browser` (checked on Codex 0.169.0, 2026-11-13)
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return []
@@ -367,7 +375,16 @@ class Codex(_NoUsageCommand):
         # otherwise reach the model as `<INSTRUCTIONS>`; checked on 0.166.0 and 0.169.0 against a scripted model).
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral",
                 "-c", "project_doc_max_bytes=0"]
-        return argv + (["-c", f'model="{_bare(model)}"'] if model else []) + ["-"]
+        argv += ["-c", f'model="{_bare(model)}"'] if model else []
+        if not browser:
+            return argv + ["-"]
+        # The browser as a Codex MCP server (`-c` takes TOML values, which these JSON strings and arrays are). Codex
+        # calls it without asking (danger-full-access) and goes on silently if it doesn't start, so mcp-check.mjs says
+        # so first; it never fails the turn, and a missing check (an older image) only goes unsaid.
+        server = BROWSER_MCP["mcpServers"][BROWSER_SERVER]
+        argv += ["-c", f"mcp_servers.{BROWSER_SERVER}.command={json.dumps(server['command'])}",
+                 "-c", f"mcp_servers.{BROWSER_SERVER}.args={json.dumps(server['args'])}", "-"]
+        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(BROWSER_MCP), *argv]
 
     def parse(self, line: str, usage: Usage) -> Parsed:
         out = Parsed()
@@ -378,6 +395,17 @@ class Codex(_NoUsageCommand):
         item = event.get("item") or {}
         if kind == "thread.started":
             out.steps.append(Step("step", "Started"))
+        elif kind == "warning" and str(event.get("message", "")).strip():  # mcp-check.mjs: the browser didn't start
+            out.steps.append(Step("error", _clip(str(event["message"]))))
+        elif kind == "item.started" and item.get("type") == "mcp_tool_call":
+            args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+            tool = str(item.get("tool") or "")
+            said = _describe_browser(tool, args) if item.get("server") == BROWSER_SERVER else f"Used {tool}"
+            out.steps.append(Step("tool", said))
+        elif kind == "item.completed" and item.get("type") == "mcp_tool_call" and (item.get("error") or item.get("status") == "failed"):
+            error = item.get("error")
+            detail = error.get("message") if isinstance(error, dict) else error
+            out.steps.append(Step("error", _clip(f"The browser: {detail or 'failed'}" if item.get("server") == BROWSER_SERVER else str(detail or "A tool failed"))))
         elif kind == "item.started" and item.get("type") == "command_execution":
             out.steps.append(Step("tool", f"Ran {_clip(str(item.get('command', '')), 160)}", item.get("id")))
         elif kind == "item.completed":
@@ -616,6 +644,8 @@ FX_STOPS = {  # a turn that ended any other way than end_turn: what the person r
 
 
 def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None:
+    if name.startswith(f"mcp_{BROWSER_SERVER}_"):  # fx names an MCP server's tools mcp_<server>_<tool>
+        return _describe_browser(name.removeprefix(f"mcp_{BROWSER_SERVER}_"), args)
     path = _relative(str(args.get("path") or args.get("file_path") or ""))
     request = args.get("request") if isinstance(args.get("request"), dict) else {}
     match name:
@@ -646,7 +676,7 @@ class Fx:
     agent = CodingAgent.FX
     name = "fx"
     resumes = True  # fx saves its sessions under ~/.fx; the driver continues ours with --resume
-    browser = False  # its own browser tools aren't passed in yet
+    browser = True  # Playwright MCP, as Claude Code has it, passed to fx by the driver (checked on fx 0.0.16, 2026-11-13)
 
     def __init__(self, provider: OpenCodeProvider, driver: str = "/opt/dotrix/fx-acp.mjs") -> None:
         self.fx_provider = provider
@@ -660,7 +690,8 @@ class Fx:
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         name = (model or "").partition(":")[2] or (model or "")
-        return ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
+        argv = ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
+        return argv + (["--mcp-config", json.dumps(BROWSER_MCP)] if browser else [])
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["--session", session.hex, *(["--resume"] if resumed else [])]
@@ -696,6 +727,8 @@ class Fx:
                 out.steps.append(Step("step", f"{said} ({event.get('model') or 'default model'})"))
             case "text" if str(event.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(str(event["text"]))))
+            case "warning" if str(event.get("message", "")).strip():  # the turn goes on: the browser didn't start
+                out.steps.append(Step("error", _clip(str(event["message"]))))
             case "tool":
                 ref = str(event.get("id") or "") or None
                 name, args = str(event.get("name") or ""), event.get("input") if isinstance(event.get("input"), dict) else {}

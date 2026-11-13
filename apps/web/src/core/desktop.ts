@@ -112,6 +112,9 @@ export interface BrowserSettings {
 export interface KaiTabRequest {
   id: number;
   url: string;
+  /** The coding session whose turn asks: its Browser pane makes the tab. */
+  sessionId: string;
+  issueKey: string;
 }
 
 interface BrowserBridge {
@@ -125,8 +128,8 @@ interface BrowserBridge {
     setKaiAllowed(allowed: boolean): Promise<BrowserSettings>;
     /** Kai, coding on this computer, asks for its tab at an address there: the pane opens and makes it. */
     onKai(listener: (request: KaiTabRequest) => void): () => void;
-    /** The request still waiting, for a pane that opened after it was sent. */
-    kaiRequest(): Promise<KaiTabRequest | null>;
+    /** The requests still waiting, for a page or pane that opened after they were sent. */
+    kaiRequests(): Promise<KaiTabRequest[]>;
     /** Which page the pane made for a request (the app checks it before Kai may use it). */
     kaiReady(id: number, contentsId: number): Promise<void>;
   };
@@ -161,6 +164,26 @@ export function useBrowserSettings(): BrowserSettings | null {
     },
     () => browserSettings,
   );
+}
+
+/** A command a person saved to start a folder's app for Kai (Settings → Browser), by folder. */
+export interface DevCommand {
+  command: string;
+  /** The port it listens on; null: the app picks a free one and passes it as PORT. */
+  port: number | null;
+}
+
+interface DevServersBridge {
+  devServers: {
+    list(): Promise<Record<string, DevCommand>>;
+    /** Save a folder's command, or forget it (null). Only one of this computer's runner folders. */
+    save(folder: string, command: DevCommand | null): Promise<Record<string, DevCommand>>;
+  };
+}
+
+/** Starting a folder's app for Kai, or null in a browser or an app from before it. */
+export function desktopDevServers(): DevServersBridge["devServers"] | null {
+  return (globalThis as { dotrixDesktop?: Partial<DevServersBridge> }).dotrixDesktop?.devServers ?? null;
 }
 
 /** The app's version, What's new and updates, or null in a browser or an app from before them. */

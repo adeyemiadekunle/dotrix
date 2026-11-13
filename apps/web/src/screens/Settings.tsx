@@ -7,12 +7,20 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
 // GitHub, What members can do, Audit log; and Devices and tokens (the CLI) under Security.
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
 import { allowed, canInvite, type Perm } from "../core/can";
-import { desktopBrowser, setBrowserSettings, useBrowserSettings, type BrowserSettings } from "../core/desktop";
+import {
+  desktopBrowser,
+  desktopDevServers,
+  setBrowserSettings,
+  useBrowserSettings,
+  useDesktopRunners,
+  type BrowserSettings,
+  type DevCommand,
+} from "../core/desktop";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import { organisations, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
@@ -2436,7 +2444,136 @@ function BrowserSettingsPage() {
           Clear browsing data
         </ActionButton>
       </SRow>
+      {on && settings?.kaiAllowed && <AppCommands />}
     </>
+  );
+}
+
+/** The command that starts each folder's app, for Kai to start in its worktree and open in the pane. */
+function AppCommands() {
+  const bridge = desktopDevServers();
+  const runners = useDesktopRunners();
+  const [saved, setSaved] = useState<Record<string, DevCommand> | null>(null);
+  useEffect(() => {
+    let live = true;
+    void bridge?.list().then((found) => live && setSaved(found));
+    return () => {
+      live = false;
+    };
+  }, [bridge]);
+  if (!bridge) return null;
+  return (
+    <div className="sblock">
+      <h2>Start your app for {CODING_AGENT.name}</h2>
+      <p className="faint" style={{ marginTop: 0 }}>
+        On a turn coding on this computer, {CODING_AGENT.name} can start your app in its own copy of the repository with the command you save here, and open it
+        in the browser to check its change. {CODING_AGENT.name} can't change the command, but the command runs the code {CODING_AGENT.name} just wrote, on this
+        computer and without a sandbox, so it can read and change your files like any program you run: save one only for a project you trust it to run. Its
+        environment carries none of your keys or tokens, and it stops when the turn ends.
+      </p>
+      {!runners.length ? (
+        <p className="muted">No folders code on this computer yet. Pick one when you start a coding session on this computer.</p>
+      ) : (
+        runners.map((runner) => (
+          <AppCommand
+            key={runner.folder}
+            folder={runner.folder}
+            label={runner.projectKey}
+            saved={saved?.[runner.folder] ?? null}
+            loading={saved === null}
+            onSave={async (next) => setSaved(await bridge.save(runner.folder, next))}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function AppCommand({
+  folder,
+  label,
+  saved,
+  loading,
+  onSave,
+}: {
+  folder: string;
+  label: string;
+  saved: DevCommand | null;
+  loading: boolean;
+  onSave: (next: DevCommand | null) => Promise<void>;
+}) {
+  const [command, setCommand] = useState(saved?.command ?? "");
+  const [port, setPort] = useState(saved?.port ? String(saved.port) : "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setCommand(saved?.command ?? "");
+    setPort(saved?.port ? String(saved.port) : "");
+  }, [saved?.command, saved?.port]);
+  const changed = command.trim() !== (saved?.command ?? "") || port.trim() !== (saved?.port ? String(saved.port) : "");
+  const portNumber = port.trim() ? Number(port.trim()) : null;
+  const badPort = portNumber !== null && !(Number.isInteger(portNumber) && portNumber >= 1024 && portNumber <= 65535);
+  const send = async (next: DevCommand | null, done: string) => {
+    setBusy(true);
+    try {
+      await onSave(next);
+      toast(done);
+    } catch (error) {
+      toast(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The command couldn't be saved");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="srow" style={{ alignItems: "flex-start" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="t">{label}</div>
+        <div className="d mono trunc" title={folder}>
+          {folder}
+        </div>
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <DesignInput
+            className="input mono"
+            style={{ flex: "1 1 260px", minWidth: 0 }}
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="pnpm install && pnpm dev"
+            aria-label={`Command that starts ${label}'s app`}
+            disabled={loading || busy}
+            spellCheck={false}
+          />
+          <DesignInput
+            className="input mono"
+            style={{ width: 110 }}
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="Any port"
+            inputMode="numeric"
+            aria-label={`Port ${label}'s app listens on`}
+            aria-invalid={badPort}
+            disabled={loading || busy}
+          />
+        </div>
+        <div className="d" style={{ marginTop: 6 }}>
+          {badPort
+            ? "The port is a number from 1024 to 65535."
+            : "Leave the port empty if the app reads the PORT variable; give it if the app always listens on one port."}
+        </div>
+      </div>
+      <div className="row" style={{ gap: 6, marginTop: 22 }}>
+        <ActionButton
+          className="btn btn-sm"
+          disabled={loading || busy || badPort || !command.trim() || !changed}
+          onClick={() => void send({ command: command.trim(), port: portNumber }, `${label}'s command is saved`)}
+        >
+          Save
+        </ActionButton>
+        {saved && (
+          <ActionButton className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void send(null, `${label}'s command is removed`)}>
+            Remove
+          </ActionButton>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,8 @@
 // Kai's hands on the Browser pane, for a turn coding on this computer: the tools the app's MCP server
-// (mcp.ts) offers its coding tool. Kai has one tab of its own in the pane, which the person watches:
-// the app's page makes it when Kai first asks (the pane opens for it), and tells this side which page it is.
+// (mcp.ts) offers its coding tool. Each turn's Kai (one per runner, told apart by its token) has one tab of its
+// own, in the Browser pane of its own coding session, which the person watches: the app's page makes it when Kai
+// first asks (the session's pane opens for it, or a notice offers to open the session), and tells this side which
+// page it is.
 // Kai's tab shows pages on this computer only (a dev server): it can't be sent, or wander, anywhere else,
 // so nothing Kai reads in the repository can leave through it. It reads a page as its accessibility tree,
 // clicks and types by the refs in that tree, takes screenshots, and reads the console: no scripts of its own.
@@ -11,7 +13,7 @@ import { loopback } from "./browserRules";
 import { type AxNode, renderTree } from "./browserTree";
 import type { Content, ToolSet } from "./mcp";
 
-const OPEN_SECONDS = 15;
+const OPEN_SECONDS = 60; // time for the person to open the session when it isn't open
 const LOAD_SECONDS = 30;
 const CONSOLE_KEPT = 100;
 
@@ -63,9 +65,23 @@ function within<T>(seconds: number, work: Promise<T>, late: string): Promise<T> 
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
 
+/** What Kai asks the app's page for: a tab at this address, in this coding session's Browser pane. */
+export interface KaiTabRequest {
+  id: number;
+  url: string;
+  sessionId: string;
+  issueKey: string;
+}
+
+/** One runner's Kai: its tab (and the session it's in), and the tab it's waiting for. */
+interface Hands {
+  tab: WebContents | null;
+  session: string | null;
+  asked: (KaiTabRequest & { done: (tab: WebContents) => void }) | null;
+}
+
 export class KaiBrowser implements ToolSet {
-  private tab: WebContents | null = null;
-  private asked: { id: number; url: string; done: (tab: WebContents) => void } | null = null;
+  private readonly hands = new Map<string, Hands>(); // by caller (a runner's folder)
   private serial = 0;
   /** Each tab's console for the page it shows now (heard from the tab's start, so a first load's messages are there too). */
   private readonly heard = new WeakMap<WebContents, string[]>();
@@ -75,7 +91,15 @@ export class KaiBrowser implements ToolSet {
     private readonly host: () => WebContents | null,
     private readonly allowed: () => boolean,
     private readonly partition: () => string,
+    /** The coding session and issue of the turn a runner's folder is coding now, or null. */
+    private readonly turnOf: (caller: string) => { sessionId: string; issueKey: string } | null,
   ) {}
+
+  private of(caller: string): Hands {
+    let found = this.hands.get(caller);
+    if (!found) this.hands.set(caller, (found = { tab: null, session: null, asked: null }));
+    return found;
+  }
 
   /** A tab of the pane, from its start: its console is kept (in memory, for the page it shows) in case it's Kai's. */
   hear(tab: WebContents): void {
@@ -92,50 +116,54 @@ export class KaiBrowser implements ToolSet {
 
   /** Whether a page is Kai's tab (its navigation is held to this computer: browser.ts `watch`). */
   owns(contents: WebContents): boolean {
-    return contents === this.tab;
+    return [...this.hands.values()].some((hands) => hands.tab === contents);
   }
 
-  /** What Kai is waiting for the pane to open, for a pane that mounts after the request was sent. */
-  get request(): { id: number; url: string } | null {
-    return this.asked ? { id: this.asked.id, url: this.asked.url } : null;
+  /** What Kai is waiting for, for a page or pane that opened after the request was sent. */
+  get requests(): KaiTabRequest[] {
+    return [...this.hands.values()].flatMap(({ asked }) =>
+      asked ? [{ id: asked.id, url: asked.url, sessionId: asked.sessionId, issueKey: asked.issueKey }] : [],
+    );
   }
 
   /** The app's page says which of its tabs it made for a request. Checked: a tab of that page, in the pane's profile, on this computer. */
   ready(sender: WebContents, id: unknown, contentsId: unknown): void {
     const found = typeof contentsId === "number" ? webContents.fromId(contentsId) : undefined;
-    if (!this.asked || this.asked.id !== id || !found || found.isDestroyed()) return;
+    const hands = [...this.hands.values()].find(({ asked }) => asked?.id === id);
+    if (!hands?.asked || !found || found.isDestroyed() || this.owns(found)) return;
     if (found.getType() !== "webview" || found.hostWebContents !== sender || found.session !== session.fromPartition(this.partition())) return;
     if (!loopback(found.getURL())) return;
-    this.adopt(found);
-    this.asked.done(found);
-    this.asked = null;
+    this.adopt(hands, found, hands.asked.sessionId);
+    hands.asked.done(found);
+    hands.asked = null;
   }
 
   list(): ReturnType<ToolSet["list"]> {
     return TOOLS;
   }
 
-  async call(name: string, args: Record<string, unknown>): Promise<Content[]> {
+  async call(name: string, args: Record<string, unknown>, caller: string): Promise<Content[]> {
+    const hands = this.of(caller);
     if (!this.allowed()) throw new Error("The person has turned off Kai's use of the Browser pane. Go on without it, and say what you couldn't check.");
     switch (name) {
       case "browser_navigate": {
         const url = typeof args.url === "string" ? args.url : "";
         if (!loopback(url))
           throw new Error("Only pages on this computer can be opened: an http://localhost:PORT or http://127.0.0.1:PORT address of the running app.");
-        if (this.live()) await this.load(this.tab!, url);
-        else await this.open(url);
-        return this.page();
+        if (this.live(hands, caller)) await this.load(hands.tab!, url);
+        else await this.open(hands, caller, url);
+        return this.page(hands, caller);
       }
       case "browser_snapshot":
-        return this.page();
+        return this.page(hands, caller);
       case "browser_click": {
-        const tab = this.mine();
+        const tab = this.mine(hands, caller);
         await this.click(tab, await this.centre(tab, args.ref));
         await this.settle(tab);
-        return this.page();
+        return this.page(hands, caller);
       }
       case "browser_type": {
-        const tab = this.mine();
+        const tab = this.mine(hands, caller);
         const node = this.node(args.ref);
         const typed = typeof args.text === "string" ? args.text : "";
         // As a person would: click into the field, select what it holds, type over it.
@@ -168,14 +196,14 @@ export class KaiBrowser implements ToolSet {
           await this.send(tab, "Input.dispatchKeyEvent", { ...enter, type: "keyUp" });
         }
         await this.settle(tab);
-        return this.page();
+        return this.page(hands, caller);
       }
       case "browser_take_screenshot": {
-        const shot = (await this.send(this.mine(), "Page.captureScreenshot", { format: "png" })) as { data: string };
+        const shot = (await this.send(this.mine(hands, caller), "Page.captureScreenshot", { format: "png" })) as { data: string };
         return [{ type: "image", data: shot.data, mimeType: "image/png" }];
       }
       case "browser_console_messages": {
-        const said = this.heard.get(this.mine()) ?? [];
+        const said = this.heard.get(this.mine(hands, caller)) ?? [];
         return [{ type: "text", text: said.length ? said.join("\n") : "No console messages." }];
       }
       default:
@@ -183,41 +211,48 @@ export class KaiBrowser implements ToolSet {
     }
   }
 
-  private live(): boolean {
-    if (this.tab?.isDestroyed()) this.tab = null;
-    return this.tab !== null;
+  /** Whether this runner's Kai has a tab, in the session of the turn it's coding now (a tab from an earlier turn's session is left there). */
+  private live(hands: Hands, caller: string): boolean {
+    if (hands.tab?.isDestroyed()) hands.tab = null;
+    if (hands.tab && hands.session !== (this.turnOf(caller)?.sessionId ?? null)) hands.tab = null;
+    return hands.tab !== null;
   }
 
   /** Kai's tab, still on this computer (a person can type another address into it: then it's theirs to bring back). */
-  private mine(): WebContents {
-    if (!this.live()) throw new Error("No page is open yet: open one with browser_navigate first.");
-    if (!loopback(this.tab!.getURL())) throw new Error("Your tab has left the app on this computer. Open its page again with browser_navigate.");
-    return this.tab!;
+  private mine(hands: Hands, caller: string): WebContents {
+    if (!this.live(hands, caller)) throw new Error("No page is open yet: open one with browser_navigate first.");
+    if (!loopback(hands.tab!.getURL())) throw new Error("Your tab has left the app on this computer. Open its page again with browser_navigate.");
+    return hands.tab!;
   }
 
   /** Ask the app's page for a tab at this address (it opens the session's Browser pane for it), and wait for it. */
-  private async open(url: string): Promise<void> {
+  private async open(hands: Hands, caller: string, url: string): Promise<void> {
     const host = this.host();
+    const turn = this.turnOf(caller);
     const nowhere =
-      "The Browser pane couldn't be opened: the person needs this session open in Codes in the dotrix app. Go on without it, and say what you couldn't check.";
+      "The Browser pane couldn't be opened: the person needs to open this coding session in Codes in the dotrix app, and didn't in time. " +
+      "Go on without it, and say what you couldn't check.";
+    if (!turn) throw new Error("No turn is coding in this project on this computer now.");
     if (!host || host.isDestroyed()) throw new Error(nowhere);
     const id = ++this.serial;
+    const request: KaiTabRequest = { id, url, sessionId: turn.sessionId, issueKey: turn.issueKey };
     const made = new Promise<WebContents>((resolve) => {
-      this.asked = { id, url, done: resolve };
+      hands.asked = { ...request, done: resolve };
     });
-    host.send("dotrix:browser:kai", { id, url });
+    host.send("dotrix:browser:kai", request);
     try {
       const tab = await within(OPEN_SECONDS, made, nowhere);
       await this.settle(tab);
     } finally {
-      if (this.asked?.id === id) this.asked = null;
+      if (hands.asked?.id === id) hands.asked = null;
     }
   }
 
-  private adopt(tab: WebContents): void {
-    this.tab = tab;
+  private adopt(hands: Hands, tab: WebContents, sessionId: string): void {
+    hands.tab = tab;
+    hands.session = sessionId;
     tab.once("destroyed", () => {
-      if (this.tab === tab) this.tab = null;
+      if (hands.tab === tab) hands.tab = null;
     });
   }
 
@@ -269,8 +304,8 @@ export class KaiBrowser implements ToolSet {
     }
   }
 
-  private async page(): Promise<Content[]> {
-    const tab = this.mine();
+  private async page(hands: Hands, caller: string): Promise<Content[]> {
+    const tab = this.mine(hands, caller);
     const { nodes } = (await this.send(tab, "Accessibility.getFullAXTree")) as { nodes: AxNode[] };
     return [{ type: "text", text: `Page: ${tab.getTitle()}\nURL: ${tab.getURL()}\n\n${renderTree(nodes)}` }];
   }
