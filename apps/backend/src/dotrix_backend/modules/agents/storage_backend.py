@@ -103,6 +103,7 @@ class PlatformKnowledgeBackend(BackendProtocol):
         self.run_id = run_id
         self.read_versions = read_versions if read_versions is not None else {}
         self._versions: dict[str, int] = {}
+        self._loaded = run_id is None  # what earlier backends of this run saw, read once on first need
 
     # -- reads -------------------------------------------------------------------------
 
@@ -124,7 +125,7 @@ class PlatformKnowledgeBackend(BackendProtocol):
         file = (await self._files()).get(file_path)
         if file is None:
             return ReadResult(error=f"File '{file_path}' not found")
-        self.read_versions[file_path] = self._versions[file_path]
+        await self._saw(file_path, self._versions[file_path])
         return slice_read_response(file, offset, limit)
 
     async def als(self, path: str) -> LsResult:
@@ -175,6 +176,7 @@ class PlatformKnowledgeBackend(BackendProtocol):
     # -- writes ------------------------------------------------------------------------
 
     async def awrite(self, file_path: str, content: str) -> WriteResult:
+        await self._load_read_versions()
         error = await self._write(file_path, content, base_version=self.read_versions.get(file_path), overwrite=True)
         return WriteResult(error=error) if error else WriteResult(path=file_path)
 
@@ -227,15 +229,48 @@ class PlatformKnowledgeBackend(BackendProtocol):
                 written = await KnowledgeService(session).write(project, path, content, actor, base_version=base_version)
             except DomainError as exc:
                 return f"Error: {exc.detail}"
-            self.read_versions[file_path] = written.version
+            await self._saw(file_path, written.version, session)
             if rule is not None:
                 AuditLog(session).record(
                     workspace_id=self.workspace_id, project_id=self.project_id, action=audit_action("knowledge.write", rule),
                     target=path, actor_type=AuthorType.AGENT, agent=agent, instructed_by_id=self.instructed_by_id,
                     approved_by_id=approved_by_id, details={"rule": rule},
                 )
-                await session.commit()
+            await session.commit()  # the run's record of what it saw, and any rule's audit
         return None
+
+    async def _load_read_versions(self) -> None:
+        """Bring in what this run's earlier backends read (before an approval wait, a resume or a
+        restart). Versions seen here since win: they're newer."""
+        if self._loaded:
+            return
+        self._loaded = True
+        from .models import AgentRun
+
+        async with self.session_factory() as session:
+            saved = await session.scalar(select(AgentRun.read_versions).where(
+                AgentRun.workspace_id == self.workspace_id, AgentRun.id == self.run_id))
+        for path, version in (saved or {}).items():
+            self.read_versions.setdefault(path, int(version))
+
+    async def _saw(self, file_path: str, version: int, session: AsyncSession | None = None) -> None:
+        """Record the version the agent has now seen of `file_path`, here and on the run."""
+        self.read_versions[file_path] = version
+        if self.run_id is None:
+            return
+        from sqlalchemy import func, update
+
+        from .models import AgentRun
+
+        stmt = update(AgentRun).where(AgentRun.workspace_id == self.workspace_id, AgentRun.id == self.run_id).values(
+            read_versions=func.coalesce(AgentRun.read_versions, func.jsonb_build_object()).op("||")(
+                func.jsonb_build_object(file_path, version)))
+        if session is not None:
+            await session.execute(stmt)  # committed with the write it records
+            return
+        async with self.session_factory() as own:
+            await own.execute(stmt)
+            await own.commit()
 
     async def _changed_by_others(self, session: AsyncSession, path: str) -> str | None:
         """Why overwriting `path` unread would lose someone else's change since the run started, or None."""

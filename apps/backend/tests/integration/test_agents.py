@@ -787,6 +787,30 @@ async def test_an_approved_overwrite_never_loses_a_persons_edit_made_while_it_wa
     assert told and "changed since this conversation's turn started" in told[-1]
 
 
+async def test_after_rereading_a_changed_page_the_agents_approved_write_goes_through(
+    project, db_client: AsyncClient, agent_script
+) -> None:
+    """The reread survives the approval wait: the resumed run checks against what the agent saw."""
+    ada, _, base = await project()
+    model = agent_script.say(
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1: core.\n"),
+        tool_call("read_file", file_path="/dotrix/roadmap.md"),
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nAda's plan, phase 1 first.\n"),
+        "Updated.",
+    )
+    paused = await run(db_client, base, ada.headers, "Rewrite the roadmap")
+    await db_client.put(f"{base}/knowledge/files/roadmap.md", json={"content": "# Roadmap\n\nAda's plan.\n"},
+                        headers=ada.headers)
+    # Refused (she changed it), reread, and a new write that waits for her again.
+    again = (await decide(db_client, base, paused, ada.headers, ("approve",))).json()
+    assert again["status"] == "awaiting_approval", again
+    done = (await decide(db_client, base, again, ada.headers, ("approve",))).json()
+    assert done["status"] == "completed" and done["reply"] == "Updated.", done
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "# Roadmap\n\nAda's plan, phase 1 first.\n"
+    told = [m.content for m in model.received[-1] if m.type == "tool"]
+    assert "changed since" not in told[-1]
+
+
 async def test_a_write_or_edit_fails_when_the_page_changed_after_the_agent_read_it(
     project, db_client: AsyncClient
 ) -> None:

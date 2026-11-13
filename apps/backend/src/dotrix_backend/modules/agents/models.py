@@ -98,6 +98,9 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     skill_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     selected_plan_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     repository_write_paths: Mapped[list[str] | None] = mapped_column(JSONB)
+    # The version of each document this run last read or wrote ("/path": version), kept across an
+    # approval wait or a restart so an overwrite is checked against what the agent actually saw.
+    read_versions: Mapped[dict[str, int] | None] = mapped_column(JSONB)
 
     # The project it's about; null for a conversation across projects (or about none), which
     # lists its projects in `project_ids` and is read-only (workspace_runs.py).
