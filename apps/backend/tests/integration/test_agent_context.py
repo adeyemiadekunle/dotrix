@@ -195,3 +195,20 @@ async def test_the_board_lists_whats_next_by_priority(project, db_client: AsyncC
     board = system_prompt(model).split("## Board", 1)[1]
     next_up = board.split("Next up (to do, most urgent first):", 1)[1]
     assert next_up.index("Fix payouts") < next_up.index("Add zones") < next_up.index("Tidy the docs")
+
+
+async def test_lessons_accepted_before_lessons_were_removed_still_reach_the_agent(
+    project, db_client: AsyncClient, agent_script
+) -> None:
+    ada, base = await project()
+    accepted = "# Lessons for project-manager\n\n- Write requirements in the present tense.\n"
+    put = await db_client.put(f"{base}/knowledge/files/agent-rules/lessons/project-manager.md",
+                              json={"content": accepted}, headers=ada.headers)
+    assert put.status_code == 200, put.text
+    model = agent_script.say("Noted.")
+    await db_client.post(f"{base}/agent/runs", json={"message": "Draft the requirements"}, headers=ada.headers)
+    prompt = system_prompt(model)
+    assert "## Lessons from this project\n- Write requirements in the present tense." in prompt
+    assert "# Lessons for project-manager" not in prompt
+    # And nothing proposes lessons now: the route is gone.
+    assert (await db_client.get(f"{base}/lessons", headers=ada.headers)).status_code == 404

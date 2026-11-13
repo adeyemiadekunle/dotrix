@@ -20,8 +20,6 @@ from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.issues.service import IssueService
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
-from dotrix_backend.modules.lessons.models import LessonSource
-from dotrix_backend.modules.lessons.service import propose as propose_lesson
 from dotrix_backend.modules.model_keys.service import may_choose, run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
@@ -664,14 +662,6 @@ class AgentService:
                 approved=len(decided) - len(rejected), rejected=len(rejected),
                 reason=next((a.reason for a in rejected if a.reason), None), actor_user_id=member.user_id,
             )
-        for approval in changes:
-            if approval.status is ApprovalStatus.REJECTED:
-                # A reason is something the agent could learn (owners and admins decide).
-                propose_lesson(
-                    self.session, access.project, agent=run.agent, source=LessonSource.REJECTION,
-                    subject=f"A change to {approval.target or approval.tool}", reason=approval.reason,
-                    run_id=run.id, by=member.user_id,
-                )
         interrupt_ids = [a.interrupt_id for a in pending]
         decisions = [_engine_decision(a, by_id[a.id]) for a in pending]
         # Answering only checkpoints approves nothing.
@@ -787,14 +777,6 @@ class AgentService:
         if row is None or not 0 <= index < len(row.items):
             raise NotFound("No such result item in this run")
         items = [dict(item) for item in row.items]
-        if data.state == "dismissed" and items[index].get("state") != "dismissed":
-            data_ = items[index].get("data") or {}
-            title = str(data_.get("title") or data_.get("claim") or data_.get("step") or data_.get("path") or "")[:120]
-            propose_lesson(
-                self.session, access.project, agent=row.agent, source=LessonSource.DISMISSAL,
-                subject=f'The {row.schema_name} "{title}"' if title else f"A {row.schema_name}",
-                reason=data.reason, run_id=run_id, by=access.member.user_id,
-            )
         items[index] |= {
             "state": data.state,
             "reason": data.reason if data.state == "dismissed" else None,

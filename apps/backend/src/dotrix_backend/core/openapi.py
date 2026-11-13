@@ -125,11 +125,6 @@ TAGS: list[dict[str, str]] = [
         "relate, derived from what they say and kept current; impact, paths, and documents that may be stale.",
     },
     {
-        "name": "lessons",
-        "description": "What people's decisions teach the agents: rejected changes and dismissed results, with "
-        "their reasons, proposed as lessons that owners and admins accept into an agent's rules or decline.",
-    },
-    {
         "name": "github",
         "description": "Connecting GitHub through the dotrix GitHub App: the GitHub accounts it's installed "
         "on in a workspace, each project's repo (private ones included), and GitHub's webhook deliveries.",
