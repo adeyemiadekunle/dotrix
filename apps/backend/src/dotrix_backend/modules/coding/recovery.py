@@ -37,7 +37,7 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
 from .models import CODING_AGENT_NAME, CodingRun, CodingRunEvent, CodingRunStatus, PrState
-from .runner import MAX_EVENTS, issue_title, issue_to_review, pr_body
+from .runner import MAX_EVENTS, issue_title, issue_to_review, pr_body, turn_ended
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +205,7 @@ async def _settle(
         run.status, run.finished_at, run.error = CodingRunStatus.STOPPED, now, error
     elif outcome is Recovered.UNCLEAR:
         run.error = error
+    turn_ended(session, run, by=by)
     said = {
         Recovered.ADOPTED_PR: f"Recovered: the push landed, PR #{run.pr_number}",
         Recovered.OPENED_PR: f"Recovered: the push landed; opened PR #{run.pr_number}",

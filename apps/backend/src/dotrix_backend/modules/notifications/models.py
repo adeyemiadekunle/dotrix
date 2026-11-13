@@ -21,12 +21,13 @@ class NotificationKind(enum.StrEnum):
     WATCHING = "watching"  # an issue you watch changed, or someone commented on it
     LIMIT = "limit"  # a run you asked for stopped at its model's limit; it can continue once that resets
     STALE = "stale"  # a push changed code that the project's wiki pages cite (for people who edit documents)
+    CODING = "coding"  # a coding turn you asked for opened or updated its PR, changed nothing, or failed
 
 
 # What people may turn off. Approvals and checkpoints always come through: agents wait on them.
 OPTIONAL_KINDS = (
     NotificationKind.MENTION, NotificationKind.ASSIGNED, NotificationKind.FINDING, NotificationKind.DECIDED,
-    NotificationKind.WATCHING, NotificationKind.STALE,
+    NotificationKind.WATCHING, NotificationKind.STALE, NotificationKind.CODING,
 )
 
 

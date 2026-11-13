@@ -61,6 +61,7 @@ const TYPE_IC: Record<string, string> = {
   decided: "check-check",
   limit: "gauge",
   stale: "file-clock",
+  coding: "code",
 };
 
 // A real workspace marks them read through the save (the cache); the sample edits the store.
@@ -228,7 +229,12 @@ function AgentDetail({ n, onBack }: { n: Notif; onBack: () => void }) {
   const { items: threads } = useThreads();
   const { items: sessions } = useCodingSessions();
   const th = n.thread ? threads.find((t) => t.id === n.thread) : null;
-  const cs = n.task ? sessions.find((c) => c.task === n.task && (c.status === "awaiting_approval" || n.type !== "approval")) : null;
+  // A known coding turn must never be replaced by another session on the same task.
+  const cs = sessions.find(
+    (c) =>
+      (n.codingSession ? c.id === n.codingSession : !n.codingRun && Boolean(n.task) && c.task === n.task) &&
+      (c.status === "awaiting_approval" || n.type !== "approval"),
+  );
   const t = n.task ? task(n.task) : null;
   const p = projOf(n);
   const changes = th?.messages.flatMap((m) => m.changes ?? []) ?? [];
@@ -424,7 +430,7 @@ const TABS: [string, string, NotifType[] | null][] = [
   ["all", "All", null],
   ["needs", "Needs you", ["approval", "checkpoint", "limit"]],
   ["mentions", "Mentions", PEOPLE],
-  ["updates", "Updates", ["finding", "decided", "update", "stale"]],
+  ["updates", "Updates", ["finding", "decided", "update", "stale", "coding"]],
 ];
 const ALL_TYPES = TABS.flatMap(([, , ts]) => ts ?? []);
 // Approvals and plans stay unread until decided.

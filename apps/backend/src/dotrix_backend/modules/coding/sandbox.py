@@ -283,6 +283,14 @@ def _kill(process: asyncio.subprocess.Process) -> None:
 
 TURN_PID = "/tmp/dotrix-turn.pid"  # the command a stoppable exec runs, so Stop can signal it in the sandbox
 STOP_GRACE = 5.0  # seconds between SIGINT (finish cleanly) and SIGKILL
+# Every process under the turn's, frozen as it's found (so none forks or is reparented away while the
+# tree is read), then killed. POSIX sh and procps' pgrep, which the coding image and OpenShell have.
+_KILL_TREE = (
+    'p=$(cat {pid} 2>/dev/null) || exit 0; kill -STOP "$p" 2>/dev/null; all="$p"; level="$p"; '
+    'while [ -n "$level" ]; do next=""; for q in $level; do '
+    'for c in $(pgrep -P "$q" 2>/dev/null); do kill -STOP "$c" 2>/dev/null; next="$next $c"; done; done; '
+    'all="$all $next"; level="$next"; done; kill -KILL $all 2>/dev/null; exit 0'
+)
 
 Exec = Callable[..., Awaitable[ExecResult]]
 
@@ -299,8 +307,9 @@ async def interruptible(
         return await run(argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=None)
 
     async def signal_inside(sig: str) -> None:
-        script = (f'p=$(cat {TURN_PID} 2>/dev/null) && kill -INT "$p"' if sig == "INT"
-                  else f'p=$(cat {TURN_PID} 2>/dev/null) && {{ pkill -KILL -P "$p"; kill -KILL "$p"; }}')
+        # SIGINT goes to the engine alone, so it ends its turn cleanly. SIGKILL ends the whole tree it
+        # started: a test runner or dev server under its shell tool, not just its direct children.
+        script = f'p=$(cat {TURN_PID} 2>/dev/null) && kill -INT "$p"' if sig == "INT" else _KILL_TREE.format(pid=TURN_PID)
         try:
             await run(["sh", "-c", script], stdin=None, on_line=None, timeout=30, cancel=None)
         except SandboxError as exc:
