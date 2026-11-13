@@ -18,10 +18,15 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Changed
 
 - Consolidated product, release-readiness and agent design documentation into two current guides, replacing obsolete proposals and updating navigation.
+- Kai's coding engines are updated: Claude Code 2.1.323, Codex 0.169.0, OpenCode 2.3.0, and the browser's Playwright MCP 0.0.85.
 
 ### Fixed
 
 - dotrix runner (and the desktop app's local coding) keeps waiting through a brief network or server outage instead of exiting.
+
+### Security
+
+- Kai on Codex no longer takes a repository's AGENTS.md as instructions, and no longer applies a repository's own Codex settings (.codex/config.toml).
 
 ## [0.2.0] - 2026-11-12
 

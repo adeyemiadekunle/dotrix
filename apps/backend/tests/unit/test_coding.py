@@ -383,6 +383,9 @@ def test_claude_code_and_codex_take_the_model_as_their_engine_names_it() -> None
     assert ClaudeCode().command("anthropic:claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]
     assert ClaudeCode().command("claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]  # a server setting's bare name
     assert Codex().command("openai:gpt-5.5")[-3:] == ["-c", 'model="gpt-5.5"', "-"]
+    # The repository's AGENTS.md never reaches Codex's model as instructions.
+    codex = Codex().command(None)
+    assert codex[codex.index("project_doc_max_bytes=0") - 1] == "-c"
 
 
 @pytest.mark.parametrize("value", ["-" + "a" * 39, "A" * 40, "g" * 40, "a" * 39, "a" * 41, "--upload-pack=" + "x" * 26])

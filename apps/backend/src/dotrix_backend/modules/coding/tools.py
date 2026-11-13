@@ -5,7 +5,8 @@ what the run page shows (steps) and what the run used (tokens).
   Headless has no prompts, so the tools it may use are pre-allowed (`--permission-mode dontAsk`
   refuses the rest); the sandbox's policy is the boundary for what Bash can reach.
 - Codex: `codex exec --json … -`, the brief on stdin, with Codex's own sandbox off
-  (`danger-full-access`) because the run is already in one.
+  (`danger-full-access`) because the run is already in one, and the repo's AGENTS.md not read
+  (`project_doc_max_bytes=0`).
 - OpenCode 2: `opencode run --standalone --format json --auto`, the brief on stdin, on any provider's
   model (one OpenCode per provider: its key and the one host the sandbox lets it reach). Its config
   is ours, never the repo's (`OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_CONFIG_CONTENT`).
@@ -326,7 +327,10 @@ class Codex(_NoUsageCommand):
         return settings.coding_codex_model
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
-        argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral"]
+        # `project_doc_max_bytes=0`: the repository's AGENTS.md is data, never Codex's instructions (it would
+        # otherwise reach the model as `<INSTRUCTIONS>`; checked on 0.166.0 and 0.169.0 against a scripted model).
+        argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral",
+                "-c", "project_doc_max_bytes=0"]
         return argv + (["-c", f'model="{_bare(model)}"'] if model else []) + ["-"]
 
     def parse(self, line: str, usage: Usage) -> Parsed:
@@ -443,7 +447,7 @@ _OPENCODE_TOTALS = (
 
 
 class OpenCode:
-    """OpenCode 2 on one provider. Checked against a fake model (2.1.4): the brief on stdin, `-s` our
+    """OpenCode 2 on one provider. Checked against a fake model (2.1.4, 2.3.0): the brief on stdin, `-s` our
     session id, events `step_start` / `text` / `tool_use` / `step_finish` / `error`, SIGINT stops it."""
 
     agent = CodingAgent.OPENCODE

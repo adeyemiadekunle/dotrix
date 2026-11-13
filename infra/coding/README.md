@@ -270,6 +270,15 @@ it.
     the session saved and restored into a fresh home).
   - Not yet: the other providers on paid models, the profiles on a gateway, fx's browser.
   - Coding runs through Dokploy's Docker proxy (see [deploy/README.md](../../deploy/README.md)).
+- **Engines raised, 2026-11-13: Claude Code 2.1.323, Codex 0.169.0, OpenCode 2.3.0, Playwright MCP 0.0.85**
+  (fx stays 0.0.16, its latest). Each new version ran beside the one it replaces against a scripted model
+  API (Anthropic Messages and OpenAI Responses), with Kai's own commands, environment, saved sessions and
+  parsers from `tools.py`: a turn that writes a file and runs a check, then a follow-up resumed in a fresh
+  home. Steps, command output, summaries, tokens, cost and resume came out the same. OpenCode 2.3.0 now
+  also emits the last step's `step_finish` (counted once by message id). Codex 0.166.0 applied a
+  repository's own `.codex/config.toml` and 0.169.0 doesn't; both sent the repository's `AGENTS.md` to the
+  model until `-c project_doc_max_bytes=0` (now in Kai's command). Playwright MCP 0.0.85 keeps every flag
+  `tools.py` passes; its browser wasn't run. Not yet: these versions on real models, in the built image.
 
 ## Check a sandbox by hand
 
