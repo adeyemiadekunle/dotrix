@@ -12,8 +12,11 @@ never touched. A worktree separates directories, it isn't a security boundary. W
 own with only the turn's worktree mounted (at the same path), behind sbx's network policy, with the
 key from the person's own `sbx secret` store, which sbx adds to the model API's requests outside the
 VM: so it may run commands there (tests, builds). Without sbx, nothing isolates the tool: it only
-edits files (Claude Code's acceptEdits, no commands), with an environment that carries its own
-provider's settings and none of this machine's other credentials (`dotrix_cli.toolenv`). A worktree is
+reads, searches and edits files (Claude Code with only its file tools, no commands), with an environment
+that carries its own provider's settings and none of this machine's other credentials
+(`dotrix_cli.toolenv`). Either way Claude Code loads none of the repository's own configuration: its
+hooks, permission rules, plugins and MCP servers (`--setting-sources user --strict-mcp-config`), and
+without sbx not its CLAUDE.md or skills either (`--safe-mode`). A worktree is
 kept after its turn, for a while: its patch is already on the platform, so the runner removes
 worktrees untouched for `WORKTREE_DAYS` days (never the one it's coding in) when it starts and after
 each turn.
@@ -50,6 +53,8 @@ MAX_PENDING = 2000  # steps kept while the platform can't be reached; the oldest
 WORKTREE_DAYS = 3  # a finished turn's worktree is removed once untouched this long
 EVENTS_SECONDS = 2.0  # waiting events go out this often (the lease is renewed every third of it regardless)
 STOP_GRACE_SECONDS = 5
+# What Claude Code may use on a turn that nothing isolates: reading, searching and editing files.
+LOCAL_FILE_TOOLS = "Read,Edit,Write,Glob,Grep"
 
 
 class Api(Protocol):
@@ -82,10 +87,19 @@ class Tool:
     @classmethod
     def named(cls, name: str, *, isolated: bool = False) -> Tool:
         if name == "claude-code":
+            # Never the repository's own configuration: its `.claude/settings.json` (hooks, permission
+            # rules, plugins) and `.mcp.json` servers would otherwise run, since `-p` asks no one to trust
+            # the folder. The person's own user settings and sign-in still apply (`--bare` would drop the
+            # sign-in, which local turns rely on).
+            own_config_only = ["--setting-sources", "user", "--strict-mcp-config"]
             if isolated:  # In its own microVM the sandbox is the boundary: it may run commands there.
-                return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"])
-            # Not isolated, so it may only edit files: no commands on this machine.
-            return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"])
+                return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", *own_config_only,
+                                  "--dangerously-skip-permissions"])
+            # Not isolated, so it may only edit files: no commands on this machine. Only the file tools
+            # are offered (`--tools`; acceptEdits alone still auto-approves rm, mv and cp in the worktree),
+            # and `--safe-mode` also leaves out the repository's CLAUDE.md, skills, agents and commands.
+            return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", *own_config_only,
+                              "--safe-mode", "--tools", LOCAL_FILE_TOOLS, "--permission-mode", "acceptEdits"])
         if name == "opencode":
             return cls(name, ["opencode", "run", "--format", "json"])
         raise ValueError(f"Unknown coding tool {name!r} (one of {', '.join(TOOLS)})")
@@ -616,6 +630,8 @@ class LocalRunner:
                 if isolated and _sign_in_failed(error):
                     error += (f"\nThe sandbox has no key for it: run `sbx secret set "
                               f"{SBX_SECRETS.get(environment_tool, 'anthropic')}` on this computer, then ask again.")
+                elif _unknown_option(error):
+                    error += f"\n{tool.name} here may be too old for the options dotrix runs it with: update it, then ask again."
                 await report("failed", base_sha=base_sha, summary=out.summary, error=error, **usage)
                 self.echo(f"  Failed: {_tail(error)}")
             else:
@@ -670,6 +686,12 @@ def _sign_in_failed(error: str) -> bool:
     """Whether a tool's error reads like it had no credentials (in a sandbox: no `sbx secret` set)."""
     lowered = error.lower()
     return any(word in lowered for word in ("api key", "api_key", "not signed in", "/login", "unauthorized", "401", "authentication"))
+
+
+def _unknown_option(error: str) -> bool:
+    """Whether a tool refused an option on its command line (an older version than dotrix expects)."""
+    lowered = error.lower()
+    return "unknown option" in lowered or "unrecognized option" in lowered
 
 
 def _tail(text: str) -> str | None:

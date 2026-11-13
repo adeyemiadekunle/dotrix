@@ -47,6 +47,10 @@ async def test_a_run_starts_with_the_project_map(project, db_client: AsyncClient
     )
     assert put.status_code == 200
     await db_client.put(f"{kb}/decisions/0001-zones.md", json={"content": "# ADR 1: Zones are a join table\n\nBecause."}, headers=ada.headers)
+    # project.md goes in as written, up to its 1,500-character excerpt (not cut to one 200-character line).
+    overview = "# Kumove\n\nDelivery for Lagos.\n\n" + "Drivers pick up parcels across zones. " * 20 + "\n\nGoal: TAIL-OF-PROJECT-MD\n"
+    assert 600 < len(overview) < 1_500
+    assert (await db_client.put(f"{kb}/project.md", json={"content": overview}, headers=ada.headers)).status_code == 200
     due = (date.today() + timedelta(days=2)).isoformat()
     for fields in (
         {"title": "Multi-zone dispatch", "status": "in_progress"},
@@ -62,6 +66,7 @@ async def test_a_run_starts_with_the_project_map(project, db_client: AsyncClient
     assert "## Using the project context" in prompt  # how to use it, before the pack itself
     assert "# Project context: Kumove (KUN)" in prompt
     assert "## Project (project.md)" in prompt
+    assert "# Kumove\n\nDelivery for Lagos." in prompt and "Goal: TAIL-OF-PROJECT-MD" in prompt
     # Every document with what it's about, not its content.
     assert "- requirements/drivers.md: **Driver requirements**: Drivers can work several zones at once. (v1," in prompt
     assert "agent-rules/" not in prompt.split("# Project context")[1]  # rules are in the instructions already

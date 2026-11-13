@@ -71,6 +71,34 @@ def test_claude_code_events_become_steps_and_tokens() -> None:
     assert "dontAsk" in argv and "--dangerously-skip-permissions" not in argv
 
 
+def test_claude_codes_refused_tool_calls_are_shown_once() -> None:
+    """`dontAsk` refuses what isn't allowed; the session says so instead of the call vanishing. The
+    events are as Claude Code 2.1.296 prints them: a `permission_denied` event when it refuses, then
+    the call again in its result's `permission_denials` (only that one carries the input)."""
+    tool, usage = ClaudeCode(), Usage()
+    lines = [
+        {"type": "assistant", "message": {"id": "m1", "content": [
+            {"type": "tool_use", "id": "toolu_2", "name": "Bash", "input": {"command": "touch /tmp/x"}},
+            {"type": "tool_use", "id": "toolu_3", "name": "TaskCreate", "input": {"subject": "Touch"}}]}},
+        {"type": "system", "subtype": "permission_denied", "tool_name": "Bash", "tool_use_id": "toolu_2",
+         "decision_reason_type": "mode", "message": "Permission to use Bash has been denied"},
+        # Its result is the engine's refusal, naming the engine: not shown as the command's output.
+        {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_2",
+         "is_error": True, "content": "Permission to use Bash has been denied because Claude Code is running in …"}]}},
+        {"type": "system", "subtype": "permission_denied", "tool_name": "NotebookEdit", "tool_use_id": "toolu_4"},
+        {"type": "result", "subtype": "success", "result": "Done.", "total_cost_usd": 0.01, "permission_denials": [
+            {"tool_name": "Bash", "tool_use_id": "toolu_2", "tool_input": {"command": "touch /tmp/x"}},
+            {"tool_name": "Write", "tool_use_id": "toolu_5", "tool_input": {"file_path": "/sandbox/repo/.env"}}]},
+    ]
+    steps = [(s.kind, s.text) for line in lines for s in tool.parse(json.dumps(line), usage).steps]
+    assert steps == [
+        ("tool", "Ran touch /tmp/x"),  # its own checklist (TaskCreate) is no step
+        ("error", "Not allowed to run touch /tmp/x"),
+        ("error", "Not allowed to use NotebookEdit"),
+        ("error", "Not allowed to change .env"),  # only in the result: said there
+    ]
+
+
 def test_codex_events_become_steps_and_tokens() -> None:
     tool, usage = Codex(), Usage()
     out = [tool.parse(json.dumps(e), usage) for e in (
@@ -133,6 +161,13 @@ def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
 
 
 def test_what_a_run_may_not_change() -> None:
+    key = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
+    import base64 as b64
+    assert guard.leaks(key, b"+API_KEY = '" + key.encode() + b"'\n")
+    assert guard.leaks(key, None, f"set it to {b64.b64encode(key.encode()).decode().rstrip('=')}")
+    assert guard.leaks(key, b64.urlsafe_b64encode(key.encode()))
+    assert not guard.leaks(key, b"+API_KEY = os.environ['ANTHROPIC_API_KEY']\n", "Reads the key from the environment.")
+    assert not guard.leaks(None, key) and not guard.leaks("short", "short")  # no key, or too short to tell
     assert guard.check(["src/a.py", "docs/dotrix.md", "docs/.github/notes.md", "src/Jenkinsfile.md"]) == []
     reasons = guard.check([".dotrix/x.md", "app/.dotrix/y.md", ".github/workflows/ci.yml", "lib/.git/config"])
     assert len(reasons) == 4 and ".dotrix/ stays on the platform" in reasons[0] and "CI configuration" in reasons[2]

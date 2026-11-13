@@ -507,6 +507,7 @@ class CodingWorker:
             if not patch.strip():
                 await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
                 return
+            _refuse_leaked_key(key, patch, summary)
             paths, files = await _stage(work, host, patch)
             if await self._hold_for_acceptance(run_id, patch, files, summary):
                 return
@@ -606,6 +607,7 @@ class CodingWorker:
                 return
 
             # 3. Apply to our checkout and check, before anything leaves this machine.
+            _refuse_leaked_key(key, patch, summary)
             paths, files = await _stage(work, host, patch)
 
             async def sandbox_moves_on(heading: str) -> None:
@@ -1266,6 +1268,13 @@ def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *
         details={"run_id": str(run.id), "pr_url": run.pr_url, "error": run.error,
                  "tokens": run.input_tokens + run.output_tokens},
     )
+
+
+def _refuse_leaked_key(key: str | None, patch: bytes, summary: str | None) -> None:
+    """Nothing that carries the person's model key is committed, pushed or kept for acceptance."""
+    if guard.leaks(key, patch, summary):
+        raise RunFailed(f"Not pushed: {CODING_AGENT_NAME}'s changes or summary contain your model key, so "
+                        "nothing was committed. Consider replacing the key with your provider")
 
 
 async def _stage(work: Path, host: Path, diff: bytes) -> tuple[list[str], list[dict[str, Any]]]:

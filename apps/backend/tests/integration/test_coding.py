@@ -369,6 +369,31 @@ async def test_changes_to_dotrix_or_workflows_are_never_pushed(
     assert run["status"] == "no_changes" and github.pulls == []
 
 
+async def test_a_turn_that_writes_the_model_key_is_never_pushed(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    """The Docker sandbox gives the agent the person's key in its environment: a turn that copies it
+    into a file, encoded or not, or into its summary (the PR body) fails before anything is committed."""
+    import base64
+
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    key = "test-anthropic-personal-key-" + str(ada.id)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Config"}, headers=ada.headers)).json()
+    for edits, result in (
+        ({"src/config.py": f"API_KEY = {key!r}\n"}, "Added the config."),
+        ({"src/config.py": f"API_KEY = {base64.b64encode(key.encode()).decode()!r}\n"}, "Added the config."),
+        ({"src/config.py": "API_KEY = None\n"}, f"Added the config; it reads {key} from the environment."),
+    ):
+        claude.edits, claude.result = edits, result
+        run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+        await _approve(db_client, base, run, ada.headers)
+        run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+        assert run["status"] == "failed" and "contain your model key" in run["error"], run
+        assert key not in run["error"] and run["branch"] is None
+    assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
+
+
 async def test_rejecting_stopping_and_when_it_isnt_available(
     db_client: AsyncClient, coding, add_member
 ) -> None:

@@ -85,10 +85,29 @@ def test_opencode_events_and_errors() -> None:
 
 
 def test_claude_code_edits_files_and_runs_no_commands() -> None:
-    """Nothing isolates a local turn, so the tool only edits files in its worktree."""
+    """Nothing isolates a local turn, so the tool only reads, searches and edits files in its worktree:
+    no Bash (acceptEdits alone would still auto-approve rm, mv and cp), and none of the repository's own
+    hooks, permission rules, MCP servers, CLAUDE.md or skills."""
     claude = Tool.named("claude-code").argv
     assert claude[-2:] == ["--permission-mode", "acceptEdits"] and "--allowedTools" not in claude
+    tools = claude[claude.index("--tools") + 1].split(",")
+    assert sorted(tools) == ["Edit", "Glob", "Grep", "Read", "Write"]
+    assert claude[claude.index("--setting-sources") + 1] == "user"
+    assert "--strict-mcp-config" in claude and "--mcp-config" not in claude and "--safe-mode" in claude
     assert Tool.named("opencode").argv[:2] == ["opencode", "run"]
+
+
+def test_claude_code_in_a_sandbox_still_ignores_the_repositorys_configuration() -> None:
+    claude = Tool.named("claude-code", isolated=True).argv
+    assert "--dangerously-skip-permissions" in claude and "--tools" not in claude  # it may run commands in the VM
+    assert claude[claude.index("--setting-sources") + 1] == "user" and "--strict-mcp-config" in claude
+
+
+def test_an_older_tool_refusing_an_option_says_to_update_it() -> None:
+    from dotrix_cli.runner import _unknown_option
+
+    assert _unknown_option("error: unknown option '--safe-mode'")
+    assert not _unknown_option("Invalid API key · Please run /login")
 
 
 
