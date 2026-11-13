@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 
 from dotrix_cli.runner import LocalRunner, Outcome, Tool, parse_line
@@ -95,6 +96,40 @@ def test_claude_code_edits_files_and_runs_no_commands() -> None:
     assert claude[claude.index("--setting-sources") + 1] == "user"
     assert "--strict-mcp-config" in claude and "--mcp-config" not in claude and "--safe-mode" in claude
     assert Tool.named("opencode").argv[:2] == ["opencode", "run"]
+
+
+def test_claude_code_with_the_desktop_apps_browser_gets_only_its_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The desktop app hands its runner the Browser pane's MCP server (this computer only, behind a token). Claude
+    Code then gets the file tools and that server's, still no commands and none of the repository's configuration."""
+    from dotrix_cli.runner import browser_tools, describe, write_browser_config
+
+    assert browser_tools({}) is None
+    assert browser_tools({"DOTRIX_BROWSER_MCP_URL": "http://127.0.0.1:4411/mcp"}) is None  # no token
+    assert browser_tools({"DOTRIX_BROWSER_MCP_URL": "https://evil.example/mcp", "DOTRIX_BROWSER_MCP_TOKEN": "t"}) is None
+    pane = browser_tools({"DOTRIX_BROWSER_MCP_URL": "http://127.0.0.1:4411/mcp", "DOTRIX_BROWSER_MCP_TOKEN": "secret"})
+    assert pane == ("http://127.0.0.1:4411/mcp", "secret")
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    config = write_browser_config(*pane)
+    assert config.parent == tmp_path and json.loads(config.read_text()) == {
+        "mcpServers": {"browser": {"type": "http", "url": "http://127.0.0.1:4411/mcp", "headers": {"Authorization": "Bearer secret"}}},
+    }
+    if os.name != "nt":
+        assert config.stat().st_mode & 0o077 == 0  # the token is this person's only
+
+    claude = Tool.named("claude-code", browser=config).argv
+    assert sorted(claude[claude.index("--tools") + 1].split(",")) == ["Edit", "Glob", "Grep", "Read", "Write"]
+    assert claude[claude.index("--mcp-config") + 1] == str(config) and "secret" not in " ".join(claude)
+    assert claude[claude.index("--allowedTools") + 1] == "mcp__browser"
+    assert "--strict-mcp-config" in claude and claude[claude.index("--setting-sources") + 1] == "user"
+    # Safe mode would switch the pane's server off: the repository's skills and commands are left out another way.
+    assert "--safe-mode" not in claude and "--disable-slash-commands" in claude
+    assert "--dangerously-skip-permissions" not in claude
+    # In a sandbox the pane isn't offered: the microVM can't reach this computer's server.
+    assert "--mcp-config" not in Tool.named("claude-code", isolated=True).argv
+
+    assert describe("mcp__browser__browser_navigate", {"url": "http://localhost:3000/x"}) == "Opened http://localhost:3000/x in the browser"
+    assert describe("mcp__browser__browser_click", {"ref": 4}) == "Clicked in the browser"
 
 
 def test_claude_code_in_a_sandbox_still_ignores_the_repositorys_configuration() -> None:

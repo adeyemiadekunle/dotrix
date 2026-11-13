@@ -57,6 +57,8 @@ export class Runners {
   constructor(
     private apiUrl: string,
     private webUrl: string,
+    /** More for a runner's environment, read when one starts (the Browser pane's tools for Kai: main.ts). */
+    private extraEnv: () => Record<string, string> = () => ({}),
   ) {}
 
   private get savedFile(): string {
@@ -103,7 +105,7 @@ export class Runners {
 
   private env(): NodeJS.ProcessEnv {
     // The CLI's own runtime picks the API from here.
-    return { ...process.env, DOTRIX_API_URL: this.apiUrl, PYTHONUNBUFFERED: "1" };
+    return { ...process.env, ...this.extraEnv(), DOTRIX_API_URL: this.apiUrl, PYTHONUNBUFFERED: "1" };
   }
 
   private cli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
