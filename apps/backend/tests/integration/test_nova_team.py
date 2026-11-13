@@ -498,3 +498,19 @@ async def test_automatic_routing_uses_host_task_policy_and_pins_choices(nova_wor
     await db_session.commit()
     await scheduler.submit(root.workspace_id, root.id, 1, "policy-batch", tasks)
     assert {task.task_key: task.model for task in children}["docs"] == "openai:routine"
+
+
+async def test_a_refused_batch_is_told_to_nova_instead_of_ending_the_run(nova_world, db_client, agent_script):
+    """Plan mode refuses a project-changing task: Nova reads why and answers, as with any refused tool call."""
+    person, _, _, _, base = nova_world
+    changing = [{"key": "draft", "agent": "product", "brief": "Write the requirements",
+                 "expected_result": "requirements/product.md", "changes_project": True}]
+    model = agent_script.say(tool_call("delegate_tasks", tasks=changing), "I'll keep this to a plan.")
+    response = await db_client.post(f"{base}/agent/runs", headers=person.headers,
+                                    json={"message": "Have Lyra write the requirements", "work_mode": "plan"})
+    assert response.status_code == 202, response.text
+    root = response.json()
+    assert root["status"] == "completed" and root["reply"] == "I'll keep this to a plan.", root
+    told = [m.content for m in model.received[-1] if m.type == "tool"]
+    assert told and "Plan mode permits only read-only specialist tasks" in told[-1]
+    assert (await db_client.get(f"{base}/agent/runs/{root['id']}/tasks", headers=person.headers)).json() == []

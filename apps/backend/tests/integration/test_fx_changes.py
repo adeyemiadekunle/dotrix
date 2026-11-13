@@ -449,3 +449,30 @@ async def test_a_run_bound_by_an_earlier_fx_version_runs_on_this_one(nova_pilot_
         assert upgraded.runtime_version == fx_pilot._VERSION and upgraded.session_id == "fx-pilot-earlier"
         assert upgraded.encrypted_context is not None
         assert "specialist_directory" not in json.loads(secrets.decrypt(upgraded.encrypted_context))
+
+
+@pytest.mark.parametrize("args, said", [
+    # The platform refuses it: the model reads why, and the run goes on.
+    ({"tasks": [{"key": "draft", "agent": "product", "brief": "Write the requirements",
+                 "expected_result": "requirements/product.md", "changes_project": True}]},
+     "read-only specialist tasks"),
+    # Arguments that don't fit the schema: the model reads what's wrong.
+    ({"tasks": [{"key": "Not A Key", "agent": "product", "brief": "x", "expected_result": "y"}]},
+     "Invalid arguments: tasks.0.key"),
+])
+async def test_an_fx_tool_refusal_reaches_the_model_with_its_reason(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts, args, said,  # noqa: F811
+):
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        requests: list = []
+        with scripted_model("delegate_tasks", args, requests=requests) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "Have Lyra draft the requirements", "chat_runtime": "fx", "work_mode": "plan",
+            })
+        assert asked.status_code == 202 and asked.json()["status"] == "completed", asked.text
+        [result] = [m for m in requests[-1]["messages"] if m["role"] == "tool"]
+        assert said in json.dumps(result["content"]) and "Tool failed." not in json.dumps(result["content"]), result
+        async with fx.sessions() as session:
+            children = list(await session.scalars(select(AgentRun).where(AgentRun.parent_run_id == uuid.UUID(asked.json()["id"]))))
+        assert children == []  # nothing was delegated

@@ -10,6 +10,7 @@ from .contracts import (
     RuntimeJournalStore,
     RuntimeTool,
     RuntimeToolContext,
+    RuntimeToolError,
     TurnResult,
     UnsupportedRuntimeOperation,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "RuntimeJournalStore",
     "RuntimeTool",
     "RuntimeToolContext",
+    "RuntimeToolError",
     "TurnResult",
     "UnsupportedRuntimeOperation",
     "fx_configuration_digest",

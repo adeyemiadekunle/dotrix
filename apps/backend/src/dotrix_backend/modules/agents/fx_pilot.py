@@ -56,7 +56,7 @@ from .runtime_sessions import (
     get_runtime_session,
     upgrade_runtime_binding,
 )
-from .runtime_tools import RuntimeRunScope, scoped_project_tools
+from .runtime_tools import RuntimeRunScope, readable_failures, scoped_project_tools
 from .storage_backend import SessionFactory
 from .unattended import Unattended
 from .work_modes import ModeContext, lead_tools
@@ -310,7 +310,7 @@ async def _turn(
         if spec.can("delegate"):
             tools.append(RuntimeTool("delegate_tasks", "Ask built-in specialists for work.",
                                      SpecialistBatch.model_json_schema(), execute_scoped=delegate, writes=True))
-    config = AgentRuntimeConfig(PM_HANDLE, instructions, tuple(tools))
+    config = AgentRuntimeConfig(PM_HANDLE, instructions, tuple(readable_failures(tool) for tool in tools))
     identity = RuntimeIdentity("fx", _DURABLE_VERSION if durable else _VERSION, fx_configuration_digest(
         config, model=connection.model, base_url=connection.base_url,
     ))
