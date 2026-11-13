@@ -266,8 +266,12 @@ def test_claude_code_gets_a_browser_only_from_the_platform() -> None:
     assert "--strict-mcp-config" in plain and "--mcp-config" not in plain  # never a repo's MCP servers
     with_browser = ClaudeCode().command("claude-haiku-5-5", browser=True)
     config = json.loads(with_browser[with_browser.index("--mcp-config") + 1])
-    assert list(config["mcpServers"]) == ["browser"] and config["mcpServers"]["browser"]["command"] == "playwright-mcp"
-    assert "--headless" in config["mcpServers"]["browser"]["args"]
+    server = config["mcpServers"]["browser"]
+    assert list(config["mcpServers"]) == ["browser"] and server["command"] == "sh" and server["args"][0] == "-c"
+    # Started in its output folder, which is its only workspace root: a screenshot it names never lands in the repository.
+    script = server["args"][1]
+    assert script.startswith("mkdir -p /tmp/playwright && cd /tmp/playwright && exec playwright-mcp ")
+    assert "--headless" in script and "--ignore-roots" in script and "--output-dir /tmp/playwright" in script
     assert "mcp__browser" in with_browser[with_browser.index("--allowedTools") + 1]
 
 

@@ -32,12 +32,17 @@ CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
 # The agent's browser: Playwright MCP in the sandbox (infra/coding/Dockerfile), headless Chromium with
 # its profile in memory. It opens what the agent serves on localhost; the sandbox's network rules apply
 # to everything else. Only the platform's MCP servers load (--strict-mcp-config), never a repo's.
+# It runs in its output folder with --ignore-roots, so that folder is the only one it writes to: started in the
+# repository, it would save a screenshot the agent names ("page.png") there, and the turn would commit it
+# (checked on Playwright MCP 0.0.85, 2026-11-13). Claude Code and fx (through fx-acp.mjs) both get it.
 BROWSER_SERVER = "browser"
+BROWSER_OUTPUT = "/tmp/playwright"
+_BROWSER_ARGS = ["--headless", "--isolated", "--ignore-roots", "--browser", "chromium", "--no-sandbox", "--output-dir", BROWSER_OUTPUT]
 BROWSER_MCP = {
     "mcpServers": {
         BROWSER_SERVER: {
-            "command": "playwright-mcp",
-            "args": ["--headless", "--isolated", "--browser", "chromium", "--no-sandbox", "--output-dir", "/tmp/playwright"],
+            "command": "sh",
+            "args": ["-c", f"mkdir -p {BROWSER_OUTPUT} && cd {BROWSER_OUTPUT} && exec playwright-mcp {' '.join(_BROWSER_ARGS)}"],
         }
     }
 }
@@ -616,6 +621,8 @@ FX_STOPS = {  # a turn that ended any other way than end_turn: what the person r
 
 
 def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None:
+    if name.startswith(f"mcp_{BROWSER_SERVER}_"):  # fx names an MCP server's tools mcp_<server>_<tool>
+        return _describe_browser(name.removeprefix(f"mcp_{BROWSER_SERVER}_"), args)
     path = _relative(str(args.get("path") or args.get("file_path") or ""))
     request = args.get("request") if isinstance(args.get("request"), dict) else {}
     match name:
@@ -646,7 +653,7 @@ class Fx:
     agent = CodingAgent.FX
     name = "fx"
     resumes = True  # fx saves its sessions under ~/.fx; the driver continues ours with --resume
-    browser = False  # its own browser tools aren't passed in yet
+    browser = True  # Playwright MCP, as Claude Code has it, passed to fx by the driver (checked on fx 0.0.16, 2026-11-13)
 
     def __init__(self, provider: OpenCodeProvider, driver: str = "/opt/dotrix/fx-acp.mjs") -> None:
         self.fx_provider = provider
@@ -660,7 +667,8 @@ class Fx:
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         name = (model or "").partition(":")[2] or (model or "")
-        return ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
+        argv = ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
+        return argv + (["--mcp-config", json.dumps(BROWSER_MCP)] if browser else [])
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["--session", session.hex, *(["--resume"] if resumed else [])]
@@ -696,6 +704,8 @@ class Fx:
                 out.steps.append(Step("step", f"{said} ({event.get('model') or 'default model'})"))
             case "text" if str(event.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(str(event["text"]))))
+            case "warning" if str(event.get("message", "")).strip():  # the turn goes on: the browser didn't start
+                out.steps.append(Step("error", _clip(str(event["message"]))))
             case "tool":
                 ref = str(event.get("id") or "") or None
                 name, args = str(event.get("name") or ""), event.get("input") if isinstance(event.get("input"), dict) else {}
