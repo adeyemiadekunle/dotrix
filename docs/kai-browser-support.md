@@ -5,9 +5,9 @@ The Browser pane and the tools that drive a browser are separate connections.
 | Coding engine | Cloud sandbox: headless browser and screenshots | Desktop local runner: app's Browser pane |
 | --- | --- | --- |
 | Claude Code | Connected | Connected |
-| Codex | Connected | Not a supported local runner |
+| Codex | Connected | Connected |
 | OpenCode | Connected | Connected |
-| fx | Connected | Not a supported local runner |
+| fx | Connected | Connected |
 
 Cloud browser tools are offered in Build turns inside the supported Docker or
 OpenShell sandboxes, not in Plan mode or a process without those boundaries. All
@@ -36,7 +36,21 @@ The desktop pane keeps its existing controls: browser enabled, Kai allowed,
 per-runner authentication, per-session tabs, and navigation to this computer's dev
 servers. Docker Sandboxes (`sbx`) turns do not connect to that pane because their
 VM cannot reach its loopback server. A live view of the cloud browser is also
-separate work; this change connects OpenCode to the existing headless tools.
+separate work.
+
+Native Codex requires 0.169.0 or newer. Its launcher disables existing MCP servers,
+hooks and plugins before adding a fresh app-owned browser connection. Commands
+use its workspace-write OS sandbox with networking disabled; the browser has its
+own authenticated connection. The bearer token never appears in the command line.
+
+Native fx requires 0.0.16 or newer. It gets a private per-turn profile containing
+only the person's model configuration and sign-in. The client verifies the loaded
+permission policy, permits file tools inside the worktree and the app's browser,
+and refuses commands, web fetch and subagents. Refreshed credentials are saved
+back only if the original sign-in has not changed; settings and grants are never
+copied back. Temporary profiles are removed after successful credential handling.
+There is no fx Docker Sandboxes template. Windows and live `sbx` verification remain
+open.
 
 ## Verification
 
@@ -57,3 +71,13 @@ uv run pytest apps/backend/tests/unit/test_opencode_browser.py -q
 The binaries can also be discovered on PATH. The test makes no paid model calls;
 it establishes the engine/tool contract rather than a real model's willingness to
 use the browser, or deployed container isolation.
+
+The native-runner tests use real Codex/fx binaries, scripted local model endpoints
+and the desktop's actual authenticated MCP transport. They check browser calls,
+worktree writes, refused outside writes, command restrictions and cleanup. They
+do not establish real-model adoption or an actual Electron page interaction.
+
+```bash
+DOTRIX_TEST_CODEX=/path/to/codex DOTRIX_TEST_FX=/path/to/fx \
+uv run pytest apps/cli/tests/test_real_local_engines.py -q
+```

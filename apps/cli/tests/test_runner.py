@@ -471,6 +471,29 @@ async def _turn(tmp_path: Path, script: str, api, files=None) -> list[str]:
     return said
 
 
+async def test_failed_native_turn_does_not_publish_its_partial_edits(tmp_path, monkeypatch):
+    import sys
+
+    results = []
+
+    class Api:
+        async def post(self, path, body=None):
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    script = ('import json,sys; open("a.txt", "w").write("partial"); '
+              'print(json.dumps({"type":"error","message":"Local policy was not loaded"})); sys.exit(1)')
+    monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("codex", [sys.executable, "-c", script]))
+    runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"original"}), workspace_id="w",
+                         project_id="p", runner_id="r1", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None)
+    await runner.work({**_RUN, "tool": "codex"})
+    [result] = results
+    assert result["outcome"] == "failed" and result["error"] == "Local policy was not loaded"
+    assert not result.get("patch") and not result.get("patch_b64")
+    assert (runner.repo / "a.txt").read_text() == "original"
+
+
 async def test_a_burst_of_steps_all_reach_the_platform_before_the_result(tmp_path: Path) -> None:
     calls: list[tuple[str, dict]] = []
 

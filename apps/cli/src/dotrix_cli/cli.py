@@ -60,6 +60,29 @@ from .platform import (
 from .sync import LinkState, find_project, find_workspace, follow_move, pull
 
 app = typer.Typer(help="Multi-agent project management for any repo (init or connect).")
+
+
+@app.command("_local-fx", hidden=True)
+def local_fx(
+    profile: Path = typer.Option(..., "--profile", exists=True, file_okay=False),
+    browser_config: Path | None = typer.Option(None, "--browser-config", exists=True, dir_okay=False),
+) -> None:
+    """Internal entry point also bundled by the standalone desktop CLI."""
+    import asyncio
+
+    from .fx_local import run
+
+    raise typer.Exit(asyncio.run(run(profile, browser_config)))
+
+
+@app.command("_local-codex", hidden=True)
+def local_codex(browser_config: Path | None = typer.Option(None, "--browser-config", exists=True, dir_okay=False)) -> None:
+    """Internal entry point also bundled by the standalone desktop CLI."""
+    from .codex_local import run
+
+    raise typer.Exit(run(browser_config))
+
+
 task_app = typer.Typer(help="Create, list, and update tasks on the project board.")
 calendar_app = typer.Typer(help="Calendar views derived from task due/scheduled dates.")
 handoff_app = typer.Typer(help="Hand-off instructions for coding agents (Claude Code, Codex).")
@@ -541,7 +564,7 @@ class _AsyncApi:
 @app.command("runner")
 def runner_command(
     project: str = ProjectOpt,
-    tool: str = typer.Option(None, "--tool", help="claude-code or opencode (default: the first found here)"),
+    tool: str = typer.Option(None, "--tool", help="claude-code, opencode, codex or fx (default: the first found here)"),
     command: str = typer.Option(None, "--command", help="Any other command instead: the brief on stdin, its output as events"),
     once: bool = typer.Option(False, "--once", help="Code at most one waiting turn, then exit"),
     poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
