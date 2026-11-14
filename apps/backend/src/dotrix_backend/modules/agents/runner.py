@@ -698,7 +698,7 @@ class AgentRunner:
                     code_tools=fx_code_tools, code_context=fx_code_context,
                     web_tools=run_web.tools if run_web is not None else None,
                     effective=(policy.spec(PM_ROLE), policy, unattended),
-                    script_calls=_script_activity(lambda: recording) if self._scripts else None,
+                    scripts=self._scripts, script_calls=_script_activity(lambda: recording),
                     mode_context=ModeContext(
                         self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
                         approval=approval, jobs=self.jobs, github=self.github,
