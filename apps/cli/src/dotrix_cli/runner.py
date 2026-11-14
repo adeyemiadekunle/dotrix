@@ -1,32 +1,11 @@
-"""`dotrix runner`: this computer codes your local turns, in a worktree of your checkout.
+"""Code local turns in separate worktrees and return patches for platform review.
 
-The platform keeps the run (approvals, events, the outcome) and pushes what's accepted itself; this
-only ever hands back a patch. So it holds no GitHub token and no provider key from the platform: the
-coding tool runs with whatever is signed in on this machine (Claude Code's login, OpenCode's
-config).
-
-Each turn gets a worktree of its own outside the checkout (`~/.dotrix/worktrees/...`), on the
-session's branch or the base branch as the remote has it, so your working copy and its changes are
-never touched. A worktree separates directories, it isn't a security boundary. With Docker Sandboxes
-(`sbx`, https://docs.docker.com/ai/sandboxes/) installed, each turn's tool runs in a microVM of its
-own with only the turn's worktree mounted (at the same path), behind sbx's network policy, with the
-key from the person's own `sbx secret` store, which sbx adds to the model API's requests outside the
-VM: so it may run commands there (tests, builds). Without sbx, nothing isolates the tool: it only
-reads, searches and edits files (Claude Code with only its file tools, OpenCode with its shell, web, sub-agent
-and skill tools denied and the repository's opencode.json ignored: `opencode_settings`), with an environment
-that carries its own provider's settings and none of this machine's other credentials
-(`dotrix_cli.toolenv`). Either way Claude Code loads none of the repository's own configuration: its
-hooks, permission rules, plugins and MCP servers (`--setting-sources user --strict-mcp-config`), and
-without sbx not its CLAUDE.md or skills either (`--safe-mode`). A worktree is
-In the desktop app, a turn nothing isolates also gets the app's Browser pane (`browser_tools`): Claude
-Code or OpenCode is handed the app's own MCP server (on this computer, behind a token made when the app started) and
-may use only its tools, which open, read and act on pages of this computer's dev server in a tab the
-person watches; the app holds that tab to this computer. Safe mode would switch that server off with the
-repository's, so such a turn leaves out the repository's CLAUDE.md, skills and commands another way.
-A worktree is
-kept after its turn, for a while: its patch is already on the platform, so the runner removes
-worktrees untouched for `WORKTREE_DAYS` days (never the one it's coding in) when it starts and after
-each turn.
+Only the person's locally configured model login is used. Docker Sandboxes provides
+an optional microVM for Claude Code, OpenCode and Codex. Native Codex uses its own
+workspace-write OS sandbox with command networking disabled; the other native
+runners restrict execution to file tools and the app-owned browser connection.
+Repository hooks, plugins and unrelated MCP servers are excluded. Worktrees are
+kept for WORKTREE_DAYS after a turn, then removed by the runner.
 """
 from __future__ import annotations
 
@@ -41,21 +20,24 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from .platform import PlatformError
-from .toolenv import tool_environment
+from .toolenv import EXECUTION_ENV, tool_environment
 
-TOOLS = ("claude-code", "opencode")
+TOOLS = ("claude-code", "opencode", "codex", "fx")
 # Each tool's Docker Sandboxes agent template (the image it starts from, with the tool installed).
-SBX_AGENTS = {"claude-code": "claude", "opencode": "opencode"}
+SBX_AGENTS = {"claude-code": "claude", "opencode": "opencode", "codex": "codex"}
 # The provider whose key `sbx secret set` stores for each tool, named when a turn fails to sign in.
-SBX_SECRETS = {"claude-code": "anthropic", "opencode": "anthropic, openai or another provider"}
+SBX_SECRETS = {"claude-code": "anthropic", "opencode": "anthropic, openai or another provider", "codex": "openai"}
 EVENTS_PER_BEAT = 50
 MAX_PENDING = 2000  # steps kept while the platform can't be reached; the oldest go first
 WORKTREE_DAYS = 3  # a finished turn's worktree is removed once untouched this long
@@ -116,7 +98,8 @@ class Tool:
     argv: list[str]
 
     @classmethod
-    def named(cls, name: str, *, isolated: bool = False, browser: Path | None = None) -> Tool:
+    def named(cls, name: str, *, isolated: bool = False, browser: Path | None = None, profile: Path | None = None,
+              native: bool = False, disabled_mcp: tuple[str, ...] = ()) -> Tool:
         if name == "claude-code":
             # Never the repository's own configuration: its `.claude/settings.json` (hooks, permission
             # rules, plugins) and `.mcp.json` servers would otherwise run, since `-p` asks no one to trust
@@ -146,6 +129,44 @@ class Tool:
             # background service started with other ones), the pinned agent those settings restrict, and what
             # isn't denied approved, since nobody is there to ask.
             return cls(name, ["opencode", "run", "--standalone", "--format", "json", "--auto", "--agent", OPENCODE_AGENT])
+        if name == "codex":
+            if not isolated and not native:
+                driver = ([sys.executable, "_local-codex"] if getattr(sys, "frozen", False)
+                          else [sys.executable, "-m", "dotrix_cli.codex_local"])
+                return cls(name, [*driver, *(["--browser-config", str(browser)] if browser is not None else [])])
+            # Commands keep Codex's native OS sandbox outside sbx. Never inherit a wider
+            # writable-root/network policy, project instructions, hooks, plugins or MCP servers.
+            argv = ["codex", "--ask-for-approval", "never", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
+                    "--sandbox", "danger-full-access" if isolated else "workspace-write"]
+            config = {
+                "project_doc_max_bytes": "0", "allow_login_shell": "false", "web_search": '"disabled"', "notify": "[]",
+                "skills.include_instructions": "false",
+                "sandbox_workspace_write": "{ writable_roots = [], network_access = false, exclude_slash_tmp = true, exclude_tmpdir_env_var = true }",
+                "shell_environment_policy": ('{ inherit = "all", include_only = ' + json.dumps(sorted(EXECUTION_ENV)) + ', set = {} }'),
+                **{f"features.{key}": "false" for key in ("hooks", "plugins", "apps", "multi_agent", "multi_agent_v2",
+                                                           "browser_use", "computer_use", "shell_snapshot")},
+            }
+            servers = [f"{json.dumps(name)} = {{ enabled = false }}" for name in disabled_mcp]
+            if browser is not None and not isolated:
+                server = json.loads(browser.read_text())["mcpServers"][BROWSER_SERVER]
+                # CLI table overrides merge with user config. A fresh id prevents a personal
+                # server named "browser" from contributing a command or headers to ours.
+                owned = f"dotrix_browser_{uuid.uuid4().hex}"
+                servers.append(f'{owned} = {{ url = {json.dumps(server["url"])}, bearer_token_env_var = {json.dumps(BROWSER_TOKEN_ENV)}, '
+                               'default_tools_approval_mode = "approve" }')
+            config["mcp_servers"] = "{ " + ", ".join(servers) + " }"
+            for key, value in config.items():
+                argv += ["-c", f"{key}={value}"]
+            return cls(name, [*argv, "-"])
+        if name == "fx":
+            if isolated:
+                raise ValueError("This tool has no Docker Sandboxes template; use --isolation none")
+            if profile is None:
+                raise ValueError("A private local profile is required")
+            driver = ([sys.executable, "_local-fx"] if getattr(sys, "frozen", False)
+                      else [sys.executable, "-m", "dotrix_cli.fx_local"])
+            return cls(name, [*driver, "--profile", str(profile),
+                              *(["--browser-config", str(browser)] if browser is not None else [])])
         raise ValueError(f"Unknown coding tool {name!r} (one of {', '.join(TOOLS)})")
 
 
@@ -190,7 +211,13 @@ def browser_tools(environ: Mapping[str, str] | None = None) -> tuple[str, str] |
     app started this runner with one: only ever on this computer."""
     environ = os.environ if environ is None else environ
     url, token = environ.get(BROWSER_URL_ENV, ""), environ.get(BROWSER_TOKEN_ENV, "")
-    return (url, token) if url.startswith("http://127.0.0.1:") and token else None
+    try:
+        address = urlsplit(url)
+        valid = (address.scheme == "http" and address.hostname == "127.0.0.1" and address.port is not None
+                 and address.username is None and address.password is None and not address.fragment)
+    except ValueError:
+        valid = False
+    return (url, token) if valid and token else None
 
 
 def write_browser_config(url: str, token: str) -> Path:
@@ -231,7 +258,8 @@ def opencode_settings(environ: Mapping[str, str], pane: tuple[str, str] | None =
 
 def found_tools() -> list[str]:
     """The coding tools on this machine's PATH, preferred first."""
-    return [name for name, binary in (("claude-code", "claude"), ("opencode", "opencode")) if shutil.which(binary)]
+    return [name for name, binary in (("claude-code", "claude"), ("opencode", "opencode"), ("codex", "codex"), ("fx", "fx"))
+            if shutil.which(binary)]
 
 
 @dataclass
@@ -241,6 +269,7 @@ class Outcome:
     usage: dict[str, Any] = field(default_factory=dict)
     root: Path | None = None  # the worktree: paths the tool names are shown relative to it
     commands: set[str] = field(default_factory=set)  # tool calls that ran a command (their result is its output)
+    tools_seen: set[str] = field(default_factory=set)
 
 
 MAX_STEP = 160
@@ -282,6 +311,10 @@ def describe(tool: str, args: dict[str, Any], root: Path | None = None) -> str |
     """What a tool call did, in the words a cloud turn's events use (`coding/tools.py`): the app's
     Terminal panel lists the `Ran …` ones, so local and cloud turns read the same."""
     path = _relative(str(args.get("file_path") or args.get("path") or ""), root)
+    if tool.startswith("mcp__dotrix_browser_"):
+        tool = f"mcp__{BROWSER_SERVER}__" + tool.split("__", 2)[-1]
+    if tool.startswith(f"mcp_{BROWSER_SERVER}_"):
+        tool = f"mcp__{BROWSER_SERVER}__" + tool.removeprefix(f"mcp_{BROWSER_SERVER}_")
     if tool.startswith(f"mcp__{BROWSER_SERVER}__"):
         return {
             "browser_navigate": f"Opened {_clip(str(args.get('url', '')), 200)} in the browser",
@@ -296,13 +329,13 @@ def describe(tool: str, args: dict[str, Any], root: Path | None = None) -> str |
     match tool:
         case "Bash" | "shell" | "bash":
             return f"Ran {_clip(str(args.get('command', '')))}"
-        case "Edit" | "MultiEdit" | "edit":
+        case "Edit" | "MultiEdit" | "edit" | "edit_file":
             return f"Edited {path}"
-        case "Write" | "write":
+        case "Write" | "write" | "write_file":
             return f"Wrote {path}"
-        case "Read" | "read":
+        case "Read" | "read" | "read_file":
             return f"Read {path}"
-        case "Glob" | "Grep" | "glob" | "grep":
+        case "Glob" | "Grep" | "glob" | "grep" | "glob_files" | "grep_files":
             return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
         case "execute":
             # OpenCode reaches the Browser pane's tools from its Code Mode script.
@@ -331,7 +364,56 @@ def parse_line(line: str, out: Outcome) -> None:
     if not isinstance(event, dict):
         return
     kind = event.get("type")
-    if kind == "assistant":  # Claude Code
+    if kind in ("item.started", "item.completed"):  # Codex exec
+        item = event.get("item") or {}
+        identity = str(item.get("id") or "")
+        item_kind = item.get("type")
+        if item_kind == "agent_message" and kind == "item.completed":
+            out.summary = item.get("text") or out.summary
+            if item.get("text"):
+                out.events.append({"kind": "text", "text": item["text"][:4000]})
+        elif item_kind == "command_execution":
+            if identity not in out.tools_seen:
+                out.tools_seen.add(identity)
+                out.events.append({"kind": "tool", "text": f"Ran {_clip(str(item.get('command', '')))}", "ref": identity})
+            if kind == "item.completed":
+                out.events.append(output_event(str(item.get("aggregated_output") or ""), identity,
+                                               failed=item.get("exit_code") not in (None, 0) or item.get("status") == "failed"))
+        elif item_kind == "file_change" and kind == "item.completed":
+            for change in item.get("changes") or []:
+                if said := describe("edit", {"path": change.get("path", "")}, out.root):
+                    out.events.append({"kind": "tool", "text": said})
+        elif item_kind == "mcp_tool_call":
+            if identity not in out.tools_seen:
+                out.tools_seen.add(identity)
+                name = f"mcp__{item.get('server')}__{item.get('tool')}"
+                if said := describe(name, item.get("arguments") or {}, out.root):
+                    out.events.append({"kind": "tool", "text": said})
+            result = item.get("result") or {}
+            if kind == "item.completed" and (item.get("error") or item.get("status") == "failed" or result.get("isError")):
+                error = item.get("error")
+                detail = error.get("message") if isinstance(error, dict) else error
+                out.events.append({"kind": "error", "text": str(detail or _result_text(result.get("content")) or "The browser action failed")[:4000]})
+    elif kind == "turn.completed":
+        usage = event.get("usage") or {}
+        out.usage = {"input_tokens": usage.get("input_tokens"), "output_tokens": usage.get("output_tokens")}
+    elif kind == "turn.failed":
+        out.events.append({"kind": "error", "text": str((event.get("error") or {}).get("message") or "The local turn failed")[:4000]})
+    elif kind == "tool":  # fx's local ACP driver
+        identity, name = str(event.get("id") or ""), str(event.get("name") or "")
+        if said := describe(name, event.get("input") or {}, out.root):
+            out.events.append({"kind": "tool", "text": said})
+    elif kind == "tool_result":
+        identity = str(event.get("id") or "")
+        if event.get("status") == "failed":
+            out.events.append({"kind": "error", "text": str(event.get("output") or "The local tool call failed")[:4000]})
+    elif kind == "done":
+        out.summary = event.get("final") or out.summary
+        usage = event.get("usage") or {}
+        out.usage = {"input_tokens": usage.get("inputTokens"), "output_tokens": usage.get("outputTokens")}
+        if event.get("stopReason") not in (None, "end_turn", "cancelled"):
+            out.events.append({"kind": "error", "text": f"The local turn stopped: {event['stopReason']}"})
+    elif kind == "assistant":  # Claude Code
         for item in (event.get("message") or {}).get("content") or []:
             if item.get("type") == "text" and item.get("text"):
                 out.events.append({"kind": "text", "text": item["text"][:4000]})
@@ -354,7 +436,7 @@ def parse_line(line: str, out: Outcome) -> None:
         if event.get("is_error") or event.get("subtype", "success") != "success":
             out.events.append({"kind": "error", "text": str(event.get("result") or event.get("subtype"))[:4000]})
     elif kind == "text":  # OpenCode
-        text = (event.get("part") or {}).get("text")
+        text = (event.get("part") or {}).get("text") or event.get("text")
         if text:
             out.events.append({"kind": "text", "text": text[:4000]})
             out.summary = text
@@ -370,7 +452,7 @@ def parse_line(line: str, out: Outcome) -> None:
             out.events.append(output_event(str(state.get("output") or state.get("error")), ref or None, failed=failed))
     elif kind == "error":
         error = event.get("error") or {}
-        out.events.append({"kind": "error", "text": str(error.get("message") or error)[:4000]})
+        out.events.append({"kind": "error", "text": str(error.get("message") or event.get("message") or error)[:4000]})
 
 
 async def git_bytes(cwd: Path, *args: str, check: bool = True) -> bytes:
@@ -446,6 +528,7 @@ class LocalRunner:
     _sandbox: str | None = None  # the turn in progress's sandbox, removed when it ends
     _browser_config: Path | None = None  # the turn in progress's MCP config for the Browser pane, removed when it ends
     _browser: tuple[str, str] | None = None  # the turn in progress has the Browser pane (its server's address and token)
+    _fx_profile: Path | None = None
 
     def tools(self) -> list[str]:
         if self.tool:
@@ -466,6 +549,10 @@ class LocalRunner:
             self.sbx = Sbx.found()
         if self.isolation == "none":
             self.sbx = None
+        if self.tool == "fx" and self.sbx is not None:
+            if self.isolation == "sbx":
+                raise ValueError("This tool has no Docker Sandboxes template; use --isolation none")
+            self.sbx = None  # the native ACP client enforces file/browser-only permissions
         if not self.name:
             where = hashlib.sha256(str(self.repo.resolve()).encode()).hexdigest()[:6]
             self.name = f"{socket.gethostname()} · {self.repo.name} ({where})"[:100]
@@ -475,7 +562,7 @@ class LocalRunner:
             raise RuntimeError("Docker Sandboxes isn't installed here: install `sbx` (https://docs.docker.com/ai/sandboxes/)")
         tools = self.tools()
         if not tools:
-            raise RuntimeError("No coding tool here: install Claude Code (`claude`) or OpenCode (`opencode`)")
+            raise RuntimeError("No coding tool here: install claude, opencode, codex or fx")
         runner = await self.api.post(self.base, {
             "name": self.name[:100], "platform": platform_info.system().lower(), "tools": tools,
             "isolation": "sbx" if self.sbx else "none", "project_ids": [self.project_id],
@@ -508,6 +595,18 @@ class LocalRunner:
                 self._browser_config.unlink(missing_ok=True)
             self._browser_config = None
             self._browser = None
+            if self._fx_profile is not None:
+                from dotrix_cli.fx_local import save_refreshed_auth
+
+                try:
+                    save_refreshed_auth(self._fx_profile)
+                except (OSError, ValueError):
+                    # Retain the private copy so a refreshed sign-in is not silently lost.
+                    self.notify({"event": "warning", "text": "Could not save the refreshed local sign-in; its private profile was retained",
+                                 "profile": str(self._fx_profile)})
+                else:
+                    shutil.rmtree(self._fx_profile, ignore_errors=True)
+            self._fx_profile = None
             self.notify({"event": "done", "run_id": claimed["run"]["run_id"]})
             await self.clean_worktrees()
         return True
@@ -640,7 +739,8 @@ class LocalRunner:
         self._coding_in = tree
         await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), "FETCH_HEAD")
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
-        pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]} (not isolated: the tool edits files only)"})
+        boundary = "" if run["tool"] == "codex" and self.command is None else " (not isolated: the tool edits files only)"
+        pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}{boundary}"})
         self.notify({"event": "turn", "run_id": run["run_id"], "session_id": run.get("session_id"),
                      "issue_key": run["issue_key"], "turn": run["turn"],
                      "worktree": str(tree)})
@@ -657,9 +757,18 @@ class LocalRunner:
             # The desktop app's Browser pane, when it started this runner: never in a sandbox (the pane's
             # server is on this computer, which a microVM doesn't reach).
             self._browser = browser_tools() if name in TOOLS and not isolated else None
-            if self._browser is not None and name == "claude-code":
+            if self._browser is not None and name in ("claude-code", "codex", "fx"):
                 self._browser_config = write_browser_config(*self._browser)
-            tool = Tool.named(name, isolated=isolated, browser=self._browser_config)
+            if name == "fx":
+                from .fx_local import prepare_profile
+
+                self._fx_profile = Path(tempfile.mkdtemp(prefix="dotrix-fx-local-"))
+                try:
+                    prepare_profile(self._fx_profile, dict(os.environ))
+                except (OSError, ValueError) as exc:
+                    await report("failed", base_sha=base_sha, error=f"Couldn't prepare the local model profile: {exc}")
+                    return
+            tool = Tool.named(name, isolated=isolated, browser=self._browser_config, profile=self._fx_profile)
         # A custom command stands in for the requested tool; its name is only a display label.
         environment_tool = run["tool"] if self.command else tool.name
         if self.sbx is not None:
@@ -679,8 +788,14 @@ class LocalRunner:
             environment = _env(environment_tool)
             if tool.name == "opencode":
                 environment.update(opencode_settings(environment, self._browser))
-            if self._browser_config is not None:
+            if self._browser_config is not None and tool.name == "claude-code":
                 environment["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"  # in place of --safe-mode (Tool.named)
+            if self._browser is not None and tool.name == "codex":
+                environment[BROWSER_TOKEN_ENV] = self._browser[1]
+            if tool.name == "codex":
+                pending.append({"kind": "step", "text": "Commands stay in a local workspace sandbox with network access disabled"})
+            elif tool.name == "fx":
+                pending.append({"kind": "step", "text": "Local file edits and the Browser pane only; host commands are refused"})
             if self._browser is not None:
                 pending.append({"kind": "step", "text": "With the Browser pane: it may open this computer's pages there"})
         out = Outcome(root=tree)
@@ -741,6 +856,13 @@ class LocalRunner:
             await report("stopped", base_sha=base_sha, summary=out.summary)
             self.echo("  Stopped")
             return
+
+        if code != 0 and tool.name in ("codex", "fx") and self.command is None:
+            error = next((event["text"] for event in reversed(out.events) if event.get("kind") == "error"),
+                         "The local coding tool stopped before completing the turn")
+            await report("failed", base_sha=base_sha, summary=out.summary, error=error[-2000:],
+                         **{key: value for key, value in out.usage.items() if value is not None})
+            return  # A partial edit from a failed native turn is not a publishable result.
 
         await git(tree, "add", "-A")
         raw_patch = await git_bytes(tree, "diff", "--cached", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",

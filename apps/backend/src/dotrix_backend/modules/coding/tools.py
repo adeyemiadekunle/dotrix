@@ -34,7 +34,7 @@ CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
 # to everything else. Only the platform's MCP servers load (--strict-mcp-config), never a repo's.
 # It runs in its output folder with --ignore-roots, so that folder is the only one it writes to: started in the
 # repository, it would save a screenshot the agent names ("page.png") there, and the turn would commit it
-# (checked on Playwright MCP 0.0.85, 2026-11-13). Claude Code, fx (through fx-acp.mjs) and Codex all get it.
+# (checked on Playwright MCP 0.0.85, 2026-11-13). All four cloud engines get the same server.
 BROWSER_SERVER = "browser"
 BROWSER_OUTPUT = "/tmp/playwright"
 _BROWSER_ARGS = ["--headless", "--isolated", "--ignore-roots", "--browser", "chromium", "--no-sandbox", "--output-dir", BROWSER_OUTPUT]
@@ -55,8 +55,12 @@ BROWSER_RULE = """\
   `python3 -m http.server 8080 >/tmp/server.log 2>&1 & echo $! >/tmp/server.pid` for static files,
   or the project's dev script), open it, check the change works, and take a screenshot of it: the
   browser saves screenshots in /tmp/playwright, never in the repository, and the person sees them.
+  Read `browser_snapshot` for current element targets before clicking or typing; navigation may
+  return a snapshot file link rather than the element list.
   When you're done, stop the server with `kill $(cat /tmp/server.pid)`. Pages outside this machine
   can't be reached, and that's expected.
+- If the browser tools are in your Code Mode catalog, call them through `execute`, for example
+  `await tools.browser.browser_navigate({url: "http://localhost:8080"})`. Keep the results you need.
 """
 
 
@@ -170,7 +174,7 @@ def _relative(path: str) -> str:
 
 
 def _describe_browser(action: str, args: dict[str, Any]) -> str:
-    target = _clip(str(args.get("element") or args.get("ref") or ""), 80)
+    target = _clip(str(args.get("element") or args.get("target") or args.get("ref") or ""), 80)
     match action:
         case "browser_navigate":
             return f"Opened {_clip(str(args.get('url', '')), 120)} in the browser"
@@ -470,6 +474,8 @@ def opencode_session(session: uuid.UUID) -> str:
 
 
 def _describe_opencode_tool(name: str, args: dict[str, Any]) -> str | None:
+    if name.startswith(f"{BROWSER_SERVER}_"):
+        return _describe_browser(name.removeprefix(f"{BROWSER_SERVER}_"), args)
     path = _relative(str(args.get("path") or ""))
     match name:
         case "shell":
@@ -483,7 +489,7 @@ def _describe_opencode_tool(name: str, args: dict[str, Any]) -> str | None:
         case "glob" | "grep":
             return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
         case "execute":
-            return "Ran a script"
+            return "Used the browser" if f"tools.{BROWSER_SERVER}" in str(args.get("code", "")) else "Ran a script"
         case "subagent":
             return f"Asked a subagent to {_clip(str(args.get('description', '')), 120)}"
         case "skill":
@@ -517,7 +523,7 @@ class OpenCode:
     agent = CodingAgent.OPENCODE
     name = "OpenCode"
     resumes = True
-    browser = False  # not yet: Playwright MCP through `OPENCODE_CONFIG_CONTENT` is unchecked
+    browser = True  # Playwright MCP through the pinned CLI's Code Mode catalog
 
     def __init__(self, provider: OpenCodeProvider) -> None:
         self.opencode_provider = provider
@@ -525,7 +531,7 @@ class OpenCode:
         self.key_env, self.api_host = provider.key_env, provider.api_host
         self.provider_type = f"dotrix-opencode-{provider.opencode}"  # infra/coding/dotrix-opencode-*.yaml
 
-    def _env(self, model: str | None = None) -> list[str]:
+    def _env(self, model: str | None = None, *, browser: bool = False) -> list[str]:
         """Its settings, before every command (`env …`): the same in each sandbox, OpenShell's too,
         which passes the sandbox nothing but the key. None of them is a secret."""
         config: dict[str, Any] = {
@@ -541,6 +547,9 @@ class OpenCode:
             config.setdefault("provider", {}).setdefault(self.opencode_provider.opencode, {})["models"] = {
                 model.partition(":")[2]: {}
             }
+        if browser:
+            server = BROWSER_MCP["mcpServers"][BROWSER_SERVER]
+            config["mcp"] = {BROWSER_SERVER: {"type": "local", "command": [server["command"], *server["args"]]}}
         return [
             f"OPENCODE_CONFIG_CONTENT={json.dumps(config, separators=(',', ':'))}",
             "OPENCODE_DISABLE_PROJECT_CONFIG=1",  # the repo's opencode.json is data, not config
@@ -552,10 +561,12 @@ class OpenCode:
         return "env " + " ".join(shlex.quote(pair) for pair in self._env()) + f" opencode {args}"
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
-        argv = ["env", *self._env(model), "opencode", "run", "--standalone", "--format", "json", "--auto"]
+        argv = ["env", *self._env(model, browser=browser), "opencode", "run", "--standalone", "--format", "json", "--auto"]
         if model:
             argv += ["-m", f"{self.opencode_provider.opencode}/{model.partition(':')[2] or model}"]
-        return argv
+        if not browser:
+            return argv
+        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(BROWSER_MCP), *argv]
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["-s", opencode_session(session)]  # made the first time, continued after
@@ -597,16 +608,38 @@ class OpenCode:
             return out
         part = event.get("part") or {}
         match event.get("type"):
+            case "warning" if str(event.get("message", "")).strip():
+                out.steps.append(Step("error", _clip(str(event["message"]))))
             case "text" if str(part.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(part["text"])))
                 out.summary = str(part["text"])[:20_000]  # the last one is its final message
             case "tool_use":
                 state = part.get("state") or {}
+                # OpenCode 2.3.0 records the actual MCP calls made by execute here. Use that
+                # evidence for browser steps rather than treating the whole script as one action.
+                nested = (state.get("metadata") or {}).get("metadata") or {}
+                browser_calls = [call for call in nested.get("toolCalls", [])
+                                 if str(call.get("tool", "")).startswith(f"{BROWSER_SERVER}.")]
+                if part.get("tool") == "execute" and browser_calls:
+                    for call in browser_calls:
+                        if call.get("status") == "error":
+                            out.steps.append(Step("error", _clip(f"The browser: {state.get('output') or 'action failed'}")))
+                        else:
+                            out.steps.append(Step("tool", _describe_browser(
+                                call["tool"].removeprefix(f"{BROWSER_SERVER}."), call.get("input") or {},
+                            )))
+                    if ((nested.get("error") or state.get("status") == "error")
+                            and not any(call.get("status") == "error" for call in browser_calls)):
+                        detail = state.get("error") or state.get("output") or "failed"
+                        out.steps.append(Step("error", _clip(f"The browser script: {detail}")))
+                    return out
                 said = _describe_opencode_tool(str(part.get("tool")), state.get("input") or {})
                 command = part.get("tool") in ("shell", "bash")
                 ref = str(part.get("callID") or part.get("id") or "") or None if command else None
-                if state.get("status") == "error" and not command:  # a failed command shows in the Terminal instead
-                    out.steps.append(Step("error", _clip(f"{said or part.get('tool')}: {state.get('error') or 'failed'}")))
+                script_error = part.get("tool") == "execute" and nested.get("error")
+                if (state.get("status") == "error" or script_error) and not command:  # commands show in the Terminal instead
+                    detail = state.get("error") or (state.get("output") if script_error else None) or "failed"
+                    out.steps.append(Step("error", _clip(f"{said or part.get('tool')}: {detail}")))
                 elif said:
                     out.steps.append(Step("tool", said, ref))
                 if command and state.get("status") in ("completed", "error") and (state.get("output") or state.get("error")):

@@ -108,6 +108,8 @@ class ScriptedSession(LocalSession):
         # Simulate the runtime below the enforced wrapper; its syscall boundary has a separate test.
         if argv[:2] == ["python3", "-c"] and "Landlock" in argv[2]:
             argv = argv[3:]
+        if argv[:2] == ["sh", "-c"] and len(argv) > 6 and argv[4] == "/opt/dotrix/mcp-check.mjs":
+            argv = argv[6:]  # MCP startup wrapper has a separate real-engine regression test
         if isinstance(self.agent, ScriptedOpenCode) and argv[:2] == ["sh", "-c"] and "node -e" in argv[2]:
             return ExecResult(code=0, stdout=self.agent.totals(), stderr="")  # its totals after the turn
         if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv):
@@ -670,20 +672,32 @@ class ShootingSandbox(ScriptedSandbox):
         return ShootingSession(session.root, session.env, self.agent)
 
 
+@pytest.mark.parametrize("coding_engine", ["claude-code", "opencode"])
 async def test_the_agent_s_screenshots_are_kept_and_shown(
-    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script, storage
+    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script, storage, coding_engine
 ) -> None:
     ada, cat, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
+    data = {}
+    script = claude
+    if coding_engine == "opencode":
+        app.state.settings.coding_opencode_model = "openai:gpt-5.5"
+        await _save_key(db_client, ada.headers, "openai", "test-opencode-openai-personal-key")
+        script = ScriptedOpenCode()
+        data = {"agent": coding_engine, "model": "openai:gpt-5.5"}
     jobs = app.state.jobs
-    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, sandbox=ShootingSandbox(claude), storage=storage))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, sandbox=ShootingSandbox(script), storage=storage))
     base = f"{ws}/projects/{kun['id']}"
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"title": "Add a Subtract button"})).json()
-    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
-    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
+    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json=data, headers=ada.headers)).json()
+    script.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
     agent_script.say("Looks right.")
     run = await _approve(db_client, base, run, ada.headers)
     assert run["status"] == "pr_opened", run.get("error")
+    if coding_engine == "opencode":
+        config = json.loads(next(arg.partition("=")[2] for arg in script.argv if arg.startswith("OPENCODE_CONFIG_CONTENT=")))
+        assert config["mcp"]["browser"]["type"] == "local"
+        assert "headless browser" in script.briefs[-1]
     # Images only, whatever the name says, and each once; listed on the run, served to whoever's session it is.
     assert run["screenshots"] == [{"index": 0, "name": "page-subtract.png", "size": len(PNG), "content_type": "image/png"}]
     assert any(e["text"] == "Kept 1 screenshot from the browser" for e in run["events"])
@@ -1776,6 +1790,79 @@ async def test_a_runner_with_docker_sandboxes_registers_as_isolated(
     assert registered["isolation"] == "sbx"
     listed = (await db_client.get(f"{ws}/coding/runners", headers=ada.headers)).json()
     assert [r["isolation"] for r in listed] == ["sbx"]
+
+
+@pytest.mark.parametrize("coding_tool", ["codex", "fx"])
+@pytest.mark.parametrize("valid_setup", [True, False])
+async def test_native_local_runners_keep_approval_and_clean_private_profiles(
+    db_client, coding, github, checkout, tmp_path, monkeypatch, coding_tool, valid_setup,
+):
+    """The real local launchers and API loop, with protocol-speaking CLIs instead of model calls."""
+    import os
+
+    ada, _, ws, kun, _, _ = coding
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    home = tmp_path / "person"
+    (home / ".fx").mkdir(parents=True)
+    original = json.dumps({"permission_mode": "yolo", "permission": {"*": "allow"}})
+    (home / ".fx/settings.json").write_text(original)
+    pointer = tmp_path / "private-profile-path"
+    script = binaries / coding_tool
+    script.write_text(f'''#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+tool={coding_tool!r}
+valid={valid_setup!r}
+if '--version' in sys.argv:
+ print('codex-cli 0.169.0' if tool=='codex' else '0.0.16');sys.exit(0)
+def reply(i, result): print(json.dumps({{"jsonrpc":"2.0","id":i,"result":result}}),flush=True)
+def edit():
+ p=Path('src/refunds.py');p.parent.mkdir(parents=True,exist_ok=True);p.write_text('def refund(a): return a\\n')
+if tool=='codex':
+ if 'list' in sys.argv:
+  print('[]' if valid else 'invalid configuration');sys.exit(0)
+ sys.stdin.read();edit()
+ for e in [{{"type":"item.completed","item":{{"id":"edit","type":"file_change","changes":[{{"path":"src/refunds.py"}}]}}}},
+           {{"type":"item.completed","item":{{"id":"reply","type":"agent_message","text":"Local edit complete."}}}},
+           {{"type":"turn.completed","usage":{{"input_tokens":100,"output_tokens":20}}}}]: print(json.dumps(e),flush=True)
+else:
+ Path({str(pointer)!r}).write_text(os.environ['HOME'])
+ if 'permissions' in sys.argv:
+  settings=json.loads((Path(os.environ['HOME'])/'.fx/settings.json').read_text())
+  print(json.dumps({{"mode":"ask","rules":[{{"permission":k,"pattern":"*","action":v}} for k,v in settings['permission'].items()] if valid else []}}));sys.exit(0)
+ for line in sys.stdin:
+  m=json.loads(line);method=m.get('method');i=m.get('id')
+  if method=='initialize': reply(i,{{"protocolVersion":1}})
+  elif method=='session/new': reply(i,{{"sessionId":"local-test"}})
+  elif method=='session/set_mode': reply(i,{{}})
+  elif method=='session/prompt':
+   edit()
+   print(json.dumps({{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"Local edit complete."}}}}}}}}),flush=True)
+   reply(i,{{"stopReason":"end_turn","usage":{{"inputTokens":100,"outputTokens":20}}}})
+''')
+    script.chmod(0o700)
+    monkeypatch.setenv("PATH", str(binaries) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("FX_HOME", str(home / ".fx"))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.delenv("DOTRIX_BROWSER_MCP_URL", raising=False)
+    monkeypatch.delenv("DOTRIX_BROWSER_MCP_TOKEN", raising=False)
+    runner = _local_runner(db_client, coding, checkout, tmp_path, None, tool=coding_tool)
+    assert (await runner.register())["tools"] == [coding_tool]
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"title": "Local refund"}, headers=ada.headers)).json()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"}, headers=ada.headers)).json()
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert await runner.once()
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == ("changes_ready" if valid_setup else "failed"), ready
+    assert ready["agent"] == coding_tool and github.pulls == []
+    assert not (checkout / "src/refunds.py").exists()
+    assert runner._fx_profile is None and runner._browser_config is None
+    if coding_tool == "fx":
+        assert pointer.exists() and not Path(pointer.read_text()).exists()
+        assert (home / ".fx/settings.json").read_text() == original
 
 
 async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushes_it(

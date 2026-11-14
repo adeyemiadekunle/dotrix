@@ -94,7 +94,7 @@ async def test_a_turn_runs_in_its_own_sandbox_and_may_run_commands(tmp_path: Pat
                          worktrees=tmp_path / "trees", echo=lambda _: None)
     registered = await runner.register()
     # Registered as isolated, offering every tool: the templates carry them, nothing to install here.
-    assert registered["isolation"] == "sbx" and registered["tools"] == ["claude-code", "opencode"]
+    assert registered["isolation"] == "sbx" and registered["tools"] == ["claude-code", "opencode", "codex"]
 
     await runner.work(RUN)
     run, exec_, *_ = calls(log)

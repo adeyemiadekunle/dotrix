@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Kai can use your local Codex or fx installation and drive the desktop Browser pane, with scoped permissions and your own model sign-in.
+
 - Settings → Preferences has a personal Code Mode switch for Nova. It applies to new chat turns when the server enables Code Mode; turns already running keep their tools.
 - Nova can do several reads in one step with a short script (code mode): it searches, reads documents, the board, the graph and the code together and keeps only what it needs, in a sandbox that can only read. Changes still go through the usual approvals. Experimental: on in development, off on deployed servers unless `DOTRIX_AGENT_SCRIPTS` is set.
 - The desktop app has a Browser pane beside a coding session (Codes → "…" → Browser): tabs for your running app or any web page, in a profile apart from dotrix and your everyday browser. Cookies are cleared when you quit unless you choose to keep them, and you can clear browsing data at any time.
@@ -40,6 +42,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Kai can drive the cloud browser with OpenCode too: navigate, inspect, click and take screenshots through the sandbox's browser tools. Browser actions and failures appear in the coding session.
 - A conversation on an NVIDIA model now counts its tokens (they read 0 in a run's usage).
 - Conversation actions respond on the first click when leaving a focused composer; opening steps, building a plan, cancelling a queued message and sharing outcomes keep the dock stable.
 

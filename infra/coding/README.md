@@ -104,6 +104,12 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 - **The browser writes only to /tmp/playwright.** Playwright MCP runs in that folder with `--ignore-roots`, so it is
   its only workspace root: started in the repository, it saved a screenshot the agent named into the repository, and
   the turn committed it (Playwright MCP 0.0.85).
+- **OpenCode gets the same browser** through `OPENCODE_CONFIG_CONTENT` as a local MCP server. The pinned
+  OpenCode 2.3.0 exposes its tools through `execute` (`tools.browser.browser_navigate`, and so on).
+  The command runs `mcp-check.mjs` first to report a browser that cannot start without failing the whole turn.
+  Actual nested browser calls become normal session steps; script and tool errors are shown too. The server
+  comes from the platform, never the repository's config, and is reattached on each new or resumed turn.
+  The cloud browser is headless: screenshots are kept with the turn; it is not the desktop app's live Browser pane.
 - **People only ever see Kai.** No step, failure, commit message or PR names the engine. Which engine ran is on the run, in the audit log, and in the worker's log; a session picks a model and the engine follows it (a preferred engine in Account → Your models).
 - **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
   the image's unprivileged `sandbox` user (uid 1500).

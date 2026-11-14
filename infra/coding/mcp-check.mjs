@@ -1,7 +1,7 @@
 // Whether the MCP servers a coding turn is given (the browser: playwright-mcp) start. Claude Code says when one
-// doesn't; fx 0.0.16 and Codex 0.169.0 go on silently without it. So each is started once, asked `initialize`,
-// and stopped: fx-acp.mjs passes fx only the ones that answer, and a Codex turn runs this first
-// (modules/coding/tools.py `Codex.command`), printing a line for each that didn't:
+// doesn't; the other engines can go on silently without it. So each is started once, asked `initialize`,
+// and stopped: fx-acp.mjs passes fx only the ones that answer, and Codex and OpenCode turns run this first
+// (modules/coding/tools.py), printing a line for each that didn't:
 //
 //   node mcp-check.mjs --mcp-config JSON      {"type":"warning","message":"The browser didn't start"}
 //
@@ -44,7 +44,7 @@ export function answers(server) {
   });
 }
 
-// Run directly (a Codex turn): check each server in the config, say which didn't start, and always exit 0.
+// Run directly: check each server in the config, say which didn't start, and always exit 0.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const at = process.argv.indexOf("--mcp-config");
   let servers = {};
