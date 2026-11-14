@@ -49,6 +49,8 @@ import {
   myAgents,
   myDefaultModelSaved,
   myCodingToolSaved,
+  myCodeMode,
+  myCodeModeSaved,
   myKeyRemoved,
   myKeySaved,
   myModels,
@@ -1064,6 +1066,45 @@ const DEMO_KEYS: KeyLook[] = [
 const DEMO_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5", "Gemini 3.8 Flash"];
 
 /* ---------- Personal: your own keys and model, your touches to the agents ---------- */
+
+function CodeModeSettings() {
+  const loaded = useApi(myCodeMode);
+  const [sample, setSample] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const data = isLive() ? loaded.data : { enabled: sample, available: true };
+  if (loaded.error) return <div className="alert danger">{loaded.error}</div>;
+  if (!data) return <div className="faint">Loading Code Mode…</div>;
+  return (
+    <SRow
+      t="Code Mode"
+      d={
+        data.available
+          ? "Let Nova combine reads and filter results in a script. Applies to new chat turns. Experimental; savings depend on the model and task."
+          : "Code Mode is not enabled on this server."
+      }
+    >
+      <Tog
+        label="Code Mode"
+        on={data.available && data.enabled}
+        disabled={saving || !data.available}
+        set={(enabled) => {
+          if (!isLive()) {
+            setSample(enabled);
+            return;
+          }
+          setSaving(true);
+          void myCodeModeSaved(enabled)
+            .then(() => {
+              toast("Code Mode preference saved");
+              loaded.reload();
+            })
+            .catch((error: unknown) => toast(errText(error), { kind: "err" }))
+            .finally(() => setSaving(false));
+        }}
+      />
+    </SRow>
+  );
+}
 
 function MyModels() {
   const demo = {
@@ -2909,6 +2950,7 @@ function Body({ sec }: { sec: string }) {
             </SRow>
           </div>
           <div className="gh">Personal defaults</div>
+          <CodeModeSettings />
           <SRow t="Open on launch" d="The page you see when dotrix opens.">
             <Sel
               k="home"

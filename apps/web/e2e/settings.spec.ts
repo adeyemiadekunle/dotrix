@@ -7,6 +7,21 @@ import { PASSWORD, signUp } from "./helpers";
 const slugOf = (page: Page) => new URL(page.url()).pathname.split("/")[2]!;
 const settings = (page: Page, sec: string) => page.goto(`/w/${slugOf(page)}/settings/${sec}`);
 
+test("Code Mode preference persists across settings reloads", async ({ page }) => {
+  await signUp(page);
+  await settings(page, "preferences");
+  const toggle = page.getByRole("switch", { name: "Code Mode", exact: true });
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await page.reload();
+  await expect(toggle).not.toBeChecked();
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await page.reload();
+  await expect(toggle).toBeChecked();
+});
+
 test("your profile: name and what you do are saved, and your profile page shows them", async ({ page }) => {
   await signUp(page);
   await settings(page, "profile");

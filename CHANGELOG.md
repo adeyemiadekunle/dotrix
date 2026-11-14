@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Settings → Preferences has a personal Code Mode switch for Nova. It applies to new chat turns when the server enables Code Mode; turns already running keep their tools.
 - Nova can do several reads in one step with a short script (code mode): it searches, reads documents, the board, the graph and the code together and keeps only what it needs, in a sandbox that can only read. Changes still go through the usual approvals. Experimental: on in development, off on deployed servers unless `DOTRIX_AGENT_SCRIPTS` is set.
 - The desktop app has a Browser pane beside a coding session (Codes → "…" → Browser): tabs for your running app or any web page, in a profile apart from dotrix and your everyday browser. Cookies are cleared when you quit unless you choose to keep them, and you can clear browsing data at any time.
 - In the desktop app, Kai can use the Browser pane on a turn coding on your computer with Claude Code: it opens your running app in a tab of its own that you watch, reads the page, clicks, types, takes screenshots and reads the console to check its change. Kai's tab opens only pages on your computer (localhost), and you can turn this off in the pane's menu (Let Kai use the browser).
@@ -24,6 +25,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - A notification tells you when a coding turn you asked Kai for opens or updates its pull request, finishes without changes, or fails, with the session to open (Settings → Notifications → Kai's turns).
 
 ### Changed
+
+- Added an opt-in Code Mode benchmark with large filtering workloads, repeated comparisons, script adoption, answer checks and context-volume measurements before enabling it for deployed conversations.
 
 - Load the workspace and its heavy Chat, Codes, Settings, Inbox and Project screens on demand, reducing the initial web JavaScript by 45% gzipped. Add a reproducible browser benchmark for route loading and transferred scripts.
 

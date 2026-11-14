@@ -4999,6 +4999,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/code-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Code Mode
+         * @description Your personal Code Mode preference; the server setting still controls availability.
+         */
+        get: operations["get_my_code_mode"];
+        /**
+         * Set My Code Mode
+         * @description Applies to new Nova turns on either chat runtime; bound turns keep their tools.
+         */
+        put: operations["set_my_code_mode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/models": {
         parameters: {
             query?: never;
@@ -6775,6 +6799,21 @@ export interface components {
             key?: string | null;
             /** @description Claim for this agent (e.g. claude-code) instead of yourself */
             as_agent?: components["schemas"]["AgentAssignee"] | null;
+        };
+        /** CodeModeRead */
+        CodeModeRead: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Available
+             * @description Whether the server enables Code Mode for new Nova turns
+             */
+            available: boolean;
+        };
+        /** CodeModeSave */
+        CodeModeSave: {
+            /** Enabled */
+            enabled: boolean;
         };
         /**
          * CodingAgent
@@ -27700,6 +27739,77 @@ export interface operations {
             };
             /** @description Not found, or not visible to you */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_my_code_mode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeModeRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_my_code_mode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeModeSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeModeRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

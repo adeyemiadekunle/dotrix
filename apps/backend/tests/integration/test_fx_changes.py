@@ -505,14 +505,17 @@ async def test_fx_nova_reads_several_things_at_once_in_one_scripted_step(
 
 
 @pytest.mark.parametrize("at_start", [False, True])
+@pytest.mark.parametrize("control", ["server", "personal"])
 async def test_fx_run_keeps_its_scripts_choice_when_the_setting_changes_before_it_resumes(
-    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts, at_start,  # noqa: F811
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts, at_start, control,  # noqa: F811
 ):
     """Whether a turn has run_script is pinned when it first binds (its snapshot), like its context: a run waiting
     for a person resumes with the tools it was bound with, whatever the setting says by then."""
     async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
         settings = fx.runner.settings
-        fx.runner.settings = settings.model_copy(update={"agent_scripts": at_start})
+        fx.runner.settings = settings.model_copy(update={"agent_scripts": at_start if control == "server" else True})
+        if control == "personal":
+            assert (await fx.client.put("/v1/me/code-mode", headers=fx.headers, json={"enabled": at_start})).status_code == 200
         requests = []
         with scripted_model("write_file", PLAN, requests=requests) as url:
             monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
@@ -522,7 +525,10 @@ async def test_fx_run_keeps_its_scripts_choice_when_the_setting_changes_before_i
             run = asked.json()
             assert run["status"] == "awaiting_approval", run
             [approval] = run["approvals"]
-            fx.runner.settings = settings.model_copy(update={"agent_scripts": not at_start})  # changed while it waits
+            if control == "server":
+                fx.runner.settings = settings.model_copy(update={"agent_scripts": not at_start})
+            else:
+                assert (await fx.client.put("/v1/me/code-mode", headers=fx.headers, json={"enabled": not at_start})).status_code == 200
             decided = await fx.client.post(f"{fx.base}/runs/{run['id']}/decisions", headers=fx.headers, json={
                 "decisions": [{"approval_id": approval["id"], "decision": "approve"}],
             })
