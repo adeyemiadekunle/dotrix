@@ -37,6 +37,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A conversation on an NVIDIA model now counts its tokens (they read 0 in a run's usage).
 - Conversation actions respond on the first click when leaving a focused composer; opening steps, building a plan, cancelling a queued message and sharing outcomes keep the dock stable.
 
 - Chat and Codes use a compact idle composer that expands while typing, keep mode and settings choices inside plus, and hide/restore the session list with a panel icon.

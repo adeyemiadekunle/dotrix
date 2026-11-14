@@ -29,6 +29,12 @@ def test_compatible_providers_use_their_fixed_endpoint(provider: str, endpoint: 
     assert chat.openai_api_key.get_secret_value() == "test-provider-key"
 
 
+
+def test_nvidia_asks_for_usage_while_streaming_so_a_run_s_tokens_are_counted() -> None:
+    # Off a custom endpoint ChatOpenAI leaves stream usage off, and a DeepAgents run on NVIDIA recorded 0 tokens.
+    assert build_chat_model("nvidia:nvidia/nemotron-3-ultra-550b-a55b", "k").stream_usage is True
+    assert build_chat_model("mistral:mistral-small-latest", "k").stream_usage is None  # not checked yet
+
 def test_anthropic_and_openai_ignore_a_base_url_in_the_servers_environment(monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://elsewhere.example")
     monkeypatch.setenv("OPENAI_BASE_URL", "http://elsewhere.example")

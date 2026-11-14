@@ -90,6 +90,9 @@ def thinking_options(model: str, effort: dict[str, str]) -> dict[str, Any]:
     return {}
 
 
+STREAMS_USAGE = frozenset({"nvidia"})
+
+
 def build_chat_model(model: str, api_key: str, *, thinking: dict[str, str] | None = None) -> Any:
     """`thinking`: effort per provider for a model that should think and show it (Nova's); none for
     specialists and summaries, which keep the provider's defaults."""
@@ -97,7 +100,10 @@ def build_chat_model(model: str, api_key: str, *, thinking: dict[str, str] | Non
     if provider == "google_genai":
         return GeminiWithBuiltinTools(model=name, google_api_key=api_key)
     if base_url := PROVIDERS[provider].base_url:
-        return ChatOpenAI(model=name, api_key=api_key, base_url=base_url, use_responses_api=False)
+        # Off a custom endpoint ChatOpenAI doesn't ask for usage while streaming, so a run's tokens read 0;
+        # asked for only where the endpoint was checked to send it (NVIDIA, 2026-11-14).
+        return ChatOpenAI(model=name, api_key=api_key, base_url=base_url, use_responses_api=False,
+                          stream_usage=True if provider in STREAMS_USAGE else None)
     return init_chat_model(model, base_url=OWN_ENDPOINTS[provider], **{PROVIDERS[provider].kwarg: api_key},
                            **thinking_options(model, thinking or {}))
 
