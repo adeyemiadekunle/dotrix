@@ -6,8 +6,10 @@ session to an admitted platform run; session IDs supplied by a model are not aut
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Any
 
 from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
@@ -124,8 +126,6 @@ def scoped_project_tools(
     Only explicit read capabilities may cross this boundary. Authorization surrounds
     every invocation, including results that finish after a lease or access change.
     """
-    from dataclasses import asdict
-
     from .board_tools import BoardContext, build_board_tools
     from .graph_tools import build_graph_tools
     from .storage_backend import PlatformKnowledgeBackend
@@ -133,25 +133,7 @@ def scoped_project_tools(
     backend = PlatformKnowledgeBackend(sessions, workspace_id=scope.workspace_id, project_id=scope.project_id,
                                        instructed_by_id=scope.requested_by_id, run_id=scope.run_id,
                                        read_versions=scope.read_versions)
-
-    def path(value: str) -> str:
-        return "/" + value.removeprefix("/dotrix/").lstrip("/")
-
-    async def read_file(file_path: str, offset: int = 0, limit: int = 2000) -> dict:
-        """Read a project document by /dotrix/ path, optionally a range of lines."""
-        return asdict(await backend.aread(path(file_path), offset, limit))
-
-    async def ls(path: str = "/dotrix/") -> dict:
-        """List a project document folder."""
-        return asdict(await backend.als("/" + path.removeprefix("/dotrix/").lstrip("/")))
-
-    async def glob(pattern: str, path: str = "/dotrix/") -> dict:
-        """Find project documents by glob pattern."""
-        return asdict(await backend.aglob(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/")))
-
-    async def grep(pattern: str, path: str = "/dotrix/", glob: str | None = None) -> dict:
-        """Search within project documents. Prefer sections to large full reads."""
-        return asdict(await backend.agrep(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/"), glob, max_count=100))
+    read_file, ls, glob, grep = document_reads(backend)
 
     ctx = BoardContext(sessions, scope.workspace_id, scope.project_id, scope.requested_by_id, None, coding=False)
     board, _, _ = build_board_tools(ctx)
@@ -175,6 +157,33 @@ def scoped_project_tools(
         tools.append(RuntimeTool(tool.name, tool.description, tool.args_schema.model_json_schema(),
                                  idempotent=True, writes=False, execute_scoped=execute))
     return tools
+
+
+def document_reads(backend: Any) -> list[Callable]:
+    """Reading the project's documents by /dotrix/ path through a knowledge backend: `read_file`, `ls`, `glob`
+    and `grep`, for a runtime without DeepAgents' own file tools (fx) and for scripts on either runtime."""
+    from dataclasses import asdict
+
+    def path(value: str) -> str:
+        return "/" + value.removeprefix("/dotrix/").lstrip("/")
+
+    async def read_file(file_path: str, offset: int = 0, limit: int = 2000) -> dict:
+        """Read a project document by /dotrix/ path, optionally a range of lines."""
+        return asdict(await backend.aread(path(file_path), offset, limit))
+
+    async def ls(path: str = "/dotrix/") -> dict:
+        """List a project document folder."""
+        return asdict(await backend.als("/" + path.removeprefix("/dotrix/").lstrip("/")))
+
+    async def glob(pattern: str, path: str = "/dotrix/") -> dict:
+        """Find project documents by glob pattern."""
+        return asdict(await backend.aglob(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/")))
+
+    async def grep(pattern: str, path: str = "/dotrix/", glob: str | None = None) -> dict:
+        """Search within project documents. Prefer sections to large full reads."""
+        return asdict(await backend.agrep(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/"), glob, max_count=100))
+
+    return [read_file, ls, glob, grep]
 
 
 def _refusal(exc: Exception) -> RuntimeToolError | None:

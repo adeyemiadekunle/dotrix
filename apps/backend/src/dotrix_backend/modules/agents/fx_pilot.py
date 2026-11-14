@@ -57,6 +57,7 @@ from .runtime_sessions import (
     upgrade_runtime_binding,
 )
 from .runtime_tools import RuntimeRunScope, readable_failures, scoped_project_tools
+from .scripts import SCRIPT_GUIDE, OnCall, script_runtime_tool
 from .storage_backend import SessionFactory
 from .unattended import Unattended
 from .work_modes import ModeContext, lead_tools
@@ -173,7 +174,7 @@ async def _turn(
     secrets: Secrets, embedder: Embedder | None = None, on_event: EventHandler | None = None,
     delegation: DelegationService | None = None, code_tools: list | None = None, code_context: str = "",
     web_tools: list | None = None, effective: tuple[AgentSpec, AgentPolicy, Unattended] | None = None,
-    mode_context: ModeContext | None = None,
+    mode_context: ModeContext | None = None, script_calls: OnCall | None = None,
 ) -> TurnResult:
     """Run (or resume) one turn for an already admitted Nova run.
 
@@ -182,6 +183,8 @@ async def _turn(
     `effective` is the run's contract with its approval mode and standing rules applied
     (the runner's); without it the turn only reads. A bound run resumes only its pinned
     journal, context and scoped delegation; another version's binding fails closed.
+    With `script_calls` (the platform's `agent_scripts` setting) Nova also gets `run_script` over its read
+    tools (agents/scripts.py), each call reported to it for the run's activity.
     """
     session_id = f"fx-pilot-{uuid.uuid4().hex}"
     async with sessions() as session:
@@ -285,6 +288,9 @@ async def _turn(
                        f'<data source="conversation">{evidence}</data>\n\nLatest message:\n{run.message}')
 
     tools = scoped_project_tools(sessions, scope=scope, spec=spec, embedder=embedder, code_tools=code_tools, web_tools=web_tools)
+    if script_calls is not None and (script := script_runtime_tool(tools, on_call=script_calls)) is not None:
+        tools.append(script)
+        instructions += SCRIPT_GUIDE
     if effective is not None:
         from .fx_tools import fx_change_tools
 

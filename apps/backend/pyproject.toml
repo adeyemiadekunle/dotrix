@@ -27,6 +27,8 @@ dependencies = [
     "httpx>=0.27",
     "pgvector>=0.5.0",
     "cryptography>=44",
+    # The sandbox for run_script (agents/scripts.py). Pinned: its limits and errors are what the tool relies on.
+    "pydantic-monty==1.4.0",
 ]
 
 [tool.uv.sources]

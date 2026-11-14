@@ -13,6 +13,7 @@ import contextvars
 import difflib
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -92,6 +93,8 @@ from .models import (
     RunStatus,
 )
 from .queue import RunQueue
+from .runtime_tools import document_reads
+from .scripts import SCRIPT_GUIDE, OnCall, script_tool
 from .specialist_sessions import seal_history, specialist_history, specialist_result_visible
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of, thinking_of
@@ -379,6 +382,12 @@ class AgentRunner:
             if goes_through(mode):
                 specs, accepted = accepting(specs, instructor)
         return specs, left, accepted, mode
+
+    @property
+    def _scripts(self) -> bool:
+        """Whether a conversation's lead gets `run_script` (agents/scripts.py): the `agent_scripts` setting;
+        a runner built without settings (some tests, tools) gives none."""
+        return self.settings is not None and self.settings.agent_scripts_enabled
 
     async def _code(
         self, workspace_id: uuid.UUID, project_id: uuid.UUID, context: str
@@ -689,6 +698,7 @@ class AgentRunner:
                     code_tools=fx_code_tools, code_context=fx_code_context,
                     web_tools=run_web.tools if run_web is not None else None,
                     effective=(policy.spec(PM_ROLE), policy, unattended),
+                    script_calls=_script_activity(lambda: recording) if self._scripts else None,
                     mode_context=ModeContext(
                         self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
                         approval=approval, jobs=self.jobs, github=self.github,
@@ -723,23 +733,19 @@ class AgentRunner:
                 (None, context) if kind is RunKind.BRIEFING else await self._code(workspace_id, project_id, context)
             )
 
-            backend = CompositeBackend(
-                default=StateBackend(),
-                routes={
-                    "/dotrix/": PlatformKnowledgeBackend(
-                        self.session_factory,
-                        workspace_id=workspace_id,
-                        project_id=project_id,
-                        instructed_by_id=instructed_by,
-                        approved_by_id=approved_by_id,
-                        policy=policy,
-                        unattended=unattended,
-                        write_prefix="docs/wiki/" if mode == "docs.repository" else None,
-                        write_paths=run.repository_write_paths if mode == "docs.repository" else None,
-                        run_id=run_id,
-                    )
-                },
+            knowledge_backend = PlatformKnowledgeBackend(
+                self.session_factory,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                instructed_by_id=instructed_by,
+                approved_by_id=approved_by_id,
+                policy=policy,
+                unattended=unattended,
+                write_prefix="docs/wiki/" if mode == "docs.repository" else None,
+                write_paths=run.repository_write_paths if mode == "docs.repository" else None,
+                run_id=run_id,
             )
+            backend = CompositeBackend(default=StateBackend(), routes={"/dotrix/": knowledge_backend})
             board_context = BoardContext(
                 session_factory=self.session_factory,
                 workspace_id=workspace_id,
@@ -795,6 +801,31 @@ class AgentRunner:
                 usage.web = run_web.usage
             from .chat_inputs import ChatSteering
 
+            knowledge = [
+                *build_knowledge_tools(
+                    self.session_factory,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    embedder=self.embedder,
+                    skill_snapshot=for_role(skill_snapshot, run.agent or PM_ROLE),
+                    resource_snapshot={name: item.get("resources", {}) for name, item in (run.skill_snapshot or {}).items()
+                                       if name in for_role(skill_snapshot, run.agent or PM_ROLE)},
+                ),
+                *build_graph_tools(board_context),
+            ]
+            # Code mode for the lead of a conversation (agents/scripts.py): several reads in one sandboxed step,
+            # over the same read tools the team has, as the lead's contract allows. Its calls are reported to the
+            # run's activity once it is recording.
+            script_guide = ""
+            script_recording: list = []  # the run's recording, once it starts (below)
+            lead_spec = policy.spec(lead or PM_ROLE)
+            if (self._scripts and not child and kind is RunKind.CHAT and lead_spec is not None
+                    and (script := script_tool(
+                        [*document_reads(knowledge_backend), *read_tools, *knowledge, *(code_tools or [])],
+                        can=lead_spec.can, on_call=_script_activity(lambda: script_recording[0] if script_recording else None),
+                    )) is not None):
+                mode_tools = [*mode_tools, script]
+                script_guide = SCRIPT_GUIDE
             agent = build_team(
                 name,
                 description,
@@ -810,20 +841,9 @@ class AgentRunner:
                 subagent_task_tools=pm_write_tools,
                 agents=specs,
                 models=lambda name: self.model_factory(project, name, keys=keys).model,
-                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE + GRAPH_TOOLS_GUIDE,
+                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE + GRAPH_TOOLS_GUIDE + script_guide,
                 context=context,
-                knowledge_tools=[
-                    *build_knowledge_tools(
-                        self.session_factory,
-                        workspace_id=workspace_id,
-                        project_id=project_id,
-                        embedder=self.embedder,
-                        skill_snapshot=for_role(skill_snapshot, run.agent or PM_ROLE),
-                        resource_snapshot={name: item.get("resources", {}) for name, item in (run.skill_snapshot or {}).items()
-                                           if name in for_role(skill_snapshot, run.agent or PM_ROLE)},
-                    ),
-                    *build_graph_tools(board_context),
-                ],
+                knowledge_tools=knowledge,
                 code_tools=code_tools,
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
@@ -885,6 +905,7 @@ class AgentRunner:
                                      usage, discard_specialist_result=True)
                     return
             stream = recording = await self._record(run_id, workspace_id, token, payload)
+            script_recording.append(recording)
             if payload["kind"] == "delegation_ready":
                 await stream.activity(WEIGHING_SPECIALISTS)
             result = None
@@ -1584,6 +1605,16 @@ def _activities(update: dict, calls: dict[str, tuple[str, Any]] | None = None) -
                 if label := activity_label(call.get("name", ""), call.get("args")):
                     labels.append(label)
     return labels
+
+
+def _script_activity(recording: Callable[[], Any]) -> OnCall:
+    """What a script's tool calls show in the run's activity: the same labels as ordinary tool calls.
+    `recording` is looked up at each call (DeepAgents builds its tools before it starts recording)."""
+    async def on_call(name: str, args: dict[str, Any]) -> None:
+        current = recording()
+        if current is not None and (label := activity_label(name, args)):
+            await current.activity(label)
+    return on_call
 
 
 def _unanswered_calls(values: dict) -> list[dict]:

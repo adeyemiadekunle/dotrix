@@ -476,3 +476,29 @@ async def test_an_fx_tool_refusal_reaches_the_model_with_its_reason(
         async with fx.sessions() as session:
             children = list(await session.scalars(select(AgentRun).where(AgentRun.parent_run_id == uuid.UUID(asked.json()["id"]))))
         assert children == []  # nothing was delegated
+
+
+async def test_fx_nova_reads_several_things_at_once_in_one_scripted_step(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts,  # noqa: F811
+):
+    """run_script on the real libfx host (agents/scripts.py): reads run together, through the turn's own tools."""
+    code = ("import asyncio\n"
+            "doc, found, issues = await asyncio.gather(read_file(file_path='/dotrix/research/runtime.md'),"
+            " grep(pattern='evidence'), list_issues())\n"
+            "[doc['file_data']['content'].splitlines()[2], len(issues)]")
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        requests = []
+        with scripted_model("run_script", {"code": code}, requests=requests) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "What does the evidence say?", "chat_runtime": "fx", "work_mode": "discuss",
+            })
+        assert asked.status_code == 202, asked.text
+        done = asked.json()
+        assert done["status"] == "completed", done
+        exposed = {tool["function"]["name"] for tool in requests[0]["tools"]}
+        assert "run_script" in exposed and "## Scripts" in requests[0]["messages"][0]["content"]
+        assert "Private project evidence." in done["reply"] and "(3 tool calls)" in done["reply"]
+        events = (await fx.client.get(f"{fx.base}/runs/{done['id']}/events", headers=fx.headers)).json()["events"]
+        labels = [e["data"].get("label") for e in events if e["kind"] == "activity"]
+        assert "Reading research/runtime.md" in labels and "Checking the board" in labels

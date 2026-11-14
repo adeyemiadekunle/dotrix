@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Nova can do several reads in one step with a short script (code mode): it searches, reads documents, the board, the graph and the code together and keeps only what it needs, in a sandbox that can only read. Changes still go through the usual approvals. Experimental: on in development, off on deployed servers unless `DOTRIX_AGENT_SCRIPTS` is set.
 - The desktop app has a Browser pane beside a coding session (Codes → "…" → Browser): tabs for your running app or any web page, in a profile apart from dotrix and your everyday browser. Cookies are cleared when you quit unless you choose to keep them, and you can clear browsing data at any time.
 - In the desktop app, Kai can use the Browser pane on a turn coding on your computer with Claude Code: it opens your running app in a tab of its own that you watch, reads the page, clicks, types, takes screenshots and reads the console to check its change. Kai's tab opens only pages on your computer (localhost), and you can turn this off in the pane's menu (Let Kai use the browser).
 - In the desktop app, Kai can start your app in its own copy of the repository and open it in the Browser pane, so it checks its own change: save the command that starts it for each folder in Settings → Browser. The command runs without a sandbox, gets none of your keys or tokens, and stops when the turn ends.

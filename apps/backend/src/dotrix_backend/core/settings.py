@@ -66,6 +66,10 @@ class Settings(DatabaseSettings):
     # development and tests keep them. Off: none can be created or opened, invites are refused, and
     # the web app shows only personal workspaces. Their data is kept, so turning it on brings them back.
     organisations: bool | None = None
+    # `run_script` for Nova (agents/scripts.py): several read tool calls in one sandboxed script, so a long read
+    # takes fewer model steps. Experimental: on in development and tests, off on a deployed server unless this is
+    # set to true, until real runs show what it saves.
+    agent_scripts: bool | None = None
 
     # Auth. The secret is required and never has a default.
     jwt_secret: SecretStr = Field(min_length=32)
@@ -338,6 +342,10 @@ class Settings(DatabaseSettings):
     @property
     def organisations_enabled(self) -> bool:
         return self.organisations if self.organisations is not None else not self.is_deployed
+
+    @property
+    def agent_scripts_enabled(self) -> bool:
+        return self.agent_scripts if self.agent_scripts is not None else not self.is_deployed
 
     @property
     def workspace_storage_limit_mb(self) -> int:
