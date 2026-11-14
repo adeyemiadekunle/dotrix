@@ -24809,6 +24809,98 @@
         }
       }
     },
+    "/v1/me/code-mode": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Get My Code Mode",
+        "description": "Your personal Code Mode preference; the server setting still controls availability.",
+        "operationId": "get_my_code_mode",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeModeRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Set My Code Mode",
+        "description": "Applies to new Nova turns on either chat runtime; bound turns keep their tools.",
+        "operationId": "set_my_code_mode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeModeSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeModeRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/me/models": {
       "get": {
         "tags": [
@@ -29501,6 +29593,38 @@
         },
         "type": "object",
         "title": "ClaimRequest"
+      },
+      "CodeModeRead": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "description": "Whether the server enables Code Mode for new Nova turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "available"
+        ],
+        "title": "CodeModeRead"
+      },
+      "CodeModeSave": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "CodeModeSave"
       },
       "CodingAgent": {
         "type": "string",

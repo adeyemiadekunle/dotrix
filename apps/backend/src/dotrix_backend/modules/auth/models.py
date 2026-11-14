@@ -26,6 +26,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Their default model for new conversations ("provider:model"; Account → Models); null: the project's.
     default_model: Mapped[str | None] = mapped_column(String(100))
     default_coding_tool: Mapped[str | None] = mapped_column(String(20))
+    # Personal opt-out; the server must also enable scripts. Sampled once per Nova turn.
+    code_mode_enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
     # When their photo last changed (null: no photo); clients add it to the photo's address.
     avatar_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     onboarding_workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey(

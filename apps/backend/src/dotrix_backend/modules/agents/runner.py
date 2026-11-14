@@ -586,6 +586,14 @@ class AgentRunner:
                     await self._fail(run_id, gone, usage, discard_specialist_result=history_validation_pending)
                     return
                 specs = [a.spec for a in resolved.values()]
+                if run.scripts_enabled is None:
+                    run.scripts_enabled = False
+                    if (self._scripts and run.kind is RunKind.CHAT and run.parent_run_id is None
+                            and run.agent in (None, PM_ROLE) and run.automation_id is None):
+                        run.scripts_enabled = bool(await session.scalar(select(User.code_mode_enabled).where(
+                            User.id == run.requested_by_id,
+                        )))
+                scripts_enabled = run.scripts_enabled
                 if run.automation_id is None and run.requested_by_id is not None:
                     # The person's own touches (agent_definitions/preferences.py): instructions, a model.
                     prefs = await preferences_for(session, run.workspace_id, run.requested_by_id)
@@ -698,7 +706,7 @@ class AgentRunner:
                     code_tools=fx_code_tools, code_context=fx_code_context,
                     web_tools=run_web.tools if run_web is not None else None,
                     effective=(policy.spec(PM_ROLE), policy, unattended),
-                    scripts=self._scripts, script_calls=_script_activity(lambda: recording),
+                    scripts=scripts_enabled, script_calls=_script_activity(lambda: recording),
                     mode_context=ModeContext(
                         self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
                         approval=approval, jobs=self.jobs, github=self.github,
@@ -819,7 +827,7 @@ class AgentRunner:
             script_guide = ""
             script_recording: list = []  # the run's recording, once it starts (below)
             lead_spec = policy.spec(lead or PM_ROLE)
-            if (not child and kind is RunKind.CHAT and lead_spec is not None and self._scripts
+            if (not child and kind is RunKind.CHAT and lead_spec is not None and scripts_enabled
                     and (script := script_tool(
                         [*document_reads(knowledge_backend), *read_tools, *knowledge, *(code_tools or [])],
                         can=lead_spec.can, on_call=_script_activity(lambda: script_recording[0] if script_recording else None),

@@ -58,6 +58,9 @@ export function useApi<T>(load: () => Promise<T>, deps: unknown[] = []): { data:
 export const myCodingToolSaved = (tool: Schemas["DefaultCodingToolSave"]["default_coding_tool"]) =>
   send(api.PUT("/v1/me/coding-tool", { body: { default_coding_tool: tool } }), MODELS);
 
+export const myCodeMode = () => unwrap(api.GET("/v1/me/code-mode"));
+export const myCodeModeSaved = (enabled: boolean) => send(api.PUT("/v1/me/code-mode", { body: { enabled } }), NOTHING);
+
 export async function profileSaved(name: string, title: string) {
   await send(api.PATCH("/v1/me", { body: { display_name: name, title } }), ["members", "projects", "onboarding-profile"]);
 }

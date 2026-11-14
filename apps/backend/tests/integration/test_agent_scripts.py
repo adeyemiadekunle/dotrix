@@ -82,3 +82,38 @@ async def test_without_the_setting_nova_has_no_scripts(project, db_client: Async
     done = await _ask(db_client, base, ada.headers, "Hello")
     assert done["status"] == "completed"
     assert "run_script" not in model.tools_received[0] and "## Scripts" not in str(model.received[0][0].content)
+
+
+@pytest.mark.parametrize("server_enabled", [False, True])
+async def test_personal_code_mode_controls_new_deepagents_turns(project, db_client, agent_script, server_enabled):
+    ada, base = await project()
+    runner = db_client._transport.app.state.runner
+    runner.settings = runner.settings.model_copy(update={"agent_scripts": server_enabled})
+    for enabled in (False, True):
+        saved = await db_client.put("/v1/me/code-mode", headers=ada.headers, json={"enabled": enabled})
+        assert saved.status_code == 200
+        model = agent_script.say("Here is the answer.")
+        done = await _ask(db_client, base, ada.headers, "Hello")
+        assert done["status"] == "completed", done
+        assert ("run_script" in model.tools_received[0]) is (enabled and server_enabled)
+        assert ("## Scripts" in str(model.received[0][0].content)) is (enabled and server_enabled)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_personal_preference_does_not_change_a_waiting_deepagents_turn(project, db_client, agent_script, enabled):
+    ada, base = await project()
+    runner = db_client._transport.app.state.runner
+    runner.settings = runner.settings.model_copy(update={"agent_scripts": True})
+    await db_client.put("/v1/me/code-mode", headers=ada.headers, json={"enabled": enabled})
+    model = agent_script.say(tool_call("write_file", file_path="/dotrix/progress/plan.md", content="# Plan"), "Written.")
+    done = await _ask(db_client, base, ada.headers, "Write the plan")
+    assert done["status"] == "awaiting_approval", done
+    await db_client.put("/v1/me/code-mode", headers=ada.headers, json={"enabled": not enabled})
+    [approval] = done["approvals"]
+    decided = await db_client.post(f"{base}/agent/runs/{done['id']}/decisions", headers=ada.headers, json={
+        "decisions": [{"approval_id": approval["id"], "decision": "approve"}],
+    })
+    assert decided.status_code == 200, decided.text
+    final = (await db_client.get(f"{base}/agent/runs/{done['id']}", headers=ada.headers)).json()
+    assert final["status"] == "completed", final
+    assert model.tools_received and all(("run_script" in tools) is enabled for tools in model.tools_received)

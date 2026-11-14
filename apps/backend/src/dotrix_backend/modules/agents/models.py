@@ -79,6 +79,9 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     __tablename__ = "agent_runs"
     __table_args__ = (UniqueConstraint("parent_run_id", "delegation_key", "task_key"), UniqueConstraint("outcome_key"))
 
+    # Pinned at first execution so personal preference changes apply only to new turns.
+    scripts_enabled: Mapped[bool | None] = mapped_column()
+
     parent_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id"), index=True)
     delegation_key: Mapped[str | None] = mapped_column(String(200))
     task_key: Mapped[str | None] = mapped_column(String(40))

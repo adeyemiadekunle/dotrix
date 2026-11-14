@@ -19,6 +19,21 @@ from dotrix_engine.testing import ScriptedChatModel
 KEY = "sk-ant-test-" + "x" * 30 + "WXYZ"
 
 
+async def test_code_mode_is_personal_persistent_and_cannot_enable_the_server(world, db_client):
+    app, ada, cat, _, _ = await world()
+    app.state.settings = app.state.settings.model_copy(update={"agent_scripts": True})
+    assert (await db_client.get("/v1/me/code-mode")).status_code == 401
+    assert (await db_client.get("/v1/me/code-mode", headers=ada.headers)).json() == {"enabled": True, "available": True}
+    saved = await db_client.put("/v1/me/code-mode", headers=ada.headers, json={"enabled": False})
+    assert saved.status_code == 200 and saved.json()["enabled"] is False
+    assert (await db_client.get("/v1/me/code-mode", headers=ada.headers)).json()["enabled"] is False
+    assert (await db_client.get("/v1/me/code-mode", headers=cat.headers)).json()["enabled"] is True
+    assert (await db_client.put("/v1/me/code-mode", headers=ada.headers, json={})).status_code == 422
+    app.state.settings = app.state.settings.model_copy(update={"agent_scripts": False})
+    saved = await db_client.put("/v1/me/code-mode", headers=ada.headers, json={"enabled": True})
+    assert saved.json() == {"enabled": True, "available": False}
+
+
 class RateLimitError(Exception):
     """What a provider's SDK raises at its rate limit (HTTP 429)."""
 

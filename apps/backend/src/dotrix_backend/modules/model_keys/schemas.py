@@ -46,6 +46,14 @@ class DefaultCodingToolSave(BaseModel):
     default_coding_tool: Literal["claude-code", "codex", "opencode", "fx"] | None = None
 
 
+class CodeModeSave(BaseModel):
+    enabled: bool
+
+
+class CodeModeRead(CodeModeSave):
+    available: bool = Field(description="Whether the server enables Code Mode for new Nova turns")
+
+
 class ModelAccessRead(BaseModel):
     ready: bool
     providers: list[str]
