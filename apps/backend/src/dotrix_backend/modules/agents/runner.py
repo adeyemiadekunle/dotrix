@@ -385,9 +385,9 @@ class AgentRunner:
 
     @property
     def _scripts(self) -> bool:
-        """Whether a conversation's lead gets `run_script` (agents/scripts.py): the `agent_scripts` setting;
-        a runner built without settings (some tests, tools) gives none."""
-        return self.settings is not None and self.settings.agent_scripts_enabled
+        """Whether a conversation's lead gets `run_script` (agents/scripts.py): the `agent_scripts` setting.
+        Settings without it (none, or a partial stand-in) mean off, never a failed run."""
+        return bool(getattr(self.settings, "agent_scripts_enabled", False))
 
     async def _code(
         self, workspace_id: uuid.UUID, project_id: uuid.UUID, context: str
@@ -819,7 +819,7 @@ class AgentRunner:
             script_guide = ""
             script_recording: list = []  # the run's recording, once it starts (below)
             lead_spec = policy.spec(lead or PM_ROLE)
-            if (self._scripts and not child and kind is RunKind.CHAT and lead_spec is not None
+            if (not child and kind is RunKind.CHAT and lead_spec is not None and self._scripts
                     and (script := script_tool(
                         [*document_reads(knowledge_backend), *read_tools, *knowledge, *(code_tools or [])],
                         can=lead_spec.can, on_call=_script_activity(lambda: script_recording[0] if script_recording else None),
