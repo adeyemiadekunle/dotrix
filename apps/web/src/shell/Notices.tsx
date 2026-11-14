@@ -166,11 +166,10 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
 export function Notices({ inPanel = false }: { inPanel?: boolean }) {
   const { route } = useRoute();
   const ref = useRef<HTMLDivElement>(null);
-  const narrow = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches; // a phone: one banner
   const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
   const all = notices(liveNotifs);
   useSystemNotices(all, !isLive() || liveNotifs !== undefined);
-  const list = route === "home" ? all.slice(0, narrow ? 1 : 2) : [];
+  const list = inPanel ? all : route === "home" ? all.slice(0, 1) : [];
   // Toasts sit above floating notices (both live bottom right).
   useEffect(() => {
     if (inPanel) {

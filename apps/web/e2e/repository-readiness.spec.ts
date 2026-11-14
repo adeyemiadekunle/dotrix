@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signUp } from "./helpers";
+import { expectComposerMode, signUp } from "./helpers";
 
 test("an empty repository gives a prerequisite and a fresh check unlocks an editable Plan starter", async ({ page }) => {
   await signUp(page);
@@ -67,7 +67,7 @@ test("an empty repository gives a prerequisite and a fresh check unlocks an edit
   expect(href).not.toContain("Private");
   expect(checks).toBe(4);
   await starter.click();
-  await expect(page.getByRole("button", { name: "Mode: Plan", exact: true })).toBeVisible();
+  await expectComposerMode(page, "Plan");
   await expect(page.getByLabel("Message", { exact: true })).toHaveText(/Plan the first useful implementation/);
   expect(agentCalls).toEqual([]);
 });

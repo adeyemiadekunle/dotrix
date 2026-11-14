@@ -37,6 +37,15 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Conversation actions respond on the first click when leaving a focused composer; opening steps, building a plan, cancelling a queued message and sharing outcomes keep the dock stable.
+
+- Chat and Codes use a compact idle composer that expands while typing, keep mode and settings choices inside plus, and hide/restore the session list with a panel icon.
+- Chat and Codes show their model control inside the bottom-right composer footer before Send/Stop, including an explicit state when no model is available.
+
+- Workspace selection is available on mobile with left-aligned branding and a trailing chevron; the chat composer's plain plus button opens its menu downward and keeps unsent drafts.
+
+- Astryx and Tailwind now share semantic tokens across the web app, admin, and public site. Restored control spacing and colors, repaired mobile Knowledge and toolbars, simplified Settings navigation and composers, and kept sample Codes and model settings consistent with the app.
+
 - A screenshot Kai names in the cloud sandbox's browser is kept with the turn's screenshots instead of being saved into the repository and committed.
 - In the desktop app, Kai's browser tab opens in the Browser pane of its own coding session; with another session open, a notice offers to open Kai's.
 - Preserve the Astryx palette in Firefox ESR without CSS scope support through generated root-theme compatibility CSS.

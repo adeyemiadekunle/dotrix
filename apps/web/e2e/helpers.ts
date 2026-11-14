@@ -86,3 +86,13 @@ export async function createTask(page: Page, workspaceId: string, projectId: str
   expect(created.status()).toBe(201);
   return (await created.json()) as { id: string; key: string };
 }
+
+/** A mode is selected inside +; checking it must not change it or send a message. */
+export async function expectComposerMode(page: Page, name: "Discuss" | "Plan" | "Build" | "Review") {
+  const plus = page.getByRole("button", { name: /^(Project and mode|Mode)$/ });
+  const menu = page.getByRole("dialog", { name: /^(Project and mode|Mode)$/ });
+  if (!(await menu.isVisible())) await plus.click();
+  await expect(menu.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+}

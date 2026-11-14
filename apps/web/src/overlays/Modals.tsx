@@ -341,6 +341,7 @@ function TaskModal({ m }: { m: Modal }) {
             <DesignInput
               className="input"
               id="f-sub"
+              style={{ width: "100%" }}
               value={sub}
               onChange={(e) => setSub(e.target.value)}
               onKeyDown={(e) => {
@@ -353,7 +354,8 @@ function TaskModal({ m }: { m: Modal }) {
                   }
                 }
               }}
-              placeholder="Add a subtask and press Enter"
+              placeholder="Add a subtask"
+              aria-label="Add a subtask and press Enter"
             />
           </div>
         </div>

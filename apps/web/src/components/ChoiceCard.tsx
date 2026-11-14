@@ -35,27 +35,36 @@ export function ChoiceCard({ label, choices, extra }: { label: string; choices: 
       <RadioList label={label} isLabelHidden value={selected?.id ?? ""} onChange={pick}>
         {shown.map(row)}
       </RadioList>
-      <ComplexSelector label={label} isLabelHidden value={selected?.id ?? ""} triggerLabel={label} onChange={pick} onOpenChange={() => setQuery("")}>
-        {(value, change, close) => (
-          <div style={{ padding: 12, minWidth: 240 }}>
-            {choices.length > 6 && (
-              <DesignInput className="input" placeholder="Search…" aria-label={`Search: ${label}`} value={query} onChange={(e) => setQuery(e.target.value)} />
-            )}
-            <RadioList
-              label={label}
-              isLabelHidden
-              value={value}
-              onChange={(id) => {
-                change(id);
-                close();
-              }}
-            >
-              {choices.filter((choice) => choice.label.toLowerCase().includes(query.toLowerCase())).map(row)}
-            </RadioList>
-            {extra?.(close)}
-          </div>
-        )}
-      </ComplexSelector>
+      {(choices.length > shown.length || extra) && (
+        <ComplexSelector
+          label={label}
+          isLabelHidden
+          value={selected?.id ?? ""}
+          triggerLabel={`More ${label.toLowerCase()}`}
+          onChange={pick}
+          onOpenChange={() => setQuery("")}
+        >
+          {(value, change, close) => (
+            <div style={{ padding: 12, minWidth: 240 }}>
+              {choices.length > 6 && (
+                <DesignInput className="input" placeholder="Search…" aria-label={`Search: ${label}`} value={query} onChange={(e) => setQuery(e.target.value)} />
+              )}
+              <RadioList
+                label={label}
+                isLabelHidden
+                value={value}
+                onChange={(id) => {
+                  change(id);
+                  close();
+                }}
+              >
+                {choices.filter((choice) => choice.label.toLowerCase().includes(query.toLowerCase())).map(row)}
+              </RadioList>
+              {extra?.(close)}
+            </div>
+          )}
+        </ComplexSelector>
+      )}
     </Card>
   );
 }

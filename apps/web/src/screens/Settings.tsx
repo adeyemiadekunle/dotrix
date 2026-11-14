@@ -1066,17 +1066,19 @@ const DEMO_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5",
 /* ---------- Personal: your own keys and model, your touches to the agents ---------- */
 
 function MyModels() {
-  const demo = async (): Promise<{ keys: KeyLook[]; default_model: string | null; models: string[] }> => ({
+  const demo = {
     keys: DEMO_KEYS.map((k) => ({ ...k, connected: false, last4: null, limit_reached_at: null })),
     default_model: null,
+    default_coding_tool: "codex" as const,
     models: DEMO_MODELS,
-  });
-  const data = useApi<{
+  };
+  const loaded = useApi<{
     keys: KeyLook[];
     default_model?: string | null;
     default_coding_tool?: "codex" | "claude-code" | "opencode" | "fx" | null;
     models: string[];
-  }>(isLive() ? myModels : demo);
+  }>(myModels);
+  const data = isLive() ? loaded : { ...loaded, data: demo };
   if (data.error) return <div className="alert danger">{data.error}</div>;
   if (!data.data) return <div className="faint">Loading…</div>;
   const d = data.data;
@@ -1086,6 +1088,7 @@ function MyModels() {
     <>
       <div className="sblock" style={{ marginTop: 0 }}>
         <h2>Your keys</h2>
+        {!isLive() && <p className="hint">Sample settings · Sign in to connect your own model keys.</p>}
         <p className="muted" style={{ fontSize: 13 }}>
           Your own provider keys pay for your chat, coding, and scheduled runs in every workspace. Stored encrypted; only the last four characters are shown.
           Every person connects their own key.
@@ -1094,7 +1097,7 @@ function MyModels() {
           <KeyRow
             key={k.provider}
             k={k}
-            canEdit
+            canEdit={isLive()}
             onSave={(v) =>
               isLive() ? save(myKeySaved(k.provider, v), `Your ${k.label} key is saved`) : Promise.resolve(toast(`Your ${k.label} key is saved`))
             }
@@ -3098,10 +3101,32 @@ export function Settings() {
   const page = SEC_PAGE[sec] ?? sec;
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
   const lead = sec === "members" ? `${members.length} ${LEADS.members}` : LEADS[page];
+  const groups = SET_NAV.filter(([, items, adminOnly]) => (!adminOnly || admin) && items.some(([k]) => shown(k)));
+  const openSection = (section: string) => {
+    S.ui.settings = section;
+    S.ui.agentSel = null;
+    go("settings", { sec: section });
+  };
   return (
     <div className="set">
+      <label className="set-section-picker" htmlFor="settings-section">
+        <span className="label">Settings section</span>
+        <select id="settings-section" className="select" value={page} onChange={(event) => openSection(event.target.value)}>
+          {groups.map(([group, items]) => (
+            <optgroup key={group} label={group}>
+              {items
+                .filter(([key]) => shown(key))
+                .map(([key, name]) => (
+                  <option key={key} value={key}>
+                    {name}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
       <nav className="set-nav" aria-label="Settings">
-        {SET_NAV.filter(([, items, adminOnly]) => (!adminOnly || admin) && items.some(([k]) => shown(k))).map(([g, items]) => (
+        {groups.map(([g, items]) => (
           <div key={g} style={{ display: "contents" }}>
             <div className="gh">{g}</div>
             {items
@@ -3110,7 +3135,8 @@ export function Settings() {
                 <button
                   key={k}
                   className={`sitem ${sec === k || page === k ? "on" : ""}`}
-                  onClick={() => ((S.ui.settings = k), (S.ui.agentSel = null), go("settings", { sec: k }))}
+                  aria-current={sec === k || page === k ? "page" : undefined}
+                  onClick={() => openSection(k)}
                 >
                   <Ic n={i} s={15} />
                   <span>{n}</span>

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signUp } from "./helpers";
+import { expectComposerMode, signUp } from "./helpers";
 
 test("an idea needs only a working title and opens an editable Nova discussion without GitHub", async ({ page }) => {
   await signUp(page);
@@ -35,8 +35,8 @@ test("an idea needs only a working title and opens an editable Nova discussion w
   expect(project).toMatchObject({ name: "Booking concept", source: "docs_only", description: "", repo_url: null });
   await page.getByRole("link", { name: "Explore with Nova", exact: true }).click();
   await expect(page.getByLabel("Message", { exact: true })).toHaveText(/clarifying the problem, intended users, constraints and uncertainties/);
-  await expect(page.getByRole("combobox", { name: "Project and mode", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Mode:/ })).toHaveCount(0); // Discuss: no mode chip
+  await expect(page.getByRole("button", { name: "Project and mode", exact: true })).toBeVisible();
+  await expectComposerMode(page, "Discuss");
   expect(githubRequests).toEqual([]);
   expect(agentRequests).toEqual([]);
   const slug = new URL(page.url()).pathname.split("/")[2]!;

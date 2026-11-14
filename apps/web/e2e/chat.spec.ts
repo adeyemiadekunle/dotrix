@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { expectComposerMode, signUp } from "./helpers";
 
 // Chat on the API: conversations in a project and across projects, and Kai's coding sessions in the same list.
 // The e2e backend runs the agents on a rule-based model: "Create issue: <title>" asks to create
@@ -32,6 +32,7 @@ async function openChat(page: Page, search = "") {
 }
 
 async function pickChatOption(page: Page, label: "Approvals", name: string | RegExp) {
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   const picker = page.getByRole("combobox", { name: label, exact: true });
   await picker.click();
   // Each picker under the message box keeps its own list.
@@ -41,17 +42,20 @@ async function pickChatOption(page: Page, label: "Approvals", name: string | Reg
   await option.click();
   await expect(picker).toContainText(selected);
   await expect(menu).toBeHidden();
+  await page.keyboard.press("Escape");
   return selected;
 }
 
-// The work mode is picked from the + menu; a chip beside + names it once it isn't Discuss.
+// Every mode lives in the + menu; the selected mode is marked when it is reopened.
 async function pickMode(page: Page, name: "Discuss" | "Plan" | "Build" | "Review") {
-  await page.getByRole("combobox", { name: /^(Project and mode|Mode)$/ }).click();
+  const plus = page.getByRole("button", { name: /^(Project and mode|Mode)$/ });
   const menu = page.getByRole("dialog", { name: /^(Project and mode|Mode)$/ });
+  if (!(await menu.isVisible())) await plus.click();
   await menu.getByRole("button", { name, exact: true }).click();
   await expect(menu).toBeHidden();
-  if (name === "Discuss") await expect(page.getByRole("button", { name: /^Mode:/ })).toHaveCount(0);
-  else await expect(page.getByRole("button", { name: `Mode: ${name}` })).toBeVisible();
+  await plus.click();
+  await expect(menu.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
 }
 
 test("fx works in every mode", async ({ page }) => {
@@ -67,11 +71,14 @@ test("fx works in every mode", async ({ page }) => {
     }),
   );
   await openChat(page, "?project=KUM");
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   await expect(page.getByRole("combobox", { name: "Chat runtime", exact: true })).toBeVisible();
   await pickMode(page, "Plan");
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   await page.getByRole("combobox", { name: "Chat runtime", exact: true }).click();
   await page.getByRole("option", { name: "fx", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible(); // the mode you picked stays
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Plan", exact: true })).toHaveAttribute("aria-pressed", "true"); // the mode you picked stays
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeVisible();
   await expect(page.getByText(/Nova runs on fx, in every mode/)).toHaveCount(0);
   await expect(page.getByText(/can't involve specialists here/)).toHaveCount(0);
@@ -127,7 +134,9 @@ test("in Accept edits what you ask for goes through, approved by you", async ({ 
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM");
-  await expect(page.getByRole("combobox", { name: "Approvals", exact: true })).toContainText("Accept edits"); // your own workspace's default
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
+  await expect(page.getByRole("combobox", { name: "Approvals", exact: true })).toContainText("Accept edits");
+  await page.keyboard.press("Escape"); // your own workspace's default
   await page.getByLabel("Message", { exact: true }).fill("Create issue: Add search");
   await page.getByLabel("Message", { exact: true }).press("Enter");
   await expect(page.getByText(/Done\./)).toBeVisible();
@@ -144,8 +153,10 @@ test("a specialist mention keeps Nova as the adviser", async ({ page }) => {
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM&agent=research");
 
-  await expect(page.getByRole("combobox", { name: "Project and mode" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Project and mode" })).toBeVisible();
+  await page.getByRole("button", { name: "Project and mode", exact: true }).click();
   await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByLabel("Message", { exact: true }).fill("Who else ships multi-zone?");
   await page.getByLabel("Message", { exact: true }).press("Enter");
   await expect(page.getByText(/Who else ships multi-zone/).last()).toBeVisible();
@@ -158,7 +169,7 @@ test("the + menu opens and cancels without touching the draft", async ({ page })
   await openChat(page, "?project=KUM");
 
   const box = page.getByLabel("Message", { exact: true });
-  const plus = page.getByRole("combobox", { name: "Project and mode" });
+  const plus = page.getByRole("button", { name: "Project and mode" });
   const menu = page.getByRole("dialog", { name: /^(Project and mode|Mode)$/ });
 
   await plus.click();
@@ -180,7 +191,7 @@ test("the + menu opens and cancels without touching the draft", async ({ page })
   await expect(page.getByRole("listbox")).toBeVisible();
   await page.getByRole("option", { name: "Plan", exact: true }).click();
   await expect(box).toHaveText("Ship it ");
-  await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible();
+  await expectComposerMode(page, "Plan");
 });
 
 test("one conversation moves from Discuss to Plan to Build, and the plan is kept to build from", async ({ page }) => {
@@ -188,8 +199,7 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM");
 
-  const mode = page.getByRole("button", { name: /^Mode:/ });
-  await expect(mode).toHaveCount(0); // a new conversation starts by talking it through (no mode chip)
+  await expectComposerMode(page, "Discuss");
   await page.getByLabel("Message", { exact: true }).fill("How would refunds work?");
   await page.getByLabel("Message", { exact: true }).press("Enter");
   await expect(page.getByText("Test model reply: How would refunds work?")).toBeVisible({ timeout: 30_000 });
@@ -209,7 +219,7 @@ test("one conversation moves from Discuss to Plan to Build, and the plan is kept
   await card.getByRole("button", { name: "Build this plan" }).click();
   await expect(page.getByText("Test model reply: Build plan version 1: Refunds")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.dotrix-message[data-sender="user"] .badge').last()).toHaveText("Build");
-  await expect(mode).toHaveAccessibleName("Mode: Build");
+  await expectComposerMode(page, "Build");
 });
 
 test("general chat excludes project context", async ({ page }) => {

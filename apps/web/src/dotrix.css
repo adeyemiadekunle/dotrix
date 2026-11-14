@@ -99,7 +99,7 @@
     color: var(--red);
   }
   .kp-diff {
-    font-size: 11.5px;
+    font-size: 12.5px;
     line-height: 1.55;
     overflow-x: auto;
   }
@@ -2706,9 +2706,7 @@ section.side-panel-body[hidden] {
   background: var(--divider);
 }
 
-/* Message boxes as Claude Code's (Chat's Composer, a new Codes session): + on the left, the box growing with
- * what's typed, send inside on the right; model and approvals below on the left, runtime on the right; the work mode
- * in the + menu, with a chip beside + once it isn't Discuss. */
+/* Composer controls use Astryx slots: options in plus, model immediately before Send/Stop. */
 .cmp-box {
   align-items: center;
   padding: 7px 7px 7px 8px;
@@ -3903,4 +3901,364 @@ textarea.onb2-input {
 .background-tasks button:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
+}
+
+/* Responsive compositions share Astryx tokens; utility classes remain available for page layout. */
+@layer components {
+  .kn-mobile-nav,
+  .set-section-picker {
+    display: none;
+  }
+  .kn-grid > section {
+    min-width: 0;
+  }
+  .document-outline {
+    margin-bottom: 16px;
+  }
+  .document-outline > summary {
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    padding: 8px 0;
+  }
+  .cs-row-copy {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+  }
+  .cs-row-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    line-height: 1.4;
+    font-weight: 500;
+  }
+  .cs-row-meta {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .cs-row-copy > .badge {
+    align-self: flex-start;
+    max-width: 100%;
+    white-space: normal;
+    height: auto;
+    min-height: 22px;
+  }
+  .cs-demo-title {
+    min-width: 0;
+    font-weight: 600;
+  }
+  .drawer-key {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .kcard .meta > button,
+  .tabs > button[aria-label="Save view"] {
+    min-width: 24px;
+    min-height: 24px;
+    justify-content: center;
+  }
+  @media (max-width: 900px) {
+    .set-nav {
+      display: none;
+    }
+    .set-section-picker {
+      display: grid;
+      gap: 6px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .set-section-picker > select {
+      width: 100%;
+      min-height: 40px;
+    }
+  }
+  @media (max-width: 639px) {
+    .kn-mobile-nav {
+      display: block;
+    }
+    .kn-grid:not(.browsing) > aside,
+    .kn-grid.browsing > section {
+      display: none;
+    }
+    .kn-grid .panel-h {
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .kn-grid .panel-h .acts {
+      margin-left: 0;
+      width: 100%;
+    }
+    .dotrix-task-drawer .drawer-h {
+      gap: 6px;
+      padding-inline: 12px;
+      flex-wrap: wrap;
+    }
+    .dotrix-task-drawer .drawer-h > .pillbtn {
+      max-width: 128px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dotrix-task-drawer .drawer-b {
+      padding-inline: 16px;
+    }
+    .dotrix-modal #f-sub {
+      min-width: 0;
+      width: 100%;
+    }
+  }
+}
+/* These existing domain rules predate layers; keep their responsive overrides beside them. */
+.cs-row > .sitem {
+  height: auto;
+  padding: 10px 30px 10px 8px;
+  align-items: flex-start;
+  width: 100%;
+}
+.cs-head {
+  min-height: 56px;
+  height: auto;
+  padding-block: 8px;
+}
+.dotrix-composer .composer-textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  resize: none;
+  outline: none;
+}
+.agents-launcher.inline {
+  position: static;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 6px;
+  box-shadow: none;
+  flex: none;
+}
+.agents-launcher.inline .al-faces > span:not(:first-child) {
+  display: none;
+}
+:root:has(.agents-launcher.inline) {
+  --launcher-h: 0px;
+}
+.workspace-shell .notices:not(.in-panel) {
+  position: static;
+  width: auto;
+  flex-shrink: 0;
+  margin: 12px var(--gutter) 0;
+  z-index: auto;
+}
+.workspace-shell .notices:not(.in-panel) .notice {
+  box-shadow: none;
+  border: 1px solid var(--border);
+}
+
+.workspace-switcher {
+  justify-content: flex-start;
+  min-width: 0;
+}
+.workspace-switcher-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.workspace-topbar .workspace-switcher {
+  width: 36px;
+  padding: 4px;
+}
+.workspace-topbar .workspace-switcher-name,
+.workspace-topbar .workspace-switcher-caret {
+  display: none;
+}
+.workspace-switcher > span:first-child,
+.workspace-switcher > span:first-child > span {
+  width: 100%;
+  min-width: 0;
+}
+.workspace-switcher-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.workspace-switcher-name {
+  flex: 1;
+}
+.dotrix-composer-wrap.menu-open {
+  /* Keep room below the footer action so its menu need not flip above it. */
+  padding-bottom: calc(min(320px, 40dvh) + 48px);
+}
+
+.composer-model {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(220px, 42vw);
+}
+.composer-model > *,
+.composer-model [role="combobox"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Session navigation hides completely; the same panel icon remains in the main header. */
+.chat-side[hidden] {
+  display: none;
+}
+.chat-main {
+  min-width: 0;
+}
+.session-start-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+.session-start-header .chat-new-back {
+  position: static;
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .chat-grid.list-open .chat-side {
+    display: flex;
+  }
+  .chat-grid.list-open .chat-main {
+    display: none;
+  }
+}
+
+/* Astryx's input/footer slots form a pill at rest and separate rows while editing. */
+/* Reserve the first editing row below, so focus changes cannot move a clicked conversation action. */
+.compact-composer > div {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 8px;
+}
+.compact-composer > div > div:first-child {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  align-self: center;
+}
+.compact-composer > div > div:last-child {
+  display: contents;
+}
+.compact-composer > div > div:last-child > div:first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+.compact-composer > div > div:last-child > div:last-child {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div {
+  padding: 12px;
+  row-gap: 12px;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:first-child {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding: 4px;
+  min-height: 32px;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:last-child > div:first-child {
+  grid-column: 1;
+  grid-row: 2;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:last-child > div:last-child {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  justify-content: flex-end;
+}
+.compact-composer .composer-textarea {
+  min-height: 24px;
+  padding: 0;
+  line-height: 24px;
+}
+.compact-composer .composer-model {
+  max-width: min(200px, 32vw);
+}
+.composer-options-menu {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  min-width: 200px;
+  max-height: min(320px, 40dvh);
+  overflow-y: auto;
+}
+.composer-menu-option {
+  justify-content: flex-start;
+}
+.composer-menu-note,
+.composer-menu-heading {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.dotrix-composer-wrap {
+  position: relative;
+}
+.compact-composer:not(:focus-within, .has-draft, :has([aria-expanded="true"])) [aria-hidden="true"]:not(svg) {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Keep the main view in the flexible column when the list is display:none. */
+.chat-main {
+  grid-column: 2;
+}
+@media (max-width: 900px) {
+  .chat-main {
+    grid-column: 1;
+  }
+}
+.new-conversation {
+  flex-direction: column;
+}
+/* Reserve the first editing row on start screens so blur cannot move a choice during its click. */
+.ns-bottom .dotrix-composer-wrap,
+.dotrix-chat-layout .dotrix-composer-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 112px;
+}
+.ns-bottom .dotrix-composer-wrap:has(.coding-start-composer),
+.dotrix-chat-layout .kt-input.dotrix-composer-wrap {
+  min-height: 144px;
+}
+.composer-options-menu {
+  max-width: min(320px, calc(100vw - 32px));
+}
+.composer-environment-options {
+  display: grid;
+  gap: 4px;
+}
+
+.composer-menu-option[aria-pressed="true"] {
+  background-color: var(--surface-2);
+  color: var(--text);
 }

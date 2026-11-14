@@ -70,8 +70,9 @@ test("composer mode suggestions preserve the plain-text draft", async ({ page })
   await message.fill("Review the navigation @Plan");
   await page.getByRole("option", { name: "Plan", exact: true }).click();
   await expect(message).toHaveText("Review the navigation ");
-  await expect(page.getByRole("button", { name: "Mode: Plan", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Back to Discuss" }).click();
+  await page.getByRole("button", { name: "Project and mode", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Plan", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("dialog").getByRole("button", { name: "Discuss", exact: true }).click();
   await expect(message).toHaveText("Review the navigation ");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
 });
