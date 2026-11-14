@@ -485,8 +485,9 @@ async def test_failed_native_turn_does_not_publish_its_partial_edits(tmp_path, m
     script = ('import json,sys; open("a.txt", "w").write("partial"); '
               'print(json.dumps({"type":"error","message":"Local policy was not loaded"})); sys.exit(1)')
     monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("codex", [sys.executable, "-c", script]))
+    monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
     runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"original"}), workspace_id="w",
-                         project_id="p", runner_id="r1", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None)
+                         project_id="p", runner_id="r1", tool="codex", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None)
     await runner.work({**_RUN, "tool": "codex"})
     [result] = results
     assert result["outcome"] == "failed" and result["error"] == "Local policy was not loaded"
