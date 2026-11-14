@@ -5,11 +5,14 @@ test("new chat is visible and preserves the full approval mode", async ({ page }
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page).toHaveURL(/\/chat\?new=1$/);
   await page.getByRole("radio", { name: "Website Redesign", exact: true }).check();
+  await page.getByRole("button", { name: "Project and mode", exact: true }).click();
   const approval = page.getByRole("combobox", { name: "Approvals" });
   await expect(approval).toBeVisible();
   expect(await approval.evaluate((el) => el.clientWidth >= el.scrollWidth)).toBe(true);
-  await page.getByRole("button", { name: "Hide the list" }).click();
-  await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.locator(".chat-side").getByRole("button", { name: "Hide the list" }).click();
+  await expect(page.getByRole("button", { name: "Show the list", exact: true })).toBeVisible();
+  await expect(page.locator(".chat-side")).toBeHidden();
 });
 
 test("mobile Home keeps decisions and notices visible, and keyboard navigation works", async ({ page }) => {

@@ -26,7 +26,7 @@ function Section({ title, children, aside }: { title: string; children: ReactNod
 }
 
 /** The model a session's turns use, as people say it: "Sonnet 5.5". */
-export const sessionModel = (model: string | null | undefined) => (model ? modelName(model) : "Your default model");
+const sessionModel = (model: string | null | undefined) => (model ? modelName(model) : "Your default model");
 export const modeName = (mode: string | null | undefined) => MODE[mode ?? ""] ?? "Manual";
 
 export function SessionDetails({

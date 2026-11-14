@@ -30,6 +30,13 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Chat and Codes use a compact idle composer that expands while typing, keep mode and settings choices inside plus, and hide/restore the session list with a panel icon.
+- Chat and Codes show their model control inside the bottom-right composer footer before Send/Stop, including an explicit state when no model is available.
+
+- Workspace selection is available on mobile with left-aligned branding and a trailing chevron; the chat composer's plain plus button opens its menu downward and keeps unsent drafts.
+
+- Astryx and Tailwind now share semantic tokens across the web app, admin, and public site. Restored control spacing and colors, repaired mobile Knowledge and toolbars, simplified Settings navigation and composers, and kept sample Codes and model settings consistent with the app.
+
 - Preserve the Astryx palette in Firefox ESR without CSS scope support through generated root-theme compatibility CSS.
 
 - Member-permission toggles use Astryx Switch without the legacy CSS overlay, keeping pointer and keyboard changes available.

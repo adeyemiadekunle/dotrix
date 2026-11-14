@@ -213,7 +213,10 @@ test("the session shows Kai, never the engine underneath", async ({ page, contex
   await mockWorkspace(page, context, baseURL!, undefined, false);
   const main = page.locator(".conv-main");
   await expect(main.getByText("Kai", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Follow-up mode", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Follow-up mode", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Code options", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Build", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveAttribute("placeholder", /Ask Kai/);
   await expect(page.locator(".chat-list")).not.toContainText("Codex");
   await expect(main).not.toContainText("Codex");
@@ -378,5 +381,132 @@ for (const state of ["binary", "too_large", "deleted"] as const) {
     ).toBeVisible();
     await expect(files.locator(".kp-source")).toHaveCount(0);
     await expect(files.getByText("must not be rendered")).toHaveCount(0);
+  });
+}
+
+test("new Chat models remain selectable before the send action", async ({ page, context, baseURL }) => {
+  await mockWorkspace(
+    page,
+    context,
+    baseURL!,
+    "chat?new=1",
+    false,
+    () => true,
+    async () => {
+      await page.route("**/models", (route) =>
+        route.fulfill({
+          json: [
+            { id: "openai:gpt-5.4", name: "GPT-5.4", provider: "openai", source: "personal" },
+            { id: "anthropic:claude-sonnet-5-5", name: "Sonnet 5.5", provider: "anthropic", source: "personal" },
+          ],
+        }),
+      );
+    },
+  );
+  const model = page.locator(".composer-model").getByRole("combobox", { name: "Model", exact: true });
+  await expect(model).toContainText("GPT-5.4");
+  await model.click();
+  await page.getByRole("option", { name: "Sonnet 5.5", exact: true }).click();
+  await expect(model).toContainText("Sonnet 5.5");
+  const input = page.getByLabel("Message", { exact: true });
+  await input.fill("Review this draft");
+  await input.press("End");
+  await input.press("Shift+Enter");
+  await page.keyboard.insertText("Keep this second line");
+  await page.route("**/conversations/runs", (route) => route.fulfill({ status: 422, json: { detail: "Test only" } }));
+  const submitted = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/conversations/runs"));
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  expect((await submitted).postDataJSON()).toMatchObject({ model: "anthropic:claude-sonnet-5-5", message: "Review this draft\nKeep this second line" });
+});
+
+for (const width of [390, 1440]) {
+  test(`new Codes models remain selectable before Send at ${width}px`, async ({ page, context, baseURL }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockWorkspace(
+      page,
+      context,
+      baseURL!,
+      "codes?new=1&issue=TEST-1",
+      false,
+      () => true,
+      async () => {
+        await page.route(/\/issues(?:\?.*)?$/, (route) =>
+          route.fulfill({
+            json: [
+              {
+                id: "i1",
+                key: "TEST-1",
+                project_id: "p1",
+                title: "Fix navigation",
+                type: "task",
+                status: "todo",
+                priority: "none",
+                labels: [],
+                checklist: [],
+                due: null,
+                description: "",
+                created_at: date,
+                updated_at: date,
+              },
+            ],
+          }),
+        );
+        await page.route("**/projects/p1/coding", (route) =>
+          route.fulfill({
+            json: {
+              available: true,
+              models: ["openai:gpt-5.4", "anthropic:claude-sonnet-5-5"],
+              default_model: "openai:gpt-5.4",
+              local_available: true,
+              local_runner: "Your computer",
+              local_tools: ["codex"],
+            },
+          }),
+        );
+      },
+    );
+    const model = page.locator(".composer-model").getByRole("combobox", { name: "Model", exact: true });
+    await expect(model).toContainText("GPT-5.4");
+    await model.click();
+    await page.getByRole("option", { name: "Sonnet 5.5", exact: true }).click();
+    await expect(model).toContainText("Sonnet 5.5");
+    const bounds = (await model.boundingBox())!;
+    const send = (await page.getByRole("button", { name: "Start coding", exact: true }).boundingBox())!;
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(send.x);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    await page.getByRole("button", { name: "Code options", exact: true }).click();
+    await page.getByRole("group", { name: "Where it codes", exact: true }).getByRole("button", { name: "Your computer", exact: true }).click();
+    await expect(page.locator(".composer-model")).toContainText("Model managed locally");
+    await page.getByRole("button", { name: "Code options", exact: true }).click();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Plan (read only)", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape");
+  });
+
+  test(`Codes keeps its pinned model before Stop at ${width}px`, async ({ page, context, baseURL }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockWorkspace(
+      page,
+      context,
+      baseURL!,
+      "codes?session=session1",
+      false,
+      () => true,
+      async () => {
+        await page.route("**/coding/sessions/session1", (route) =>
+          route.fulfill({ json: [{ ...turn(1), status: "running", can_stop: true, model: "openai:gpt-5.4" }] }),
+        );
+      },
+    );
+    const model = page.locator(".composer-model");
+    await expect(model).toContainText("GPT-5.4");
+    const stop = page.locator(".dotrix-composer").getByRole("button", { name: "Stop", exact: true });
+    await expect(stop).toBeEnabled();
+    const modelBounds = (await model.boundingBox())!;
+    const stopBounds = (await stop.boundingBox())!;
+    expect(modelBounds.x + modelBounds.width).toBeLessThanOrEqual(stopBounds.x);
+    expect(modelBounds.x + modelBounds.width).toBeLessThanOrEqual(width);
+    const halted = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/coding/runs/turn1/stop"));
+    await stop.click();
+    await halted;
   });
 }

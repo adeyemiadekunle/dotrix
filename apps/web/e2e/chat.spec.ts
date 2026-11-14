@@ -32,6 +32,7 @@ async function openChat(page: Page, search = "") {
 }
 
 async function pickChatOption(page: Page, label: "Approvals", name: string | RegExp) {
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   const picker = page.getByRole("combobox", { name: label, exact: true });
   await picker.click();
   // Each picker under the message box keeps its own list.
@@ -41,17 +42,20 @@ async function pickChatOption(page: Page, label: "Approvals", name: string | Reg
   await option.click();
   await expect(picker).toContainText(selected);
   await expect(menu).toBeHidden();
+  await page.keyboard.press("Escape");
   return selected;
 }
 
-// The work mode is picked from the + menu; a chip beside + names it once it isn't Discuss.
+// Every mode lives in the + menu; the selected mode is marked when it is reopened.
 async function pickMode(page: Page, name: "Discuss" | "Plan" | "Build" | "Review") {
-  await page.getByRole("combobox", { name: /^(Project and mode|Mode)$/ }).click();
+  const plus = page.getByRole("button", { name: /^(Project and mode|Mode)$/ });
   const menu = page.getByRole("dialog", { name: /^(Project and mode|Mode)$/ });
+  if (!(await menu.isVisible())) await plus.click();
   await menu.getByRole("button", { name, exact: true }).click();
   await expect(menu).toBeHidden();
-  if (name === "Discuss") await expect(page.getByRole("button", { name: /^Mode:/ })).toHaveCount(0);
-  else await expect(page.getByRole("button", { name: `Mode: ${name}` })).toBeVisible();
+  await plus.click();
+  await expect(menu.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
 }
 
 test("fx works in every mode", async ({ page }) => {
@@ -67,11 +71,14 @@ test("fx works in every mode", async ({ page }) => {
     }),
   );
   await openChat(page, "?project=KUM");
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   await expect(page.getByRole("combobox", { name: "Chat runtime", exact: true })).toBeVisible();
   await pickMode(page, "Plan");
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   await page.getByRole("combobox", { name: "Chat runtime", exact: true }).click();
   await page.getByRole("option", { name: "fx", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Mode: Plan" })).toBeVisible(); // the mode you picked stays
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Plan", exact: true })).toHaveAttribute("aria-pressed", "true"); // the mode you picked stays
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeVisible();
   await expect(page.getByText(/Nova runs on fx, in every mode/)).toHaveCount(0);
   await expect(page.getByText(/can't involve specialists here/)).toHaveCount(0);
@@ -127,7 +134,9 @@ test("in Accept edits what you ask for goes through, approved by you", async ({ 
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM");
-  await expect(page.getByRole("combobox", { name: "Approvals", exact: true })).toContainText("Accept edits"); // your own workspace's default
+  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
+  await expect(page.getByRole("combobox", { name: "Approvals", exact: true })).toContainText("Accept edits");
+  await page.keyboard.press("Escape"); // your own workspace's default
   await page.getByLabel("Message", { exact: true }).fill("Create issue: Add search");
   await page.getByLabel("Message", { exact: true }).press("Enter");
   await expect(page.getByText(/Done\./)).toBeVisible();

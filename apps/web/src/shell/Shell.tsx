@@ -51,6 +51,35 @@ const NARROW = "(max-width: 900px)";
 const narrow = () => typeof window !== "undefined" && window.matchMedia(NARROW).matches;
 const sideCollapsed = () => S.ui.collapsed && !narrow();
 
+function WorkspaceSwitcher() {
+  const workspace = D().ws;
+  return (
+    <Button
+      label="Switch workspace"
+      aria-label="Switch workspace"
+      aria-haspopup="menu"
+      aria-expanded={S.ui.pop?.type === "ws"}
+      aria-controls={S.ui.pop?.type === "ws" ? "workspace-menu" : undefined}
+      className="workspace-switcher"
+      width="100%"
+      variant="ghost"
+      onClick={(event) => openPop(event.currentTarget, "ws")}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowDown" && S.ui.pop?.type !== "ws") {
+          event.preventDefault();
+          openPop(event.currentTarget, "ws");
+        }
+      }}
+    >
+      <span className="workspace-switcher-content">
+        <WsLogo w={workspace} px={22} />
+        <span className="workspace-switcher-name">{workspace.name}</span>
+        <Ic n="chevrons-up-down" s={13} cls="workspace-switcher-caret" />
+      </span>
+    </Button>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const { ui } = useStudio();
   const { route, params } = useRoute();
@@ -127,7 +156,6 @@ export function Shell({ children }: { children: ReactNode }) {
             <AgentsPanel />
           </>
         )}
-        {!inCodeTab() && <AgentsLauncher />}
         <BottomNav openNavigation={openNavigation} />
       </AppShell>
       <PopLayer />
@@ -153,16 +181,7 @@ function Sidebar() {
       aria-label="Main"
       className="workspace-navigation"
       collapsible={{ isCollapsed: sideCollapsed(), onCollapsedChange: () => toggleSide(), hasButton: true }}
-      header={
-        <Button
-          label={d.ws.name}
-          aria-label="Switch workspace"
-          variant="ghost"
-          icon={<WsLogo w={d.ws} px={22} />}
-          endContent={<Ic n="chevrons-up-down" s={13} />}
-          onClick={(e) => openPop(e.currentTarget, "ws")}
-        />
-      }
+      header={<WorkspaceSwitcher />}
       footer={
         <>
           {desktopApp() && <SideNavItem size={S.prefs.side === "compact" ? "sm" : "md"} label="What's new" icon={<Ic n="gift" />} onClick={openWhatsNew} />}
@@ -288,6 +307,7 @@ function Topbar() {
     <TopNav
       label="Workspace actions"
       className="workspace-topbar"
+      heading={narrow() ? <WorkspaceSwitcher /> : undefined}
       startContent={
         <>
           <Crumbs />
@@ -317,6 +337,7 @@ function Topbar() {
               />
             )}
           </ActionButton>
+          {!inCodeTab() && <AgentsLauncher inline />}
           <ActionButton className="btn btn-secondary btn-sm" onClick={(e) => openPop(e.currentTarget, "create")} aria-haspopup="menu" aria-label="Create new">
             <Ic n="plus" s={14} />
             <span className="hide-m">New</span>

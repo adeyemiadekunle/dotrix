@@ -61,6 +61,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
         .knowledge.filter((f) => f.project === p.id)
         .filter((f) => !open.q || f.path.toLowerCase().includes(open.q.toLowerCase()));
   const folderId = useId();
+  const [browsing, setBrowsing] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const t = tree(files.filter((f) => !open.q || f.path.toLowerCase().includes(open.q.toLowerCase())));
   const curEntry = files.find((f) => f.path === (open.path ?? "project.md")) ?? files[0];
@@ -74,6 +75,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
   const [draft, setDraft] = useState("");
   const [note, setNote] = useState("");
   const pick = (f: KnowledgeFile) => {
+    setBrowsing(false);
     open.path = f.path;
     open.editing = false;
     render();
@@ -140,8 +142,19 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
             text="The project's requirements, decisions, and research live here, kept current by the agents. Upload documents under Files, or ask in Chat."
           />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "240px minmax(0,1fr)", gap: 16, alignItems: "start" }} className="kn-grid">
-            <aside className="panel" style={{ padding: 6 }}>
+          <div className={`kn-grid grid min-w-0 items-start gap-4 sm:grid-cols-[240px_minmax(0,1fr)] ${browsing ? "browsing" : ""}`}>
+            <div className="kn-mobile-nav rounded-lg border border-border bg-surface p-3 text-primary">
+              <ActionButton
+                className="btn btn-secondary"
+                onClick={() => setBrowsing(!browsing)}
+                aria-expanded={browsing}
+                aria-controls={`${folderId}-documents`}
+              >
+                <Ic n={browsing ? "arrow-left" : "folder"} s={16} />
+                {browsing ? "Back to document" : "Documents"}
+              </ActionButton>
+            </div>
+            <aside id={`${folderId}-documents`} className="panel" style={{ padding: 6 }}>
               <div className="inwrap" style={{ margin: "2px 2px 6px" }}>
                 <Ic n="search" s={13} />
                 <DesignInput

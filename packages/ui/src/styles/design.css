@@ -53,7 +53,7 @@
   --font: var(--font-family-body);
   --mono: 'Geist Mono Variable', ui-monospace, monospace;
   --serif: var(--font-family-heading);
-  --fs-2xs: 11px; --fs-xs: 12px; --fs-sm: 13px; --fs: 14px;
+  --fs-2xs: 12px; --fs-xs: 12px; --fs-sm: 13px; --fs: 14px;
   --fs-md: 15px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 24px;
   --h-xs: 24px; --h-sm: 28px; --h-md: 32px; --h-lg: 36px;
   --side-w: 252px; --side-row: 32px; --row-h: 44px; --card-pad: 12px;
@@ -100,14 +100,14 @@ body {
   -webkit-font-smoothing: antialiased;
   font-feature-settings: normal;
 }
-button:not([class*='astryx-']),
+:where(button:not([class*='astryx-']),
 input:not([class*='astryx-']):not([data-dotrix-control]),
 select:not([class*='astryx-']),
-textarea:not([class*='astryx-']):not([data-dotrix-control]) {
+textarea:not([class*='astryx-']):not([data-dotrix-control])) {
   font: inherit;
   color: inherit;
 }
-button:not([class*='astryx-']) {
+:where(button:not([class*='astryx-'])) {
   cursor: pointer;
   background: none;
   border: 0;
@@ -1968,6 +1968,7 @@ h3.sub {
   padding: 0;
 }
 .toolbar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 4px;

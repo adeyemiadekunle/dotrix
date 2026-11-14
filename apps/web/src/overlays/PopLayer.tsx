@@ -436,20 +436,22 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         ),
       };
     }
-    case "ws":
+    case "ws": {
+      // Older saved sample workspaces predate IDs; real workspaces always match by ID.
+      const selected = D().ws.id ?? (!isLive() ? D().workspaces.find((workspace) => workspace.name === D().ws.name)?.id : undefined);
       return {
         style: { width: 260 },
         inner: (
           <>
             <div className="mh">Workspaces</div>
             {D().workspaces.map((w) => (
-              <button key={w.id} className="mi" onClick={() => switchWs(w.id)}>
+              <button key={w.id} className="mi" role="menuitemradio" aria-checked={w.id === selected} onClick={() => switchWs(w.id)}>
                 <WsLogo w={w} px={20} />
-                <span className="grow">{w.name}</span>
+                <span className="grow trunc">{w.name}</span>
                 <span className="faint" style={{ fontSize: 11 }}>
                   {w.plan}
                 </span>
-                {w.name === D().ws.name && (
+                {w.id === selected && (
                   <span className="ck">
                     <Ic n="check" s={14} />
                   </span>
@@ -467,6 +469,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
           </>
         ),
       };
+    }
     case "session": {
       // A coding session's ⋮ (Chat's Code tab).
       const cs = p.session as CodingSession | undefined;
@@ -1084,6 +1087,15 @@ export function PopLayer() {
   const p = S.ui.pop as P | null;
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
+    if (p?.type !== "ws") return;
+    const trigger = document.activeElement as HTMLElement | null;
+    const frame = requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus());
+    return () => {
+      cancelAnimationFrame(frame);
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, [p?.type]);
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !p) return;
     const w = el.offsetWidth;
@@ -1107,7 +1119,14 @@ export function PopLayer() {
   if (!out) return null;
   const content = layer.render(
     <LayerDepthProvider>
-      <div ref={ref} className={`pop floating enter ${out.cls ?? ""}`} role="menu" style={{ left: p.x as number, top: p.y as number, ...out.style }}>
+      <div
+        ref={ref}
+        id={p.type === "ws" ? "workspace-menu" : undefined}
+        aria-label={p.type === "ws" ? "Workspaces" : undefined}
+        className={`pop floating enter ${out.cls ?? ""}`}
+        role="menu"
+        style={{ left: p.x as number, top: p.y as number, ...out.style }}
+      >
         {out.inner}
       </div>
     </LayerDepthProvider>,

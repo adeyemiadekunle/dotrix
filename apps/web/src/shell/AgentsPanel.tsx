@@ -122,7 +122,7 @@ const ORDER: Record<Presence["state"], number> = { needs: 0, blocked: 1, working
 
 /** The button at the bottom right: up to three faces (whoever needs you first, then whoever is
  * working, else the team's first), and how many wait on you. Escape closes the panel. */
-export function AgentsLauncher() {
+export function AgentsLauncher({ inline = false }: { inline?: boolean }) {
   const all = useTeam();
   const open = agentsShown();
   const waiting = all.filter((p) => p.state === "needs" || p.state === "blocked").length;
@@ -135,7 +135,7 @@ export function AgentsLauncher() {
   }, [open]);
   return (
     <button
-      className={`agents-launcher ${open ? "on" : ""}`}
+      className={`agents-launcher ${inline ? "inline" : ""} ${open ? "on" : ""}`}
       onClick={toggleAgents}
       aria-expanded={open}
       aria-controls="agents-panel"

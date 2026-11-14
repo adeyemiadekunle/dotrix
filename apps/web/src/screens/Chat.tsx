@@ -1,5 +1,4 @@
 import { Code as InlineCode } from "@dotrix/ui/astryx";
-import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
 import {
   ChatLayout,
@@ -24,7 +23,7 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
 // URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Codes.
 import { useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps } from "react";
 
 import {
   isActive,
@@ -95,11 +94,12 @@ import { Av, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
-import { CODING_AGENT } from "../data/seed-dotrix";
+import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePanel";
 import { BackgroundTasks } from "../components/BackgroundTasks";
-import { SessionDetails, modeName, sessionModel } from "../components/SessionDetails";
+import { SessionDetails, modeName } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
+import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
 import { ChoiceCard, type Choice } from "../components/ChoiceCard";
 import {
   ChainOfThought,
@@ -120,7 +120,8 @@ import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/spl
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@dotrix/ui/components/trace";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
-const agentName = (h: string) => D().agents.find((a) => a.handle === h)?.name ?? h;
+const agentName = (h: string) =>
+  CODING_TOOLS.some((tool) => tool.id === h || tool.id === `agent:${h}`) ? CODING_AGENT.name : (D().agents.find((a) => a.handle === h)?.name ?? h);
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
 /** An agent as the store names it: the project manager is "auto". */
 const handleOf = (a: string | null | undefined) => (!a || a === "project-manager" || a === "pm" ? "auto" : a);
@@ -243,37 +244,44 @@ const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running
 // Waiting on a person: to start, or (Manual) to push what it changed.
 const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"];
 
+/** Shared session chrome keeps sample and live panes on the same responsive layout. */
+export function SessionHeader({ className = "", children, ...props }: ComponentProps<"div">) {
+  return (
+    <div {...props} className={`row cs-head ${className}`}>
+      <SessionListToggle />
+      {children}
+    </div>
+  );
+}
+
 export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const [label0, c] = STATUS[cs.status];
   const label = cs.location === "local" && cs.status === "queued" ? "Waiting for your computer" : label0;
+  const title = cs.title ?? cs.issue_title;
   return (
     <div className={`cs-row ${on ? "on" : ""}`}>
       <button
         className={`sitem ${on ? "on" : ""}`}
-        style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start", width: "100%" }}
+        aria-label={`${cs.issue_key} ${title} · ${label}`}
+        title={title}
         onClick={() => openCoding(`session=${cs.session_id}`)}
       >
-        <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-          <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
-            {cs.pinned && <Ic n="pin" s={11} cls="cs-pin" />}
+        <span className="cs-row-copy">
+          <span className="cs-row-title">
+            {cs.pinned && <Ic n="pin" s={12} cls="cs-pin" />}
             {cs.thread_id && (
-              <span className="faint" aria-label="Started from a conversation" title="Started from a conversation">
-                <Ic n="message-square" s={11} />{" "}
+              <span className="faint" aria-label="Started from a conversation">
+                <Ic n="message-square" s={12} />
               </span>
             )}
-            <span className="mono faint" style={{ fontSize: 11 }}>
-              {cs.issue_key}
-            </span>{" "}
-            {cs.title ?? cs.issue_title}
+            {title}
           </span>
-          <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
-            <Ic n={cs.location === "local" ? "laptop" : "cloud"} s={11} />
-            {CODING_AGENT.name} · {ago(ms(cs.updated_at))}
+          <span className="cs-row-meta">
+            <span className="mono">{cs.issue_key}</span>
+            <span>· {ago(ms(cs.updated_at))}</span>
             {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
           </span>
-        </span>
-        <span className={`badge ${c}`} style={{ marginTop: 2 }}>
-          {label}
+          <span className={`badge ${c}`}>{label}</span>
         </span>
       </button>
       <ActionButton
@@ -704,7 +712,7 @@ function Pick({
   options: [string, string][];
   label: string;
   lead?: React.ReactNode;
-  /** Plain text under a message box (as Claude Code's model and mode), not a chip. */
+  /** Compact text trigger for the composer and its options menu. */
   plain?: boolean;
   /** Options under headings (the Model Selector's providers): each option's group, "" for none. */
   groupOf?: (value: string) => string;
@@ -749,6 +757,7 @@ function WhereItCodes({
   canAdd,
   adding,
   onAdd,
+  onClose,
 }: {
   location: "cloud" | "local";
   setWhere: (where: "cloud" | "local") => void;
@@ -761,104 +770,138 @@ function WhereItCodes({
   canAdd: boolean;
   adding: boolean;
   onAdd: () => void;
+  onClose: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
   const folderName = folder ? folder.folder.split(/[\\/]/).filter(Boolean).pop() : null;
   const localLabel = folderName ?? localName ?? "Your computer";
   const starting = adding || folder?.state === "starting";
   const choose = (where: "cloud" | "local") => {
     setWhere(where);
-    setOpen(false);
-    btnRef.current?.focus();
+    onClose();
   };
   return (
-    <span
-      className="fpick"
-      onKeyDown={(e) => {
-        if (e.key === "Escape" && open) {
-          e.stopPropagation();
-          setOpen(false);
-          btnRef.current?.focus();
-        }
-      }}
-    >
-      <button
-        ref={btnRef}
-        type="button"
-        className="pick-open"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={`Where it codes: ${location === "local" ? localLabel : "Cloud"}`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <Ic n={location === "local" ? "laptop" : "cloud"} s={13} />
-        <span className="trunc">{location === "local" ? localLabel : "Cloud"}</span>
-      </button>
-      {open && (
-        <>
-          <span className="pick-veil" aria-hidden onClick={() => setOpen(false)} />
-          <span className="cmenu env-menu" role="listbox" aria-label="Where it codes">
-            <span className="env-h">This computer</span>
-            {localReady || folder ? (
-              <button
-                type="button"
-                role="option"
-                aria-selected={location === "local"}
-                className={`mi ${location === "local" ? "on" : ""}`}
-                disabled={!localReady}
-                onClick={() => choose("local")}
-                data-tip={folder?.folder ?? "In a worktree of your checkout, with the coding tool signed in there; the platform pushes what's accepted"}
-              >
-                <Ic n="laptop" s={14} />
-                <span className="trunc grow">{localLabel}</span>
-                {!localReady && <span className="faint env-state">{starting ? "Starting…" : folder?.state === "failed" ? "Stopped" : "Not ready"}</span>}
-                {location === "local" && <Ic n="check" s={13} />}
-              </button>
-            ) : (
-              !canAdd && (
-                <span className="env-note faint" title={localWhy ?? undefined}>
-                  Run <InlineCode>dotrix runner</InlineCode> in your checkout, or use the desktop app
-                </span>
-              )
-            )}
-            {canAdd && (
-              <button
-                type="button"
-                className="mi"
-                disabled={starting}
-                onClick={() => {
-                  onAdd();
-                  setWhere("local");
-                  setOpen(false);
-                }}
-                data-tip="Choose your checkout of the project's repository: this app codes its turns there, in a worktree"
-              >
-                <Ic n="folder-plus" s={14} />
-                <span className="trunc grow">
-                  {folder ? (folder.state === "failed" ? "Choose the folder again" : "Choose another folder") : "Add a folder"}
-                </span>
-              </button>
-            )}
-            <span className="env-sep" />
-            <span className="env-h">Cloud</span>
-            <button
-              type="button"
-              role="option"
-              aria-selected={location === "cloud"}
-              className={`mi ${location === "cloud" ? "on" : ""}`}
-              onClick={() => choose("cloud")}
-              data-tip={cloudReady ? "In a sandbox on the platform" : (cloudWhy ?? undefined)}
-            >
-              <Ic n="cloud" s={14} />
-              <span className="trunc grow">Cloud sandbox</span>
-              {!cloudReady && <span className="faint env-state">Off</span>}
-              {location === "cloud" && <Ic n="check" s={13} />}
-            </button>
+    <div className="composer-environment-options" role="group" aria-label="Where it codes">
+      <span className="composer-menu-heading">Environment</span>
+      {localReady || folder ? (
+        <DesignButton
+          label={localReady ? localLabel : `${localLabel} (${starting ? "Starting…" : folder?.state === "failed" ? "Stopped" : "Not ready"})`}
+          variant="ghost"
+          className="composer-menu-option"
+          icon={<Ic n="laptop" s={16} />}
+          aria-pressed={location === "local"}
+          isDisabled={!localReady}
+          data-tip={folder?.folder ?? localWhy ?? undefined}
+          onClick={() => choose("local")}
+        />
+      ) : (
+        !canAdd && (
+          <span className="composer-menu-note" title={localWhy ?? undefined}>
+            Run <InlineCode>dotrix runner</InlineCode> in your checkout, or use the desktop app
           </span>
-        </>
+        )
+      )}
+      {canAdd && (
+        <DesignButton
+          label={folder ? (folder.state === "failed" ? "Choose the folder again" : "Choose another folder") : "Add a folder"}
+          variant="ghost"
+          className="composer-menu-option"
+          icon={<Ic n="folder-plus" s={16} />}
+          isDisabled={starting}
+          onClick={() => {
+            onAdd();
+            choose("local");
+          }}
+        />
+      )}
+      <DesignButton
+        label="Cloud sandbox"
+        variant="ghost"
+        className="composer-menu-option"
+        icon={<Ic n="cloud" s={16} />}
+        aria-pressed={location === "cloud"}
+        data-tip={cloudReady ? "In a sandbox on the platform" : (cloudWhy ?? undefined)}
+        onClick={() => choose("cloud")}
+      />
+    </div>
+  );
+}
+
+/** New sessions choose a model; existing sessions keep the model admitted for their run. */
+function ComposerModel({
+  model,
+  models,
+  onChange,
+  empty = "No models connected",
+}: {
+  model?: string | null;
+  models?: [string, string][];
+  onChange?: (model: string) => void;
+  empty?: string;
+}) {
+  return (
+    <span className="cmp-model composer-model">
+      {onChange && models?.length ? (
+        <Pick plain value={model ?? ""} onChange={onChange} options={models} label="Model" groupOf={providerName} />
+      ) : (
+        <DesignButton label={model ? modelName(model) : empty} aria-label="Model" variant="ghost" size="sm" isDisabled />
       )}
     </span>
+  );
+}
+
+function CodingOptions({
+  mode,
+  setMode,
+  local,
+  disabled = false,
+  onOpenChange,
+  focusInput,
+  children,
+}: {
+  mode: "plan" | "build";
+  setMode: (mode: "plan" | "build") => void;
+  local: boolean;
+  disabled?: boolean;
+  onOpenChange: (open: boolean) => void;
+  focusInput: () => void;
+  children?: (close: () => void) => React.ReactNode;
+}) {
+  return (
+    <ComplexSelector
+      label="Code options"
+      isLabelHidden
+      value=""
+      placement="below"
+      alignment="start"
+      isDisabled={disabled}
+      onOpenChange={onOpenChange}
+      renderTrigger={(props) => (
+        <DesignButton {...props} role="button" label="Code options" variant="ghost" size="sm" isIconOnly icon={<Ic n="plus" s={20} />} />
+      )}
+    >
+      {(_value, _change, close) => (
+        <div className="composer-options-menu">
+          <span className="composer-menu-heading">Mode</span>
+          {(["build", "plan"] as const).map((value) => (
+            <DesignButton
+              key={value}
+              className="composer-menu-option"
+              label={value === "plan" ? "Plan (read only)" : "Build"}
+              variant="ghost"
+              aria-pressed={mode === value}
+              icon={<Ic n={mode === value ? "check" : value === "plan" ? "list-checks" : "hammer"} s={16} />}
+              isDisabled={disabled || (value === "plan" && local)}
+              onClick={() => {
+                setMode(value);
+                close();
+                focusInput();
+              }}
+            />
+          ))}
+          {children?.(close)}
+        </div>
+      )}
+    </ComplexSelector>
   );
 }
 
@@ -872,6 +915,7 @@ function Composer({
   models,
   autoFocus,
   initial = "",
+  context,
   contexts,
   setContext,
   mode,
@@ -913,6 +957,16 @@ function Composer({
   const [submitting, setSubmitting] = useState(false);
   const ref = useRef<ChatComposerInputHandle>(null);
   const picker = useRef<ComplexSelectorHandle>(null);
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false);
+  const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!composerMenuOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const scroller = wrapper.current?.closest(".ns");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [composerMenuOpen]);
   const a = useAgents().items.find((x) => x.handle === agent);
   // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
   const choices = useMemo(
@@ -956,11 +1010,10 @@ function Composer({
       setSubmitting(false);
     }
   };
-  const plus = Boolean(contexts || (mode && setMode));
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={wrapper} className={`dotrix-composer-wrap ${composerMenuOpen ? "menu-open" : ""}`} style={{ position: "relative" }}>
       <ChatComposer
-        className="dotrix-composer"
+        className={`dotrix-composer compact-composer ${text ? "has-draft" : ""}`}
         onSubmit={() => {
           void send();
         }}
@@ -990,46 +1043,100 @@ function Composer({
             }}
           />
         }
-        headerActions={
+        footerActions={
           <>
-            {plus && (
-              <ComplexSelector handleRef={picker} label={contexts ? "Project and mode" : "Mode"} isLabelHidden value="" triggerLabel={<Ic n="plus" s={18} />}>
-                {(_value, _change, close) => (
-                  <div style={{ display: "grid", gap: 4, padding: 8 }}>
-                    {choices.map((choice) => (
+            <ComplexSelector
+              handleRef={picker}
+              label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
+              isLabelHidden
+              value=""
+              placement="below"
+              alignment="start"
+              onOpenChange={setComposerMenuOpen}
+              renderTrigger={(triggerProps) => (
+                <DesignButton
+                  {...triggerProps}
+                  role="button"
+                  label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
+                  variant="ghost"
+                  size="sm"
+                  isIconOnly
+                  icon={<Ic n="plus" s={18} />}
+                />
+              )}
+            >
+              {(_value, _change, close) => (
+                <div className="composer-options-menu">
+                  {choices.map((choice, index) => (
+                    <Fragment key={choice.id}>
+                      {(index === 0 || choices[index - 1]?.auxiliaryData.group !== choice.auxiliaryData.group) && (
+                        <span className="composer-menu-heading">{choice.auxiliaryData.group}</span>
+                      )}
                       <DesignButton
-                        key={choice.id}
                         label={choice.label}
                         variant="ghost"
+                        className="composer-menu-option"
+                        icon={
+                          <Ic
+                            n={
+                              choice.id === `mode:${mode}` || choice.id === `project:${context}`
+                                ? "check"
+                                : choice.id.startsWith("mode:")
+                                  ? MODE_ICONS[choice.id.slice(5) as WorkMode]
+                                  : choice.id === "project:"
+                                    ? "layers"
+                                    : "folder"
+                            }
+                            s={16}
+                          />
+                        }
+                        aria-pressed={choice.id.startsWith("mode:") ? choice.id === `mode:${mode}` : choice.id === `project:${context}`}
                         onClick={() => {
                           choose(choice.id);
                           close();
                           ref.current?.focus();
                         }}
                       />
+                    </Fragment>
+                  ))}
+                  {choices.length === 0 && <span className="composer-menu-note">General chat</span>}
+                  {approval && setApproval && approvals.length > 1 && (
+                    <span>
+                      <Pick
+                        plain
+                        value={approval}
+                        onChange={(v) => setApproval(v as ApprovalMode)}
+                        options={approvals.map(([v, l]): [string, string] => [v, l])}
+                        label="Approvals"
+                      />
+                    </span>
+                  )}
+                  {runtime &&
+                    (setRuntime ? (
+                      <Pick
+                        plain
+                        value={runtime}
+                        onChange={(v) => setRuntime(v as ChatRuntime)}
+                        options={[
+                          ["deepagents", "Standard"],
+                          ["fx", "fx"],
+                        ]}
+                        label="Chat runtime"
+                      />
+                    ) : (
+                      runtime === "fx" && <span data-tip="This conversation runs on fx">fx</span>
                     ))}
-                  </div>
-                )}
-              </ComplexSelector>
-            )}
-            {mode && setMode && mode !== "discuss" && (
-              <span className="cmp-chip cmp-mode" data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}>
-                <button
-                  type="button"
-                  className="cmp-mode-pick"
-                  onClick={() => picker.current?.open()}
-                  aria-label={`Mode: ${WORK_MODES.find(([v]) => v === mode)?.[1]}`}
-                >
-                  <Ic n={MODE_ICONS[mode]} s={12} />
-                  {WORK_MODES.find(([v]) => v === mode)?.[1]}
-                </button>
-                <ActionButton className="ibtn ibtn-xs" onClick={() => setMode("discuss")} aria-label="Back to Discuss">
-                  <Ic n="x" s={11} />
-                </ActionButton>
-              </span>
-            )}
+                  {agent !== "auto" && a && setAgent && (
+                    <button className="cmp-chip" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
+                      Involve {a.name} <Ic n="x" s={10} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </ComplexSelector>
           </>
         }
+        sendActions={<ComposerModel model={model} models={models} onChange={setModel} empty={setModel ? "No models connected" : "Model not recorded"} />}
         sendButton={
           <>
             {(!onStop || text.trim()) && (
@@ -1044,51 +1151,6 @@ function Composer({
           </>
         }
       />
-      <div className="kt-foot cmp-foot">
-        <div className="cmp-controls cmp-controls-left">
-          {agent !== "auto" && a && setAgent && (
-            <button className="cmp-chip" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
-              Involve {a.name} <Ic n="x" s={10} />
-            </button>
-          )}
-          {approval && setApproval && approvals.length > 1 && (
-            <span>
-              <Pick
-                plain
-                value={approval}
-                onChange={(v) => setApproval(v as ApprovalMode)}
-                options={approvals.map(([v, l]): [string, string] => [v, l])}
-                label="Approvals"
-              />
-            </span>
-          )}
-          {setModel && models?.length ? (
-            <span className="cmp-model">
-              <Pick plain value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" groupOf={providerName} />
-            </span>
-          ) : (
-            model && <span className="cmp-model">{model}</span>
-          )}
-        </div>
-        <span className="sp" />
-        <div className="cmp-controls cmp-controls-right">
-          {runtime &&
-            (setRuntime ? (
-              <Pick
-                plain
-                value={runtime}
-                onChange={(v) => setRuntime(v as ChatRuntime)}
-                options={[
-                  ["deepagents", "Standard"],
-                  ["fx", "fx"],
-                ]}
-                label="Chat runtime"
-              />
-            ) : (
-              runtime === "fx" && <span data-tip="This conversation runs on fx">fx</span>
-            ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -1173,7 +1235,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   return (
     <div className="conv">
       <div className="conv-main">
-        <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
+        <SessionHeader>
           <ActionButton className="ibtn ibtn-sm" onClick={() => open("")} aria-label="Back to conversations">
             <Ic n="arrow-left" s={15} />
           </ActionButton>
@@ -1202,7 +1264,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               ) : null;
             })}
           </span>
-        </div>
+        </SessionHeader>
         <ChatLayout
           className="dotrix-chat-layout"
           density={S.prefs.density === "compact" ? "compact" : "balanced"}
@@ -1256,7 +1318,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               <Composer
                 placeholder="Ask Nova, or type @ to pick a mode"
                 agent={agent}
-                model={modelName(last?.conversation_model) || undefined}
+                model={last?.conversation_model ?? last?.model ?? undefined}
                 context={p?.name ?? "General"}
                 onSend={(q) => say(q)}
                 mode={projectId ? mode : undefined}
@@ -1358,10 +1420,13 @@ function NewChat({
   };
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
-    <div className="conv">
-      <ActionButton className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
-        <Ic n="arrow-left" s={16} />
-      </ActionButton>
+    <div className="conv new-conversation">
+      <div className="session-start-header">
+        <SessionListToggle />
+        <ActionButton className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
+          <Ic n="arrow-left" s={16} />
+        </ActionButton>
+      </div>
       <div className="ns">
         <div className="ns-mid">
           <h2 className="ns-title">
@@ -1446,6 +1511,8 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   const [menuBtn, setMenuBtn] = useState(false);
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const composerWrap = useRef<HTMLDivElement>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -1493,6 +1560,14 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   const start = useStartCoding(scope, t?.key ?? "", approval, location, null, model, codingMode);
   // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
   const menuOpen = menu !== null || menuBtn;
+  useEffect(() => {
+    if (!optionsOpen && !menuOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const scroller = composerWrap.current?.closest(".ns");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [optionsOpen, menuOpen]);
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
@@ -1528,6 +1603,9 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   };
   return (
     <div className="ns">
+      <div className="session-start-header">
+        <SessionListToggle />
+      </div>
       <div className="ns-mid">
         <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
         <h2 className="ns-title">Start a session</h2>
@@ -1587,75 +1665,129 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
         )}
       </div>
       <div className="ns-bottom">
-        <div style={{ position: "relative" }}>
-          <div className="kt-box cmp-box">
-            <button
-              className="cmp-plus"
-              onClick={ask}
-              aria-label="Pick an issue"
-              aria-haspopup="listbox"
-              aria-expanded={menuOpen}
-              data-tip="Pick an issue (or type @)"
-            >
-              <Ic n="plus" s={18} />
-            </button>
-            <label>
-              Mode{" "}
-              <select aria-label="Coding mode" value={codingMode} onChange={(e) => setCodingMode(e.target.value as "plan" | "build")}>
-                <option value="build">Build</option>
-                <option value="plan" disabled={location === "local"}>
-                  Plan (read only)
-                </option>
-              </select>
-            </label>
-            <DesignTextarea
-              ref={ref}
-              rows={1}
-              value={note}
-              autoFocus
-              placeholder={t ? `What should Kai do on ${t.key}?` : `Type @ to pick ${personal ? "an issue" : "one of your issues"}`}
-              onChange={(e) => onText(e.target)}
-              onKeyDown={(e) => {
-                if (menuOpen && found.length) {
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
-                    return;
+        <div ref={composerWrap} className={`dotrix-composer-wrap ${optionsOpen || menuOpen ? "menu-open" : ""}`}>
+          <ChatComposer
+            className={`dotrix-composer compact-composer coding-start-composer ${note ? "has-draft" : ""}`}
+            value={note}
+            onSubmit={go_}
+            input={
+              <textarea
+                data-dotrix-control
+                className="composer-textarea"
+                ref={ref}
+                rows={1}
+                value={note}
+                autoFocus
+                placeholder={t ? `What should Kai do on ${t.key}?` : `Type @ to pick ${personal ? "an issue" : "one of your issues"}`}
+                onChange={(e) => onText(e.target)}
+                onKeyDown={(e) => {
+                  if (menuOpen && found.length) {
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
+                      return;
+                    }
+                    if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+                      e.preventDefault();
+                      pick(found[hl]!.id);
+                      return;
+                    }
                   }
-                  if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
-                    e.preventDefault();
-                    pick(found[hl]!.id);
-                    return;
+                  if (e.key === "Escape" && menuOpen) {
+                    e.stopPropagation();
+                    setMenu(null);
+                    setMenuBtn(false);
                   }
-                }
-                if (e.key === "Escape" && menuOpen) {
-                  e.stopPropagation();
-                  setMenu(null);
-                  setMenuBtn(false);
-                }
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  go_();
-                }
-              }}
-              aria-label="What should it do"
-              aria-expanded={menuOpen}
-              aria-controls="cs-issues"
-            />
-            <span
-              data-tip={
-                !t
-                  ? "Pick an issue first"
-                  : !ready
-                    ? ((location === "local" ? avail?.local_reason : avail?.reason) ?? "Kai can't code here yet")
-                    : "Start coding"
-              }
-            >
-              <button className="kt-send" onClick={go_} disabled={!t || !ready || start.isPending} aria-label="Start coding">
-                <Ic n="arrow-up" s={15} />
-              </button>
-            </span>
-          </div>
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    go_();
+                  }
+                }}
+                aria-label="What should it do"
+                aria-expanded={menuOpen}
+                aria-controls="cs-issues"
+              />
+            }
+            footerActions={
+              <CodingOptions
+                mode={codingMode}
+                setMode={setCodingMode}
+                local={location === "local"}
+                onOpenChange={setOptionsOpen}
+                focusInput={() => ref.current?.focus()}
+              >
+                {(close) => (
+                  <>
+                    <DesignButton
+                      label="Pick an issue"
+                      variant="ghost"
+                      className="composer-menu-option"
+                      icon={<Ic n="square-check" s={16} />}
+                      onClick={() => {
+                        close();
+                        ask();
+                      }}
+                    />
+                    {approvals.length > 1 && (
+                      <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
+                        <Pick
+                          plain
+                          value={approval}
+                          onChange={(v) => setApproval(v as ApprovalMode)}
+                          options={approvals.map(([v, l]): [string, string] => [v, l])}
+                          label="Approvals"
+                        />
+                      </span>
+                    )}
+                    {avail && (avail.local_available || location === "local" || here) && (
+                      <WhereItCodes
+                        location={location}
+                        setWhere={setWhere}
+                        cloudReady={avail.available}
+                        cloudWhy={avail.reason}
+                        localReady={avail.local_available}
+                        localName={avail.local_runner}
+                        localWhy={avail.local_reason}
+                        folder={hereRunner}
+                        canAdd={Boolean(here && slug && pkey)}
+                        adding={adding}
+                        onAdd={codeHere}
+                        onClose={() => {
+                          close();
+                          ref.current?.focus();
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+              </CodingOptions>
+            }
+            sendActions={
+              <ComposerModel
+                model={model}
+                models={models.map((m): [string, string] => [m, modelName(m)])}
+                onChange={setChosenModel}
+                empty={location === "local" ? "Model managed locally" : !t ? "Pick an issue first" : "No models connected"}
+              />
+            }
+            sendButton={
+              <>
+                <span
+                  data-tip={
+                    !t
+                      ? "Pick an issue first"
+                      : !ready
+                        ? ((location === "local" ? avail?.local_reason : avail?.reason) ?? "Kai can't code here yet")
+                        : "Start coding"
+                  }
+                >
+                  <button className="kt-send" onClick={go_} disabled={!t || !ready || start.isPending} aria-label="Start coding">
+                    <Ic n="arrow-up" s={15} />
+                  </button>
+                </span>
+              </>
+            }
+          />
           <div className="kt-foot cmp-foot">
             {t && (
               <span className="cmp-chip" title={`${t.key} ${t.title}`}>
@@ -1670,37 +1802,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
             )}
             {!t && <span className="faint">Pick an issue, then where and on which model</span>}
             <span className="sp" />
-            {approvals.length > 1 && (
-              <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
-                <Pick
-                  plain
-                  value={approval}
-                  onChange={(v) => setApproval(v as ApprovalMode)}
-                  options={approvals.map(([v, l]): [string, string] => [v, l])}
-                  label="Approvals"
-                />
-              </span>
-            )}
-            {avail && (avail.local_available || location === "local" || here) && (
-              <WhereItCodes
-                location={location}
-                setWhere={setWhere}
-                cloudReady={avail.available}
-                cloudWhy={avail.reason}
-                localReady={avail.local_available}
-                localName={avail.local_runner}
-                localWhy={avail.local_reason}
-                folder={hereRunner}
-                canAdd={Boolean(here && slug && pkey)}
-                adding={adding}
-                onAdd={codeHere}
-              />
-            )}
-            {model && (
-              <span className="cmp-model">
-                <Pick plain value={model} label="Model" onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} groupOf={providerName} />
-              </span>
-            )}
           </div>
           {menuOpen && (
             <>
@@ -1717,7 +1818,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 id="cs-issues"
                 role="listbox"
                 aria-label="Issues"
-                style={{ position: "absolute", bottom: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520, zIndex: 80 }}
+                style={{ position: "absolute", bottom: 0, left: 0, right: 0, maxHeight: "min(320px, 40dvh)", maxWidth: 520, zIndex: 80 }}
               >
                 {found.length ? (
                   found.map((x, i) => (
@@ -2030,6 +2131,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
   const latest = turns.at(-1);
   const [codingMode, setCodingMode] = useState<"plan" | "build">("build");
+  const [optionsOpen, setOptionsOpen] = useState(false);
   // The open session is followed as it happens; its turns land in the query above.
   useCodingSessionStream(scope, cs.session_id, turns.some(isOpenTurn));
   const decide = useDecideCoding(scope, cs.issue_key);
@@ -2162,7 +2264,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   return (
     <div className="conv" ref={convRef}>
       <div className="conv-main">
-        <div className="row cs-head" ref={headRef}>
+        <SessionHeader ref={headRef}>
           <ActionButton className="ibtn ibtn-sm cs-back" onClick={() => openCoding("")} aria-label="Back to sessions" data-tip="Sessions">
             <Ic n="arrow-left" s={15} />
           </ActionButton>
@@ -2271,7 +2373,7 @@ export function Session({ cs }: { cs: CodingSession }) {
               )}
             </div>
           </div>
-        </div>
+        </SessionHeader>
         {shot && (
           <Lightbox
             isOpen
@@ -2291,24 +2393,29 @@ export function Session({ cs }: { cs: CodingSession }) {
           className="dotrix-chat-layout"
           density={S.prefs.density === "compact" ? "compact" : "balanced"}
           composer={
-            <div className="chat-input kt-input">
-              <Selector
-                label="Follow-up mode"
-                value={codingMode}
-                isDisabled={busy}
-                onChange={(value) => setCodingMode(value as "plan" | "build")}
-                options={[
-                  { value: "build", label: "Build" },
-                  { value: "plan", label: "Plan (read only)", isDisabled: latest?.location === "local" },
-                ]}
-              />
+            <div className={`chat-input kt-input dotrix-composer-wrap ${optionsOpen ? "menu-open" : ""}`}>
               <ChatComposer
-                className="dotrix-composer"
+                className={`dotrix-composer compact-composer ${ask ? "has-draft" : ""}`}
                 value={ask}
                 isDisabled={busy}
+                isStopShown={Boolean(latest?.can_stop && (latest.status === "running" || latest.status === "queued"))}
                 onSubmit={send}
+                footerActions={
+                  <CodingOptions
+                    mode={codingMode}
+                    setMode={setCodingMode}
+                    local={latest?.location === "local"}
+                    disabled={busy}
+                    onOpenChange={setOptionsOpen}
+                    focusInput={() => box.current?.focus()}
+                  >
+                    {() => <span className="composer-menu-note">Approvals: {modeName(latest?.approval_mode)}</span>}
+                  </CodingOptions>
+                }
                 input={
-                  <DesignTextarea
+                  <textarea
+                    data-dotrix-control
+                    className="composer-textarea"
                     ref={box}
                     rows={1}
                     placeholder={
@@ -2332,17 +2439,18 @@ export function Session({ cs }: { cs: CodingSession }) {
                     }}
                   />
                 }
+                sendActions={<ComposerModel model={latest?.model} empty={cs.location === "local" ? "Model managed locally" : "Model not recorded"} />}
                 sendButton={
-                  latest?.can_stop && (latest.status === "running" || latest.status === "queued") ? (
-                    <ChatSendButton isStopShown isDisabled={stop.isPending} onStop={() => stop.mutate(latest.id)} aria-label="Stop coding turn" />
-                  ) : (
-                    <ChatSendButton isDisabled={busy || !ask.trim() || follow.isPending} onSend={send} />
-                  )
+                  <>
+                    {latest?.can_stop && (latest.status === "running" || latest.status === "queued") ? (
+                      <ChatSendButton isStopShown isDisabled={stop.isPending} onStop={() => stop.mutate(latest.id)} aria-label="Stop coding turn" />
+                    ) : (
+                      <ChatSendButton isDisabled={busy || !ask.trim() || follow.isPending} onSend={send} />
+                    )}
+                  </>
                 }
               />
               <div className="kt-foot">
-                <span>{sessionModel(latest?.model)}</span>
-                <span>{modeName(latest?.approval_mode)}</span>
                 <span className="sp" />
                 {cs.location !== "local" && cs.sandbox && (
                   <span
@@ -2601,27 +2709,30 @@ export const Pending = ({
   inbox?: boolean;
   back?: [string, () => void];
 }) => (
-  <div className="chat-scroll" style={{ display: "flex" }}>
-    <div className="chat-pending" role={loading ? "status" : undefined}>
-      {loading && <DotsLoader px={44} />}
-      <span>{text}</span>
-      {onRetry && (
-        <ActionButton className="btn btn-secondary btn-sm" onClick={onRetry}>
-          Try again
-        </ActionButton>
-      )}
-      {inbox && (
-        <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
-          Open Inbox
-        </ActionButton>
-      )}
-      {!loading && (
-        <ActionButton className="btn btn-ghost btn-sm" onClick={back[1]}>
-          {back[0]}
-        </ActionButton>
-      )}
+  <>
+    <SessionHeader />
+    <div className="chat-scroll" style={{ display: "flex" }}>
+      <div className="chat-pending" role={loading ? "status" : undefined}>
+        {loading && <DotsLoader px={44} />}
+        <span>{text}</span>
+        {onRetry && (
+          <ActionButton className="btn btn-secondary btn-sm" onClick={onRetry}>
+            Try again
+          </ActionButton>
+        )}
+        {inbox && (
+          <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+            Open Inbox
+          </ActionButton>
+        )}
+        {!loading && (
+          <ActionButton className="btn btn-ghost btn-sm" onClick={back[1]}>
+            {back[0]}
+          </ActionButton>
+        )}
+      </div>
     </div>
-  </div>
+  </>
 );
 
 /** Older links to a coding session or a new one (`?session=`, `?tab=coding`) open in Codes. */
@@ -2641,9 +2752,11 @@ function DemoConversation({ id }: { id: string }) {
   if (!thread) return <Pending text="This sample conversation is no longer available." />;
   return (
     <>
+      <SessionHeader>
+        <b className="trunc">{thread.title}</b>
+      </SessionHeader>
       <div className="chat-scroll">
         <div className="chat-col">
-          <h2>{thread.title}</h2>
           <p className="muted">Sample conversation · Sign in to work with Nova.</p>
           {thread.messages.map((message) => (
             <Message key={message.id} m={message} projectId={thread.project} />
@@ -2683,85 +2796,73 @@ function Conversations({ search }: { search: URLSearchParams }) {
   const hasSel = Boolean(threadId || projectKey || across || search.get("q") || search.get("new"));
   // Column widths, dragged by their edges and kept in this browser.
   const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 240, 220, 480);
-  // The list folds to a rail (like the sidebar) to give the conversation the room; not on phones.
-  const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
-  const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
+  const sidebar = useSessionSidebar("chat", hasSel ? search.toString() : "");
   return (
-    <div className="page flush">
-      <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
-        <aside className={`chat-side ${listMin ? "min" : ""}`}>
-          {listMin ? (
-            <div className="chat-rail">
-              <ActionButton className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
-                <Ic n="sidebar-simple" s={18} />
-              </ActionButton>
-              <ActionButton className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
-                <Ic n="square-pen" s={16} />
+    <SessionSidebarContext value={sidebar}>
+      <div className="page flush">
+        <div
+          className={`chat-grid ${hasSel ? "has-sel" : ""} ${sidebar.listOpen ? "list-open" : ""}`}
+          style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
+        >
+          <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
+            <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={220} max={480} onResize={setListW} />
+            <div style={{ padding: "18px 16px 8px" }} className="row">
+              <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
+              <span className="sp" />
+              <SessionListToggle />
+            </div>
+            <div className="chat-new">
+              <ActionButton className="btn btn-secondary" onClick={() => open("new=1")}>
+                <Ic n="square-pen" s={14} /> New chat
               </ActionButton>
             </div>
-          ) : (
-            <>
-              <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={220} max={480} onResize={setListW} />
-              <div style={{ padding: "18px 16px 8px" }} className="row">
-                <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
-                <span className="sp" />
-                <ActionButton className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">
-                  <Ic n="panel-left-close" s={15} />
-                </ActionButton>
+            <div style={{ padding: "0 14px 8px" }}>
+              <div className="inwrap">
+                <Ic n="search" s={13} />
+                <DesignInput
+                  className="input search-sm"
+                  style={{ width: "100%" }}
+                  placeholder="Find a conversation"
+                  value={S.ui.chatQ}
+                  onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
+                  aria-label="Find"
+                />
               </div>
-              <div className="chat-new">
-                <ActionButton className="btn btn-secondary" onClick={() => open("new=1")}>
-                  <Ic n="square-pen" s={14} /> New chat
-                </ActionButton>
-              </div>
-              <div style={{ padding: "0 14px 8px" }}>
-                <div className="inwrap">
-                  <Ic n="search" s={13} />
-                  <DesignInput
-                    className="input search-sm"
-                    style={{ width: "100%" }}
-                    placeholder="Find a conversation"
-                    value={S.ui.chatQ}
-                    onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
-                    aria-label="Find"
-                  />
+            </div>
+            <nav className="chat-list" aria-label="Conversations" onClick={sidebar.closeList}>
+              {threads.length ? (
+                threads.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />)
+              ) : (
+                <div className="faint" style={{ fontSize: 12, padding: "6px 8px" }}>
+                  {q ? "No conversation matches." : loaded ? "No conversations yet" : "Loading…"}
                 </div>
-              </div>
-              <nav className="chat-list" aria-label="Conversations">
-                {threads.length ? (
-                  threads.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />)
-                ) : (
-                  <div className="faint" style={{ fontSize: 12, padding: "6px 8px" }}>
-                    {q ? "No conversation matches." : loaded ? "No conversations yet" : "Loading…"}
-                  </div>
-                )}
-              </nav>
-            </>
-          )}
-        </aside>
-        <section className="chat-main">
-          {!isLive() && threadId ? (
-            <DemoConversation key={threadId} id={threadId} />
-          ) : threadId ? (
-            thread ? (
-              <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
-            ) : failed ? (
-              <Pending text="The conversation couldn't be loaded." onRetry={retry} />
+              )}
+            </nav>
+          </aside>
+          <section className="chat-main">
+            {!isLive() && threadId ? (
+              <DemoConversation key={threadId} id={threadId} />
+            ) : threadId ? (
+              thread ? (
+                <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
+              ) : failed ? (
+                <Pending text="The conversation couldn't be loaded." onRetry={retry} />
+              ) : (
+                <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} loading={!loaded} />
+              )
             ) : (
-              <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} loading={!loaded} />
-            )
-          ) : (
-            <NewChat
-              key={`${projectKey}-${across}-${search.get("q")}`}
-              projectKey={projectKey}
-              across={across}
-              q={search.get("q") ?? ""}
-              agent0={search.get("agent")}
-              mode0={search.get("mode")}
-            />
-          )}
-        </section>
+              <NewChat
+                key={`${projectKey}-${across}-${search.get("q")}`}
+                projectKey={projectKey}
+                across={across}
+                q={search.get("q") ?? ""}
+                agent0={search.get("agent")}
+                mode0={search.get("mode")}
+              />
+            )}
+          </section>
+        </div>
       </div>
-    </div>
+    </SessionSidebarContext>
   );
 }

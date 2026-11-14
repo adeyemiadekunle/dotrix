@@ -54,7 +54,7 @@ function AgentItem({ n }: { n: Notif }) {
         <div className="trunc muted" style={{ fontSize: 12.5 }}>
           {n.snippet}
         </div>
-        <div className="row faint" style={{ gap: 6, marginTop: 3, fontSize: 11.5 }}>
+        <div className="row faint" style={{ gap: 6, marginTop: 3, fontSize: 12 }}>
           {p && (
             <>
               <span className="pdot" style={css({ "--c": pColor(p), width: 6, height: 6 })} />
@@ -333,7 +333,7 @@ export function Home() {
                         <td>
                           <span className="row">
                             <ProgBar v={pr} cls={p.status === "risk" ? "red" : ""} />
-                            <span className="num faint" style={{ fontSize: 11.5, width: 30 }}>
+                            <span className="num faint" style={{ fontSize: 12, width: 30 }}>
                               {pr}%
                             </span>
                           </span>
@@ -360,7 +360,7 @@ export function Home() {
           <section className="panel">
             <div className="panel-h">
               <h2>Tasks by status</h2>
-              <span className="faint" style={{ fontSize: 11.5 }}>
+              <span className="faint" style={{ fontSize: 12 }}>
                 {all.length} across {activeP.length} projects
               </span>
             </div>
@@ -400,7 +400,7 @@ export function Home() {
             <div className="panel-b" style={{ paddingBottom: 6 }}>
               {ms.length > 0 && (
                 <div style={{ marginBottom: 10 }}>
-                  <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
+                  <div className="row" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
                     Milestones
                     <span className="faint" style={{ fontWeight: 500 }}>
                       {ms.length}
@@ -426,7 +426,7 @@ export function Home() {
               )}
               {dls.map((g) => (
                 <div key={g.lab} style={{ marginBottom: 10 }}>
-                  <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
+                  <div className="row" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
                     {g.lab}
                     <span className="faint" style={{ fontWeight: 500 }}>
                       {g.ts.length}
@@ -443,7 +443,7 @@ export function Home() {
                         </div>
                       ))}
                       {g.ts.length > 4 && (
-                        <div className="faint" style={{ fontSize: 11.5, paddingLeft: 16 }}>
+                        <div className="faint" style={{ fontSize: 12, paddingLeft: 16 }}>
                           +{g.ts.length - 4} more
                         </div>
                       )}
@@ -463,7 +463,7 @@ export function Home() {
               <div className="panel-h">
                 <h2>Workload</h2>
                 <div className="acts">
-                  <span className="faint" style={{ fontSize: 11.5 }}>
+                  <span className="faint" style={{ fontSize: 12 }}>
                     Open tasks per person
                   </span>
                 </div>

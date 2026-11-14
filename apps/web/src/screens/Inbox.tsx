@@ -563,7 +563,7 @@ export function Inbox() {
             )}
           </div>
         </div>
-        <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", justifyContent: "safe center", minHeight: 0, overflowY: "auto" }}>
+        <div className="inbox-prev" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflowY: "auto" }}>
           {shown ? (
             PEOPLE.includes(shown.type) ? (
               <TaskPreview n={shown} onBack={onBack} />
