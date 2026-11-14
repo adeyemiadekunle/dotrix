@@ -108,6 +108,8 @@ class ScriptedSession(LocalSession):
         # Simulate the runtime below the enforced wrapper; its syscall boundary has a separate test.
         if argv[:2] == ["python3", "-c"] and "Landlock" in argv[2]:
             argv = argv[3:]
+        if argv[:2] == ["sh", "-c"] and len(argv) > 6 and argv[4] == "/opt/dotrix/mcp-check.mjs":
+            argv = argv[6:]  # MCP startup wrapper has a separate real-engine regression test
         if isinstance(self.agent, ScriptedOpenCode) and argv[:2] == ["sh", "-c"] and "node -e" in argv[2]:
             return ExecResult(code=0, stdout=self.agent.totals(), stderr="")  # its totals after the turn
         if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv):
@@ -670,20 +672,32 @@ class ShootingSandbox(ScriptedSandbox):
         return ShootingSession(session.root, session.env, self.agent)
 
 
+@pytest.mark.parametrize("coding_engine", ["claude-code", "opencode"])
 async def test_the_agent_s_screenshots_are_kept_and_shown(
-    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script, storage
+    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script, storage, coding_engine
 ) -> None:
     ada, cat, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
+    data = {}
+    script = claude
+    if coding_engine == "opencode":
+        app.state.settings.coding_opencode_model = "openai:gpt-5.5"
+        await _save_key(db_client, ada.headers, "openai", "test-opencode-openai-personal-key")
+        script = ScriptedOpenCode()
+        data = {"agent": coding_engine, "model": "openai:gpt-5.5"}
     jobs = app.state.jobs
-    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, sandbox=ShootingSandbox(claude), storage=storage))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, sandbox=ShootingSandbox(script), storage=storage))
     base = f"{ws}/projects/{kun['id']}"
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"title": "Add a Subtract button"})).json()
-    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
-    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
+    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json=data, headers=ada.headers)).json()
+    script.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
     agent_script.say("Looks right.")
     run = await _approve(db_client, base, run, ada.headers)
     assert run["status"] == "pr_opened", run.get("error")
+    if coding_engine == "opencode":
+        config = json.loads(next(arg.partition("=")[2] for arg in script.argv if arg.startswith("OPENCODE_CONFIG_CONTENT=")))
+        assert config["mcp"]["browser"]["type"] == "local"
+        assert "headless browser" in script.briefs[-1]
     # Images only, whatever the name says, and each once; listed on the run, served to whoever's session it is.
     assert run["screenshots"] == [{"index": 0, "name": "page-subtract.png", "size": len(PNG), "content_type": "image/png"}]
     assert any(e["text"] == "Kept 1 screenshot from the browser" for e in run["events"])

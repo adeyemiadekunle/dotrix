@@ -99,6 +99,19 @@ async def test_chat_resource_reads_stay_inside_the_authorized_snapshot():
     assert "authorized catalog" in await read("other", "references/check.md")
 
 
+@pytest.mark.parametrize("agent", ["claude-code", "codex", "opencode", "fx"])
+@pytest.mark.parametrize("mode", ["plan", "build"])
+def test_cloud_browser_capabilities_match_engine_support_and_mode(agent, mode):
+    from dotrix_backend.core.settings import Settings
+    from dotrix_backend.modules.coding.capabilities import describe
+    from dotrix_backend.modules.coding.models import CodingAgent, CodingLocation
+
+    run = SimpleNamespace(agent=CodingAgent(agent), model="openai:gpt-5.5", location=CodingLocation.CLOUD, work_mode=mode)
+    settings = Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="test-only-secret-for-browser-capabilities",
+                        coding_sandbox="docker")
+    assert next(item for item in describe(run, settings) if item["id"] == "browser")["available"] is (mode != "plan")
+
+
 def test_plan_capabilities_report_unavailable_writes_and_browser():
     from dotrix_backend.core.settings import Settings
     from dotrix_backend.modules.coding.capabilities import describe, instructions

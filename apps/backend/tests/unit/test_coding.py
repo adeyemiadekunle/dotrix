@@ -377,6 +377,64 @@ def test_opencode_s_config_is_ours_and_the_key_is_only_in_its_environment(monkey
     assert "provider" not in config
 
 
+def test_opencode_gets_only_the_platform_browser_and_reports_startup_failure() -> None:
+    from dotrix_backend.modules.coding.tools import BROWSER_MCP, MCP_CHECK
+
+    tool = OpenCode(OPENCODE_PROVIDERS["nvidia"])
+    assert tool.browser
+    argv = tool.command("nvidia:nvidia/nemotron-3-ultra-550b-a55b", browser=True)
+    assert argv[:2] == ["sh", "-c"] and argv[4] == MCP_CHECK
+    assert json.loads(argv[5]) == BROWSER_MCP
+    command = argv[6:]
+    env = dict(pair.split("=", 1) for pair in command[1:command.index("opencode")])
+    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    server = BROWSER_MCP["mcpServers"]["browser"]
+    assert config["mcp"] == {"browser": {"type": "local", "command": [server["command"], *server["args"]]}}
+    assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
+    assert config["permission"]["webfetch"] == "deny"
+    assert "/tmp/playwright" in str(config["mcp"]) and "--ignore-roots" in str(config["mcp"])
+    plain = tool.command("nvidia:nvidia/nemotron-3-ultra-550b-a55b")
+    assert "mcp" not in json.loads(next(arg.split("=", 1)[1] for arg in plain if arg.startswith("OPENCODE_CONFIG_CONTENT=")))
+    warning = tool.parse(json.dumps({"type": "warning", "message": "The browser didn't start"}), Usage())
+    assert warning.failed is None and [(s.kind, s.text) for s in warning.steps] == [("error", "The browser didn't start")]
+
+
+def test_opencode_browser_steps_cover_code_mode_and_direct_tool_calls() -> None:
+    tool, usage = OpenCode(OPENCODE_PROVIDERS["openai"]), Usage()
+    events = [
+        ("execute", {"code": "return await tools.browser.browser_snapshot({})"}, "Used the browser"),
+        ("execute", {"code": "return 1 + 1"}, "Ran a script"),
+        ("browser_browser_navigate", {"url": "http://localhost:8080/"}, "Opened http://localhost:8080/ in the browser"),
+        ("browser_browser_take_screenshot", {}, "Took a screenshot"),
+    ]
+    for name, args, expected in events:
+        result = tool.parse(_opencode_event("tool_use", tool=name, state={"status": "completed", "input": args}), usage)
+        assert [step.text for step in result.steps] == [expected]
+
+
+def test_opencode_reports_actual_nested_browser_calls_and_script_errors() -> None:
+    tool = OpenCode(OPENCODE_PROVIDERS["nvidia"])
+    calls = [{"tool": "browser.browser_navigate", "status": "completed", "input": {"url": "http://localhost:8080"}},
+             {"tool": "browser.browser_click", "status": "completed", "input": {"element": "Verify", "target": "e2"}},
+             {"tool": "browser.browser_take_screenshot", "status": "completed", "input": {"filename": "proof.png"}}]
+    state = {"status": "completed", "input": {"code": "return await verify()"},
+             "metadata": {"metadata": {"toolCalls": calls}}}
+    steps = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage()).steps
+    assert [step.text for step in steps] == ["Opened http://localhost:8080 in the browser", "Clicked Verify", "Took a screenshot"]
+    calls[1]["status"] = "error"
+    state["output"] = "No such element"
+    steps = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage()).steps
+    assert steps[1].kind == "error" and steps[1].text == "The browser: No such element"
+    state["metadata"]["metadata"] = {"error": True, "toolCalls": []}
+    state["output"] = "Unknown browser tool"
+    result = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage())
+    assert result.failed is None and result.steps[0].kind == "error" and "Unknown browser tool" in result.steps[0].text
+    calls[1]["status"] = "completed"
+    state.update(status="error", error="Bridge stopped", metadata={"metadata": {"toolCalls": calls}})
+    result = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage())
+    assert result.steps[-1].kind == "error" and result.steps[-1].text == "The browser script: Bridge stopped"
+
+
 def test_opencode_events_become_steps_and_tokens() -> None:
     tool, usage = OpenCode(OPENCODE_PROVIDERS["anthropic"]), Usage()
     tokens = {"input": 1000, "output": 20, "reasoning": 5, "cache": {"read": 200, "write": 0}}

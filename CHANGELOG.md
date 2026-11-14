@@ -40,6 +40,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Kai can drive the cloud browser with OpenCode too: navigate, inspect, click and take screenshots through the sandbox's browser tools. Browser actions and failures appear in the coding session.
 - A conversation on an NVIDIA model now counts its tokens (they read 0 in a run's usage).
 - Conversation actions respond on the first click when leaving a focused composer; opening steps, building a plan, cancelling a queued message and sharing outcomes keep the dock stable.
 
