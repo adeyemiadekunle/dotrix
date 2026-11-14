@@ -57,6 +57,7 @@ from .runtime_sessions import (
     upgrade_runtime_binding,
 )
 from .runtime_tools import RuntimeRunScope, readable_failures, scoped_project_tools
+from .scripts import SCRIPT_GUIDE, OnCall, script_runtime_tool
 from .storage_backend import SessionFactory
 from .unattended import Unattended
 from .work_modes import ModeContext, lead_tools
@@ -173,7 +174,7 @@ async def _turn(
     secrets: Secrets, embedder: Embedder | None = None, on_event: EventHandler | None = None,
     delegation: DelegationService | None = None, code_tools: list | None = None, code_context: str = "",
     web_tools: list | None = None, effective: tuple[AgentSpec, AgentPolicy, Unattended] | None = None,
-    mode_context: ModeContext | None = None,
+    mode_context: ModeContext | None = None, scripts: bool = False, script_calls: OnCall | None = None,
 ) -> TurnResult:
     """Run (or resume) one turn for an already admitted Nova run.
 
@@ -182,6 +183,10 @@ async def _turn(
     `effective` is the run's contract with its approval mode and standing rules applied
     (the runner's); without it the turn only reads. A bound run resumes only its pinned
     journal, context and scoped delegation; another version's binding fails closed.
+    With `scripts` (the platform's `agent_scripts` setting, read when the run first binds and pinned in its
+    snapshot after that, like its context) Nova also gets `run_script` over its read tools (agents/scripts.py),
+    each call reported to `script_calls` for the run's activity. A resumed turn keeps the choice it was bound
+    with whatever the setting says by then, so its configuration (and its binding's digest) stays the same.
     """
     session_id = f"fx-pilot-{uuid.uuid4().hex}"
     async with sessions() as session:
@@ -242,6 +247,9 @@ async def _turn(
             # Existing bindings without this field keep their original instructions.
             if existing is None and durable and not coding_outcome and spec.can("delegate"):
                 snapshot["specialist_directory"] = _specialist_directory(spec, specs)
+            # Pinned for the run's life; a binding from before scripts (no field) never has them.
+            if existing is None:
+                snapshot["scripts"] = scripts
         if "specialist_directory" in snapshot:
             guide += f"\nBuilt-in specialists (name → delegation handle): {snapshot['specialist_directory']}.\n"
         instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}{work_mode_guide(work_mode.value)}"
@@ -285,6 +293,9 @@ async def _turn(
                        f'<data source="conversation">{evidence}</data>\n\nLatest message:\n{run.message}')
 
     tools = scoped_project_tools(sessions, scope=scope, spec=spec, embedder=embedder, code_tools=code_tools, web_tools=web_tools)
+    if snapshot.get("scripts") is True and (script := script_runtime_tool(tools, on_call=script_calls)) is not None:
+        tools.append(script)
+        instructions += SCRIPT_GUIDE
     if effective is not None:
         from .fx_tools import fx_change_tools
 

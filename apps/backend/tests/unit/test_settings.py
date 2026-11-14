@@ -102,3 +102,10 @@ def test_every_required_setting_is_in_env_example() -> None:
     }
     required = {f"DOTRIX_{name.upper()}" for name, field in Settings.model_fields.items() if field.is_required()}
     assert required <= names, f"missing from .env.example: {sorted(required - names)}"
+
+
+@pytest.mark.parametrize(("env", "on"), [("development", True), ("test", True), ("staging", False), ("production", False)])
+def test_agent_scripts_are_on_locally_and_off_when_deployed_unless_set(env: str, on: bool) -> None:
+    deployed = DEPLOYED if env in ("staging", "production") else {}
+    assert settings(env=env, **deployed).agent_scripts_enabled is on
+    assert settings(env=env, agent_scripts=not on, **deployed).agent_scripts_enabled is (not on)
