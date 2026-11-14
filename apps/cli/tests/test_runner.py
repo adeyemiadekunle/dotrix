@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 
 from dotrix_cli.runner import LocalRunner, Outcome, Tool, parse_line
@@ -97,6 +98,72 @@ def test_claude_code_edits_files_and_runs_no_commands() -> None:
     assert Tool.named("opencode").argv[:2] == ["opencode", "run"]
 
 
+def test_claude_code_with_the_desktop_apps_browser_gets_only_its_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The desktop app hands its runner the Browser pane's MCP server (this computer only, behind a token). Claude
+    Code then gets the file tools and that server's, still no commands and none of the repository's configuration."""
+    from dotrix_cli.runner import browser_tools, describe, write_browser_config
+
+    assert browser_tools({}) is None
+    assert browser_tools({"DOTRIX_BROWSER_MCP_URL": "http://127.0.0.1:4411/mcp"}) is None  # no token
+    assert browser_tools({"DOTRIX_BROWSER_MCP_URL": "https://evil.example/mcp", "DOTRIX_BROWSER_MCP_TOKEN": "t"}) is None
+    pane = browser_tools({"DOTRIX_BROWSER_MCP_URL": "http://127.0.0.1:4411/mcp", "DOTRIX_BROWSER_MCP_TOKEN": "secret"})
+    assert pane == ("http://127.0.0.1:4411/mcp", "secret")
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    config = write_browser_config(*pane)
+    assert config.parent == tmp_path and json.loads(config.read_text()) == {
+        "mcpServers": {"browser": {"type": "http", "url": "http://127.0.0.1:4411/mcp", "headers": {"Authorization": "Bearer secret"}}},
+    }
+    if os.name != "nt":
+        assert config.stat().st_mode & 0o077 == 0  # the token is this person's only
+
+    claude = Tool.named("claude-code", browser=config).argv
+    assert sorted(claude[claude.index("--tools") + 1].split(",")) == ["Edit", "Glob", "Grep", "Read", "Write"]
+    assert claude[claude.index("--mcp-config") + 1] == str(config) and "secret" not in " ".join(claude)
+    assert claude[claude.index("--allowedTools") + 1] == "mcp__browser"
+    assert "--strict-mcp-config" in claude and claude[claude.index("--setting-sources") + 1] == "user"
+    # Safe mode would switch the pane's server off: the repository's skills and commands are left out another way.
+    assert "--safe-mode" not in claude and "--disable-slash-commands" in claude
+    assert "--dangerously-skip-permissions" not in claude
+    # In a sandbox the pane isn't offered: the microVM can't reach this computer's server.
+    assert "--mcp-config" not in Tool.named("claude-code", isolated=True).argv
+
+    assert describe("mcp__browser__browser_navigate", {"url": "http://localhost:3000/x"}) == "Opened http://localhost:3000/x in the browser"
+    assert describe("mcp__browser__browser_click", {"ref": 4}) == "Clicked in the browser"
+    assert describe("mcp__browser__app_start", {}) == "Started the app on this computer"
+
+
+def test_opencode_on_a_turn_nothing_isolates_runs_no_commands() -> None:
+    """Checked against OpenCode 2.3.0 with a scripted model: a shell call is refused even when the person's own
+    config allows it on an agent, and `fetch` inside `execute` is refused with `webfetch`."""
+    from dotrix_cli.runner import opencode_settings
+
+    argv = Tool.named("opencode").argv
+    assert argv[:2] == ["opencode", "run"] and "--standalone" in argv and "--auto" in argv
+    assert argv[argv.index("--agent") + 1] == "build"
+    assert Tool.named("opencode", isolated=True).argv == ["opencode", "run", "--format", "json"]
+
+    mine = json.dumps({"model": "nvidia/x", "permission": {"bash": "allow", "edit": "allow"},
+                       "agent": {"build": {"permission": {"bash": {"*": "allow"}}, "model": "nvidia/y"}},
+                       "mcp": {"mine": {"type": "remote", "url": "https://example.test/mcp"}}})
+    env = opencode_settings({"OPENCODE_CONFIG_CONTENT": mine})
+    assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1" and env["OPENCODE_DISABLE_AUTOUPDATE"] == "1"
+    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    denied = ("bash", "webfetch", "websearch", "question", "subagent", "task", "skill")
+    assert all(config["permission"][tool] == "deny" for tool in denied) and config["permission"]["edit"] == "allow"
+    assert all(config["agent"]["build"]["permission"][tool] == "deny" for tool in denied)
+    assert config["agent"]["build"]["model"] == "nvidia/y" and config["model"] == "nvidia/x"  # the person's own kept
+    assert "browser" not in config["mcp"] and config["mcp"]["mine"]["url"] == "https://example.test/mcp"
+
+    with_pane = json.loads(opencode_settings({}, ("http://127.0.0.1:4411/mcp", "secret"))["OPENCODE_CONFIG_CONTENT"])
+    assert with_pane["mcp"]["browser"] == {"type": "remote", "url": "http://127.0.0.1:4411/mcp", "headers": {"Authorization": "Bearer secret"}}
+    assert json.loads(opencode_settings({"OPENCODE_CONFIG_CONTENT": "not json"})["OPENCODE_CONFIG_CONTENT"])["permission"]["bash"] == "deny"
+
+    from dotrix_cli.runner import describe
+    assert describe("execute", {"code": 'return await tools.browser["browser_snapshot"]({})'}) == "Used the browser"
+    assert describe("execute", {"code": "return 1 + 1"}) == "Ran a script"
+
+
 def test_claude_code_in_a_sandbox_still_ignores_the_repositorys_configuration() -> None:
     claude = Tool.named("claude-code", isolated=True).argv
     assert "--dangerously-skip-permissions" in claude and "--tools" not in claude  # it may run commands in the VM
@@ -185,7 +252,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
                          command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
                          worktrees=tmp_path / "trees", echo=lambda _: None, notify=notified.append)
-    await runner.work({"run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
+    await runner.work({"run_id": "run-000001", "session_id": "session-1", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
                        "issue_key": "KUN-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
                        "tool": "claude-code", "brief": "x"})
     beats = [(at, body) for at, kind, body in calls if kind == "heartbeat"]
@@ -196,7 +263,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     # Where the turn's worktree is: to the platform (the desktop app opens it) and to whatever runs this.
     tree = beats[0][1]["worktree"]
     assert Path(tree).is_relative_to(tmp_path / "trees") and notified == [
-        {"event": "turn", "run_id": "run-000001", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
+        {"event": "turn", "run_id": "run-000001", "session_id": "session-1", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
 
 
 async def test_a_tool_that_fails_before_changing_anything_is_shown_as_failed(tmp_path: Path) -> None:

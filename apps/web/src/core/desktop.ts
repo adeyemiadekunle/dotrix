@@ -2,7 +2,7 @@
 // (the bundled dotrix CLI's `dotrix runner`, one per folder a person picks), the live worktrees of
 // the turns they code, the app's version and What's new, and its updates. In a browser there's none,
 // and every helper here says so; an older app has runners and worktrees but no updates.
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import type { CodingRun } from "@/lib/coding";
 
@@ -97,6 +97,93 @@ interface NotifyBridge {
 /** The app's system notifications, or null in a browser or an app from before them. */
 export function desktopNotify(): NotifyBridge["notify"] | null {
   return (globalThis as { dotrixDesktop?: Partial<NotifyBridge> }).dotrixDesktop?.notify ?? null;
+}
+
+export interface BrowserSettings {
+  /** The pane is offered at all on this computer (Settings → Browser). */
+  enabled: boolean;
+  keepCookies: boolean;
+  /** Kai may use the pane (a tab of its own, pages on this computer only) on a turn coding here. */
+  kaiAllowed: boolean;
+  /** The profile every tab uses: the app refuses a tab with another. */
+  partition: string;
+}
+
+export interface KaiTabRequest {
+  id: number;
+  url: string;
+  /** The coding session whose turn asks: its Browser pane makes the tab. */
+  sessionId: string;
+  issueKey: string;
+}
+
+interface BrowserBridge {
+  browser: {
+    settings(): Promise<BrowserSettings>;
+    setKeepCookies(keep: boolean): Promise<BrowserSettings>;
+    clear(): Promise<void>;
+    /** A page in the pane asked for a new window: open it as a tab. */
+    onOpen(listener: (url: string) => void): () => void;
+    setEnabled(enabled: boolean): Promise<BrowserSettings>;
+    setKaiAllowed(allowed: boolean): Promise<BrowserSettings>;
+    /** Kai, coding on this computer, asks for its tab at an address there: the pane opens and makes it. */
+    onKai(listener: (request: KaiTabRequest) => void): () => void;
+    /** The requests still waiting, for a page or pane that opened after they were sent. */
+    kaiRequests(): Promise<KaiTabRequest[]>;
+    /** Which page the pane made for a request (the app checks it before Kai may use it). */
+    kaiReady(id: number, contentsId: number): Promise<void>;
+  };
+}
+
+/** The app's Browser pane (its profile and settings), or null in a browser or an app from before it. */
+export function desktopBrowser(): BrowserBridge["browser"] | null {
+  return (globalThis as { dotrixDesktop?: Partial<BrowserBridge> }).dotrixDesktop?.browser ?? null;
+}
+
+// The pane's settings, shared by everything that shows them (the pane, its menu, Settings → Browser, Codes' list of panes).
+let browserSettings: BrowserSettings | null = null;
+let browserAsked = false;
+const browserWatchers = new Set<() => void>();
+
+/** What a change to the pane's settings answered: everything showing them follows. */
+export function setBrowserSettings(next: BrowserSettings): void {
+  browserSettings = next;
+  for (const watcher of browserWatchers) watcher();
+}
+
+/** The Browser pane's settings on this computer, kept current (null in a browser, and until the app answers). */
+export function useBrowserSettings(): BrowserSettings | null {
+  return useSyncExternalStore(
+    (watcher) => {
+      browserWatchers.add(watcher);
+      if (!browserAsked) {
+        browserAsked = true;
+        void desktopBrowser()?.settings().then(setBrowserSettings);
+      }
+      return () => browserWatchers.delete(watcher);
+    },
+    () => browserSettings,
+  );
+}
+
+/** A command a person saved to start a folder's app for Kai (Settings → Browser), by folder. */
+export interface DevCommand {
+  command: string;
+  /** The port it listens on; null: the app picks a free one and passes it as PORT. */
+  port: number | null;
+}
+
+interface DevServersBridge {
+  devServers: {
+    list(): Promise<Record<string, DevCommand>>;
+    /** Save a folder's command, or forget it (null). Only one of this computer's runner folders. */
+    save(folder: string, command: DevCommand | null): Promise<Record<string, DevCommand>>;
+  };
+}
+
+/** Starting a folder's app for Kai, or null in a browser or an app from before it. */
+export function desktopDevServers(): DevServersBridge["devServers"] | null {
+  return (globalThis as { dotrixDesktop?: Partial<DevServersBridge> }).dotrixDesktop?.devServers ?? null;
 }
 
 /** The app's version, What's new and updates, or null in a browser or an app from before them. */

@@ -20,7 +20,7 @@ import { PopLayer } from "../overlays/PopLayer";
 import { AppShell, SideNav, SideNavItem, SideNavSection, TopNav, Breadcrumbs, BreadcrumbItem, Button, IconButton, Banner } from "@dotrix/ui/astryx";
 import { AgentsLauncher, AgentsPanel, agentsShown, inCodeTab } from "./AgentsPanel";
 import { desktopApp } from "../core/desktop";
-import { UpdateBar, openWhatsNew, useWhatsNewAfterUpdate } from "./DesktopApp";
+import { UpdateBar, openWhatsNew, useKaiBrowserNotice, useWhatsNewAfterUpdate } from "./DesktopApp";
 import { Notices } from "./Notices";
 
 export const ROUTE_NAMES: Record<string, string> = {
@@ -85,6 +85,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const { route, params } = useRoute();
   const at = `${route}/${JSON.stringify(params)}`;
   useWhatsNewAfterUpdate();
+  useKaiBrowserNotice();
   useEffect(() => {
     if (S.ui.mnav) {
       S.ui.mnav = false;

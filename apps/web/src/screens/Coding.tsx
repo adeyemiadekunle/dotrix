@@ -119,9 +119,12 @@ export function Coding() {
   );
 }
 
+/** The sample session's panes: recorded excerpts only, so no Browser. */
+type DemoView = Exclude<CodingView, "browser">;
+
 function DemoSession({ id }: { id: string }) {
   const session = D().coding.find((item) => item.id === id);
-  const [views, setViews] = useState<CodingView[]>([]);
+  const [views, setViews] = useState<DemoView[]>([]);
   const [opened, setOpened] = useState<string | null>(null);
   const turn = session ? session.turns.length - 1 : 0;
   if (!session) return <Pending text="This sample session is no longer available." back={toList()} />;
@@ -139,7 +142,7 @@ function DemoSession({ id }: { id: string }) {
   const tree = buildTree(entries);
   const title = session.title ?? D().tasks.find((item) => item.id === session.task)?.title ?? "Coding session";
   const active = session.turns[turn];
-  const labels: Record<CodingView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review" };
+  const labels: Record<DemoView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review" };
   return (
     <div style={{ display: "flex", height: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
@@ -150,7 +153,7 @@ function DemoSession({ id }: { id: string }) {
           <b className="trunc cs-demo-title">{title}</b>
           <span className="sp" />
           <div className="cs-views" role="group" aria-label="Session panes">
-            {(Object.keys(labels) as CodingView[]).map((view) => (
+            {(Object.keys(labels) as DemoView[]).map((view) => (
               <button
                 key={view}
                 className={`cs-view ${views.includes(view) ? "on" : ""}`}

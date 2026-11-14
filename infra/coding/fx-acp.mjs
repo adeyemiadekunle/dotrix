@@ -6,9 +6,14 @@
 //   {"type":"tool","id":…,"name":…,"title":…,"input":{…}}   a tool call starts
 //   {"type":"tool_result","id":…,"status":"completed"|"failed","output":…}
 //   {"type":"done","stopReason":…,"usage":{…},"final":…}    the turn ended
+//   {"type":"warning","message":…}                    something the turn goes on without (the browser didn't start)
 //   {"type":"error","message":…}                      it couldn't run (shown to people: never names fx)
 //
-//   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]]  < brief
+//   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]] [--mcp-config JSON]  < brief
+//
+// --mcp-config gives fx MCP servers for the turn, in Claude Code's format ({"mcpServers": {name: {command, args}}}):
+// the platform passes the browser (playwright-mcp) this way, as it does for Claude Code. They go to fx with each
+// session it starts, resumes or loads (ACP's mcpServers), so a resumed conversation has them too.
 //
 // fx's settings are ours, written each turn: one OpenAI-compatible provider (the person's own, its key
 // read from NAME, which the sandbox holds), no auto-upgrade. The session runs in fx's `full-access` mode:
@@ -16,13 +21,15 @@
 // session id is kept under ~/.fx/dotrix so the next turn (with --resume) continues the same conversation;
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import tls from "node:tls";
+
+import { answers, notStarted } from "./mcp-check.mjs";
 
 const args = process.argv.slice(2);
 const arg = (name) => {
@@ -34,6 +41,7 @@ const keyEnv = arg("--key-env");
 const model = arg("--model");
 const dotrixSession = arg("--session");
 const resume = args.includes("--resume");
+const mcpConfig = arg("--mcp-config");
 const fxBin = process.env.DOTRIX_FX_BIN || "fx";
 
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -44,6 +52,50 @@ const fail = (message) => {
 
 if (!baseUrl || !keyEnv || !model) fail("The coding engine wasn't set up for this turn (base URL, key or model missing)");
 if (dotrixSession && !/^[A-Za-z0-9_-]{1,64}$/.test(dotrixSession)) fail("The coding engine wasn't set up for this turn (invalid session)");
+
+/** A command as fx needs it (0.0.16 takes only an absolute path to an executable): found on PATH like a shell would. */
+function executable(command) {
+  const runs = (path) => {
+    try {
+      accessSync(path, constants.X_OK);
+      return statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  };
+  if (isAbsolute(command)) return runs(command) ? command : null;
+  if (command.includes("/")) return null;
+  for (const dir of (process.env.PATH || "").split(delimiter)) if (dir && isAbsolute(dir) && runs(join(dir, command))) return join(dir, command);
+  return null;
+}
+
+/** ACP's stdio MCP servers from Claude Code's format; anything malformed fails the turn rather than going unsaid. */
+function mcpServersFrom(raw) {
+  if (!raw) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    fail("The coding engine wasn't set up for this turn (invalid MCP servers)");
+  }
+  const servers = parsed?.mcpServers;
+  if (!servers || typeof servers !== "object" || Array.isArray(servers)) fail("The coding engine wasn't set up for this turn (invalid MCP servers)");
+  return Object.entries(servers).map(([name, server]) => {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(name) || typeof server?.command !== "string" || !server.command)
+      fail("The coding engine wasn't set up for this turn (invalid MCP server)");
+    const command = executable(server.command);
+    if (!command) fail(`The coding engine's ${name === "browser" ? "browser" : `${name} tool`} isn't installed in this sandbox`);
+    const serverArgs = Array.isArray(server.args) ? server.args.map(String) : [];
+    const env = Object.entries(server.env && typeof server.env === "object" ? server.env : {}).map(([key, value]) => ({ name: key, value: String(value) }));
+    return { name, command, args: serverArgs, env };
+  });
+}
+// Only the servers that start go to fx; one that doesn't is said, and the turn goes on without it.
+const mcpServers = [];
+for (const server of mcpServersFrom(mcpConfig)) {
+  if (await answers(server)) mcpServers.push(server);
+  else emit({ type: "warning", message: notStarted(server.name) });
+}
 
 const brief = readFileSync(0, "utf8");
 if (!brief.trim()) fail("The coding engine got an empty brief");
@@ -236,17 +288,17 @@ async function open() {
     replaying = true;
     try {
       try {
-        await call("session/resume", { sessionId: previous, cwd, mcpServers: [] });
+        await call("session/resume", { sessionId: previous, cwd, mcpServers });
       } catch (error) {
         if (error.code !== -32601) throw error;
-        await call("session/load", { sessionId: previous, cwd, mcpServers: [] });
+        await call("session/load", { sessionId: previous, cwd, mcpServers });
       }
       return { id: previous, resumed: true };
     } finally {
       replaying = false;
     }
   }
-  const created = await call("session/new", { cwd, mcpServers: [] });
+  const created = await call("session/new", { cwd, mcpServers });
   if (!created?.sessionId) throw new Error("session/new returned no session");
   if (sessionFile) writeFileSync(sessionFile, JSON.stringify({ fxSession: created.sessionId }), { mode: 0o600 });
   return { id: created.sessionId, resumed: false };

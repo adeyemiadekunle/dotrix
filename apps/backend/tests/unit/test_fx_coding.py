@@ -315,3 +315,75 @@ def test_behind_an_egress_proxy_fx_calls_a_local_forwarder_and_a_refusal_is_the_
     assert url.startswith("http://127.0.0.1:") and url.endswith("/v1")  # the forwarder, keeping the provider's path
     assert asked == ["api.openai.com:443"]  # the forwarder tunnels to the configured provider only
     assert events[-1] == {"type": "error", "message": "The sandbox doesn't allow this model provider (its egress proxy refused it)"}
+
+
+FAKE_MCP = """
+import json, sys
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"protocolVersion": "2025-06-18", "capabilities": {}}}) + "\\n")
+        sys.stdout.flush()
+"""
+
+
+def test_fx_gets_the_browser_as_claude_code_does() -> None:
+    from dotrix_backend.modules.coding.tools import BROWSER_MCP
+
+    tool = Fx(FX_PROVIDERS["openai"])
+    assert tool.browser and "--mcp-config" not in tool.command("openai:gpt-6.1")
+    with_browser = tool.command("openai:gpt-6.1", browser=True)
+    assert json.loads(with_browser[with_browser.index("--mcp-config") + 1]) == BROWSER_MCP
+    usage = Usage()
+    calls = [("mcp_browser_browser_navigate", {"url": "http://localhost:8080/"}), ("mcp_browser_browser_take_screenshot", {})]
+    steps = [s.text for name, args in calls for s in tool.parse(json.dumps({"type": "tool", "id": name, "name": name, "input": args}), usage).steps]
+    assert steps == ["Opened http://localhost:8080/ in the browser", "Took a screenshot"]
+    warned = tool.parse(json.dumps({"type": "warning", "message": "The browser didn't start"}), usage).steps
+    assert [(s.kind, s.text) for s in warned] == [("error", "The browser didn't start")]
+
+
+def test_the_driver_passes_fx_the_servers_that_start_and_says_which_didnt(fake_fx, tmp_path: Path) -> None:
+    server = tmp_path / "browser-mcp"
+    server.write_text(f"#!{sys.executable}\n{FAKE_MCP}")
+    server.chmod(0o755)
+    config = {"mcpServers": {"browser": {"command": str(server), "args": ["--headless"]},
+                             "broken": {"command": "sh", "args": ["-c", "exit 1"]}}}
+    events = _drive(fake_fx, "Fix the tests", "--mcp-config", json.dumps(config))
+    assert events[0] == {"type": "warning", "message": "The broken tool didn't start"} and events[-1]["type"] == "done"
+    new = next(c for c in _calls(fake_fx) if c["method"] == "session/new")
+    assert new["params"]["mcpServers"] == [{"name": "browser", "command": str(server), "args": ["--headless"], "env": []}]
+
+    # A bare command is found on PATH (fx takes only an absolute path); one that isn't there fails the turn, plainly.
+    found = _drive({**fake_fx, "PATH": f"{tmp_path}:{fake_fx['PATH']}"}, "Fix the tests", "--mcp-config",
+                   json.dumps({"mcpServers": {"browser": {"command": "browser-mcp"}}}))
+    assert found[-1]["type"] == "done"
+    assert next(c for c in reversed(_calls(fake_fx)) if c["method"] == "session/new")["params"]["mcpServers"][0]["command"] == str(server)
+    missing = _drive(fake_fx, "Fix the tests", "--mcp-config", json.dumps({"mcpServers": {"browser": {"command": "no-such-browser"}}}))
+    assert missing == [{"type": "error", "message": "The coding engine's browser isn't installed in this sandbox"}]
+    assert _drive(fake_fx, "Fix the tests", "--mcp-config", "not json")[-1]["type"] == "error"
+
+
+def test_a_resumed_conversation_has_the_browser_too(fake_fx, tmp_path: Path) -> None:
+    server = tmp_path / "browser-mcp"
+    server.write_text(f"#!{sys.executable}\n{FAKE_MCP}")
+    server.chmod(0o755)
+    config = json.dumps({"mcpServers": {"browser": {"command": str(server)}}})
+    _drive(fake_fx, "Fix the tests", "--mcp-config", config)
+    _drive(fake_fx, "And the docs", "--resume", "--mcp-config", config)
+    resumed = next(c for c in reversed(_calls(fake_fx)) if c["method"] == "session/resume")
+    assert [s["name"] for s in resumed["params"]["mcpServers"]] == ["browser"]
+
+
+def test_the_check_codex_runs_first_says_which_servers_didnt_start(tmp_path: Path) -> None:
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    server = tmp_path / "browser-mcp"
+    server.write_text(f"#!{sys.executable}\n{FAKE_MCP}")
+    server.chmod(0o755)
+    config = {"mcpServers": {"browser": {"command": "sh", "args": ["-c", "exit 1"]}, "ok": {"command": str(server)},
+                             "missing": {"command": "/nonexistent/server"}}}
+    done = subprocess.run(["node", str(DRIVER.parent / "mcp-check.mjs"), "--mcp-config", json.dumps(config)],
+                          capture_output=True, text=True, timeout=30)
+    assert done.returncode == 0  # never fails the turn
+    assert [json.loads(line) for line in done.stdout.splitlines()] == [
+        {"type": "warning", "message": "The browser didn't start"}, {"type": "warning", "message": "The missing tool didn't start"}]

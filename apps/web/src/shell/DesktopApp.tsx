@@ -5,8 +5,10 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useEffect, useState } from "react";
 
 import { Markdown } from "@/components/markdown";
-import { desktopApp, useDesktopUpdate, type DesktopRelease } from "../core/desktop";
+import { desktopApp, desktopBrowser, useDesktopUpdate, type DesktopRelease, type KaiTabRequest } from "../core/desktop";
 import { Ic } from "../core/icons";
+import { go } from "../core/nav";
+import { CODING_AGENT } from "../data/seed-dotrix";
 import { openModal } from "../core/more";
 import { toast } from "../ui/toast";
 
@@ -30,6 +32,32 @@ export function useWhatsNewAfterUpdate() {
       }
       if (seen && seen !== version) openWhatsNew();
     });
+  }, []);
+}
+
+/** Whether a coding session is the one open in Codes now. */
+function showing(sessionId: string): boolean {
+  return window.location.pathname.endsWith("/codes") && new URLSearchParams(window.location.search).get("session") === sessionId;
+}
+
+/** Kai, coding on this computer, wants its browser tab while its session isn't open: a notice offers to open it (with its Browser
+ *  pane, which makes the tab). Kai waits about a minute, then goes on without the browser. */
+export function useKaiBrowserNotice() {
+  useEffect(() => {
+    const bridge = desktopBrowser();
+    if (!bridge) return;
+    const told = new Set<number>();
+    const tell = (request: KaiTabRequest) => {
+      if (told.has(request.id) || showing(request.sessionId)) return;
+      told.add(request.id);
+      toast(`${CODING_AGENT.name} wants to check its change on ${request.issueKey} in the browser`, {
+        action: "Open the session",
+        onAction: () => go("codes", {}, { search: `session=${encodeURIComponent(request.sessionId)}&panel=browser` }),
+        ms: 60_000,
+      });
+    };
+    void bridge.kaiRequests().then((waiting) => waiting.forEach(tell));
+    return bridge.onKai(tell);
   }, []);
 }
 

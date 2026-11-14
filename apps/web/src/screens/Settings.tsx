@@ -7,11 +7,21 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
 // GitHub, What members can do, Audit log; and Devices and tokens (the CLI) under Security.
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
 import { allowed, canInvite, type Perm } from "../core/can";
+import {
+  desktopBrowser,
+  desktopDevServers,
+  setBrowserSettings,
+  useBrowserSettings,
+  useDesktopRunners,
+  type BrowserSettings,
+  type DevCommand,
+} from "../core/desktop";
+import { CODING_AGENT } from "../data/seed-dotrix";
 import { organisations, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
@@ -116,6 +126,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
       ["profile", "Profile", "user"],
       ["my-models", "Your models", "key-round"],
       ["my-agents", "Your agents", "bot"],
+      ["browser", "Browser", "globe"],
       ["preferences", "Preferences", "sliders-horizontal"],
     ],
   ],
@@ -2389,6 +2400,186 @@ function LivePermissions() {
   );
 }
 
+/** The desktop app's Browser pane: on or off, Kai's use of it, and what its pages keep. Saved by the app, for this computer. */
+function BrowserSettingsPage() {
+  const bridge = desktopBrowser();
+  const settings = useBrowserSettings();
+  if (!bridge) return <p className="muted">The Browser pane is part of the dotrix desktop app. Open Settings there to change it.</p>;
+  const change = (send: () => Promise<BrowserSettings>) => () =>
+    void send()
+      .then(setBrowserSettings)
+      .catch(() => toast("The setting couldn't be saved"));
+  const on = settings?.enabled ?? false;
+  return (
+    <>
+      <SRow t="Browser pane" d="Open your running app or any web page beside a coding session, in a profile apart from dotrix and your everyday browser.">
+        <Tog on={on} set={(v) => change(() => bridge.setEnabled(v))()} label="Browser pane" disabled={!settings} />
+      </SRow>
+      <SRow
+        t={`Let ${CODING_AGENT.name} use the browser`}
+        d={`On a turn coding on this computer, ${CODING_AGENT.name} can open your running app in a tab of its own to check its change. Its tab opens only pages on this computer.`}
+      >
+        <Tog
+          on={on && (settings?.kaiAllowed ?? false)}
+          set={(v) => change(() => bridge.setKaiAllowed(v))()}
+          label={`Let ${CODING_AGENT.name} use the browser`}
+          disabled={!on}
+        />
+      </SRow>
+      <SRow t="Keep cookies after quitting" d="Off, pages in the pane are signed out each time you quit dotrix.">
+        <Tog
+          on={on && (settings?.keepCookies ?? false)}
+          set={(v) => change(() => bridge.setKeepCookies(v))()}
+          label="Keep cookies after quitting"
+          disabled={!on}
+        />
+      </SRow>
+      <SRow t="Browsing data" d="Cookies, storage and cache saved by pages in the pane.">
+        <ActionButton
+          className="btn btn-sm"
+          onClick={() =>
+            void bridge.clear().then(
+              () => toast("Browsing data cleared"),
+              () => toast("The browsing data couldn't be cleared"),
+            )
+          }
+        >
+          Clear browsing data
+        </ActionButton>
+      </SRow>
+      {on && settings?.kaiAllowed && <AppCommands />}
+    </>
+  );
+}
+
+/** The command that starts each folder's app, for Kai to start in its worktree and open in the pane. */
+function AppCommands() {
+  const bridge = desktopDevServers();
+  const runners = useDesktopRunners();
+  const [saved, setSaved] = useState<Record<string, DevCommand> | null>(null);
+  useEffect(() => {
+    let live = true;
+    void bridge?.list().then((found) => live && setSaved(found));
+    return () => {
+      live = false;
+    };
+  }, [bridge]);
+  if (!bridge) return null;
+  return (
+    <div className="sblock">
+      <h2>Start your app for {CODING_AGENT.name}</h2>
+      <p className="faint" style={{ marginTop: 0 }}>
+        On a turn coding on this computer, {CODING_AGENT.name} can start your app in its own copy of the repository with the command you save here, and open it
+        in the browser to check its change. {CODING_AGENT.name} can't change the command, but the command runs the code {CODING_AGENT.name} just wrote, on this
+        computer and without a sandbox, so it can read and change your files like any program you run: save one only for a project you trust it to run. Its
+        environment carries none of your keys or tokens, and it stops when the turn ends.
+      </p>
+      {!runners.length ? (
+        <p className="muted">No folders code on this computer yet. Pick one when you start a coding session on this computer.</p>
+      ) : (
+        runners.map((runner) => (
+          <AppCommand
+            key={runner.folder}
+            folder={runner.folder}
+            label={runner.projectKey}
+            saved={saved?.[runner.folder] ?? null}
+            loading={saved === null}
+            onSave={async (next) => setSaved(await bridge.save(runner.folder, next))}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function AppCommand({
+  folder,
+  label,
+  saved,
+  loading,
+  onSave,
+}: {
+  folder: string;
+  label: string;
+  saved: DevCommand | null;
+  loading: boolean;
+  onSave: (next: DevCommand | null) => Promise<void>;
+}) {
+  const [command, setCommand] = useState(saved?.command ?? "");
+  const [port, setPort] = useState(saved?.port ? String(saved.port) : "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setCommand(saved?.command ?? "");
+    setPort(saved?.port ? String(saved.port) : "");
+  }, [saved?.command, saved?.port]);
+  const changed = command.trim() !== (saved?.command ?? "") || port.trim() !== (saved?.port ? String(saved.port) : "");
+  const portNumber = port.trim() ? Number(port.trim()) : null;
+  const badPort = portNumber !== null && !(Number.isInteger(portNumber) && portNumber >= 1024 && portNumber <= 65535);
+  const send = async (next: DevCommand | null, done: string) => {
+    setBusy(true);
+    try {
+      await onSave(next);
+      toast(done);
+    } catch (error) {
+      toast(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The command couldn't be saved");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="srow" style={{ alignItems: "flex-start" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="t">{label}</div>
+        <div className="d mono trunc" title={folder}>
+          {folder}
+        </div>
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <DesignInput
+            className="input mono"
+            style={{ flex: "1 1 260px", minWidth: 0 }}
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="pnpm install && pnpm dev"
+            aria-label={`Command that starts ${label}'s app`}
+            disabled={loading || busy}
+            spellCheck={false}
+          />
+          <DesignInput
+            className="input mono"
+            style={{ width: 110 }}
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="Any port"
+            inputMode="numeric"
+            aria-label={`Port ${label}'s app listens on`}
+            aria-invalid={badPort}
+            disabled={loading || busy}
+          />
+        </div>
+        <div className="d" style={{ marginTop: 6 }}>
+          {badPort
+            ? "The port is a number from 1024 to 65535."
+            : "Leave the port empty if the app reads the PORT variable; give it if the app always listens on one port."}
+        </div>
+      </div>
+      <div className="row" style={{ gap: 6, marginTop: 22 }}>
+        <ActionButton
+          className="btn btn-sm"
+          disabled={loading || busy || badPort || !command.trim() || !changed}
+          onClick={() => void send({ command: command.trim(), port: portNumber }, `${label}'s command is saved`)}
+        >
+          Save
+        </ActionButton>
+        {saved && (
+          <ActionButton className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void send(null, `${label}'s command is removed`)}>
+            Remove
+          </ActionButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Body({ sec }: { sec: string }) {
   if (sec === "appearance" || sec === "shortcuts") sec = "preferences";
   const d = D();
@@ -2770,6 +2961,8 @@ function Body({ sec }: { sec: string }) {
       );
     case "password":
       return <Password />;
+    case "browser":
+      return <BrowserSettingsPage />;
     case "sessions":
       if (isLive()) return <LiveSessions />;
       return (
@@ -2856,6 +3049,7 @@ const LEADS: Record<string, string> = {
   "my-agents": "How you like each agent to work, for the conversations you start. Only you see these.",
   password: "Use a long password you don't use anywhere else.",
   sessions: "Browsers and apps signed in to your account, and the tokens that act as you.",
+  browser: "The Browser pane beside a coding session in the desktop app. These settings are this computer's.",
 };
 
 // Old sec ids fold into a page: Agents holds Rules and Automations, Notifications holds the
@@ -2901,7 +3095,9 @@ export function Settings() {
   const sec = personal() && TEAM_ONLY.has(renamed) ? "profile" : renamed;
   const admin = allowed("workspace:manage");
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
-  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k));
+  // The Browser pane is the desktop app's: its page is listed only there.
+  const shown = (k: string) =>
+    (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k)) && (k !== "browser" || Boolean(desktopBrowser()));
   const page = SEC_PAGE[sec] ?? sec;
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
   const lead = sec === "members" ? `${members.length} ${LEADS.members}` : LEADS[page];
