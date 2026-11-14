@@ -49,6 +49,7 @@ The bridge uses `@theme reference inline`: it generates utilities referencing ac
 - Sample and live coding sessions use the same session-header layout. Keep pane actions named and keep the agent identity Kai.
 - Use one composer surface; native input slots inside the composer preserve issue-picking and follow-up behavior without nested field borders.
 - Chat and Codes keep the model control inside the bottom-right footer, before Send/Stop. New sessions allow model selection; existing sessions show the pinned model. Missing models and locally managed models have an explicit disabled state instead of disappearing.
+- Reserve the first editing row in conversation docks too: both focusing and blurring the composer must leave message actions and publication confirmations in place until their click completes.
 - Composers rest as a compact pill and expand into an input row above the controls while focused, holding a draft, or displaying a menu. New-session screens reserve this first editing row so blur does not move project choices during a click.
 - Modes, approvals, runtime and environment choices are inside the plus menu, with the current mode marked on reopening. No mode selector or mode chip sits outside that menu.
 - Chat and Codes hide the session sidebar completely with the panel icon and restore it from the conversation header. The desktop preference persists, and the narrow-screen list overlays the main view without discarding drafts.

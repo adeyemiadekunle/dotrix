@@ -4148,6 +4148,7 @@ textarea.onb2-input {
 }
 
 /* Astryx's input/footer slots form a pill at rest and separate rows while editing. */
+/* Reserve the first editing row below, so focus changes cannot move a clicked conversation action. */
 .compact-composer > div {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto;
@@ -4238,13 +4239,15 @@ textarea.onb2-input {
   flex-direction: column;
 }
 /* Reserve the first editing row on start screens so blur cannot move a choice during its click. */
-.ns-bottom .dotrix-composer-wrap {
+.ns-bottom .dotrix-composer-wrap,
+.dotrix-chat-layout .dotrix-composer-wrap {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   min-height: 112px;
 }
-.ns-bottom .dotrix-composer-wrap:has(.coding-start-composer) {
+.ns-bottom .dotrix-composer-wrap:has(.coding-start-composer),
+.dotrix-chat-layout .kt-input.dotrix-composer-wrap {
   min-height: 144px;
 }
 .composer-options-menu {
