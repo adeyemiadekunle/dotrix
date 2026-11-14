@@ -37,6 +37,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- A conversation on an NVIDIA model now counts its tokens (they read 0 in a run's usage).
 - A screenshot Kai names in the cloud sandbox's browser is kept with the turn's screenshots instead of being saved into the repository and committed.
 - In the desktop app, Kai's browser tab opens in the Browser pane of its own coding session; with another session open, a notice offers to open Kai's.
 - Preserve the Astryx palette in Firefox ESR without CSS scope support through generated root-theme compatibility CSS.
