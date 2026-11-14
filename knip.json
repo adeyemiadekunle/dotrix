@@ -9,7 +9,7 @@
     },
     "apps/site": {
       "entry": ["src/entry-server.tsx"],
-      "project": ["src/**/*.{ts,tsx}"]
+      "project": ["src/**/*.{ts,tsx,css}"]
     },
     "apps/desktop": {
       "entry": ["src/preload.ts"],

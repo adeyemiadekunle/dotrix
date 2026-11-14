@@ -5,7 +5,14 @@ const externalURL = process.env.DOTRIX_DESIGN_URL;
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./.playwright-design-results",
-  testMatch: ["astryx.spec.ts", "ui-review.spec.ts", "work-panel.spec.ts", "code-presentation.spec.ts"],
+  testMatch: [
+    "astryx.spec.ts",
+    "astryx-integration.spec.ts",
+    "ui-review.spec.ts",
+    "work-panel.spec.ts",
+    "code-presentation.spec.ts",
+    "coding-notifications.spec.ts",
+  ],
   workers: 1,
   timeout: 60_000,
   use: { baseURL: externalURL ?? "http://127.0.0.1:3102", trace: "retain-on-failure", screenshot: "only-on-failure" },

@@ -135,6 +135,9 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.3.3(@types/node@26.6.2)(jiti@2.7.0)(yaml@2.9.1))
       '@types/node':
         specifier: ^26.6.2
         version: 26.6.2

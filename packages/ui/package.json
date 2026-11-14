@@ -14,6 +14,7 @@
     "./lib/toast": "./src/lib/toast.tsx"
   },
   "scripts": {
+    "astryx": "node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",
     "typecheck": "tsc --noEmit",
     "theme:build": "node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs theme build src/theme/source.tsx --out src/theme/dotrix.css && node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs theme build src/theme/reduced.ts --out src/theme/dotrix-reduced.css && node scripts/theme-compat.mjs",
     "theme:check": "node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs theme build src/theme/source.tsx --out src/theme/dotrix.css --check && node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs theme build src/theme/reduced.ts --out src/theme/dotrix-reduced.css --check && node scripts/theme-compat.mjs --check"

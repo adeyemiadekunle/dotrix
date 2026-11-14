@@ -690,7 +690,8 @@ export function Drawer() {
           if (!open) closeDrawer();
         }}
         label={sub ? `Subtask: ${sub.title}` : `Task: ${t.title}`}
-        width={u.drawerFull ? "min(960px, 100vw)" : 520}
+        width={u.drawerFull ? "min(960px, 100vw)" : "min(520px, 100vw)"}
+        experimental={{ isFullWidthOnMobile: true }}
         hasScrim={u.drawerFull}
         padding={0}
       >
@@ -703,7 +704,7 @@ export function Drawer() {
             {p.name}
           </button>
           <span className="faint">/</span>
-          <span className="mono faint" style={{ fontSize: 11.5, padding: "0 6px" }}>
+          <span className="mono faint drawer-key" style={{ fontSize: 12, padding: "0 6px" }}>
             {t.key}
           </span>
           <span className="sp" />

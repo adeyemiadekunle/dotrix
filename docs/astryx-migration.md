@@ -1,5 +1,7 @@
 # Astryx migration and component inventory
 
+For the shared CSS layer order, Tailwind token roles, responsive composition rules, and verification commands, see [Astryx and Tailwind integration](astryx-integration.md).
+
 Version: **0.7.15**. Original baseline: `stage` at `c5c3e8110a50b1ccc3c931e4d8f1ce2b0ce5def0`. Integration base: `c17775cab23765f4b771be558a9b05ce741c505b`.
 
 The installed npm package is the API authority. The public website returned HTTP 403 in this environment; website-theme values were checked against the public Meta Astryx source (`56680f6`). This does not claim a pixel-by-pixel website comparison.

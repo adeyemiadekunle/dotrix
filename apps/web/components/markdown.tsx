@@ -56,7 +56,12 @@ export function Markdown({
   }, [children, outline]);
   return (
     <>
-      {outline && headings.length > 1 && <Outline items={headings} label="On this page" density="compact" />}
+      {outline && headings.length > 2 && (
+        <details className="document-outline">
+          <summary>On this page</summary>
+          <Outline items={headings} label="On this page" density="compact" />
+        </details>
+      )}
 
       <div
         ref={content}

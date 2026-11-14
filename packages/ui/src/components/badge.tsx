@@ -15,7 +15,7 @@ const badgeVariants = cva(
         destructive: "red",
         outline: "bg-transparent text-foreground",
         ghost: "border-transparent bg-transparent",
-        link: "border-transparent bg-transparent text-primary underline-offset-4 [a&]:hover:underline",
+        link: "border-transparent bg-transparent text-accent underline-offset-4 [a&]:hover:underline",
         brand: "accent",
         success: "green",
         warning: "amber",
