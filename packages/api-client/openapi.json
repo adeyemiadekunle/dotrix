@@ -23832,6 +23832,7 @@
           "coding"
         ],
         "summary": "Get Cloud Environment",
+        "description": "Read the project's current cloud setup/verification profile and operator-approved image choices.\nSaving or reading a profile does not execute scripts; native local runs ignore the profile.",
         "operationId": "get_cloud_environment",
         "security": [
           {
@@ -23908,6 +23909,7 @@
           "coding"
         ],
         "summary": "Set Cloud Environment",
+        "description": "Save an administrator's cloud environment profile using its current revision.\nStale revisions or unapproved images return 409. New cloud sessions pin the saved profile;\nexisting sessions retain their admitted snapshot. This action never starts coding or runs scripts.",
         "operationId": "set_cloud_environment",
         "security": [
           {

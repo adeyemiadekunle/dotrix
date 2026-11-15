@@ -422,11 +422,16 @@ async def shared_issue_coding_outcomes(
 
 @router.get("/environment")
 async def get_cloud_environment(access: ProjectViewer, settings: SettingsDep) -> EnvironmentRead:
+    """Read the project's current cloud setup/verification profile and operator-approved image choices.
+    Saving or reading a profile does not execute scripts; native local runs ignore the profile."""
     return profile(access.project.coding_environment).model_copy(update={"available_images": settings.coding_environment_images})
 
 
 @router.put("/environment", responses=errors(403, 409, 422))
 async def set_cloud_environment(data: EnvironmentUpdate, access: ProjectNetworkEditor, session: SessionDep, settings: SettingsDep) -> EnvironmentRead:
+    """Save an administrator's cloud environment profile using its current revision.
+    Stale revisions or unapproved images return 409. New cloud sessions pin the saved profile;
+    existing sessions retain their admitted snapshot. This action never starts coding or runs scripts."""
     from sqlalchemy import select
 
     from dotrix_backend.core.errors import Conflict

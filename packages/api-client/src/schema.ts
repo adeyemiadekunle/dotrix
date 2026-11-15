@@ -4807,9 +4807,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Cloud Environment */
+        /**
+         * Get Cloud Environment
+         * @description Read the project's current cloud setup/verification profile and operator-approved image choices.
+         *     Saving or reading a profile does not execute scripts; native local runs ignore the profile.
+         */
         get: operations["get_cloud_environment"];
-        /** Set Cloud Environment */
+        /**
+         * Set Cloud Environment
+         * @description Save an administrator's cloud environment profile using its current revision.
+         *     Stale revisions or unapproved images return 409. New cloud sessions pin the saved profile;
+         *     existing sessions retain their admitted snapshot. This action never starts coding or runs scripts.
+         */
         put: operations["set_cloud_environment"];
         post?: never;
         delete?: never;
