@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Changed
+
+- Applications retain one repository with enforced package boundaries, CI for affected apps, separate desktop/CLI release schedules, and app-specific development configuration.
+
 ### Added
 
 - Kai can use your local Codex or fx installation and drive the desktop Browser pane, with scoped permissions and your own model sign-in.

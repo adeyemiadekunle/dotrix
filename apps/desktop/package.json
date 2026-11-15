@@ -46,7 +46,7 @@
         ]
       },
       {
-        "from": "../../CHANGELOG.md",
+        "from": "CHANGELOG.md",
         "to": "CHANGELOG.md"
       }
     ],

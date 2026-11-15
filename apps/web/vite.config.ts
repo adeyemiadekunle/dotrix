@@ -10,12 +10,16 @@ import { iconSubset } from "./icons-plugin";
 // and the page never handles tokens. Locally Vite's server forwards the API's paths; in
 // production a reverse proxy does the same (serve dist/, send /v1, /api, /health to the API).
 export default defineConfig(({ mode }) => {
-  const env = { ...loadEnv(mode, process.cwd(), ""), ...process.env };
+  const appRoot = fileURLToPath(new URL(".", import.meta.url));
+  const env = { ...loadEnv(mode, appRoot, ""), ...process.env };
   const api = (env.DOTRIX_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
   // xfwd: the API sees the browser's address (it trusts X-Forwarded-For from 127.0.0.1).
   const forward: ProxyOptions = { target: api, xfwd: true };
   const proxy = { "/v1": forward, "/api": forward, "/health": forward };
   return {
+    root: appRoot,
+    envDir: appRoot,
+    envPrefix: "VITE_",
     plugins: [react(), tailwindcss(), iconSubset(fileURLToPath(new URL("./src", import.meta.url)))],
     resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
     server: { port: 3000, strictPort: true, proxy },

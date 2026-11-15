@@ -1,6 +1,6 @@
 name: Release flow
 # Every change goes into stage first; main only takes stage (CLAUDE.md, Branches and releases). And the
-# version is the same in every package, with its CHANGELOG section (scripts/release.py).
+# each release group keeps its own version and changelog (scripts/release.py).
 # Its own workflow so it also runs when a pull request is edited: retargeting one from main to stage
 # re-checks it, without running all of CI again for a changed title or description.
 on:
@@ -22,5 +22,5 @@ jobs:
         run: |
           echo "::error::Open this pull request into stage. main only takes stage (CLAUDE.md, Branches and releases)."
           exit 1
-      - name: One version everywhere, with its changelog section
+      - name: Component versions agree internally and have release notes
         run: python3 scripts/release.py check

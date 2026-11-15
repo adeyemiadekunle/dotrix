@@ -8,12 +8,19 @@ from typing import Annotated, Any, Literal
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-# Repo-root .env, so settings load the same from any working directory
-# (uvicorn at the root, alembic in apps/backend). Real env vars take precedence.
+# Never load a .env from whichever app happens to be the working directory.
+# An explicit backend file is exclusive; the root file is a legacy fallback for
+# existing installations that have not moved their server settings yet.
 REPO_ROOT_ENV = Path(__file__).resolve().parents[5] / ".env"
+BACKEND_ENV = Path(__file__).resolve().parents[3] / ".env"
+
+
+def settings_env_file(backend: Path = BACKEND_ENV, legacy: Path = REPO_ROOT_ENV) -> Path:
+    return backend if backend.is_file() else legacy
+
 
 _CONFIG = SettingsConfigDict(
-    env_prefix="DOTRIX_", env_file=(REPO_ROOT_ENV, ".env"), extra="ignore"
+    env_prefix="DOTRIX_", env_file=settings_env_file(), extra="ignore"
 )
 # Settings where an empty value means something of its own, not "unset" (see Settings._empty_is_unset).
 EMPTY_MEANS_SOMETHING = frozenset({"embedding_model"})

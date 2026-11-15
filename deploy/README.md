@@ -220,8 +220,9 @@ GitHub token ever reaches a sandbox.
    Environment tab, as a secret).
 3. **Publish the coding image** to a registry Docker can pull from. In GitHub: the repository variable
    `CODING_IMAGE` (e.g. `docker.io/acme/dotrix-coding`) and the secrets `DOCKERHUB_USERNAME` and
-   `DOCKERHUB_TOKEN`; `.github/workflows/coding-image.yml` then publishes it for each release (or run it
-   by hand). Set `DOTRIX_CODING_IMAGE` to the version you deploy, e.g. `docker.io/acme/dotrix-coding:0.1.0`.
+   `DOCKERHUB_TOKEN` in the `coding-image` environment. Run `.github/workflows/coding-image.yml`
+   manually and select publication explicitly. Set `DOTRIX_CODING_IMAGE` to the resulting immutable
+   build tag, e.g. `docker.io/acme/dotrix-coding:sha-<12-character-commit>`.
 4. **Size:** `DOTRIX_CODING_CPUS` picks the sandbox size (Docker pairs 2 GiB of memory with each CPU:
    1, 2, 4, 8 or 16 CPUs); `DOTRIX_CODING_MEMORY` and `DOTRIX_CODING_DOCKER_RUNTIME` don't apply.
 
@@ -344,3 +345,13 @@ the selected runtime. Finally run an explicitly authorised coding turn through t
 worker and record its checks, PR and container runtime. Configuration/unit tests alone do not
 verify the host's isolation or establish production readiness. No host runtime installation or
 Docker restart is performed by the application.
+
+### Independent releases
+
+Platform, desktop and standalone CLI versions are cut separately; see
+[monorepo operations](../docs/monorepo.md). A desktop/CLI release does not deploy
+server/browser applications or publish a coding image. Coding-image publication
+is manual and uses a commit SHA tag; configure the registry credentials in the
+`coding-image` GitHub environment, select publish explicitly, then review and set
+that image reference on the worker. Existing deployment variables and secrets are
+not changed automatically.

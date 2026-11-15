@@ -28,6 +28,16 @@ For the first release, follow [the solo-first product direction](docs/product.md
 - Project Chat has host-owned steering and queued follow-ups for DeepAgents and fx. Reauthorize delivery, preserve ordering and retry IDs, keep approvals unchanged, and cancel pending inputs on Stop. Accepted steering is not proof the model acted on it. Wait for continuation only on resumable runtimes, and reconcile restored checkpoint messages before rejecting steering on failure.
 - Reauthorize saved specialist content and dependency provenance when it is read or executed. Keep task status visible with unavailable details redacted. Continuations reserve their specialist session under the scheduler's project lock; a busy automatic continuation remains pending.
 
+## Monorepo boundaries and delivery
+
+Keep the monorepo and independent app entry points. Run `pnpm check:boundaries`: shared Python/JS packages cannot depend on applications; backend and CLI runtime source cannot import one another; browser apps use declared shared-package public exports. Build/release tooling is separate from runtime source.
+
+CI uses `scripts/affected.py` and manifest dependency edges, including engine → CLI → bundled desktop, to select app tests/builds. Unknown changes/history select full work; always-running guards and `checks` prevent docs-only PRs leaving required checks pending. Do not add path filters that bypass those guards. Backend/API changes retain contract/browser checks.
+
+Platform, desktop and CLI now have separate versions and changelogs. `scripts/release.py bump VERSION --component platform|desktop|cli` changes only that group; main releases only new component versions. Desktop retains `vX.Y.Z` tags/update feed, while platform/CLI tags never become GitHub's latest release. The coding image is an explicit independent manual publication. See [monorepo operations](docs/monorepo.md) for workflows, required checks, release compatibility and local updates.
+
+Keep app configuration separate: backend `apps/backend/.env` is exclusive when present, otherwise root `.env` is a legacy fallback; never load arbitrary working-directory dotenv files. Browser app env files contain public/proxy settings only, with Vite rooted to each app. CLI/desktop sign-ins remain in the keychain/runtime, not build resources. No actual repository secrets/settings or deployments are changed by adding these workflows.
+
 The rules that always apply, in short (CLAUDE.md has them in full):
 
 - The engine (`packages/engine`) never imports from `apps/*`, FastAPI, or Typer.
@@ -41,7 +51,7 @@ The rules that always apply, in short (CLAUDE.md has them in full):
 
 Work from the prioritized list at the end of CLAUDE.md (Remaining work, by priority: P0 first).
 
-Before pushing, run what CI runs: `uv run ruff check apps packages`, `uv run pytest`, `pnpm format:check`, `pnpm lint`, `pnpm build && pnpm typecheck`, `pnpm test`, `pnpm knip`; after an API change, `pnpm openapi` and commit `openapi.json` and `src/schema.ts`.
+Before pushing, run what CI runs: `uv run ruff check apps packages`, `uv run pytest`, `pnpm format:check`, `pnpm lint`, `pnpm build && pnpm typecheck`, `pnpm test`, `pnpm knip`, `pnpm check:boundaries` and `pnpm test:tooling`; after an API change, `pnpm openapi` and commit `openapi.json` and `src/schema.ts`.
 
 - Personal workspaces launch first: `DOTRIX_ORGANISATIONS` (off on staging and production unless set) hides organisations everywhere without deleting them; `GET /v1/features` tells clients. A personal workspace never shows Members, Permissions, Teams or invites.
 - After signup, a labelled onboarding stepper first offers Personal or Organisation, with Personal selected by default. Skip keeps Personal. The chosen workspace is saved before the first project, followed by GitHub where needed, personal model setup and readiness. Reuse the personal workspace by default; create a team workspace only on request. Support documents-only projects and deferred model setup, retaining navigation without a key. Resume across GitHub redirects with confirmed workspace/project IDs; keys stay out of URLs and browser storage. Demo and live share list, message, coding-pane and Settings presentation; sample actions remain local or read-only. Use Figtree/Geist Mono typography, including sans-serif page titles.
