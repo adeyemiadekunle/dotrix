@@ -1862,7 +1862,10 @@ else:
     assert runner._fx_profile is None and runner._browser_config is None
     if coding_tool == "fx":
         assert not pointer.exists()  # Unsafe native runtime never starts.
-        assert "requires Linux Bubblewrap" in ready["error"] or "Could not start isolated" in ready["error"]
+        # This legacy fixture has neither the supported runtime nor a matching
+        # API-key profile. Hosts with namespaces reach profile validation first.
+        assert any(reason in ready["error"] for reason in (
+            "requires Linux Bubblewrap", "Could not start isolated", "Couldn't prepare the local model profile"))
         assert (home / ".fx/settings.json").read_text() == original
 
 
