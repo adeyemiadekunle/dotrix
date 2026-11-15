@@ -124,8 +124,7 @@ def make_settings(database_url: str = UNUSED_DATABASE_URL, **overrides: Any) -> 
         # Not offered unless a test sets it up (a developer's .env may have it).
         github_client_id=None,
         github_client_secret=None,
-        # No real web searches (a developer's .env may have a Tavily key).
-        tavily_api_key=None,
+        # No real web searches (a developer's .env may have a SearXNG key).
         **overrides,
     )
 

@@ -74,6 +74,9 @@ import {
   tokenCreated,
   tokenRevoked,
   tokens,
+  cloudEnvironment,
+  cloudEnvironmentSaved,
+  type CloudEnvironment,
   sandboxNetwork,
   sandboxNetworkSaved,
   unlinkGitHub,
@@ -116,7 +119,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["agents", "Agents", "bot"],
       ["github", "GitHub", "github"],
-      ["sandbox", "Network", "shield-check"],
+      ["sandbox", "Environments & network", "shield-check"],
       ["audit", "Audit log", "list-checks"],
     ],
     true,
@@ -1761,6 +1764,111 @@ const DEMO_PRESETS: Record<string, { label: string; hosts: string[] }> = {
 
 /** Owners and admins choose the hosts Kai's sandboxes may reach besides the model API: for every project,
  *  and on top of that for one. Each is somewhere an agent could send data, so it stays a short list. */
+function CloudEnvironmentSettings({ projectId }: { projectId: string }) {
+  const loaded = useApi(() => cloudEnvironment(projectId), [projectId]);
+  const [draft, setDraft] = useState<CloudEnvironment | null>(null);
+  const [busy, setBusy] = useState(false);
+  const data = draft ?? loaded.data;
+  if (loaded.error) return <div className="alert danger">{loaded.error}</div>;
+  if (!data) return <div className="faint">Loading cloud environment…</div>;
+  const change = (patch: Partial<CloudEnvironment>) => setDraft({ ...data, ...patch });
+  const save = async () => {
+    setBusy(true);
+    try {
+      await cloudEnvironmentSaved(projectId, {
+        revision: data.revision,
+        enabled: data.enabled,
+        name: data.name,
+        image: data.image,
+        setup_script: data.setup_script,
+        verify_script: data.verify_script,
+        timeout_seconds: data.timeout_seconds,
+      });
+      setDraft(null);
+      loaded.reload();
+      toast("Cloud environment saved");
+    } catch (error) {
+      toast(errText(error), { kind: "err", ms: 6000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="sblock">
+      <h2>Cloud environment</h2>
+      <p className="faint">
+        Use an operator-approved coding image and the network policy below. Saving does not run scripts. New cloud sessions pin this revision before approval;
+        local sessions keep their own setup. Keep secrets out of these fields. Environment secrets are not supported here yet.
+      </p>
+      <SRow t="Use this environment" d={`Revision ${data.revision}`}>
+        <Tog on={data.enabled} set={(enabled) => change({ enabled })} label="Use cloud environment" />
+      </SRow>
+      <SRow t="Name">
+        <DesignInput value={data.name} maxLength={100} onChange={(e) => change({ name: e.target.value })} aria-label="Environment name" />
+      </SRow>
+      <SRow t="Coding image" d="Custom images must be approved by the server operator and pinned by digest. They run on Docker only.">
+        <select
+          style={{ width: 240, maxWidth: "100%" }}
+          title={data.image ?? "Platform coding image"}
+          className="select"
+          aria-label="Environment coding image"
+          value={data.image ?? ""}
+          onChange={(e) => change({ image: e.target.value || null })}
+        >
+          <option value="">Platform coding image</option>
+          {data.image && !(data.available_images ?? []).includes(data.image) && <option value={data.image}>No longer approved: {data.image}</option>}
+          {(data.available_images ?? []).map((image) => (
+            <option key={image} value={image}>
+              {image}
+            </option>
+          ))}
+        </select>
+      </SRow>
+      <div style={{ marginTop: 16 }}>
+        <label htmlFor={`environment-setup-${projectId}`}>Setup script</label>
+        <p className="faint">Runs in a fresh sandbox before Kai. Use frozen dependency installs; repository file changes are refused.</p>
+        <DesignTextarea
+          id={`environment-setup-${projectId}`}
+          style={{ width: "100%" }}
+          className="textarea mono"
+          rows={6}
+          value={data.setup_script}
+          onChange={(e) => change({ setup_script: e.target.value })}
+          maxLength={16000}
+          aria-label="Environment setup script"
+        />
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <label htmlFor={`environment-verify-${projectId}`}>Verification command</label>
+        <p className="faint">Must pass before changes can be accepted. Runs with the repository read-only; write test artifacts to $TMPDIR.</p>
+        <DesignTextarea
+          id={`environment-verify-${projectId}`}
+          style={{ width: "100%" }}
+          className="textarea mono"
+          rows={4}
+          value={data.verify_script}
+          onChange={(e) => change({ verify_script: e.target.value })}
+          maxLength={16000}
+          aria-label="Environment verification command"
+        />
+      </div>
+      <SRow t="Time limit per script" d="10–900 seconds">
+        <DesignInput
+          type="number"
+          min={10}
+          max={900}
+          value={data.timeout_seconds}
+          onChange={(e) => change({ timeout_seconds: Number(e.target.value) })}
+          aria-label="Environment script time limit"
+        />
+      </SRow>
+      <ActionButton className="btn btn-primary btn-sm" disabled={!draft || busy} onClick={save}>
+        Save environment
+      </ActionButton>
+    </div>
+  );
+}
+
 function SandboxNetworkSettings() {
   const { items: projects } = useProjects();
   const [scope, setScope] = useState("");
@@ -1819,6 +1927,7 @@ function SandboxNetworkSettings() {
           </select>
         </SRow>
       </div>
+      {scope && isLive() && <CloudEnvironmentSettings key={scope} projectId={scope} />}
       <div className="sblock">
         <h2>Package registries</h2>
         {Object.entries(available).map(([key, preset]) => (

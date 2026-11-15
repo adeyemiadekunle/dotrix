@@ -87,7 +87,7 @@ Contributor rules and the detailed engineering queue: [CLAUDE.md](CLAUDE.md).
   - A page goes stale when the code it cites changes; "Refresh stale pages" updates it.
   - Dependencies come from manifests and lockfiles, checked against OSV for known
     vulnerabilities.
-- **Research** on the web (Tavily): every claim is checked against the page it cites.
+- **Research** on the web (SearXNG): every claim is checked against the page it cites.
 - **Notifications:** approvals waiting, decisions, mentions, assignments, findings, changes to
   issues you watch, runs stopped at a limit, and stale wiki pages. They arrive in the Inbox, by
   email as they happen, or as a daily digest.
@@ -197,7 +197,8 @@ Then sign up, open Account → Your models and connect your own provider key: ag
   - The Postgres and storage passwords.
 - **Optional:**
   - `DOTRIX_EMBEDDING_MODEL`: search by meaning; without it, search uses keywords only.
-  - `DOTRIX_TAVILY_API_KEY`: web research through Tavily.
+  - `SEARXNG_SECRET`: random server secret for the included SearXNG Docker service.
+  - `DOTRIX_SEARXNG_URL`: native development uses `http://127.0.0.1:8081`; Docker configures its internal address automatically.
   - `DOTRIX_SENDLY_API_KEY`: real email delivery.
   - The GitHub sign-in and GitHub App settings: sign-in with GitHub, connected repos, and
     coding.
@@ -306,3 +307,5 @@ pnpm knip                                          # unused files, exports and d
 pnpm --filter @dotrix/web e2e                      # browser tests on a rule-based model
 python scripts/release.py check                    # one version everywhere, with its changelog section
 ```
+
+Cloud/local environment guidance and SearXNG setup: [coding environments](docs/cloud-environments.md).

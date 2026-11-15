@@ -4800,6 +4800,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cloud Environment */
+        get: operations["get_cloud_environment"];
+        /** Set Cloud Environment */
+        put: operations["set_cloud_environment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/coding/sessions": {
         parameters: {
             query?: never;
@@ -7158,6 +7176,8 @@ export interface components {
         };
         /** CodingRunRead */
         CodingRunRead: {
+            /** Environment Image Id */
+            environment_image_id?: string | null;
             /** Capabilities */
             capabilities?: components["schemas"]["CodingCapabilityRead"][];
             /** Skills */
@@ -8035,6 +8055,78 @@ export interface components {
             token: string;
             /** Display Name */
             display_name: string;
+        };
+        /** EnvironmentRead */
+        EnvironmentRead: {
+            /** Revision */
+            revision: number;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Name
+             * @default Project environment
+             */
+            name: string;
+            /** Image */
+            image?: string | null;
+            /**
+             * Setup Script
+             * @default
+             */
+            setup_script: string;
+            /**
+             * Verify Script
+             * @default
+             */
+            verify_script: string;
+            /**
+             * Timeout Seconds
+             * @default 300
+             */
+            timeout_seconds: number;
+            /**
+             * Image Policy
+             * @default platform
+             * @enum {string}
+             */
+            image_policy: "platform" | "approved";
+            /** Available Images */
+            available_images?: string[];
+        };
+        /** EnvironmentUpdate */
+        EnvironmentUpdate: {
+            /** Revision */
+            revision: number;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Name
+             * @default Project environment
+             */
+            name: string;
+            /** Image */
+            image?: string | null;
+            /**
+             * Setup Script
+             * @default
+             */
+            setup_script: string;
+            /**
+             * Verify Script
+             * @default
+             */
+            verify_script: string;
+            /**
+             * Timeout Seconds
+             * @default 300
+             */
+            timeout_seconds: number;
         };
         /** EpicProgress */
         EpicProgress: {
@@ -11467,7 +11559,7 @@ export interface components {
             fetches: number;
             /**
              * Credits
-             * @description Tavily credits it used
+             * @description Historical search credits (retained for older runs)
              */
             credits: number;
             /**
@@ -27102,6 +27194,128 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_cloud_environment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_cloud_environment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvironmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
             422: {
                 headers: {
                     [name: string]: unknown;

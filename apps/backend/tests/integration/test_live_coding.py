@@ -1,8 +1,9 @@
 """Live coding on real models: one of Kai's turns on each engine (Claude Code, Codex, OpenCode, fx) and
-provider (Anthropic, OpenAI), in the Docker sandbox through its egress proxy, from the issue to the PR.
-Each runs only when its provider's key is given (DOTRIX_LIVE_ANTHROPIC_API_KEY, DOTRIX_LIVE_OPENAI_API_KEY)
+provider (Anthropic, OpenAI, NVIDIA), in the Docker sandbox through its egress proxy, from the issue to the PR.
+Each runs only when its provider's key is given (DOTRIX_LIVE_ANTHROPIC_API_KEY, DOTRIX_LIVE_OPENAI_API_KEY, DOTRIX_LIVE_NVIDIA_API_KEY)
 and the coding image is built (docker build -t dotrix-coding:latest infra/coding); each makes paid calls."""
 import dataclasses
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -22,7 +23,8 @@ from dotrix_backend.modules.coding.runner import CodingWorker
 from dotrix_backend.modules.coding.sandbox import DockerSandbox
 
 IMAGE = "dotrix-coding:latest"
-KEYS = {"anthropic": "DOTRIX_LIVE_ANTHROPIC_API_KEY", "openai": "DOTRIX_LIVE_OPENAI_API_KEY"}
+KEYS = {"anthropic": "DOTRIX_LIVE_ANTHROPIC_API_KEY", "openai": "DOTRIX_LIVE_OPENAI_API_KEY",
+        "nvidia": "DOTRIX_LIVE_NVIDIA_API_KEY"}
 ENGINES = [
     ("claude-code", "anthropic:claude-haiku-5-5"),
     ("codex", "openai:gpt-5.5"),
@@ -30,6 +32,8 @@ ENGINES = [
     ("opencode", "openai:gpt-5.5"),
     ("fx", "anthropic:claude-haiku-5-5"),
     ("fx", "openai:gpt-5.5"),
+    ("opencode", "nvidia:nvidia/nemotron-3-ultra-550b-a55b"),
+    ("fx", "nvidia:nvidia/nemotron-3-ultra-550b-a55b"),
 ]
 
 
@@ -78,7 +82,9 @@ async def test_live_kai_turn_in_docker_opens_a_pr(
     assert (run["agent"], run["model"]) == (agent, model)
     assert "src/payments.py" in {f["path"] for f in run["files_changed"]}, run["files_changed"]
     assert "def refund(" in _git(origin, "show", f"{run['branch']}:src/payments.py")
-    assert run["input_tokens"] > 0 and run["cost_usd"], run  # every engine shows a cost (Codex and fx priced from tokens)
+    assert run["input_tokens"] > 0, run
+    if provider != "nvidia":
+        assert run["cost_usd"], run  # NVIDIA billing is not established by engine estimates.
     print(f"LIVE {agent}/{model}: {run['summary']!r} tokens={run['input_tokens']}+{run['output_tokens']} "
           f"cost={run['cost_usd']} steps={steps[:8]}")
 
@@ -200,3 +206,65 @@ async def test_live_kai_loads_a_pinned_skill_resource(
     run = await _approve(db_client, base, asked, ada.headers)
     assert run["status"] == "pr_opened", (run["status"], run["error"], run["summary"])
     assert marker in _git(origin, "show", f"{run['branch']}:src/payments.py")
+
+
+@pytest.mark.parametrize(("agent", "model"), [case for case in _cases() if case.values[1].startswith("nvidia:")])
+async def test_live_nvidia_bug_and_browser(
+    db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
+) -> None:
+    """Real provider and gVisor containers; disposable git and simulated GitHub/reviewer only."""
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app
+    settings = app.state.settings
+    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
+    settings.coding_docker_runtime = "runsc"
+    settings.coding_timeout_minutes = 5
+    worker = app.state.jobs.ctx.coding
+    app.state.jobs.ctx = dataclasses.replace(app.state.jobs.ctx,
+        coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+    await _save_key(db_client, ada.headers, "nvidia", os.environ[KEYS["nvidia"]])
+    # The test starts after setup; no external repository or GitHub write is possible.
+    (origin / ".gitignore").write_text("__pycache__/\n")
+    (origin / "add.py").write_text("def add(a, b):\n    return a - b\n")
+    (origin / "test_add.py").write_text("import unittest\nfrom add import add\nclass TestAdd(unittest.TestCase):\n"
+        "    def test_sum(self):\n        self.assertEqual(add(2, 3), 5)\n        self.assertEqual(add(-2, 3), 1)\n"
+        "        self.assertEqual(add(0, 0), 0)\n")
+    (origin / "index.html").write_text('<button onclick="this.textContent=\'Clicked successfully\'">Click me</button>')
+    _git(origin, "add", "-A")
+    _git(origin, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Bug fixture")
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
+        "type": "task", "title": "Fix add and verify the browser",
+        "description": "Fix add.py so add returns a+b. Change only add.py. Run python3 -m unittest -v test_add "
+        "and verify all assertions pass. Then start python3 -m http.server 8080 in the background, "
+        "navigate with browser tools to http://localhost:8080/index.html, read browser_snapshot, "
+        "click Click me using its target, read a fresh snapshot and verify Clicked successfully. "
+        "Save a screenshot in /tmp/playwright and stop the web server. Report tests and browser evidence.",
+    })).json()
+    asked = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
+        json={"agent": agent, "model": model})
+    assert asked.status_code == 201, asked.text
+    assert asked.json()["status"] == "awaiting_approval"
+    agent_script.say("Disposable live validation review completed.")
+    decision = await db_client.post(f"{base}/coding/runs/{asked.json()['id']}/decision",
+        json={"decision": "approve"}, headers=ada.headers)
+    assert decision.status_code == 200, decision.text
+    run = (await db_client.get(f"{base}/coding/runs/{asked.json()['id']}", headers=ada.headers)).json()
+    print("NVIDIA_LIVE_RESULT " + json.dumps({key: run.get(key) for key in (
+        "agent", "model", "status", "error", "summary", "input_tokens", "output_tokens", "cost_usd",
+        "events", "files_changed", "screenshots")}), flush=True)
+    assert run["status"] == "changes_ready", (run["status"], run.get("error"))
+    assert not github.pulls, "Manual changes must wait for human acceptance"
+    assert {f["path"] for f in run["files_changed"]} == {"add.py"}
+    diff = (await db_client.get(f"{base}/coding/runs/{run['id']}/diff", headers=ada.headers)).json()["diff"]
+    assert "+    return a + b" in diff or "+    return a+b" in diff
+    assert any("test_sum" in e["text"] and "OK" in e["text"] for e in run["events"])
+    assert any("Clicked successfully" in e["text"] for e in run["events"])
+    assert run["input_tokens"] > 0
+    assert run["screenshots"], "The real model must capture the browser"
+    shot = await db_client.get(f"{base}/coding/runs/{run['id']}/screenshots/0", headers=ada.headers)
+    assert shot.status_code == 200 and shot.content.startswith(b"\x89PNG")
+    # Discard instead of publishing even to the fake GitHub transport.
+    rejected = await db_client.post(f"{base}/coding/runs/{run['id']}/decision",
+        json={"decision": "reject"}, headers=ada.headers)
+    assert rejected.status_code == 200, rejected.text

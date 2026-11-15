@@ -1,5 +1,5 @@
 """Research on the platform (docs/architecture.md): a run's sources saved with stable
-ids, pages cached per workspace, web limits and Tavily credits, and report claims checked
+ids, pages cached per workspace, web limits and historical search credits, and report claims checked
 against what was read."""
 from collections.abc import Iterator
 
@@ -23,8 +23,7 @@ PAGE = f"<html><head><title>VAT rates</title></head><body><h1>VAT rates</h1><p>{
 HITS = [SearchHit(GOV, "VAT rates", "The standard rate is 20%"), SearchHit(BLOG, "VAT tips", "Rates may change")]
 
 
-class Tavily(FakeSearch):
-    name = "tavily"  # so credits are counted
+
 
 
 @pytest.fixture
@@ -43,7 +42,7 @@ def web(db_client: AsyncClient, site: list[str]) -> Iterator[WebResearch]:
         return httpx.Response(200, content=PAGE.encode(), headers={"content-type": "text/html"})
 
     research = WebResearch(
-        search=Tavily(default=HITS),
+        search=FakeSearch(default=HITS),
         fetcher_factory=lambda: PageFetcher(
             resolver=public, transport=httpx.MockTransport(serve), min_interval=0, respect_robots=False
         ),
@@ -131,7 +130,7 @@ async def test_a_research_run_records_its_sources_and_checks_its_claims(
         {"status": "unsupported", "quotes": [{"source": "S1", "found": None}]},
         {"status": "weak", "quotes": [{"source": "S2", "found": "snippet"}]},
     ]
-    assert run["breakdown"]["web"] == {"searches": 1, "fetches": 1, "credits": 1, "flagged": []}
+    assert run["breakdown"]["web"] == {"searches": 1, "fetches": 1, "credits": 0, "flagged": []}
 
     # The conversation is private to whoever asked: a colleague doesn't open it.
     assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=cat.headers)).status_code == 404
@@ -182,24 +181,6 @@ async def test_pages_are_cached_per_workspace(
     assert site == [GOV, GOV]  # never served from another workspace's cache
     owners = set(await db_session.scalars(select(WebPage.workspace_id)))
     assert {str(w) for w in owners} == {team["id"], other["id"]}
-
-
-async def test_tavily_credits_are_capped_per_workspace_per_day(
-    world, web: WebResearch, db_client: AsyncClient, agent_script
-) -> None:
-    ada, _, _, base = await world()
-    web.daily_credits = 1
-    agent_script.say(_delegate("research", "UK VAT"), tool_call("web_search", query="uk vat rate"),
-                     "Found it.", "Nova sums up.")
-    first = await _research(db_client, base, ada.headers)
-    assert first["breakdown"]["web"]["credits"] == 1
-
-    model = agent_script.say(_delegate("research", "UK VAT"), tool_call("web_search", query="uk vat rate"),
-                           "Out of searches.", "Nova sums up.")
-    second = await _research(db_client, base, ada.headers)
-    assert second["breakdown"]["web"] == {"searches": 0, "fetches": 0, "credits": 0, "flagged": []}
-    seen = [str(m.content) for call in model.received for m in call]
-    assert any("allowance is used up" in content for content in seen)
 
 
 async def test_searches_per_run_are_limited(world, web: WebResearch, db_client: AsyncClient, agent_script) -> None:

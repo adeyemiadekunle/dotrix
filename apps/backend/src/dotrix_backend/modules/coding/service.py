@@ -484,6 +484,21 @@ class CodingService:
             # The mode this turn was asked in, as far as the workspace and the person allow.
             approval_mode=effective(approval, member).value,
         )
+        if location is CodingLocation.CLOUD:
+            from .environments import profile, require_approved_image
+
+            await self.session.refresh(project, ["coding_environment"])
+            environment = carry.environment_snapshot if carry is not None else project.coding_environment
+            if environment and profile(environment).enabled:
+                run.environment_snapshot = dict(environment)
+                configured = profile(environment)
+                require_approved_image(configured.image, self.settings.coding_environment_images)
+                run.environment_image_id = carry.environment_image_id if carry is not None else None
+                run.brief += (f"\n\n## Cloud environment: {configured.name} (revision {configured.revision})\n"
+                    f"Image: {configured.image or self.settings.coding_image}\n"
+                    "Administrator setup runs before Kai; verification must pass before changes can be published.\n"
+                    + fence("Setup script (administrator configuration)", configured.setup_script)
+                    + fence("Verification script (administrator configuration)", configured.verify_script))
         if location is CodingLocation.LOCAL:
             run.brief += "\n\n## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
             run.brief += "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])
@@ -884,6 +899,7 @@ class CodingService:
         capabilities = describe(run, self.settings)
         usage = can(access.member, Permission.VIEW_USAGE)
         return CodingRunRead(
+            environment_image_id=run.environment_image_id,
             id=run.id, project_id=run.project_id, issue_key=run.issue_key, agent=run.agent, model=run.model,
             session_id=run.session_id, turn=run.turn, origin=run.origin, pr_state=run.pr_state,
             status=run.status, brief=run.brief, note=run.note, repo_full_name=run.repo_full_name,
