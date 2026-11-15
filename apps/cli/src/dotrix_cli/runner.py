@@ -753,7 +753,8 @@ class LocalRunner:
         self._coding_in = tree
         await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), "FETCH_HEAD")
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
-        pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}"})
+        boundary = " (custom command, not isolated)" if self.command and self.sbx is None else ""
+        pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}{boundary}"})
         self.notify({"event": "turn", "run_id": run["run_id"], "session_id": run.get("session_id"),
                      "issue_key": run["issue_key"], "turn": run["turn"],
                      "worktree": str(tree)})
