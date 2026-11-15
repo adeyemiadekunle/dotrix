@@ -3,11 +3,22 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "env": ["NODE_ENV", "VITE_APP_URL", "VITE_DOWNLOADS_URL", "DOTRIX_API_URL", "DOTRIX_WEB_URL", "DOTRIX_WEB_OUT_DIR"]
     },
-    "dev": { "cache": false, "persistent": true },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["VITE_*", "DOTRIX_API_URL", "DOTRIX_WEB_URL"]
+    },
     "lint": {},
-    "typecheck": { "dependsOn": ["^build"] },
-    "test": { "dependsOn": ["^build"] }
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "env": ["CI", "NODE_ENV"]
+    }
   }
 }

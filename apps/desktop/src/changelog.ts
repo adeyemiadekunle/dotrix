@@ -39,9 +39,9 @@ export function parseChangelog(text: string, { unreleased = false } = {}): Relea
   return releases.filter((r) => r.sections.length);
 }
 
-/** The bundled CHANGELOG.md: in a release, beside the app's resources; developing, the repository's. */
+/** The bundled CHANGELOG.md: in a release, beside the app's resources; developing, the desktop component's. */
 export function readChangelog(resources: string | undefined, packaged: boolean, limit = 10): Release[] {
-  const candidates = [resources && path.join(resources, "CHANGELOG.md"), path.join(__dirname, "..", "..", "..", "CHANGELOG.md")];
+  const candidates = [resources && path.join(resources, "CHANGELOG.md"), path.join(__dirname, "..", "CHANGELOG.md")];
   for (const file of candidates) {
     if (!file) continue;
     try {

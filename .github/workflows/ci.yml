@@ -7,8 +7,59 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      components: ${{ steps.scope.outputs.components }}
+      python: ${{ steps.scope.outputs.python }}
+      python_targets: ${{ steps.scope.outputs.python_targets }}
+      node: ${{ steps.scope.outputs.node }}
+      node_filters: ${{ steps.scope.outputs.node_filters }}
+      cli: ${{ steps.scope.outputs.cli }}
+      e2e: ${{ steps.scope.outputs.e2e }}
+      contract: ${{ steps.scope.outputs.contract }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/affected.py --github-output "$GITHUB_OUTPUT" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  guards:
+    # Always emitted, including documentation-only PRs: no pending required checks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm exec eslint .
+      - run: uv run --locked --only-group dev ruff check apps packages scripts
+      - run: python3 scripts/check_boundaries.py
+      - run: node scripts/check-boundaries.mjs
+      - run: python3 -m unittest discover -s scripts/tests -v
+      - run: node --test scripts/tests/*.test.mjs
+
   python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -47,20 +98,25 @@ jobs:
       - name: Install the fx runtime's host
         run: npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host
       - run: uv run ruff check apps packages
-      - run: uv run pytest
-      - name: fx delegation handoff
-        run: node --test packages/engine/src/dotrix_engine/runtimes/fx_host/handoff.test.mjs
-      - name: OpenAPI schema is up to date (run `pnpm openapi` if this fails)
+      - name: Test affected Python packages
+        env:
+          PYTHON_TARGETS: ${{ needs.changes.outputs.python_targets }}
         run: |
-          uv run python apps/backend/scripts/export_openapi.py
-          git diff --exit-code packages/api-client/openapi.json
+          read -r -a targets <<< "$PYTHON_TARGETS"
+          uv run pytest "${targets[@]}"
+      - name: fx delegation handoff
+        if: contains(fromJSON(needs.changes.outputs.components), 'engine') || contains(fromJSON(needs.changes.outputs.components), 'backend')
+        run: node --test packages/engine/src/dotrix_engine/runtimes/fx_host/handoff.test.mjs
       - name: Migrations apply cleanly and match the models
+        if: contains(fromJSON(needs.changes.outputs.components), 'backend')
         working-directory: apps/backend
         run: |
           uv run alembic upgrade head
           uv run alembic check
 
   cli-install:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     # The CLI must install and run on its own, outside the workspace, on Linux and Windows.
     strategy:
       fail-fast: false
@@ -86,6 +142,8 @@ jobs:
           echo "$out" | grep -q "Not signed in"
 
   node:
+    needs: changes
+    if: needs.changes.outputs.node == 'true' || needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -95,23 +153,34 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        if: needs.changes.outputs.contract == 'true'
       - name: API client matches the schema (run `pnpm openapi` if this fails)
+        if: needs.changes.outputs.contract == 'true'
         run: |
+          uv run python apps/backend/scripts/export_openapi.py
+          git diff --exit-code packages/api-client/openapi.json
           pnpm --filter @dotrix/api-client generate
           git diff --exit-code packages/api-client/src/schema.ts
-      - name: Formatted with Prettier (run `pnpm format` if this fails)
-        run: pnpm format:check
-      - name: ESLint (run `pnpm lint:fix` for what it can fix)
-        run: pnpm exec eslint .
-      - run: pnpm build
-      - run: pnpm typecheck
-      - run: pnpm test
+      - name: Build and test affected packages and their build dependencies
+        if: needs.changes.outputs.node == 'true'
+        env:
+          NODE_FILTERS: ${{ needs.changes.outputs.node_filters }}
+        run: |
+          read -r -a filters <<< "$NODE_FILTERS"
+          pnpm build "${filters[@]}"
+          pnpm typecheck "${filters[@]}"
+          pnpm test "${filters[@]}"
       - name: Unused files and dependencies
+        if: needs.changes.outputs.node == 'true'
         run: pnpm knip --include files,dependencies,unlisted,unresolved,binaries
       - name: Unused exports (report only)
+        if: needs.changes.outputs.node == 'true'
         run: pnpm knip --no-exit-code --include exports,types
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     # The web app in a real browser against a real backend: throwaway database, and the
     # deterministic "e2e:rules" model so agent runs need no API key (apps/web/e2e).
     runs-on: ubuntu-latest
@@ -159,3 +228,22 @@ jobs:
             apps/web/playwright-report
             apps/web/test-results
           retention-days: 7
+
+  checks:
+    # Use this stable aggregate as the required check in branch protection.
+    if: always()
+    needs: [changes, guards, python, cli-install, node, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All selected checks passed
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          results = json.loads(os.environ['JOB_RESULTS'])
+          failed = [name for name, job in results.items() if job['result'] not in ('success', 'skipped')]
+          if failed:
+              sys.exit('Failed or cancelled checks: ' + ', '.join(failed))
+          print('All required and affected checks passed')
+          PY

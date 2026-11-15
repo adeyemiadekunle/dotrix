@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Changed
+
+- Applications retain one repository with enforced package boundaries, CI for affected apps, separate desktop/CLI release schedules, and app-specific development configuration.
+
 ### Added
 
 - Project cloud environment profiles with administrator-reviewed setup and read-only verification scripts, approval snapshots, cancellation/time limits and local-session isolation. Docker profiles can select operator-approved image digests and retain resolved content IDs across retries and follow-ups.
@@ -44,6 +48,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - Kai's coding engines are updated: Claude Code 2.1.323, Codex 0.169.0, OpenCode 2.3.0, and the browser's Playwright MCP 0.0.85.
 
 ### Fixed
+
+- Coding follow-ups keep their admitted cloud environment and resolved image even when earlier turns only planned, made no changes, or used another location.
 
 - Kai can drive the cloud browser with OpenCode too: navigate, inspect, click and take screenshots through the sandbox's browser tools. Browser actions and failures appear in the coding session.
 - A conversation on an NVIDIA model now counts its tokens (they read 0 in a run's usage).

@@ -109,3 +109,27 @@ def test_agent_scripts_are_on_locally_and_off_when_deployed_unless_set(env: str,
     deployed = DEPLOYED if env in ("staging", "production") else {}
     assert settings(env=env, **deployed).agent_scripts_enabled is on
     assert settings(env=env, agent_scripts=not on, **deployed).agent_scripts_enabled is (not on)
+
+
+def test_backend_env_is_exclusive_and_unrelated_cwd_env_is_ignored(tmp_path, monkeypatch):
+    from dotrix_backend.core.settings import Settings, settings_env_file
+
+    backend = tmp_path / 'backend.env'
+    legacy = tmp_path / 'root.env'
+    unrelated = tmp_path / 'other-app'
+    unrelated.mkdir()
+    monkeypatch.chdir(unrelated)
+    for name in ('DOTRIX_DATABASE_URL', 'DOTRIX_JWT_SECRET'):
+        monkeypatch.delenv(name, raising=False)
+    (unrelated / '.env').write_text('DOTRIX_DATABASE_URL=must-not-load\n')
+    legacy.write_text('DOTRIX_DATABASE_URL=legacy\nDOTRIX_JWT_SECRET=' + 'x' * 40 + '\n')
+    assert settings_env_file(backend, legacy) == legacy
+    backend.write_text('DOTRIX_DATABASE_URL=backend\nDOTRIX_JWT_SECRET=' + 'y' * 40 + '\n')
+    monkeypatch.setitem(Settings.model_config, 'env_file', settings_env_file(backend, legacy))
+    assert Settings().database_url == 'backend'
+    monkeypatch.setenv('DOTRIX_DATABASE_URL', 'process-wins')
+    assert Settings().database_url == 'process-wins'
+    monkeypatch.delenv('DOTRIX_DATABASE_URL')
+    backend.write_text('DOTRIX_DATABASE_URL=backend-only\n')
+    with pytest.raises(ValidationError):
+        Settings()  # The required JWT key must not leak in from the legacy root file.

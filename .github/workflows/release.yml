@@ -1,13 +1,12 @@
 name: Release
-# When stage is merged into main with a version that isn't tagged yet (scripts/release.py bump on stage),
-# tag that commit vX.Y.Z and publish the GitHub release with its CHANGELOG section. A merge that keeps the
-# version publishes nothing, so main can take stage without a release in between.
+# Each versioned component releases only when its own version changes. Existing desktop
+# updaters retain vX.Y.Z. Platform/CLI tags must not become GitHub's latest release.
 on:
   push:
     branches: [main]
 
 permissions:
-  contents: write # the tag and the release
+  contents: write
 
 concurrency:
   group: release
@@ -16,30 +15,32 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      desktop_tag: ${{ steps.publish.outputs.desktop_tag }}
+      cli_tag: ${{ steps.publish.outputs.cli_tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0 # the existing tags
-      - name: The version, and whether it's released
-        id: version
-        run: |
-          python3 scripts/release.py check
-          version="$(python3 scripts/release.py version)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
-            echo "v$version is already tagged at $(git rev-list -n 1 "v$version"); nothing to release"
-            echo "new=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "new=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Tag and publish the release
-        if: steps.version.outputs.new == 'true'
+          fetch-depth: 0
+      - run: python3 scripts/release.py check
+      - name: Publish only unreleased component versions
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          python3 scripts/release.py notes "$VERSION" > "$RUNNER_TEMP/notes.md"
-          prerelease=""
-          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac # 1.2.0-rc.1
-          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "dotrix $VERSION" \
-            --notes-file "$RUNNER_TEMP/notes.md" $prerelease
+        run: python3 scripts/release.py publish --github-output "$GITHUB_OUTPUT"
+
+  desktop-assets:
+    needs: release
+    if: needs.release.outputs.desktop_tag != ''
+    uses: ./.github/workflows/desktop.yml
+    with:
+      artifact: desktop
+      release_tag: ${{ needs.release.outputs.desktop_tag }}
+
+  cli-assets:
+    needs: release
+    if: needs.release.outputs.cli_tag != ''
+    uses: ./.github/workflows/desktop.yml
+    with:
+      artifact: cli
+      release_tag: ${{ needs.release.outputs.cli_tag }}

@@ -157,20 +157,27 @@ deploy/migrate.sh [status|backup|upgrade|check]   # on the server: a deployment'
 pnpm docker:up                            # dotrix in Docker: migrate, API on :8000, worker, web on :3080 (DOTRIX_DOCKER_WEB_PORT=3000 keeps the native web address); docker:web rebuilds the web, docker:logs, docker:down
 pnpm openapi                              # after any API change: export openapi.json + regenerate the TS client
 pnpm --filter @dotrix/web e2e            # browser tests: fresh dotrix_e2e DB + backend on :8100 + web on :3100, rule-based model
-python scripts/release.py check           # one version in every package, with its CHANGELOG section; `bump X.Y.Z` cuts a release (Branches and releases)
+python scripts/release.py check           # each release group agrees internally; bump with --component platform|desktop|cli
 ```
 
 A pre-commit hook (Husky + lint-staged) runs ESLint --fix and Prettier on staged TypeScript and JavaScript, Prettier on CSS, JSON, and YAML, and Ruff on staged Python. CI runs Ruff and pytest, Prettier and ESLint, the pnpm build, typecheck and unit tests, knip (unused files and dependencies), and the browser tests. Run them before pushing (the browser tests at least when you change web flows).
 
-## Branches and releases
+## Branches, monorepo boundaries and releases
 
-Since 2026-10-31 (v0.1.0), every change goes through `stage`:
+Every change still branches from `stage` and opens a PR into `stage`; only `stage` may target `main`. Keep human review and the existing privacy/approval rules. The monorepo contains independently built/deployed applications; applications do not become shared libraries.
 
-- **Branch from `stage`, open the PR into `stage`.** Never into `main`: the `release-flow` workflow (`.github/workflows/release-flow.yml`) fails a PR into `main` whose branch isn't `stage`, and runs again when a PR is retargeted.
-- **Every PR adds its change to `CHANGELOG.md` under Unreleased** (Added, Changed, Fixed, Removed, Security; one line each, written for the people who use dotrix).
-- **`stage` → `main` is the release.** To release, on a branch from `stage`: `python scripts/release.py bump X.Y.Z` (sets every package's version, `API_VERSION`, and `uv.lock`, and turns Unreleased into `## [X.Y.Z] - date`), then `pnpm openapi`, then a PR into `stage`. Then a PR from `stage` into `main`. When it merges, `.github/workflows/release.yml` tags `vX.Y.Z` and publishes the GitHub release with that section. A `stage` → `main` merge that keeps the version publishes nothing.
-- **Versions** follow semver: before 1.0, a minor bump can change the API or the database; a patch is fixes only. `X.Y.Z-rc.N` is published as a prerelease. `python scripts/release.py check` (in CI) makes sure every package says the same version and the changelog has its section.
-- (you) Protect `stage` and `main` on GitHub: require a pull request and the CI checks (including `release-flow`) before merging, and no direct pushes.
+The current implementation is documented in [monorepo operations](docs/monorepo.md):
+
+- `pnpm check:boundaries` enforces Python dependency direction and declared public JS workspace imports. Engine cannot import applications/FastAPI/Typer; backend and CLI cannot import one another. App runtime source cannot import another app. Shared code belongs in packages.
+- `scripts/affected.py` follows manifest dependencies and the bundled CLI → desktop edge. CI selects affected Python/Node work, while API changes retain contract/E2E checks. Unknown source/config/history is conservative. Stable `checks`, `desktop-checks` and `release-flow` are the branch-protection targets; guards always run, including on docs-only PRs.
+- Versions are aligned **within** the platform group (backend/engine/browser apps/UI/API client/API_VERSION). Desktop and CLI have independent versions and `apps/desktop/CHANGELOG.md` / `apps/cli/CHANGELOG.md`. Each component change belongs in that component's Unreleased notes. Root `CHANGELOG.md` is the platform changelog.
+- `python scripts/release.py bump X.Y.Z --component platform|desktop|cli` changes only that group; Python changes update uv.lock and platform changes additionally require `pnpm openapi`. `check` validates every group's version/notes; `plan` is read-only. Do not bump a release or publish as part of ordinary implementation unless requested.
+- Merging stage into main publishes only new component versions. Desktop keeps `vX.Y.Z` for installed updater compatibility; CLI uses `cli-vX.Y.Z`, platform uses `platform-vX.Y.Z`, and neither may replace the desktop's latest release. Legacy v0.2.0, if present, is not republished under new names. Asset workflows are called explicitly because GITHUB_TOKEN-created release events do not trigger other workflows.
+- The reusable Windows builder can build desktop or standalone CLI; desktop necessarily bundles its CLI dependency but no longer forces a standalone CLI or server release. New macOS/Linux installers and signing remain separate work. Coding images have their own manual, opt-in registry publication and immutable commit tags.
+- Backend settings use apps/backend/.env exclusively when present, with process variables winning; root .env is a migration fallback only. Vite reads app-local env directories. Client env files and packaged resources must not hold backend/provider/signing credentials. Local Docker app env can be selected with DOTRIX_BACKEND_ENV_FILE. Existing deployed configuration/secrets are not modified automatically.
+- `pnpm docker:web|admin|site` updates only the selected local app; `pnpm docker:backend` migrates before updating API/worker. Initial stack setup remains `pnpm docker:up`. Production rollout remains an explicit operator action.
+
+Before pushing, run the relevant app checks plus the always-running tooling guards. Changes to the selector, release machinery or shared config require the selection/release regression tests and workflow validation. (you) Configure branch protections and the coding-image environment's registry secrets/protections; adding YAML does not apply repository settings.
 
 ## Rules that always apply
 

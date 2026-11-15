@@ -229,7 +229,7 @@ and **your checklist** (what to do before the first deploy, after it, and for ev
 
 The `dotrix` CLI depends on `dotrix-engine`, which isn't published to PyPI, so install it from a release or a checkout (Python 3.11+ and [uv](https://docs.astral.sh/uv/) for the checkout):
 
-- **Release download:** the standalone CLI (Windows) is attached to each [GitHub release](https://github.com/adeyemiadekunle/dotrix/releases). No Python needed.
+- **Release download:** the standalone CLI (Windows) is attached to `cli-vX.Y.Z` [GitHub releases](https://github.com/adeyemiadekunle/dotrix/releases). No Python needed.
 - **From a checkout:** run `uv sync` once, then `uv run dotrix`.
 
 - Point it at your server with `DOTRIX_API_URL` (or `--api-url` on `login`). The default is
@@ -296,7 +296,7 @@ Details in [CLAUDE.md](CLAUDE.md#branches-and-releases).
 
 ## Checks
 
-CI runs all of these:
+Full local verification (CI selects affected application suites):
 
 ```bash
 uv run ruff check apps packages && uv run pytest   # lint; unit and integration tests (need Postgres)
@@ -305,7 +305,9 @@ pnpm build && pnpm typecheck
 pnpm test                                          # web unit tests (Vitest)
 pnpm knip                                          # unused files, exports and dependencies
 pnpm --filter @dotrix/web e2e                      # browser tests on a rule-based model
-python scripts/release.py check                    # one version everywhere, with its changelog section
+python scripts/release.py check                    # validate platform, desktop and CLI release groups
 ```
+
+
 
 Cloud/local environment guidance and SearXNG setup: [coding environments](docs/cloud-environments.md).

@@ -29,7 +29,6 @@ RUN uv sync --frozen --no-dev --no-install-workspace --package dotrix-backend
 
 COPY packages/engine packages/engine
 COPY --from=fx-host /fx/node_modules packages/engine/src/dotrix_engine/runtimes/fx_host/node_modules
-COPY apps/cli apps/cli
 COPY apps/backend apps/backend
 RUN uv sync --frozen --no-dev --package dotrix-backend
 
