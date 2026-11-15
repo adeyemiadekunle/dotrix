@@ -19,6 +19,22 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+  searxng:
+    # Pinned multi-platform image; update after checking the JSON API and health endpoint.
+    image: docker.io/searxng/searxng@sha256:eb8b09ffa83aebbe8b8d3ded23cfd224b2d3b01db4f3af9eb03876ef6def6dda
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Generate SEARXNG_SECRET with openssl rand -hex 32}
+    configs:
+      - source: searxng-settings
+        target: /etc/searxng/settings.yml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    ports: ["127.0.0.1:${DOTRIX_SEARXNG_PORT:-8081}:8080"] # native backend only
   redis:
     image: redis:7
     restart: unless-stopped
@@ -42,3 +58,16 @@ services:
 volumes:
   pgdata:
   storagedata:
+
+# Inline so both native-service and repo-root app Compose commands resolve it identically.
+configs:
+  searxng-settings:
+    content: |
+      use_default_settings: true
+      server:
+        limiter: false
+        public_instance: false
+      search:
+        formats:
+          - html
+          - json

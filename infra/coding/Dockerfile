@@ -30,10 +30,10 @@ RUN npm install -g @opencode/cli@${OPENCODE_VERSION} && opencode --version
 RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/* && rg --version
 
 # fx (DOTRIX_CODING_FX=true): Kai on an OpenAI-compatible provider, driven over ACP by fx-acp.mjs. Pinned,
-# because the driver reads its ACP messages and modes (written against 0.0.16's source); the release is
+# because the driver reads its ACP messages and modes (checked on 0.0.17 with real CLI/provider transport, resume and cancellation tests); the release is
 # fx's own (releases.fx.sh, what `fx upgrade` fetches), checked against its published SHA-256. Its profiles
 # are dotrix-fx-*.yaml. Needs releases.fx.sh reachable where the image is built, never in the sandbox.
-ARG FX_VERSION=0.0.16
+ARG FX_VERSION=0.0.17
 RUN set -eu; \
   case "$(uname -m)" in x86_64) arch=x86_64 ;; aarch64|arm64) arch=aarch64 ;; *) echo "fx: unsupported $(uname -m)"; exit 1 ;; esac; \
   base="https://releases.fx.sh/v${FX_VERSION}/fx-linux-${arch}.tar.gz"; \

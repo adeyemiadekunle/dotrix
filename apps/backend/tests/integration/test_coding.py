@@ -1856,12 +1856,16 @@ else:
     await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
     assert await runner.once()
     ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
-    assert ready["status"] == ("changes_ready" if valid_setup else "failed"), ready
+    assert ready["status"] == ("changes_ready" if valid_setup and coding_tool != "fx" else "failed"), ready
     assert ready["agent"] == coding_tool and github.pulls == []
     assert not (checkout / "src/refunds.py").exists()
     assert runner._fx_profile is None and runner._browser_config is None
     if coding_tool == "fx":
-        assert pointer.exists() and not Path(pointer.read_text()).exists()
+        assert not pointer.exists()  # Unsafe native runtime never starts.
+        # This legacy fixture has neither the supported runtime nor a matching
+        # API-key profile. Hosts with namespaces reach profile validation first.
+        assert any(reason in ready["error"] for reason in (
+            "requires Linux Bubblewrap", "Could not start isolated", "Couldn't prepare the local model profile"))
         assert (home / ".fx/settings.json").read_text() == original
 
 

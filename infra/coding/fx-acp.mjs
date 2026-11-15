@@ -137,7 +137,13 @@ async function forwarder(target, proxy) {
     });
     req.pipe(out);
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  // fx 0.0.17 pins its connection when saving a session. A random port makes
+  // every resumed turn look like a different provider. Each sandbox has its own
+  // network namespace, so reserve one fixed local relay port and fail on collision.
+  await new Promise((resolve, reject) => {
+    server.once("error", () => reject(new Error("The model relay port is unavailable; start a fresh coding session")));
+    server.listen(31821, "127.0.0.1", resolve);
+  });
   server.unref();
   // The provider's path (e.g. /v1) stays; only the origin becomes the forwarder's.
   return `http://127.0.0.1:${server.address().port}${upstream.pathname.replace(/\/$/, "")}`;
@@ -153,6 +159,9 @@ writeFileSync(
   JSON.stringify({
     provider: "dotrix",
     auto_upgrade: false,
+    cache_warming: false,
+    session_titles: false,
+    sound: false,
     providers: {
       dotrix: {
         protocol: "openai-chat-completions",
@@ -213,6 +222,12 @@ const contentText = (content) =>
 
 function onUpdate(update) {
   if (replaying || !update) return;
+  const recovery = update._meta?.fx?.modelResponseRecovery;
+  if (recovery && ["need_user", "failed"].includes(recovery.state) && !cancelled) {
+    providerFailed = true;
+    emit({ type: "error", message: "The model request needs attention; check your provider connection and try again" });
+    cancel();
+  }
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
       if (update.messageId && update.messageId !== messageId) flush();
@@ -272,6 +287,7 @@ fx.on("exit", (code, signal) => {
 
 let sessionId = null;
 let cancelled = false;
+let providerFailed = false;
 const cancel = () => {
   if (cancelled) return;
   cancelled = true;
@@ -317,15 +333,23 @@ try {
   if (cancelled) notify("session/cancel", { sessionId });
   const result = await call("session/prompt", { sessionId, prompt: [{ type: "text", text: brief }] });
   flush();
-  if (egressRefused && result?.stopReason !== "end_turn") {
+  if (egressRefused) {
     emit({ type: "error", message: "The sandbox doesn't allow this model provider (its egress proxy refused it)" });
     process.exitCode = 1;
-  } else emit({ type: "done", stopReason: result?.stopReason ?? "end_turn", usage: result?.usage ?? null, final: lastMessage });
+  } else {
+    emit({
+      type: "done",
+      stopReason: providerFailed ? "refused" : cancelled ? "cancelled" : (result?.stopReason ?? "end_turn"),
+      usage: result?.usage ?? null,
+      final: lastMessage,
+    });
+    if (providerFailed) process.exitCode = 1;
+  }
 } catch (error) {
   flush();
-  if (cancelled) emit({ type: "done", stopReason: "cancelled", usage: null, final: lastMessage });
+  if (cancelled) emit({ type: "done", stopReason: providerFailed ? "refused" : "cancelled", usage: null, final: lastMessage });
   else emit({ type: "error", message: String(error?.message ?? error).slice(0, 2000) });
-  process.exitCode = cancelled ? 0 : 1;
+  process.exitCode = cancelled && !providerFailed ? 0 : 1;
 } finally {
   // fx ends when its input closes; wait for it, so no fx outlives the turn, and stop it if it doesn't.
   if (!exited) {

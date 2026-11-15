@@ -2,8 +2,9 @@
 
 Only the person's locally configured model login is used. Docker Sandboxes provides
 an optional microVM for Claude Code, OpenCode and Codex. Native Codex uses its own
-workspace-write OS sandbox with command networking disabled; the other native
-runners restrict execution to file tools and the app-owned browser connection.
+workspace-write OS sandbox with command networking disabled. Native Claude Code
+and fx can use a Linux namespace and host-owned model/browser relay with API keys;
+unsupported native paths retain file tools and the app-owned browser connection.
 Repository hooks, plugins and unrelated MCP servers are excluded. Worktrees are
 kept for WORKTREE_DAYS after a turn, then removed by the runner.
 """
@@ -99,8 +100,18 @@ class Tool:
 
     @classmethod
     def named(cls, name: str, *, isolated: bool = False, browser: Path | None = None, profile: Path | None = None,
-              native: bool = False, disabled_mcp: tuple[str, ...] = ()) -> Tool:
+              native: bool = False, disabled_mcp: tuple[str, ...] = (), model: str | None = None) -> Tool:
         if name == "claude-code":
+            from .claude_local import command as claude_command
+            from .claude_local import configured as native_claude_available
+
+            if not isolated and not native and native_claude_available():
+                driver = ([sys.executable, "_local-claude"] if getattr(sys, "frozen", False)
+                          else [sys.executable, "-m", "dotrix_cli.claude_local"])
+                return cls(name, [*driver, *(["--browser-config", str(browser)] if browser is not None else []),
+                                  *(["--model", model] if model else [])])
+            if not isolated and native:
+                return cls(name, ["claude", *claude_command(browser is not None)])
             # Never the repository's own configuration: its `.claude/settings.json` (hooks, permission
             # rules, plugins) and `.mcp.json` servers would otherwise run, since `-p` asks no one to trust
             # the folder. The person's own user settings and sign-in still apply (`--bare` would drop the
@@ -258,8 +269,11 @@ def opencode_settings(environ: Mapping[str, str], pane: tuple[str, str] | None =
 
 def found_tools() -> list[str]:
     """The coding tools on this machine's PATH, preferred first."""
+    from .fx_local import NATIVE_FX_POLICY_VALIDATED
+    from .fx_native import available as native_fx_available
+
     return [name for name, binary in (("claude-code", "claude"), ("opencode", "opencode"), ("codex", "codex"), ("fx", "fx"))
-            if shutil.which(binary)]
+            if shutil.which(binary) and (name != "fx" or (NATIVE_FX_POLICY_VALIDATED and native_fx_available()))]
 
 
 @dataclass
@@ -552,7 +566,7 @@ class LocalRunner:
         if self.tool == "fx" and self.sbx is not None:
             if self.isolation == "sbx":
                 raise ValueError("This tool has no Docker Sandboxes template; use --isolation none")
-            self.sbx = None  # the native ACP client enforces file/browser-only permissions
+            self.sbx = None  # fx uses its own Linux worktree/network namespace.
         if not self.name:
             where = hashlib.sha256(str(self.repo.resolve()).encode()).hexdigest()[:6]
             self.name = f"{socket.gethostname()} · {self.repo.name} ({where})"[:100]
@@ -739,7 +753,7 @@ class LocalRunner:
         self._coding_in = tree
         await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), "FETCH_HEAD")
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
-        boundary = "" if run["tool"] == "codex" and self.command is None else " (not isolated: the tool edits files only)"
+        boundary = " (custom command, not isolated)" if self.command and self.sbx is None else ""
         pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}{boundary}"})
         self.notify({"event": "turn", "run_id": run["run_id"], "session_id": run.get("session_id"),
                      "issue_key": run["issue_key"], "turn": run["turn"],
@@ -760,15 +774,19 @@ class LocalRunner:
             if self._browser is not None and name in ("claude-code", "codex", "fx"):
                 self._browser_config = write_browser_config(*self._browser)
             if name == "fx":
-                from .fx_local import prepare_profile
+                from .fx_local import NATIVE_FX_POLICY_VALIDATED, NATIVE_FX_REFUSAL, prepare_profile
+                from .fx_native import available as native_fx_available
 
+                if not NATIVE_FX_POLICY_VALIDATED or not native_fx_available():
+                    await report("failed", base_sha=base_sha, error=NATIVE_FX_REFUSAL)
+                    return
                 self._fx_profile = Path(tempfile.mkdtemp(prefix="dotrix-fx-local-"))
                 try:
-                    prepare_profile(self._fx_profile, dict(os.environ))
+                    prepare_profile(self._fx_profile, dict(os.environ), expected_model=run.get("model"))
                 except (OSError, ValueError) as exc:
                     await report("failed", base_sha=base_sha, error=f"Couldn't prepare the local model profile: {exc}")
                     return
-            tool = Tool.named(name, isolated=isolated, browser=self._browser_config, profile=self._fx_profile)
+            tool = Tool.named(name, isolated=isolated, browser=self._browser_config, profile=self._fx_profile, model=run.get("model"))
         # A custom command stands in for the requested tool; its name is only a display label.
         environment_tool = run["tool"] if self.command else tool.name
         if self.sbx is not None:
@@ -786,6 +804,11 @@ class LocalRunner:
             # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
             argv = [shutil.which(tool.argv[0]) or tool.argv[0], *tool.argv[1:]]
             environment = _env(environment_tool)
+            if tool.name == "claude-code" and any(part in ("dotrix_cli.claude_local", "_local-claude") for part in tool.argv):
+                # Only the isolated launcher's host relay receives proxy settings.
+                # Its namespace builds a fresh environment without proxy credentials.
+                environment.update({key: value for key, value in os.environ.items()
+                                    if key.upper() in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}})
             if tool.name == "opencode":
                 environment.update(opencode_settings(environment, self._browser))
             if self._browser_config is not None and tool.name == "claude-code":
@@ -794,8 +817,13 @@ class LocalRunner:
                 environment[BROWSER_TOKEN_ENV] = self._browser[1]
             if tool.name == "codex":
                 pending.append({"kind": "step", "text": "Commands stay in a local workspace sandbox with network access disabled"})
+            elif tool.name == "claude-code":
+                from .claude_local import configured as native_claude_available
+
+                pending.append({"kind": "step", "text": "Commands stay in a local workspace sandbox with network access disabled"
+                                if native_claude_available() else "Local file edits only; command isolation is unavailable"})
             elif tool.name == "fx":
-                pending.append({"kind": "step", "text": "Local file edits and the Browser pane only; host commands are refused"})
+                pending.append({"kind": "step", "text": "Local worktree sandbox: shell commands and file edits; direct networking is disabled"})
             if self._browser is not None:
                 pending.append({"kind": "step", "text": "With the Browser pane: it may open this computer's pages there"})
         out = Outcome(root=tree)

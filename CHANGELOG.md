@@ -11,7 +11,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
-- Kai can use your local Codex or fx installation and drive the desktop Browser pane, with scoped permissions and your own model sign-in.
+- Project cloud environment profiles with administrator-reviewed setup and read-only verification scripts, approval snapshots, cancellation/time limits and local-session isolation. Docker profiles can select operator-approved image digests and retain resolved content IDs across retries and follow-ups.
+- A private SearXNG service in the development and Dokploy Docker stacks, providing shared web search for models without built-in search.
+
+- Kai can use your local Codex installation and drive the desktop Browser pane, with scoped permissions and your own model sign-in.
 
 - Settings → Preferences has a personal Code Mode switch for Nova. It applies to new chat turns when the server enables Code Mode; turns already running keep their tools.
 - Nova can do several reads in one step with a short script (code mode): it searches, reads documents, the board, the graph and the code together and keeps only what it needs, in a sandbox that can only read. Changes still go through the usual approvals. Experimental: on in development, off on deployed servers unless `DOTRIX_AGENT_SCRIPTS` is set.
@@ -69,6 +72,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Security
 
+- Native Claude Code 2.1.296 can run shell commands in a Linux worktree namespace with a personal API key. The host relay protects model/browser credentials, Git uses isolated metadata, Stop terminates background work, and provider authentication failure blocks completion. Subscription/OAuth and unsupported hosts retain file-only execution. Local-runner status messages now describe native command support correctly.
+
+- Native fx 0.0.17 can run shell commands on Linux only inside a verified Bubblewrap worktree/network boundary, using a host-owned model/browser relay. Direct networking and credential write-back are blocked; unsupported hosts and OAuth profiles are refused. Failed model recovery cannot publish partial changes. Cloud coding source pins 0.0.17 and keeps the provider relay address stable across resumed sessions.
+
 - A local OpenCode turn without a Docker sandbox no longer runs commands or reaches the network on your computer, and ignores the repository's own opencode.json: it only reads and edits files, as local Claude Code turns already did.
 - Local coding (dotrix runner and the desktop app) no longer runs a repository's own Claude Code hooks, permission rules, plugins or MCP servers. Without Docker Sandboxes, Claude Code there gets only its file tools (no shell commands) and none of the repository's CLAUDE.md or skills.
 - A cloud coding turn whose changes or summary contain your model key, as written or base64-encoded, is refused before anything is committed or pushed.
@@ -76,6 +83,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - Kai on Codex no longer takes a repository's AGENTS.md as instructions, and no longer applies a repository's own Codex settings (.codex/config.toml).
 
 ### Removed
+
+- Tavily search/extraction integration, credentials and deployment configuration. Historical usage fields remain readable.
 
 - Lessons: a rejection or dismissal with a reason no longer proposes a lesson, and Knowledge has no Lessons tab. Lessons you accepted earlier still apply as part of each agent's rules.
 

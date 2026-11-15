@@ -22,6 +22,7 @@ from dotrix_backend.modules.projects.deps import (
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
+from .environments import EnvironmentRead, EnvironmentUpdate, profile, require_approved_image
 from .files import TurnFiles
 from .local import LocalRunners
 from .network import SandboxNetwork
@@ -414,3 +415,41 @@ async def shared_issue_coding_outcomes(
 ) -> list[SharedCodingOutcomeRead]:
     """Latest published PR evidence for a shared task, without access to private sessions."""
     return await shared_outcomes(session, access, key)
+
+
+# Profiles are executable administrator configuration, not repository instructions.
+
+
+@router.get("/environment")
+async def get_cloud_environment(access: ProjectViewer, settings: SettingsDep) -> EnvironmentRead:
+    """Read the project's current cloud setup/verification profile and operator-approved image choices.
+    Saving or reading a profile does not execute scripts; native local runs ignore the profile."""
+    return profile(access.project.coding_environment).model_copy(update={"available_images": settings.coding_environment_images})
+
+
+@router.put("/environment", responses=errors(403, 409, 422))
+async def set_cloud_environment(data: EnvironmentUpdate, access: ProjectNetworkEditor, session: SessionDep, settings: SettingsDep) -> EnvironmentRead:
+    """Save an administrator's cloud environment profile using its current revision.
+    Stale revisions or unapproved images return 409. New cloud sessions pin the saved profile;
+    existing sessions retain their admitted snapshot. This action never starts coding or runs scripts."""
+    from sqlalchemy import select
+
+    from dotrix_backend.core.errors import Conflict
+    from dotrix_backend.modules.audit.models import AuthorType
+    from dotrix_backend.modules.audit.service import AuditLog
+    from dotrix_backend.modules.projects.models import Project
+
+    project = await session.scalar(select(Project).where(
+        Project.id == access.project.id, Project.workspace_id == access.member.workspace_id).with_for_update().execution_options(populate_existing=True))
+    assert project is not None
+    require_approved_image(data.image, settings.coding_environment_images)
+    before = profile(project.coding_environment)
+    if before.revision != data.revision:
+        raise Conflict("The environment changed; reload it before saving")
+    updated = profile({**data.model_dump(), "revision": before.revision + 1})
+    project.coding_environment = updated.model_dump()
+    AuditLog(session).record(workspace_id=project.workspace_id, project_id=project.id,
+        action="coding_environment.updated", target=str(project.id), actor_type=AuthorType.USER,
+        actor_user_id=access.member.user_id, details={"revision": updated.revision, "enabled": updated.enabled})
+    await session.commit()
+    return updated.model_copy(update={"available_images": settings.coding_environment_images})

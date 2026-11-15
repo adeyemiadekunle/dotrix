@@ -140,6 +140,7 @@ class CodingSkillRead(BaseModel):
 
 
 class CodingRunRead(BaseModel):
+    environment_image_id: str | None = None
     capabilities: list[CodingCapabilityRead] = Field(default_factory=list)
     skills: list[CodingSkillRead] = Field(default_factory=list)
     tasks: list[CodingTaskRead] = Field(default_factory=list)

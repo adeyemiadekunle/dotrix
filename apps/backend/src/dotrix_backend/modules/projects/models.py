@@ -88,6 +88,7 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     automatic_model_routing: Mapped[bool] = mapped_column(default=False, server_default="false")
     # Hosts this project's coding sandboxes may also reach, on top of the workspace's (coding/network.py).
     sandbox_network: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    coding_environment: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     # Bumped on every .dotrix/ change; lets the CLI mirror pull only what changed.
     knowledge_revision: Mapped[int] = mapped_column(default=0, server_default="0")
     # Next issue number (KUN-<n>). Incremented under a row lock; numbers are never reused.

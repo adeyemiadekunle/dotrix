@@ -56,7 +56,7 @@ def main() -> None:
         "DOTRIX_RATE_LIMITS": "off",
         # Test sign-ups mustn't reach a real email provider, even if .env configures one.
         "DOTRIX_EMAIL_BACKEND": "console",
-        # A canned web: no Tavily calls with a developer's key.
+        # A canned web: no SearXNG calls with a developer's key.
         "DOTRIX_SEARCH_PROVIDER": "fake",
         # Search by keywords only: no embedding calls with a developer's key.
         "DOTRIX_EMBEDDING_MODEL": "",

@@ -1,4 +1,4 @@
-"""fx's local ACP client: private per-turn settings, file edits and the app's browser only.
+"""fx 0.0.17 local ACP client: shell/file tools inside a Linux namespace, and the app browser.
 
 The cloud driver deliberately grants full access inside its sandbox. This client never
 does: unknown permissions are refused, edits must stay in the worktree, and the ACP
@@ -11,13 +11,18 @@ import asyncio
 import hashlib
 import json
 import os
-import re
 import shutil
 import signal
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+# The kernel boundary, not fx's wildcard permission rules, protects native work.
+# fx_native.available() refuses unsupported hosts; there is no unconfined fallback.
+NATIVE_FX_POLICY_VALIDATED = True
+NATIVE_FX_REFUSAL = ("Local execution requires Linux Bubblewrap with working user/network namespaces and the tested coding runtime. "
+                     "Use cloud coding or another local runtime on this computer.")
 
 AUTH_FILES = ("auth.json", "chatgpt-auth.json", "grok-auth.json", "api-key")
 PROVIDER_SETTINGS = ("provider", "providers", "models", "credential_source", "effort")
@@ -44,14 +49,18 @@ def read_settings(source: Path) -> dict[str, Any]:
     return settings
 
 
-def prepare_profile(root: Path, environ: dict[str, str]) -> None:
+def prepare_profile(root: Path, environ: dict[str, str], *, expected_model: str | None = None) -> None:
     """Copy only fx's own model/auth settings, never its full-access mode or remembered grants."""
     source = profile_source(environ)
     saved = read_settings(source)
+    if expected_model:
+        model_name = expected_model.partition(":")[2] or expected_model
+        if saved.get("models", {}).get(saved.get("provider")) != model_name:
+            raise ValueError("The local connection's model does not match this session; choose a matching model or start a new session")
     settings = {key: saved[key] for key in PROVIDER_SETTINGS if key in saved}
     settings.update({
         "permission_mode": "ask", "auto_upgrade": False, "context": False, "session_titles": False,
-        "permission": {"*": "deny", "read": "ask", "glob": "ask", "grep": "ask", "edit": "ask",
+        "permission": {"*": "deny", "bash": "ask", "toolbox": "allow", "subagent": "deny", "read": "ask", "glob": "ask", "grep": "ask", "edit": "ask",
                        "read_tool_result": "allow", "capability_search": "allow", "mcp_browser_*": "ask"},
     })
     folder = root / ".fx"
@@ -113,6 +122,8 @@ def allowed(call: dict[str, Any], root: Path) -> bool:
     mcp = meta.get("mcp") or {}
     if mcp.get("server") == "browser" and name.startswith("mcp_browser_"):
         return True
+    if name == "shell":
+        return True  # The entire runtime and its descendants are inside the OS namespace.
     if name not in ("write_file", "edit_file", "read_file", "glob_files", "grep_files"):
         return False
     args = call.get("rawInput") or {}
@@ -132,6 +143,11 @@ def emit(kind: str, **values: Any) -> None:
 
 
 async def run(profile: Path, browser: Path | None = None) -> int:
+    from .fx_native import available, launch
+
+    if not NATIVE_FX_POLICY_VALIDATED or not available():
+        emit("error", message=NATIVE_FX_REFUSAL)
+        return 1
     binary = shutil.which("fx")
     if binary is None:
         emit("error", message="The local coding tool is not installed")
@@ -143,45 +159,22 @@ async def run(profile: Path, browser: Path | None = None) -> int:
         configured = json.loads(browser.read_text())["mcpServers"]["browser"]
         servers = [{"type": "http", "name": "browser", "url": configured["url"],
                     "headers": [{"name": name, "value": value} for name, value in configured["headers"].items()]}]
-    # Only the child gets this private home. Its mode changes and sessions never touch the person's profile.
-    child_env = {**os.environ, "HOME": str(profile), "USERPROFILE": str(profile), "FX_HOME": str(profile / ".fx"),
-                 "FX_AUTO_UPGRADE": "0", "FX_SOUND": "0", "FX_NO_OPEN_BROWSER": "1", "NO_COLOR": "1"}
-    version = await asyncio.create_subprocess_exec(binary, "--version", env=child_env,
-                                                   stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    configured_browser = json.loads(browser.read_text())["mcpServers"]["browser"] if browser else None
+    manager = launch(profile, str(Path(binary).resolve()), root, configured_browser)
     try:
-        version_text, _ = await asyncio.wait_for(version.communicate(), timeout=15)
-        match = re.search(r"(\d+)\.(\d+)\.(\d+)", version_text.decode())
-        if version.returncode != 0 or match is None or tuple(map(int, match.groups())) < (0, 0, 16):
-            raise ValueError("Unsupported local policy")
-    except (TimeoutError, ValueError):
-        if version.returncode is None:
-            version.kill()
-            await version.wait()
-        emit("error", message="Update the local coding tool before using it with this runner")
+        child, bridge_port = await manager.__aenter__()
+    except (OSError, ValueError, TimeoutError):
+        emit("error", message="Could not start isolated local execution; use the tested runtime with a custom API-key connection or cloud coding")
         return 1
-    probe = await asyncio.create_subprocess_exec(binary, "permissions", "--json", env=child_env,
-                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    try:
-        stdout, _ = await asyncio.wait_for(probe.communicate(), timeout=15)
-        policy = json.loads(stdout)
-        expected = json.loads((profile / ".fx/settings.json").read_text())["permission"]
-        loaded = {rule["permission"]: rule["action"] for rule in policy.get("rules", []) if rule.get("pattern") == "*"}
-        if probe.returncode != 0 or policy.get("mode") != "ask" or any(loaded.get(key) != value for key, value in expected.items()):
-            raise ValueError("The local permission policy was not loaded")
-    except (TimeoutError, ValueError, KeyError, TypeError):
-        if probe.returncode is None:
-            probe.kill()
-            await probe.wait()
-        emit("error", message="The local permission policy was not loaded; update the coding tool and try again")
-        return 1
-    child = await asyncio.create_subprocess_exec(binary, "acp", env=child_env, stdin=asyncio.subprocess.PIPE,
-                                                 stdout=asyncio.subprocess.PIPE, stderr=None, limit=16 * 1024 * 1024)
+    if browser:
+        servers = [{"type": "http", "name": "browser", "url": f"http://127.0.0.1:{bridge_port}/browser", "headers": []}]
     assert child.stdin and child.stdout
     pending: dict[int, asyncio.Future] = {}
     calls: dict[str, dict] = {}
     counter = 0
     session_id = None
     cancelled = False
+    failure = None
     text: list[str] = []
     last = ""
 
@@ -210,6 +203,7 @@ async def run(profile: Path, browser: Path | None = None) -> int:
             pending.pop(identity, None)
 
     async def read():
+        nonlocal failure
         assert child.stdout
         try:
             while line := await child.stdout.readline():
@@ -223,6 +217,12 @@ async def run(profile: Path, browser: Path | None = None) -> int:
                 elif value.get("method") == "session/update":
                     update = value.get("params", {}).get("update") or {}
                     kind = update.get("sessionUpdate")
+                    recovery = ((update.get("_meta") or {}).get("fx") or {}).get("modelResponseRecovery")
+                    if isinstance(recovery, dict) and recovery.get("state") in ("need_user", "failed") and not cancelled and not failure:
+                        failure = "The model request needs attention; check your provider connection and try again"
+                        emit("error", message=failure)
+                        if session_id:
+                            send({"method": "session/cancel", "params": {"sessionId": session_id}})
                     if kind == "agent_message_chunk" and update.get("content", {}).get("type") == "text":
                         text.append(update["content"]["text"])
                     elif kind in ("tool_call", "tool_call_update"):
@@ -273,8 +273,8 @@ async def run(profile: Path, browser: Path | None = None) -> int:
         await request("session/set_mode", {"sessionId": session_id, "modeId": "ask"})
         result = await request("session/prompt", {"sessionId": session_id, "prompt": [{"type": "text", "text": brief}]})
         flush()
-        emit("done", final=last, usage=result.get("usage"), stopReason="cancelled" if cancelled else result.get("stopReason"))
-        return 0 if cancelled or result.get("stopReason") == "end_turn" else 1
+        emit("done", final=last, usage=result.get("usage"), stopReason="refused" if failure else "cancelled" if cancelled else result.get("stopReason"))
+        return 0 if not failure and (cancelled or result.get("stopReason") == "end_turn") else 1
     except Exception as exc:
         emit("error", message=str(exc)[:2000])
         return 1
@@ -288,6 +288,7 @@ async def run(profile: Path, browser: Path | None = None) -> int:
             child.kill()
             await child.wait()
         await reader
+        await manager.__aexit__(None, None, None)
 
 
 def main() -> None:

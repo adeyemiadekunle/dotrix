@@ -160,6 +160,7 @@ class Settings(DatabaseSettings):
     openshell_bin: str = "openshell"
     docker_bin: str = "docker"
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
+    coding_environment_images: list[Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}$")]] = Field(default_factory=list)
     # Docker Cloud sandboxes: the Docker ID and a personal access token with Cloud Sandboxes access
     # (sandbox:use); the coding image must then be a registry reference Docker can pull.
     docker_cloud_url: str = "https://connect.docker.com/sandboxes"
@@ -306,19 +307,12 @@ class Settings(DatabaseSettings):
     # unrelated query are still "nearest"). Depends on the model: measured on
     # gemini-embedding-001, the right passage scored 0.68-0.72 and unrelated queries at most 0.56.
     embedding_min_similarity: float = Field(default=0.6, ge=0, le=1)
-    # Research on the web (docs/architecture.md). Search: "tavily" (needs the key), "native"
-    # (the model's built-in search), or "auto" (Tavily when the key is set). Agents read pages
-    # themselves either way. "fake": a canned search and site, for end-to-end tests only.
-    tavily_api_key: SecretStr | None = Field(
-        default=None, validation_alias=AliasChoices("DOTRIX_TAVILY_API_KEY", "TAVILY_API_KEY")
-    )
-    search_provider: Literal["auto", "tavily", "native", "fake"] = "auto"
-    # Pages our reader can't read (JavaScript-only, blocking readers) are read by Tavily instead.
-    tavily_extract: bool = True
-    # Per run: web searches and pages read. Per workspace per day: Tavily credits (0: no limit).
+    # Shared search for every model: self-hosted SearXNG, or provider-native search.
+    # Auto selects SearXNG when its service URL is configured. Fake is for E2E only.
+    search_provider: Literal["auto", "searxng", "native", "fake"] = "auto"
+    searxng_url: str | None = None
     research_max_searches: int = Field(default=10, ge=0, le=100)
     research_max_fetches: int = Field(default=20, ge=0, le=200)
-    tavily_daily_credits: int = Field(default=500, ge=0)
     # Where background work executes (agent runs, emails, password-reset requests):
     # - "local": tasks in the API process (simplest; an API restart cuts runs off)
     # - "worker": queued in Redis and executed by `python -m dotrix_backend.worker`; work
@@ -363,8 +357,8 @@ class Settings(DatabaseSettings):
             raise ValueError("email_backend=console logs tokens; not allowed in staging or production")
         if self.is_deployed and self.rate_limits != "redis":
             raise ValueError("rate_limits must be redis in staging and production (limits shared by every process)")
-        if self.search_provider == "tavily" and not self.tavily_api_key:
-            raise ValueError("search_provider=tavily needs DOTRIX_TAVILY_API_KEY")
+        if self.search_provider == "searxng" and not self.searxng_url:
+            raise ValueError("search_provider=searxng needs DOTRIX_SEARXNG_URL")
         if self.search_provider == "fake" and not self.e2e_models:
             raise ValueError("search_provider=fake is for end-to-end tests (needs DOTRIX_E2E_MODELS=true)")
         if self.coding_sandbox == "docker-cloud":

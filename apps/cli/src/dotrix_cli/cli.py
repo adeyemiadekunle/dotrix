@@ -75,6 +75,17 @@ def local_fx(
     raise typer.Exit(asyncio.run(run(profile, browser_config)))
 
 
+@app.command("_local-claude", hidden=True)
+def local_claude(browser_config: Path | None = typer.Option(None, "--browser-config", exists=True, dir_okay=False),
+                 model: str | None = typer.Option(None, "--model")) -> None:
+    """Internal entry point also bundled by the standalone desktop CLI."""
+    import asyncio
+
+    from .claude_local import run
+
+    raise typer.Exit(asyncio.run(run(browser_config, model)))
+
+
 @app.command("_local-codex", hidden=True)
 def local_codex(browser_config: Path | None = typer.Option(None, "--browser-config", exists=True, dir_okay=False)) -> None:
     """Internal entry point also bundled by the standalone desktop CLI."""
@@ -575,7 +586,7 @@ def runner_command(
         "auto",
         "--isolation",
         help="auto: in a Docker sandbox when `sbx` is installed (it may run commands there), else a worktree only "
-        "(edits only); sbx: require it; none: never",
+        "(native sandbox commands where supported, otherwise edits only); sbx: require it; none: never use sbx",
     ),
 ):
     """Code your local turns on this computer: each in a worktree of this checkout, in a Docker sandbox
@@ -603,8 +614,8 @@ def runner_command(
     except (PlatformError, RuntimeError) as exc:
         _fail(str(exc))
     how = ("each in a Docker sandbox of its own (it may run commands there)" if registered.get("isolation") == "sbx"
-           else "each in a worktree of its own (not isolated: the tool edits files, it runs no commands; "
-                "install Docker Sandboxes, `sbx`, to let it run commands)")
+           else "each in a worktree of its own (commands require a supported native sandbox; "
+                "other tools edit files only)")
     say(f"{registered['name']}: coding {state.project_key} turns with {', '.join(registered['tools'])}, {how}")
     try:
         if once:

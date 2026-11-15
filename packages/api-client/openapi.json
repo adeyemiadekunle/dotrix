@@ -23826,6 +23826,192 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Get Cloud Environment",
+        "description": "Read the project's current cloud setup/verification profile and operator-approved image choices.\nSaving or reading a profile does not execute scripts; native local runs ignore the profile.",
+        "operationId": "get_cloud_environment",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Set Cloud Environment",
+        "description": "Save an administrator's cloud environment profile using its current revision.\nStale revisions or unapproved images return 409. New cloud sessions pin the saved profile;\nexisting sessions retain their admitted snapshot. This action never starts coding or runs scripts.",
+        "operationId": "set_cloud_environment",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/coding/sessions": {
       "get": {
         "tags": [
@@ -30397,6 +30583,17 @@
       },
       "CodingRunRead": {
         "properties": {
+          "environment_image_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Image Id"
+          },
           "capabilities": {
             "items": {
               "$ref": "#/components/schemas/CodingCapabilityRead"
@@ -32414,6 +32611,138 @@
           "display_name"
         ],
         "title": "EmailSignupFinish"
+      },
+      "EnvironmentRead": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "default": "Project environment"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "setup_script": {
+            "type": "string",
+            "maxLength": 16000,
+            "title": "Setup Script",
+            "default": ""
+          },
+          "verify_script": {
+            "type": "string",
+            "maxLength": 16000,
+            "title": "Verify Script",
+            "default": ""
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 900.0,
+            "minimum": 10.0,
+            "title": "Timeout Seconds",
+            "default": 300
+          },
+          "image_policy": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "approved"
+            ],
+            "title": "Image Policy",
+            "default": "platform"
+          },
+          "available_images": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Images"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "EnvironmentRead"
+      },
+      "EnvironmentUpdate": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "default": "Project environment"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "setup_script": {
+            "type": "string",
+            "maxLength": 16000,
+            "title": "Setup Script",
+            "default": ""
+          },
+          "verify_script": {
+            "type": "string",
+            "maxLength": 16000,
+            "title": "Verify Script",
+            "default": ""
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 900.0,
+            "minimum": 10.0,
+            "title": "Timeout Seconds",
+            "default": 300
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "EnvironmentUpdate"
       },
       "EpicProgress": {
         "properties": {
@@ -40579,7 +40908,7 @@
           "credits": {
             "type": "integer",
             "title": "Credits",
-            "description": "Tavily credits it used"
+            "description": "Historical search credits (retained for older runs)"
           },
           "flagged": {
             "items": {

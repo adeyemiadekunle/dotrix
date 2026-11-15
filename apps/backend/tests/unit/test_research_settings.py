@@ -1,34 +1,29 @@
-"""Which web search agents get, from settings (docs/architecture.md)."""
+"""Model-independent web research configuration."""
 import pytest
 
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.research.service import build_web_research
 
 
-def settings(**values: object) -> Settings:
-    return Settings(
-        database_url="postgresql+asyncpg://localhost/unused",
-        jwt_secret="test-only-jwt-secret-not-used-anywhere-else",  # type: ignore[arg-type]
-        **{"tavily_api_key": None, **values},  # type: ignore[arg-type]
-    )
+def settings(**values):
+    return Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="test-only-jwt-secret-not-used-anywhere-else", **values)
 
 
-def test_without_a_key_the_models_own_search_is_used() -> None:
-    web = build_web_research(settings())
-    assert web.search is None and web.extractor is None  # agents still read pages
+def test_unconfigured_search_still_allows_page_reads():
+    assert build_web_research(settings()).search is None
 
 
-def test_with_a_key_tavily_searches_and_reads_what_we_cant() -> None:
-    web = build_web_research(settings(tavily_api_key="tvly-test", research_max_searches=3))
-    assert web.search is not None and web.search.name == "tavily"
-    assert web.extractor is web.search and web.max_searches == 3 and web.daily_credits == 500
-    assert build_web_research(settings(tavily_api_key="tvly-test", tavily_extract=False)).extractor is None
+def test_searxng_is_selected_without_model_provider_support():
+    web = build_web_research(settings(searxng_url="http://search:8080"))
+    assert web.search.name == "searxng" and web.extractor is None
+    assert build_web_research(settings(searxng_url="http://search:8080", search_provider="native")).search is None
 
 
-def test_native_keeps_the_models_search_even_with_a_key() -> None:
-    assert build_web_research(settings(tavily_api_key="tvly-test", search_provider="native")).search is None
+def test_searxng_requires_a_service():
+    with pytest.raises(ValueError, match="DOTRIX_SEARXNG_URL"):
+        settings(search_provider="searxng")
 
 
-def test_tavily_needs_its_key() -> None:
-    with pytest.raises(ValueError, match="needs DOTRIX_TAVILY_API_KEY"):
+def test_removed_provider_is_rejected():
+    with pytest.raises(ValueError):
         settings(search_provider="tavily")

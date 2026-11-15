@@ -3,7 +3,7 @@
 `WebResearch` (one per process, from settings) gives each step of a run its web tools
 (`dotrix_engine.web`): sources saved to `research_sources` after every call, so their ids stay
 the same when the run resumes; pages cached per workspace in `web_pages` for a day; searches,
-page reads, and Tavily credits limited per run and per workspace per day. `check_report` checks
+page reads, and historical search credits limited per run and per workspace per day. `check_report` checks
 a report's claims against the pages its sources were read from.
 """
 from __future__ import annotations
@@ -34,7 +34,6 @@ from dotrix_engine.web import (
     SearchProvider,
     Source,
     SourceLog,
-    TavilySearch,
     WebLimits,
     WebUsage,
     build_web_tools,
@@ -42,6 +41,7 @@ from dotrix_engine.web import (
     url_key,
 )
 from dotrix_engine.web.search import PageExtractor
+from dotrix_engine.web.searxng import SearxngSearch
 
 from .models import ResearchSource, WebPage
 
@@ -168,7 +168,7 @@ class RunWeb:
 
 
 async def credits_used_today(session: AsyncSession, workspace_id: uuid.UUID) -> int:
-    """Tavily credits the workspace's runs used since midnight (UTC)."""
+    """historical search credits the workspace's runs used since midnight (UTC)."""
     midnight = _now().replace(hour=0, minute=0, second=0, microsecond=0)
     used = await session.scalar(
         select(func.coalesce(func.sum(AgentRun.usage["web"]["credits"].astext.cast(Integer)), 0)).where(
@@ -192,7 +192,7 @@ class WebResearch:
     extractor: PageExtractor | None = None
     max_searches: int = 10
     max_fetches: int = 20
-    daily_credits: int = 0  # Tavily credits per workspace per day; 0: no limit
+    daily_credits: int = 0  # historical search credits per workspace per day; 0: no limit
     fetcher_factory: Callable[[], PageFetcher] = field(default=PageFetcher)
 
     async def for_run(
@@ -254,16 +254,14 @@ def build_web_research(settings: Settings) -> WebResearch:
     if provider == "fake":
         return fake_web_research()
     if provider == "auto":
-        provider = "tavily" if settings.tavily_api_key else "native"
-    search: TavilySearch | None = None
-    if provider == "tavily" and settings.tavily_api_key is not None:
-        search = TavilySearch(settings.tavily_api_key.get_secret_value())
+        provider = "searxng" if settings.searxng_url else "native"
+    search: SearchProvider | None = None
+    if provider == "searxng" and settings.searxng_url:
+        search = SearxngSearch(settings.searxng_url)
     return WebResearch(
         search=search,
-        extractor=search if search is not None and settings.tavily_extract else None,
         max_searches=settings.research_max_searches,
         max_fetches=settings.research_max_fetches,
-        daily_credits=settings.tavily_daily_credits,
     )
 
 

@@ -137,6 +137,8 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     recovery_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # What the agent is told: the issue, its acceptance criteria, linked documents (as data).
     # Fixed when asked for, so the approver sees exactly what will be sent.
+    environment_image_id: Mapped[str | None] = mapped_column(String(80))
+    environment_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     brief: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)  # what the person asking added
 

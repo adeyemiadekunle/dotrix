@@ -31,7 +31,7 @@ class ResearchSource(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     published: Mapped[str | None] = mapped_column(String(40))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     content_hash: Mapped[str | None] = mapped_column(String(64))
-    via: Mapped[str | None] = mapped_column(String(8))  # direct, or tavily (their extract)
+    via: Mapped[str | None] = mapped_column(String(8))  # direct, or searxng (their extract)
     # Why it looks like it addresses AI agents (empty: it doesn't).
     flagged: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
