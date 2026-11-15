@@ -196,7 +196,7 @@ class StageUsage(BaseModel):
 class WebUsageRead(BaseModel):
     searches: int = Field(description="Web searches the run made")
     fetches: int = Field(description="Web pages it read (pages from the workspace's cache aren't counted)")
-    credits: int = Field(description="Tavily credits it used")
+    credits: int = Field(description="Historical search credits (retained for older runs)")
     flagged: list[str] = Field(description="Source ids of pages that addressed AI agents (their text was ignored)")
 
 

@@ -17,8 +17,11 @@ from dotrix_cli.runner import (
 from dotrix_cli.toolenv import tool_environment
 
 
-def test_both_new_tools_are_detected_and_codex_keeps_its_native_sandbox(monkeypatch, tmp_path):
+def test_codex_is_detected_and_unsafe_native_fx_is_not_advertised(monkeypatch, tmp_path):
+    monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: False)
     monkeypatch.setattr("shutil.which", lambda name: f"/bin/{name}" if name in ("codex", "fx") else None)
+    assert found_tools() == ["codex"]
+    monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: True)
     assert found_tools() == ["codex", "fx"]
     config = write_browser_config("http://127.0.0.1:4411/mcp", "browser-secret")
     try:
@@ -65,6 +68,9 @@ def test_fx_copies_only_its_connection_and_auth_not_saved_full_access(tmp_path):
     assert "dotrix_cli.fx_local" in argv and "--profile" in argv and "own-provider-key" not in " ".join(argv)
     with pytest.raises(ValueError, match="template"):
         Tool.named("fx", isolated=True, profile=profile)
+    with pytest.raises(ValueError, match="model does not match"):
+        prepare_profile(tmp_path / "mismatch", {"HOME": str(source.parent)}, expected_model="nvidia:different-model")
+    assert not (tmp_path / "mismatch").exists()
 
 
 def test_refreshed_login_survives_cleanup_without_overwriting_a_new_sign_in(tmp_path):
@@ -90,7 +96,7 @@ def test_fx_permissions_require_observed_identity_and_bound_paths(tmp_path):
     root.mkdir()
     assert allowed({"name": "write_file", "rawInput": {"path": "inside.md"}}, root)
     assert not allowed({"name": "write_file", "rawInput": {"path": "../outside.md"}}, root)
-    assert not allowed({"name": "shell", "rawInput": {"command": "touch inside"}}, root)
+    assert allowed({"name": "shell", "rawInput": {"command": "touch inside"}}, root)
     assert not allowed({"name": "web_fetch", "rawInput": {"url": "http://localhost"}}, root)
     assert not allowed({"name": "mcp_browser_browser_click"}, root)
     assert allowed({"name": "mcp_browser_browser_click", "_meta": {"fx": {"toolCall": {"mcp": {"server": "browser"}}}}}, root)
@@ -115,3 +121,19 @@ def test_new_engine_streams_keep_browser_steps_failures_and_usage():
         parse_line(json.dumps(event), fx)
     assert [e["kind"] for e in fx.events] == ["tool", "error"]
     assert fx.summary == "Could not check." and fx.usage == {"input_tokens": 80, "output_tokens": 10}
+
+
+async def test_native_fx_is_refused_before_any_engine_or_model_process(monkeypatch, tmp_path, capsys):
+    from dotrix_cli.fx_local import run
+
+    monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: False)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("No engine process may start while the native network boundary is unverified")
+
+    monkeypatch.setenv("NATIVE_FX_POLICY_VALIDATED", "true")
+    monkeypatch.setenv("DOTRIX_NATIVE_FX_POLICY_VALIDATED", "true")
+    monkeypatch.setattr("asyncio.create_subprocess_exec", forbidden)
+    assert await run(tmp_path / "not-created") == 1
+    output = capsys.readouterr().out
+    assert "requires Linux Bubblewrap" in output and "Use cloud coding" in output

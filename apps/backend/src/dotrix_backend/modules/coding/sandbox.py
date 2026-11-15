@@ -479,6 +479,18 @@ class DockerSandbox:
         self.image = settings.coding_image
         self.memory, self.cpus, self.runtime = settings.coding_memory, settings.coding_cpus, settings.coding_docker_runtime
 
+    async def pin_image(self, reference: str) -> DockerSandbox:
+        """Resolve once, use the content ID for both agent and egress containers; never mutate the shared factory."""
+        import copy
+        import re
+
+        identity = (await self.cli("image", "inspect", "--format", "{{.Id}}", reference)).strip()
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", identity):
+            raise SandboxError("The coding image has no valid immutable identity")
+        pinned = copy.copy(self)
+        pinned.image = identity
+        return pinned
+
     def cli_env(self, **extra: str) -> dict[str, str]:
         """The CLI finds its daemon in the worker's environment; nothing else of ours reaches it."""
         keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "TEMP",

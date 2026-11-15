@@ -38,10 +38,12 @@ x-dotrix: &dotrix
     DOTRIX_GITHUB_WEBHOOK_SECRET: ${DOTRIX_GITHUB_WEBHOOK_SECRET:-}
     DOTRIX_GITHUB_CLIENT_ID: ${DOTRIX_GITHUB_CLIENT_ID:-}
     DOTRIX_GITHUB_CLIENT_SECRET: ${DOTRIX_GITHUB_CLIENT_SECRET:-}
-    DOTRIX_TAVILY_API_KEY: ${DOTRIX_TAVILY_API_KEY:-}
+    DOTRIX_SEARXNG_URL: http://searxng:8080
+    DOTRIX_SEARCH_PROVIDER: searxng
     # Coding runs (the worker): sandboxes on Docker Cloud (docker-cloud: the image from a registry), or
     # on this host's Docker through the socket proxy below (docker: the image built here).
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
+    DOTRIX_CODING_ENVIRONMENT_IMAGES: ${DOTRIX_CODING_ENVIRONMENT_IMAGES:-[]}
     DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:${DOTRIX_VERSION:-latest}}
     DOTRIX_DOCKER_CLOUD_ID: ${DOTRIX_DOCKER_CLOUD_ID:-}
     DOTRIX_DOCKER_CLOUD_PAT: ${DOTRIX_DOCKER_CLOUD_PAT:-}
@@ -100,6 +102,7 @@ services:
     <<: *dotrix
     depends_on:
       migrate: { condition: service_completed_successfully }
+      searxng: { condition: service_healthy }
       redis: { condition: service_started }
       storage: { condition: service_started }
 
@@ -112,6 +115,7 @@ services:
     command: ["python", "-m", "dotrix_backend.worker"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+      searxng: { condition: service_healthy }
       coding-image: { condition: service_completed_successfully }
       docker-proxy: { condition: service_started }
       redis: { condition: service_started }
@@ -147,6 +151,22 @@ services:
       interval: 5s
       retries: 20
 
+  searxng:
+    # Pinned multi-platform image; update after checking the JSON API and health endpoint.
+    image: docker.io/searxng/searxng@sha256:eb8b09ffa83aebbe8b8d3ded23cfd224b2d3b01db4f3af9eb03876ef6def6dda
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Generate SEARXNG_SECRET with openssl rand -hex 32}
+    configs:
+      - source: searxng-settings
+        target: /etc/searxng/settings.yml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   redis:
     image: redis:7
     restart: unless-stopped
@@ -173,3 +193,16 @@ volumes:
   pgdata:
   redisdata:
   storagedata:
+
+# Inline so both native-service and repo-root app Compose commands resolve it identically.
+configs:
+  searxng-settings:
+    content: |
+      use_default_settings: true
+      server:
+        limiter: false
+        public_instance: false
+      search:
+        formats:
+          - html
+          - json

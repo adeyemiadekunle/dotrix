@@ -46,7 +46,7 @@ _TYPES = {
 
 
 class FetchError(Exception):
-    """A page that couldn't be read. `fallback` says whether another reader (Tavily's extract)
+    """A page that couldn't be read. `fallback` says whether another reader (SearXNG's extract)
     may try it: never for addresses we refuse or pages robots.txt keeps us out of."""
 
     def __init__(self, message: str, *, fallback: bool = False) -> None:
@@ -67,7 +67,7 @@ class Page:
     markdown: str
     content_type: str
     published: str | None = None
-    via: str = "direct"  # or "tavily"
+    via: str = "direct"  # or "searxng"
     fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property

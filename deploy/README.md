@@ -275,7 +275,7 @@ setup. If you put a firewall or an egress proxy in front of the VPS, allow HTTPS
 | `connect.docker.com`, `hub.docker.com`, and each sandbox's endpoint host | Docker Cloud sandboxes (`docker-cloud`): the Sandboxes API, signing in, and a sandbox's files and commands |
 | `api.osv.dev` | `dependency_advisories`: known vulnerabilities in a repository's dependencies. Without it the tool says OSV can't be reached; nothing else breaks |
 | `api.sendlyai.com` | Email |
-| `api.tavily.com`, and the pages research reads | Web research (optional) |
+| `your private SearXNG service`, and the pages research reads | Web research (optional) |
 
 Building the coding image (`coding-image`) also needs Docker Hub, `registry.npmjs.org`,
 `releases.fx.sh`, Debian's package mirrors and Playwright's browser download. The coding sandboxes
@@ -346,12 +346,14 @@ worker and record its checks, PR and container runtime. Configuration/unit tests
 verify the host's isolation or establish production readiness. No host runtime installation or
 Docker restart is performed by the application.
 
-### Independent releases
 
-Platform, desktop and standalone CLI versions are cut separately; see
-[monorepo operations](../docs/monorepo.md). A desktop/CLI release does not deploy
-server/browser applications or publish a coding image. Coding-image publication
-is manual and uses a commit SHA tag; configure the registry credentials in the
-`coding-image` GitHub environment, select publish explicitly, then review and set
-that image reference on the worker. Existing deployment variables and secrets are
-not changed automatically.
+
+### Included web search
+
+The Compose stack includes SearXNG with JSON enabled and a pinned image. Set
+`SEARXNG_SECRET` in Dokploy before redeploying (`openssl rand -hex 32`). Both API
+and worker use `http://searxng:8080` and wait for its health check. Keep this service
+private: assign no public domain or host port. SearXNG needs outbound HTTPS to its
+upstream search engines. No search-provider API key is required. See
+[coding environments and search](../docs/cloud-environments.md) for native setup,
+validation and TLS-proxy guidance.

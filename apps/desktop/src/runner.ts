@@ -2,8 +2,8 @@
 // a person picks (a checkout of a project's repo), with the dotrix CLI bundled in the app
 // (resources/dotrix, built by apps/cli/scripts/standalone.py). Each turn codes in a git worktree of
 // its own: in a Docker sandbox (a microVM, `sbx`) when Docker Sandboxes is installed, where the tool may run
-// commands. Native Codex uses its workspace-write OS sandbox; other native tools permit file edits
-// and the app-owned browser only. Like the CLI's runner, the
+// commands. Native Codex uses its workspace-write OS sandbox. Native Claude Code and fx can run
+// commands in a verified Linux namespace with API keys; other native paths permit file edits and the app browser. Like the CLI's runner, the
 // coding tool is the one signed in on this computer; the platform never sends a provider key or
 // GitHub token here. The CLI signs in with a device code the
 // person approves in the app's own window (where they're already signed in), and keeps its token in

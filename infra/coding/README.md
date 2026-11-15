@@ -90,8 +90,8 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   `~/.fx/settings.json` each turn (one OpenAI-compatible provider, its key read from the provider's
   variable by name, auto-upgrade off) and drives `fx acp`; the sandbox, not fx, is the boundary, and
   nobody is there to answer fx's permission prompts. fx's web tools reach nothing (the sandbox blocks
-  them). fx (0.0.16) ignores `HTTPS_PROXY`, so behind the egress proxy the driver points it at a forwarder
-  on 127.0.0.1 that tunnels each request to the configured provider (and nothing else) through the proxy;
+  them). fx (0.0.17) ignores `HTTPS_PROXY`, so behind the egress proxy the driver points it at a forwarder
+  on 127.0.0.1:31821 that tunnels each request to the configured provider (and nothing else) through the proxy;
   a refusal ends the turn at once ("The sandbox doesn't allow this model provider"). fx gets the browser as
   Claude Code does: the driver passes `--mcp-config` (Playwright MCP) to every session it starts, resumes or loads
   (ACP's `mcpServers`, each command resolved to an absolute path, which fx 0.0.16 requires), after checking each server
@@ -346,3 +346,16 @@ With Docker Sandboxes (`sbx`) installed, each turn runs in a microVM of its own 
 worktree mounted, and may run commands; without it the tool only edits files. The patch comes
 back to the platform, which checks and pushes it like a cloud turn. See
 `apps/cli/src/dotrix_cli/runner.py`.
+
+### fx 0.0.17 update
+
+The coding image source pins 0.0.17; previous image checks above describe 0.0.16.
+The model forwarder uses a stable sandbox port (31821), since 0.0.17 refuses a
+resumed session whose provider base URL changed. A collision fails startup.
+Failed or user-input-required model recovery also fails the turn rather than
+publishing an incomplete edit. The real binary/Node driver new-turn and resume
+protocol was checked in Bubblewrap with scripted responses; a rebuilt/deployed
+Docker image and live NVIDIA cloud/browser runs remain separate validation.
+Native Linux shell support uses the host-owned namespace relay documented in
+[the browser support guide](../../docs/kai-browser-support.md). Nova's libfx chat
+host remains at 0.0.16 pending its own persistence and recovery validation.

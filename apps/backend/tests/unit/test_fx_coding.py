@@ -149,6 +149,11 @@ FAKE_FX = textwrap.dedent('''
             send({"jsonrpc": "2.0", "id": mid, "result": None})
         elif method == "session/prompt":
             sid = msg["params"]["sessionId"]
+            if "recovery" in msg["params"]["prompt"][0]["text"]:
+                waiting = mid
+                update(sid, {"sessionUpdate": "session_info_update", "_meta": {"fx": {
+                    "modelResponseRecovery": {"state": "need_user", "message": "private provider response"}}}})
+                continue
             if "provider" in msg["params"]["prompt"][0]["text"]:  # call the model the way fx does: the settings' base_url
                 import urllib.error, urllib.request
                 url = json.load(open(os.path.join(os.environ["HOME"], ".fx", "settings.json")))["providers"]["dotrix"]["base_url"]
@@ -204,6 +209,14 @@ def _drive(env: dict[str, str], brief: str, *extra: str) -> list[dict]:
 
 def _calls(env: dict[str, str]) -> list[dict]:
     return [json.loads(line) for line in Path(env["FAKE_FX_LOG"]).read_text().splitlines()]
+
+
+def test_model_recovery_needing_input_cannot_finish_as_success(fake_fx) -> None:
+    events = _drive(fake_fx, "Trigger recovery")
+    assert any(event["type"] == "error" for event in events)
+    assert "private provider response" not in json.dumps(events)
+    assert not any(event.get("stopReason") == "end_turn" for event in events)
+    assert "session/cancel" in [call["method"] for call in _calls(fake_fx)]
 
 
 def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_fx) -> None:

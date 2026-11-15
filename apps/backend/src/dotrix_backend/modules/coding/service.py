@@ -338,6 +338,7 @@ class CodingService:
             access.project, access.member, issue, data.message, CodingOrigin.FOLLOW_UP,
             session_id=session_id, turn=turns[-1].turn + 1, earlier=earlier, carry=with_branch,
             approval=data.approval_mode, location=location, selection=selection,
+            session_environment=self._session_environment(turns),
         )
         run.work_mode = data.work_mode
         if data.source_plan_id:
@@ -376,9 +377,26 @@ class CodingService:
             access.project, access.member, issue, f"Revert turn {target.turn} ({target.commit_sha[:7]})",
             CodingOrigin.FOLLOW_UP, session_id=target.session_id, turn=turns[-1].turn + 1, earlier=earlier,
             carry=with_branch, approval=data.approval_mode, location=CodingLocation.CLOUD, agent=target.agent,
+            session_environment=self._session_environment(turns),
         )
         run.revert_of = target.id
         return await self._settle(access, run)
+
+    @staticmethod
+    def _session_environment(turns: list[CodingRun]) -> tuple[dict | None, str | None] | None:
+        """The first cloud admission owns the environment, independently of PR/branch history.
+
+        A tuple with a null snapshot preserves an admitted absence; None means
+        this session has not yet admitted a cloud turn. Local/revert turns cannot
+        erase it. Image resolution may occur on a later attempt of that profile.
+        """
+        cloud = [turn for turn in turns if turn.location is CodingLocation.CLOUD and turn.revert_of is None]
+        if not cloud:
+            return None
+        snapshot = cloud[0].environment_snapshot
+        image = next((turn.environment_image_id for turn in reversed(cloud)
+                      if turn.environment_snapshot == snapshot and turn.environment_image_id), None)
+        return snapshot, image
 
     async def _next_turn(
         self, access: ProjectAccess, session_id: uuid.UUID, *, location: CodingLocation, publish_only: bool = False,
@@ -454,6 +472,7 @@ class CodingService:
         location: CodingLocation = CodingLocation.CLOUD, agent: CodingAgent | None = None,
         requested_agent: CodingAgent | None = None, requested_model: str | None = None,
         selection: tuple[CodingAgent, str | None] | None = None,
+        session_environment: tuple[dict | None, str | None] | None = None,
     ) -> CodingRun:
         model: str | None = None
         if agent is not None:  # a revert: the session's engine, on record only (nothing runs it)
@@ -484,6 +503,22 @@ class CodingService:
             # The mode this turn was asked in, as far as the workspace and the person allow.
             approval_mode=effective(approval, member).value,
         )
+        if location is CodingLocation.CLOUD:
+            from .environments import profile, require_approved_image
+
+            await self.session.refresh(project, ["coding_environment"])
+            environment, image_id = (session_environment if session_environment is not None
+                                     else (project.coding_environment, None))
+            if environment and profile(environment).enabled:
+                run.environment_snapshot = dict(environment)
+                configured = profile(environment)
+                require_approved_image(configured.image, self.settings.coding_environment_images)
+                run.environment_image_id = image_id
+                run.brief += (f"\n\n## Cloud environment: {configured.name} (revision {configured.revision})\n"
+                    f"Image: {configured.image or self.settings.coding_image}\n"
+                    "Administrator setup runs before Kai; verification must pass before changes can be published.\n"
+                    + fence("Setup script (administrator configuration)", configured.setup_script)
+                    + fence("Verification script (administrator configuration)", configured.verify_script))
         if location is CodingLocation.LOCAL:
             run.brief += "\n\n## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
             run.brief += "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])
@@ -884,6 +919,7 @@ class CodingService:
         capabilities = describe(run, self.settings)
         usage = can(access.member, Permission.VIEW_USAGE)
         return CodingRunRead(
+            environment_image_id=run.environment_image_id,
             id=run.id, project_id=run.project_id, issue_key=run.issue_key, agent=run.agent, model=run.model,
             session_id=run.session_id, turn=run.turn, origin=run.origin, pr_state=run.pr_state,
             status=run.status, brief=run.brief, note=run.note, repo_full_name=run.repo_full_name,

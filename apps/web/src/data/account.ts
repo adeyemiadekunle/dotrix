@@ -427,3 +427,20 @@ export async function sandboxNetworkSaved(body: NetworkBody, projectId?: string)
     }),
   );
 }
+
+export type CloudEnvironment = Schemas["EnvironmentRead"];
+export async function cloudEnvironment(projectId: string): Promise<CloudEnvironment> {
+  return unwrap(
+    api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+    }),
+  );
+}
+export async function cloudEnvironmentSaved(projectId: string, body: Schemas["EnvironmentUpdate"]): Promise<CloudEnvironment> {
+  return unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+      body,
+    }),
+  );
+}

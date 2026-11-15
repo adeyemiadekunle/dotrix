@@ -17,6 +17,7 @@ import asyncio
 import base64
 import contextvars
 import hashlib
+import json
 import logging
 import re
 import shlex
@@ -428,6 +429,8 @@ class CodingWorker:
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
+            environment_image_id = run.environment_image_id
+            environment = dict(run.environment_snapshot) if run.environment_snapshot else None
             execution_plan = run.execution_plan
             plan_mode = run.work_mode == "plan"
             session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
@@ -498,6 +501,32 @@ class CodingWorker:
             return
         assert tool is not None and key is not None and self.sandbox is not None
 
+        if environment and not plan_mode and self.sandbox.kind == "local":
+            raise RunFailed("Cloud environment scripts require a supported isolated sandbox")
+        if environment and not plan_mode and execution_plan and self.settings.coding_parallel:
+            raise RunFailed("Cloud environment profiles are not yet supported for parallel coding")
+        run_sandbox = self.sandbox
+        if environment:
+            from dotrix_backend.core.errors import Conflict
+
+            from .environments import profile, require_approved_image
+
+            configured = profile(environment)
+            try:
+                require_approved_image(configured.image, self.settings.coding_environment_images)
+            except Conflict as exc:
+                raise RunFailed("The environment image is no longer approved; ask the operator to review it") from exc
+            if configured.image and self.sandbox.kind != "docker":
+                raise RunFailed("Approved custom images currently require the Docker sandbox")
+            if hasattr(self.sandbox, "pin_image"):
+                try:
+                    run_sandbox = await self.sandbox.pin_image(environment_image_id or configured.image or self.settings.coding_image)
+                except SandboxError as exc:
+                    raise RunFailed("The approved coding image is unavailable on this worker; ask the operator to install it") from exc
+                environment_image_id = run_sandbox.image
+                await self._update(run_id, environment_image_id=environment_image_id)
+            elif configured.image:
+                raise RunFailed("This sandbox cannot pin the approved coding image")
         if not plan_mode and execution_plan and self.settings.coding_parallel:
             from .parallel import execute as execute_tasks
 
@@ -522,6 +551,8 @@ class CodingWorker:
         resumable = tool.resumes
         # Which key and network the sandbox has: a warm or sleeping one opened with others isn't reused.
         credential = hashlib.sha256(f"{key}\n{network_digest(allow)}".encode()).hexdigest()
+        if environment:
+            credential = hashlib.sha256((credential + json.dumps(environment, sort_keys=True) + (environment_image_id or "")).encode()).hexdigest()
         box = await self.pool.take(session_id, credential)
         woken = False
         if box is None and sleeping is not None:
@@ -547,7 +578,7 @@ class CodingWorker:
             copy = work / "upload" / "repo"
             await _export(host, copy)
             await _baseline(copy)
-            box = await self.sandbox.open(run_id, copy, tool, key, **({"allow": allow} if allow else {}))
+            box = await run_sandbox.open(run_id, copy, tool, key, **({"allow": allow} if allow else {}))
             if resumable and transcript_key:
                 try:
                     resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)
@@ -557,6 +588,16 @@ class CodingWorker:
         keep = False
         reported: float | None = None
         try:
+            if environment and not plan_mode and not warm:
+                before_setup = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=30)
+                if before_setup.code != 0:
+                    raise RunFailed("Could not read the environment setup baseline")
+                await self._environment_phase(run_id, box, environment, "setup_script")
+                clean = await box.exec(["git", "status", "--porcelain", "--untracked-files=normal"], timeout=30)
+                after_setup = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=30)
+                if (clean.code != 0 or clean.stdout.strip() or after_setup.code != 0
+                        or before_setup.stdout.strip() != after_setup.stdout.strip()):
+                    raise RunFailed("Environment setup changed repository files; use a frozen dependency install and keep generated files ignored")
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
             where = ("woken from the last turn" if woken else "kept from the last turn") if warm else self.sandbox.kind
             await self._update(run_id, step=f"Sandbox ready ({where}); {CODING_AGENT_NAME} is "
@@ -589,6 +630,8 @@ class CodingWorker:
                     await session.commit()
                 await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=result_plan["summary"])
                 return
+            if environment:
+                await self._environment_phase(run_id, box, environment, "verify_script")
             await self._blocked(run_id, box, started)
             await self._screenshots(run_id, box)
             changes = await box.exec(
@@ -796,6 +839,39 @@ class CodingWorker:
         fork_ref = replace(ref, installation_id=installation_id, full_name=fork.full_name)
         fork_url = await self.repo_url(fork_ref)
         return _PushTarget(fork_ref, fork_url, auth_env(fork_url, fork_token), f"{owner}:", fork_token)
+
+    async def _environment_phase(self, run_id, box, environment: dict, phase: str) -> None:
+        from .environments import profile
+
+        configured = profile(environment)
+        script = getattr(configured, phase)
+        if not script.strip():
+            return
+        heading = "Environment setup" if phase == "setup_script" else "Environment verification"
+        await self._update(run_id, step=f"{heading} started (revision {configured.revision})")
+        cancel = asyncio.Event()
+
+        async def watch():
+            while not cancel.is_set():
+                await asyncio.sleep(STOP_POLL_SECONDS)
+                if await self.reconciliation_required(run_id) or await self.stop_requested(run_id):
+                    cancel.set()
+                    return
+
+        watcher = asyncio.create_task(watch())
+        try:
+            command = ["sh", "-eu", "-c", script]
+            if phase == "verify_script":
+                command = readonly_command(command)
+            result = await box.exec(command, timeout=configured.timeout_seconds, cancel=cancel)
+        finally:
+            watcher.cancel()
+        if result.cancelled:
+            raise _Stopped(f"{heading} stopped")
+        if result.timed_out or result.code != 0:
+            # Arbitrary command output can contain credentials; report status, never raw stdout/stderr.
+            raise RunFailed(f"{heading} failed" + (" at its time limit" if result.timed_out else f" (exit {result.code})"))
+        await self._update(run_id, step=f"{heading} passed")
 
     async def _code(
         self, run_id: uuid.UUID, box: SandboxSession, tool: CodingTool, model: str | None, tool_session: uuid.UUID,
@@ -1085,7 +1161,7 @@ class CodingWorker:
 
     async def _update(
         self, run_id: uuid.UUID, *, events: list[dict[str, Any]] | None = None, usage: Usage | None = None,
-        step: str | None = None, base_sha: str | None = None,
+        step: str | None = None, base_sha: str | None = None, environment_image_id: str | None = None,
     ) -> None:
         async with self.session_factory() as session:
             run = await session.scalar(select(CodingRun).where(
@@ -1102,6 +1178,10 @@ class CodingWorker:
                     run.model, input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
                     cached_input_tokens=usage.cached_input_tokens, cache_write_tokens=usage.cache_write_tokens,
                     overrides=self.settings.model_prices) if usage.total else None
+            if environment_image_id is not None:
+                if run.environment_image_id is not None and run.environment_image_id != environment_image_id:
+                    raise RunFailed("The coding environment image identity changed; start a new session")
+                run.environment_image_id = environment_image_id
             if base_sha:
                 run.base_sha = base_sha
             await session.commit()
