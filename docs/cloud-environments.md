@@ -8,6 +8,12 @@ be applied before using these endpoints.
 
 Each new cloud session pins the profile before approval and shows its scripts in
 the brief; follow-ups retain that snapshot. Local sessions ignore cloud profiles.
+Environment ownership is independent of a published branch or PR. Plan/no-change
+turns and branch rollover keep the first cloud admission's profile, including an
+admitted absence of a profile. Local turns do not apply or erase it; a session
+that starts locally pins a profile only on its first cloud admission. The last
+resolved image for that admitted profile survives later attempts.
+
 Setup runs only in a supported isolated sandbox, never the development local
 process backend. Setup must leave tracked and non-ignored repository files clean;
 use frozen installs and ignored dependency/cache directories. Verification runs

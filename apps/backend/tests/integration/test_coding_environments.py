@@ -4,6 +4,7 @@ import pytest
 from apps.backend.tests.integration.test_coding import (  # noqa: F401
     _git,
     _local_runner,
+    _set_run,
     checkout,
     claude,
     coding,
@@ -16,10 +17,10 @@ async def configure(client, base, headers, **values):
         json={"revision": 0, "enabled": True, "name": "Python checks", **values})
 
 
-async def ask(client, base, headers):
+async def ask(client, base, headers, **options):
     issue = (await client.post(base + "/issues", headers=headers,
         json={"type": "task", "title": "Add refund"})).json()
-    response = await client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=headers, json={})
+    response = await client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=headers, json=options)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -157,3 +158,76 @@ async def test_resolved_image_is_pinned_and_used_for_worker_execution(db_client,
     assert result["status"] == "changes_ready", result.get("error")
     assert result["environment_image_id"] == "sha256:" + "b" * 64
     assert calls == [sandbox.image if already_resolved else db_client._transport.app.state.settings.coding_image]
+
+
+@pytest.mark.parametrize(("mode", "published", "disable"), [
+    ("plan", False, False), ("build", False, True), ("build", True, True),
+])
+async def test_followups_preserve_environment_without_a_published_branch(
+    db_client, coding, db_session, mode, published, disable,  # noqa: F811
+):
+    """Real admission/history; terminal execution metadata is simulated, with no model/container calls."""
+    from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus, PrState
+
+    ada, _, ws, project, _, _ = coding
+    base = f"{ws}/projects/{project['id']}"
+    await configure(db_client, base, ada.headers, setup_script="true", verify_script="python3 --version")
+    first = await ask(db_client, base, ada.headers, work_mode=mode)
+    admitted = dict((await db_session.get(CodingRun, first["id"])).environment_snapshot)
+    identity = "sha256:" + "b" * 64
+    terminal = {"status": CodingRunStatus.NO_CHANGES, "environment_image_id": identity}
+    if published:
+        terminal.update(status=CodingRunStatus.PR_OPENED, branch="dotrix/earlier", pr_number=17, pr_state=PrState.MERGED)
+    await _set_run(db_client, first["id"], **terminal)
+    await configure(db_client, base, ada.headers, revision=1, enabled=not disable, setup_script="exit 77")
+    response = await db_client.post(f"{base}/coding/sessions/{first['session_id']}/turns", headers=ada.headers,
+                                   json={"message": "Continue", "work_mode": "build"})
+    assert response.status_code == 201, response.text
+    next_run = await db_session.get(CodingRun, response.json()["id"])
+    assert next_run.environment_snapshot == admitted
+    assert next_run.environment_image_id == identity
+    assert next_run.branch is None and next_run.pr_number is None
+    assert "revision 1" in next_run.brief and "exit 77" not in next_run.brief
+
+
+async def test_a_session_without_a_profile_does_not_adopt_a_later_project_profile(db_client, coding, db_session):  # noqa: F811
+    from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
+
+    ada, _, ws, project, _, _ = coding
+    base = f"{ws}/projects/{project['id']}"
+    first = await ask(db_client, base, ada.headers)
+    await _set_run(db_client, first["id"], status=CodingRunStatus.NO_CHANGES)
+    await configure(db_client, base, ada.headers, setup_script="exit 77")
+    response = await db_client.post(f"{base}/coding/sessions/{first['session_id']}/turns", headers=ada.headers,
+                                   json={"message": "Continue"})
+    assert response.status_code == 201, response.text
+    stored = await db_session.get(CodingRun, response.json()["id"])
+    assert stored.environment_snapshot is None and stored.environment_image_id is None
+    assert "exit 77" not in stored.brief
+
+
+async def test_a_later_resolution_survives_local_intermediate_turns(db_client, coding, checkout, tmp_path, db_session):  # noqa: F811
+    from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
+
+    ada, _, ws, project, _, _ = coding
+    base = f"{ws}/projects/{project['id']}"
+    await configure(db_client, base, ada.headers, setup_script="true")
+    first = await ask(db_client, base, ada.headers)
+    original = dict((await db_session.get(CodingRun, first["id"])).environment_snapshot)
+    await _set_run(db_client, first["id"], status=CodingRunStatus.FAILED)
+    path = f"{base}/coding/sessions/{first['session_id']}/turns"
+    second = await db_client.post(path, headers=ada.headers, json={"message": "Retry"})
+    assert second.status_code == 201, second.text
+    identity = "sha256:" + "c" * 64
+    await _set_run(db_client, second.json()["id"], status=CodingRunStatus.NO_CHANGES, environment_image_id=identity)
+    runner = _local_runner(db_client, coding, checkout, tmp_path, "true", tool="claude-code")
+    await runner.register()
+    local = await db_client.post(path, headers=ada.headers, json={"message": "Check locally", "location": "local"})
+    assert local.status_code == 201, local.text
+    assert (await db_session.get(CodingRun, local.json()["id"])).environment_snapshot is None
+    await _set_run(db_client, local.json()["id"], status=CodingRunStatus.NO_CHANGES)
+    await configure(db_client, base, ada.headers, revision=1, enabled=False)
+    final = await db_client.post(path, headers=ada.headers, json={"message": "Continue in cloud", "location": "cloud"})
+    assert final.status_code == 201, final.text
+    stored = await db_session.get(CodingRun, final.json()["id"])
+    assert stored.environment_snapshot == original and stored.environment_image_id == identity
