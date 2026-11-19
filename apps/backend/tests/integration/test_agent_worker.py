@@ -45,6 +45,7 @@ def worker_mode(db_client: AsyncClient, redis, create_team, signup, agent_script
                 model_factory=model_factory,
                 inline=True,
                 stop_reasons=RunQueue(redis, queue_name=name),
+                outbox=RunQueue(redis, queue_name=name),
                 streams=streams,
             )
             return Worker(
@@ -212,3 +213,41 @@ async def test_a_run_whose_worker_stopped_goes_on_in_another(worker_mode, db_cli
     async with factory() as session:
         row = await session.get(AgentRun, uuid.UUID(queued["id"]))
         assert row.lease_token == 2 and row.lease_expires_at is None
+
+
+async def test_a_follow_up_delivered_in_the_worker_gets_its_own_dispatch(
+    worker_mode, db_client: AsyncClient, agent_script,
+) -> None:
+    from sqlalchemy import select
+
+    from dotrix_backend.modules.agents.models import AgentRun
+    from dotrix_backend.modules.execution.models import RunDispatch
+    from dotrix_backend.modules.execution.service import RunDispatcher
+
+    ada, _, base, make_worker = await worker_mode()
+    agent_script.say("First answer.", "Second answer.")
+    first = (await db_client.post(f"{base}/agent/runs", json={"message": "Hi"}, headers=ada.headers)).json()
+    assert first["status"] == "queued"
+    queued = await db_client.post(
+        f"{base}/agent/threads/{first['thread_id']}/inputs",
+        json={"kind": "queue", "message": "And then?", "client_id": str(uuid.uuid4())},
+        headers=ada.headers,
+    )
+    assert queued.status_code == 202, queued.text
+
+    await make_worker().main()  # the first run finishes and the worker delivers the follow-up
+
+    runner = db_client._transport.app.state.runner  # type: ignore[attr-defined]
+    factory = runner.session_factory
+    async with factory() as session:
+        runs = (await session.scalars(select(AgentRun).where(AgentRun.thread_id == uuid.UUID(first["thread_id"])))).all()
+        follow_ups = [run for run in runs if str(run.id) != first["id"]]
+        assert len(follow_ups) == 1
+        follow_up_id = follow_ups[0].id
+        dispatches = (await session.scalars(select(RunDispatch).where(RunDispatch.agent_run_id == follow_up_id))).all()
+        assert dispatches, "the follow-up was started inline, with no dispatch row"
+
+    await RunDispatcher(factory, runner.queue).sweep()
+    await make_worker().main()
+    done = (await db_client.get(f"{base}/agent/runs/{follow_up_id}", headers=ada.headers)).json()
+    assert done["status"] == "completed" and done["reply"] == "Second answer."

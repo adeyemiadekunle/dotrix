@@ -37,6 +37,7 @@ from dotrix_engine.runtimes import (
     fx_configuration_digest,
 )
 from dotrix_engine.runtimes.contracts import EventHandler
+from dotrix_engine.runtimes.fx import LIBFX_ARTIFACTS, libfx_version
 from dotrix_engine.work_modes import guide as work_mode_guide
 
 from .board_tools import board_instructions
@@ -56,10 +57,12 @@ from .runtime_sessions import (
     get_runtime_session,
     upgrade_runtime_binding,
 )
-from .runtime_tools import RuntimeRunScope, scoped_project_tools
+from .runtime_tools import RuntimeRunScope, readable_failures, scoped_project_tools
+from .scripts import SCRIPT_GUIDE, OnCall, script_runtime_tool
 from .storage_backend import SessionFactory
 from .unattended import Unattended
 from .work_modes import ModeContext, lead_tools
+from .workspace_runs import read_only
 
 # These are fixed platform endpoints, not URLs supplied by a model or browser. Anthropic's is its
 # OpenAI-compatible endpoint (checked with libfx 0.0.16 on Claude Haiku 5.5, 2026-10-30: tools, follow-ups,
@@ -69,14 +72,27 @@ _FX_ENDPOINTS = {
     "anthropic": "https://api.anthropic.com/v1",
     **{name: provider.base_url for name, provider in PROVIDERS.items() if provider.base_url},
 }
-# A run bound to another libfx version fails closed instead of resuming on this one (runtime_sessions.py).
-# Since -3 every turn is journaled and may change the project through approvals.
-_VERSION = "libfx-0.0.16-chat-3"
-_DURABLE_VERSION = "libfx-0.0.16-delegation-3"
-# Earlier pilots' bindings, upgraded to these when their run works again: True where the journal was
-# written by libfx 0.0.15, which 0.0.16 can't read, so the turn starts again from its message.
-_EARLIER = {"libfx-0.0.15-pilot-1": True, "libfx-0.0.15-delegation-1": True,
-            "libfx-0.0.16-pilot-2": False, "libfx-0.0.16-delegation-2": False}
+# A run is bound to the libfx artifact the host pins (runtimes/fx.py LIBFX_ARTIFACTS); a run bound to
+# another one fails closed instead of resuming on this one (runtime_sessions.py), unless it is listed
+# below. Since -3 every turn is journaled and may change the project through approvals.
+_LIBFX = libfx_version()
+_VERSION = f"libfx-{_LIBFX}-chat-3"
+_DURABLE_VERSION = f"libfx-{_LIBFX}-delegation-3"
+
+
+def _earlier_bindings(current: str) -> dict[str, bool]:
+    """Bindings upgraded to this version when their run works again, each True when its journal is
+    dropped and the turn starts again from its message. 0.0.15's journals no host since 0.0.16 can
+    read; the others are only those whose artifact `current` was shown to resume."""
+    earlier = {"libfx-0.0.15-pilot-1": True, "libfx-0.0.15-delegation-1": True}
+    for version in (current, *LIBFX_ARTIFACTS[current]):
+        names = ["pilot-2", "delegation-2"] if version == "0.0.16" else []
+        names += [] if version == current else ["chat-3", "delegation-3"]
+        earlier |= {f"libfx-{version}-{name}": False for name in names}
+    return earlier
+
+
+_EARLIER = _earlier_bindings(_LIBFX)
 _HISTORY_TURNS = 16
 _HISTORY_CHARS = 30_000
 _GUIDE = """Answer the person using the project tools you are given.
@@ -94,6 +110,13 @@ _DELEGATION_GUIDE = _GUIDE.replace(
     "You can delegate selectively to built-in specialists with delegate_tasks; mark a task "
     "changes_project only when the person asked for that change.",
 )
+
+
+def _specialist_directory(spec: AgentSpec, specs: list[AgentSpec]) -> str:
+    """Show the names of specialists that Nova's contract permits it to call."""
+    available = [item for item in specs if item.handle in ("product", "architecture", "research", "reviewer", "documentation")
+                 and ("*" in spec.can_call or item.handle in spec.can_call)]
+    return ", ".join(f"{item.name} → {item.handle}" for item in available) or "none"
 
 
 @dataclass(frozen=True)
@@ -165,7 +188,7 @@ async def _turn(
     secrets: Secrets, embedder: Embedder | None = None, on_event: EventHandler | None = None,
     delegation: DelegationService | None = None, code_tools: list | None = None, code_context: str = "",
     web_tools: list | None = None, effective: tuple[AgentSpec, AgentPolicy, Unattended] | None = None,
-    mode_context: ModeContext | None = None,
+    mode_context: ModeContext | None = None, scripts: bool = False, script_calls: OnCall | None = None,
 ) -> TurnResult:
     """Run (or resume) one turn for an already admitted Nova run.
 
@@ -174,14 +197,19 @@ async def _turn(
     `effective` is the run's contract with its approval mode and standing rules applied
     (the runner's); without it the turn only reads. A bound run resumes only its pinned
     journal, context and scoped delegation; another version's binding fails closed.
+    With `scripts` (the platform's `agent_scripts` setting, read when the run first binds and pinned in its
+    snapshot after that, like its context) Nova also gets `run_script` over its read tools (agents/scripts.py),
+    each call reported to `script_calls` for the run's activity. A resumed turn keeps the choice it was bound
+    with whatever the setting says by then, so its configuration (and its binding's digest) stays the same.
     """
     session_id = f"fx-pilot-{uuid.uuid4().hex}"
     async with sessions() as session:
         run = await admit_runtime_run(session, workspace_id, run_id, token)
+        coding_outcome = run.source == "coding_outcome" and run.work_mode is WorkMode.REVIEW
         if (run.kind is not RunKind.CHAT or run.work_mode is None or run.parent_run_id is not None
                 or run.agent not in (None, PM_HANDLE) or run.automation_id is not None or run.mode is not None
-                or run.source != "user"):
-            raise Conflict("The fx pilot only supports an interactive Nova turn in a work mode")
+                or (run.source != "user" and not coding_outcome)):
+            raise Conflict("fx supports interactive Nova turns in a work mode, or read-only coding outcomes in Review mode")
         previous = list(await session.scalars(select(AgentRun).where(
             AgentRun.workspace_id == workspace_id, AgentRun.project_id == run.project_id,
             AgentRun.thread_id == run.thread_id, AgentRun.requested_by_id == run.requested_by_id,
@@ -210,20 +238,35 @@ async def _turn(
             person = await session.get(User, run.requested_by_id)
             specs = with_preferences(specs, preferences, person.display_name if person else "the person")
         spec = next(item for item in specs if item.handle == PM_HANDLE)
+        if coding_outcome:
+            spec = read_only(spec)
         keys = (await run_keys(session, secrets, workspace_id, run.requested_by_id)).keys
         connection = _connection(run.model, keys)
+        from .skill_snapshots import for_role, pin
+
+        skill_snapshot = await pin(session, run, secrets)
         scope = RuntimeRunScope(workspace_id, run.project_id, run_id, run.requested_by_id,
-                                PM_HANDLE, token, session_id)
-        guide = _DELEGATION_GUIDE if durable and spec.can("delegate") else _GUIDE
-        instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}{work_mode_guide(work_mode.value)}"
+                                PM_HANDLE, token, session_id, for_role(skill_snapshot, PM_HANDLE),
+                                {name: item.get("resources", {}) for name, item in (run.skill_snapshot or {}).items()
+                                 if name in for_role(skill_snapshot, PM_HANDLE)})
+        guide = _DELEGATION_GUIDE if durable and not coding_outcome and spec.can("delegate") else _GUIDE
         if existing is not None and existing.encrypted_context:
             snapshot = json.loads(secrets.decrypt(existing.encrypted_context))
         else:  # a new run, or one bound before the context was pinned: today's context
             snapshot = {
-                "rules": await project_rules(session, project.id, [PM_HANDLE], workspace_id),
+                "rules": await project_rules(session, project.id, [PM_HANDLE], workspace_id, skill_snapshot),
                 "context": await build_context_pack(session, project, run, embedder),
                 "code_context": code_context,
             }
+            # Existing bindings without this field keep their original instructions.
+            if existing is None and durable and not coding_outcome and spec.can("delegate"):
+                snapshot["specialist_directory"] = _specialist_directory(spec, specs)
+            # Pinned for the run's life; a binding from before scripts (no field) never has them.
+            if existing is None:
+                snapshot["scripts"] = scripts
+        if "specialist_directory" in snapshot:
+            guide += f"\nBuilt-in specialists (name → delegation handle): {snapshot['specialist_directory']}.\n"
+        instructions = f"{introduce(spec, project.name)}\n\n{role_instructions(spec)}\n\n{guide}{work_mode_guide(work_mode.value)}"
         rules = snapshot["rules"]
         instructions = "\n\n".join(part for part in (
             rules.get("base", ""), rules.get(PM_HANDLE, ""), instructions,
@@ -264,14 +307,18 @@ async def _turn(
                        f'<data source="conversation">{evidence}</data>\n\nLatest message:\n{run.message}')
 
     tools = scoped_project_tools(sessions, scope=scope, spec=spec, embedder=embedder, code_tools=code_tools, web_tools=web_tools)
+    if snapshot.get("scripts") is True and (script := script_runtime_tool(tools, on_call=script_calls)) is not None:
+        tools.append(script)
+        instructions += SCRIPT_GUIDE
     if effective is not None:
         from .fx_tools import fx_change_tools
 
         lead, policy, unattended = effective
-        tools += fx_change_tools(sessions, secrets, scope=scope, spec=lead, policy=policy, unattended=unattended,
-                                 work_mode=work_mode, mode_context=mode_context, authorize=lambda: authorize())
+        if not coding_outcome:
+            tools += fx_change_tools(sessions, secrets, scope=scope, spec=lead, policy=policy, unattended=unattended,
+                                     work_mode=work_mode, mode_context=mode_context, authorize=lambda: authorize())
         tools += mode_reads(work_mode, mode_context, lambda: authorize())
-    if durable:
+    if durable and not coding_outcome:
         async def delegate(arguments: dict, context: RuntimeToolContext):
             await authorize()
             if context.session_id != session_id or not context.execution_id:
@@ -288,7 +335,7 @@ async def _turn(
         if spec.can("delegate"):
             tools.append(RuntimeTool("delegate_tasks", "Ask built-in specialists for work.",
                                      SpecialistBatch.model_json_schema(), execute_scoped=delegate, writes=True))
-    config = AgentRuntimeConfig(PM_HANDLE, instructions, tuple(tools))
+    config = AgentRuntimeConfig(PM_HANDLE, instructions, tuple(readable_failures(tool) for tool in tools))
     identity = RuntimeIdentity("fx", _DURABLE_VERSION if durable else _VERSION, fx_configuration_digest(
         config, model=connection.model, base_url=connection.base_url,
     ))

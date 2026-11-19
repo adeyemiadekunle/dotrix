@@ -73,6 +73,7 @@ class BoardContext:
     unattended: Unattended | None = None
     # Whether Kai may be engaged: false outside Build mode (work_modes.py), so issues can't be handed to it.
     coding: bool = True
+    mode_context: Any = None  # Nova's structured, conversation-linked Kai handoff
 
 
 CODING_REFUSED = "Assigning Kai starts coding, which needs Build mode: say so, and that the person can switch to Build"
@@ -230,7 +231,11 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             )
             return _detail(await service.create(project, actor, data))
 
-        return await _run(True, fn, "issues.create")
+        result = await _run(True, fn, "issues.create")
+        if ctx.mode_context and assignee in {a.value for a in AgentAssignee} and isinstance(result, dict) and "key" in result:
+            from .work_modes import StartCoding, _start_coding
+            result["coding"] = await _start_coding(ctx.mode_context, StartCoding(issue_key=result["key"]))
+        return result
 
     async def update_issue(
         key: str,
@@ -276,7 +281,11 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
         async def fn(service: IssueService, project: Any, actor: IssueActor) -> Any:
             return _detail(await service.update(project, key, actor, IssueUpdate(**fields)))
 
-        return await _run(True, fn, "issues.update", closes=status == "done")
+        result = await _run(True, fn, "issues.update", closes=status == "done")
+        if ctx.mode_context and fields.get("assignee_agent") and isinstance(result, dict) and "key" in result:
+            from .work_modes import StartCoding, _start_coding
+            result["coding"] = await _start_coding(ctx.mode_context, StartCoding(issue_key=result["key"]))
+        return result
 
     async def comment_issue(key: str, text: str) -> Any:
         """Add a comment to an issue's log. ACTION MODE ONLY: pauses for approval.

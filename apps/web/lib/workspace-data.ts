@@ -8,32 +8,40 @@ import { useMemo } from "react";
 import { api, unwrap, type Schemas } from "./api";
 import { useProjectActivity, useWorkspaceActivity } from "./activity";
 import { useDocuments } from "./documents";
-import { useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./issues";
+import { fetchAllIssues, useWorkspaceIssues, type Scope, type WorkspaceIssueFilters } from "./issues";
 import { useKnowledge, useKnowledgeFile } from "./knowledge";
 import { useNotifications } from "./notifications";
 import { useProjects } from "./queries";
+import { EVERY_ISSUE, readSlot } from "./store-slots";
 import { useStarredProjects } from "./stars";
-import { ms, toActivity, toAgent, toAudit, toAutomation, toFile, toMember, toNotif, toProject, toTask } from "./view-models";
+import { ms, toActivity, toAutomation, toFile, toTask } from "./view-models";
 import type { Activity, Agent, AuditEvent, Automation, FileItem, KnowledgeFile, Member, Notif, Project, Task } from "@/src/data/types";
 
-/** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
-function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean): Task[] | undefined {
-  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, filters);
-  const starred = useQuery({
+/** The issues you starred, every page of them. */
+function useStarredKeys(workspaceId: string | undefined, enabled: boolean) {
+  return useQuery({
     queryKey: ["issues", "workspace", workspaceId, "starred-keys"],
     queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/issues", {
-          params: { path: { workspace_id: workspaceId! }, query: { starred: true, limit: 5000 } },
-        }),
+      fetchAllIssues((offset) =>
+        unwrap(
+          api.GET("/v1/workspaces/{workspace_id}/issues", {
+            params: { path: { workspace_id: workspaceId! }, query: { starred: true, limit: 1000, offset } },
+          }),
+        ),
       ),
     enabled: enabled && Boolean(workspaceId),
   });
+}
+
+/** Workspace issues as store Tasks: `fav` comes from the starred set, project ids are real. */
+function useLiveTasks(workspaceId: string | undefined, filters: WorkspaceIssueFilters, enabled: boolean, byRank = false): Task[] | undefined {
+  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, filters);
+  const starred = useStarredKeys(workspaceId, enabled);
   return useMemo(() => {
     if (!issues.data) return undefined;
     const fav = new Set((starred.data ?? []).map((i) => i.key));
-    return issues.data.map((i, order) => ({ ...toTask(i, i.project_id, order), fav: fav.has(i.key) }));
-  }, [issues.data, starred.data]);
+    return issues.data.map((i, order) => ({ ...toTask(i, i.project_id, byRank ? i.rank : order), fav: fav.has(i.key) }));
+  }, [issues.data, starred.data, byRank]);
 }
 
 /** Issues assigned to you across every project you can see (My Tasks → Assigned). */
@@ -58,36 +66,24 @@ export function useLiveAllTasks(workspaceId: string | undefined, enabled = true)
   return useLiveTasks(workspaceId, {}, enabled);
 }
 
-/** Every issue including archived ones, rank-ordered — the synchronous store mirror keeps them all reachable. */
+/** Every issue including archived ones, rank-ordered: the same Tasks the store's `D().tasks` reads (lib/store-slots.ts). */
 export function useLiveWorkspaceTasks(workspaceId: string | undefined, enabled = true): Task[] | undefined {
-  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, { archived: "include", order: "created" });
-  const starred = useQuery({
-    queryKey: ["issues", "workspace", workspaceId, "starred-keys"],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/issues", {
-          params: { path: { workspace_id: workspaceId! }, query: { starred: true, limit: 5000 } },
-        }),
-      ),
-    enabled: enabled && Boolean(workspaceId),
-  });
-  return useMemo(() => {
-    if (!issues.data) return undefined;
-    const fav = new Set((starred.data ?? []).map((i) => i.key));
-    return issues.data.map((i) => ({ ...toTask(i, i.project_id, i.rank), fav: fav.has(i.key) }));
-  }, [issues.data, starred.data]);
+  const issues = useWorkspaceIssues(enabled ? workspaceId : undefined, EVERY_ISSUE);
+  const starred = useStarredKeys(workspaceId, enabled);
+  // starred.data is read so this re-renders when stars change; the slot reads both from the cache.
+  return issues.data && workspaceId ? (starred.data, readSlot("tasks", workspaceId)) : undefined;
 }
 
 /** The signed-in person's notifications as store Notifs (Home's waiting card, the Inbox). */
 export function useLiveNotifications(workspaceId: string | undefined, enabled = true): Notif[] | undefined {
   const notifs = useNotifications(enabled ? workspaceId : undefined);
-  return useMemo(() => notifs.data?.map(toNotif), [notifs.data]);
+  return notifs.data && workspaceId ? readSlot("notifs", workspaceId) : undefined;
 }
 
 /** The workspace activity feed as store Activity rows (the /activity page). */
 export function useLiveWorkspaceActivity(workspaceId: string | undefined, enabled = true): Activity[] | undefined {
   const feed = useWorkspaceActivity(enabled ? workspaceId : undefined);
-  return useMemo(() => feed.data?.map(toActivity), [feed.data]);
+  return feed.data && workspaceId ? readSlot("activity", workspaceId) : undefined;
 }
 
 /** A project's activity feed as store Activity rows (the project Activity tab / overview rail). */
@@ -96,28 +92,13 @@ export function useLiveProjectActivity(scope: Scope | undefined, enabled = true)
   return useMemo(() => feed.data?.map(toActivity), [feed.data]);
 }
 
-/** A project's non-archived issues as store Tasks (Board and List). */
+/** A project's non-archived issues as store Tasks, in the project's own order: its rank, which dragging changes (Board and List). */
 export function useLiveProjectTasks(workspaceId: string | undefined, projectId: string | undefined, enabled = true) {
-  const tasks = useLiveTasks(workspaceId, {}, enabled && Boolean(projectId));
+  const tasks = useLiveTasks(workspaceId, {}, enabled && Boolean(projectId), true);
   return useMemo(() => tasks?.filter((t) => t.project === projectId && !t.archived), [tasks, projectId]);
 }
 
-/** Workspace members as store Members. */
-const toInvitedMember = (i: Schemas["InviteRead"]): Member => ({
-  id: "invite:" + i.id,
-  name: (i.email ?? "")
-    .split("@")[0]!
-    .replace(/[._-]+/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase()),
-  email: i.email ?? "",
-  role: ({ owner: "Owner", admin: "Admin", member: "Member", guest: "Guest" } as const)[i.role] ?? "Member",
-  title: "",
-  c: "#6B7280",
-  status: "invited",
-  last: null,
-  tz: "",
-});
-
+/** Workspace members as store Members, with pending email invites (the same objects as the store's `D().members`). */
 export function useLiveMembers(workspaceId: string | undefined, enabled = true): Member[] | undefined {
   const members = useQuery({
     queryKey: ["members", workspaceId],
@@ -132,11 +113,7 @@ export function useLiveMembers(workspaceId: string | undefined, enabled = true):
     staleTime: 5 * 60_000,
     retry: false,
   });
-  return useMemo(() => {
-    if (!members.data) return undefined;
-    const pending = (invites.data ?? []).filter((i) => i.kind === "email" && i.email).map(toInvitedMember);
-    return [...members.data.map(toMember), ...pending];
-  }, [members.data, invites.data]);
+  return members.data && workspaceId ? (invites.data, readSlot("members", workspaceId)) : undefined;
 }
 
 /** The workspace's agent contracts as store Agents (Chat's list, Settings → Agents). */
@@ -147,7 +124,7 @@ export function useLiveAgents(workspaceId: string | undefined, enabled = true): 
     enabled: enabled && Boolean(workspaceId),
     staleTime: 5 * 60_000,
   });
-  return useMemo(() => agents.data?.map(toAgent), [agents.data]);
+  return agents.data && workspaceId ? readSlot("agents", workspaceId) : undefined;
 }
 
 /** The workspace's projects as store Projects (starred and member lists resolved). */
@@ -160,11 +137,7 @@ export function useLiveProjects(workspaceId: string | undefined, enabled = true)
     enabled: enabled && Boolean(workspaceId),
     staleTime: 5 * 60_000,
   });
-  return useMemo(() => {
-    if (!projects.data || !members.data) return undefined;
-    const stars = new Set(starred.data ?? []);
-    return projects.data.map((p) => toProject(p, members.data, stars));
-  }, [projects.data, starred.data, members.data]);
+  return projects.data && members.data && workspaceId ? (starred.data, readSlot("projects", workspaceId)) : undefined;
 }
 
 /** A project's .dotrix/ manifest as store KnowledgeFiles (paths + versions; content is ""). */
@@ -221,7 +194,8 @@ export function useLiveWorkspaceFiles(workspaceId: string | undefined, enabled =
         ? undefined
         : results.flatMap((r, i) => (r.data ?? []).map((d) => toFile(d, projects.data![i].id))),
   });
-  return projects.data ? files : undefined;
+  // What combine built only says the lists changed; the store's slot gives the same objects as `D().files`.
+  return projects.data && files && workspaceId ? readSlot("files", workspaceId) : undefined;
 }
 
 /** The .dotrix/ manifest across every visible project (the store's `knowledge` mirror; content is ""). */
@@ -246,7 +220,8 @@ export function useLiveWorkspaceKnowledge(workspaceId: string | undefined, enabl
               .map((f) => ({ path: f.path, project: projects.data![i].id, content: "", version: f.version, by: "", at: ms(f.updated_at) })),
           ),
   });
-  return projects.data ? knowledge : undefined;
+  // What combine built only says the lists changed; the store's slot gives the same objects as `D().knowledge`.
+  return projects.data && knowledge && workspaceId ? readSlot("knowledge", workspaceId) : undefined;
 }
 
 /** Automations across every visible project (the store's `automations` mirror). */
@@ -264,7 +239,8 @@ export function useLiveWorkspaceAutomations(workspaceId: string | undefined, ena
     })),
     combine: (results) => (results.some((r) => r.data === undefined && !r.isError) ? undefined : results.flatMap((r) => (r.data ?? []).map(toAutomation))),
   });
-  return projects.data ? autos : undefined;
+  // What combine built only says the lists changed; the store's slot gives the same objects as `D().automations`.
+  return projects.data && autos && workspaceId ? readSlot("automations", workspaceId) : undefined;
 }
 
 /** The workspace's audit log for owners and admins (Settings → Audit); other roles get nothing. */
@@ -280,7 +256,7 @@ export function useLiveAudit(workspaceId: string | undefined, enabled = true): A
     enabled: enabled && Boolean(workspaceId),
     retry: false,
   });
-  return useMemo(() => events.data?.map(toAudit), [events.data]);
+  return events.data && workspaceId ? readSlot("audit", workspaceId) : undefined;
 }
 
 /** Workspace hybrid search hits (documents and/or issues) across every project you can see. */
@@ -306,4 +282,3 @@ export function useLiveWorkspaceSearch(
 }
 
 /** Minutes-since strings: store dates are epoch ms under the same name. */
-export { ms };

@@ -39,6 +39,7 @@ from dotrix_backend.modules.auth.service import AuthService
 from dotrix_backend.modules.connectors.github_app import get_github_app
 from dotrix_backend.modules.connectors.schemas import InstallationAdd
 from dotrix_backend.modules.connectors.service import ConnectorService
+from dotrix_backend.modules.workspaces.availability import available
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
@@ -288,7 +289,8 @@ async def _add_installation(
     they must be an owner or admin of the workspace it's for (like the API's route)."""
     workspace_id = uuid.UUID(str(install["workspace"]))
     membership = await MembershipRepository(session).get(workspace_id, user.id)
-    if membership is None or not can(membership, Permission.MANAGE_PROJECTS):
+    usable = membership is not None and available(membership.workspace, settings)
+    if not usable or not can(membership, Permission.MANAGE_PROJECTS):
         raise Unauthorized("Only the workspace's owners and admins can add GitHub accounts.")
     data = InstallationAdd(installation_id=int(install["installation_id"]), code=code)
     await ConnectorService(session, get_github_app(settings)).add_installation(membership, data, github)

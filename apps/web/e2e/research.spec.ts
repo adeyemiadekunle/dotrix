@@ -13,7 +13,7 @@ test("research a question: claims checked against the page, sources, and a saved
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   await page.getByRole("button", { name: "Choose the agent and model" }).click();
   await page.getByRole("menuitemradio", { name: /Research agent/ }).click();
-  const box = page.getByLabel("Message Research agent");
+  const box = page.getByLabel("Message Research agent", { exact: true });
   await box.fill("Research: UK VAT rate");
   await box.press("Enter");
 

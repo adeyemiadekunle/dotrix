@@ -1,27 +1,44 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Task pages: the same views over every project you can see.
 import { Ic } from "../core/icons";
 import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dOff, diffD, parse } from "../core/utils";
-import { isLive, live, taskPatched } from "../data/live";
-import { useLiveArchivedTasks, useLiveMyTasks, useLiveStarredTasks } from "../../lib/workspace-data";
-import { D, S, allTasks, canSee, isOver, mutate, proj, render } from "../data/store";
+import { isLive, taskPatched } from "../data/live";
+import { useAllTasks, useArchivedTasks, useMyTasks, useStarredTasks } from "../data/tasks";
+import { D, S, isOver, mutate, proj, render } from "../data/store";
+import { tasksLabel } from "../core/features";
 import { ListView, MiniRow } from "../components/TaskList";
-import { applyView, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
+import { applyView, groupTasks, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty, StIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
+
+export function WorkspaceTasks() {
+  const k = "tasks";
+  const tasks = applyView(useAllTasks().tasks, viewOf(k));
+  return (
+    <div className="page flush">
+      <div className="ph">
+        <div>
+          <h1>Tasks</h1>
+          <p>Across your projects</p>
+        </div>
+      </div>
+      <ViewToolbar k={k} />
+      <div className="list-wrap">
+        <ListView groups={groupTasks(tasks, viewOf(k).group)} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
+      </div>
+    </div>
+  );
+}
 
 export function MyTasks() {
   const k = "mytasks";
   const view = S.ui.myTab;
   const setView = (v: typeof view) => ((S.ui.myTab = v), render());
   const v = viewOf(k);
-  const ws = live.ws?.id;
-  const liveMine = useLiveMyTasks(ws, isLive());
-  const mine = applyView(
-    (isLive() ? (liveMine ?? []) : allTasks()).filter((t) => t.assignee === D().me),
-    v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v,
-  );
+  // In a personal workspace every task is yours, assigned or not (core/features.ts).
+  const mine = applyView(useMyTasks().tasks, v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v);
   const groups: Group[] = [
     {
       key: "overdue",
@@ -66,16 +83,16 @@ export function MyTasks() {
     <div className="page flush">
       <div className="ph">
         <div>
-          <h1>My Tasks</h1>
+          <h1>{tasksLabel()}</h1>
           <p>
             {groups[1]!.tasks.length} due today · {groups[0]!.tasks.length} overdue · {groups[2]!.tasks.length} upcoming
           </p>
         </div>
         <div className="acts">
-          <button className="btn btn-primary" onClick={() => newTask({ assignee: D().me })}>
+          <ActionButton className="btn btn-primary" onClick={() => newTask({ assignee: D().me })}>
             <Ic n="plus" s={14} />
             New task
-          </button>
+          </ActionButton>
         </div>
       </div>
       <div className="tabs" style={{ margin: "0 24px 10px" }}>
@@ -109,9 +126,7 @@ export function MyTasks() {
 
 /** Tasks you starred, from every project you can see. */
 function Starred() {
-  const ws = live.ws?.id;
-  const starred = useLiveStarredTasks(ws, isLive());
-  const ts = isLive() ? (starred ?? []) : allTasks().filter((t) => t.fav);
+  const { tasks: ts } = useStarredTasks();
   return (
     <div style={{ padding: "0 24px 24px" }}>
       {ts.length ? (
@@ -154,13 +169,7 @@ function purgeTask(id: string) {
 
 /** Archived tasks: restore them or delete them for good. Archived projects are restored from Settings → Projects. */
 function Archived() {
-  const ws = live.ws?.id;
-  const archived = useLiveArchivedTasks(ws, isLive());
-  const ts = isLive()
-    ? (archived ?? [])
-    : D()
-        .tasks.filter((t) => t.archived && canSee(proj(t.project)) && !proj(t.project)?.archived)
-        .sort((a, b) => ((b as ArchivedAt).archivedAt || 0) - ((a as ArchivedAt).archivedAt || 0));
+  const { tasks: ts } = useArchivedTasks();
   return (
     <div style={{ padding: "0 24px 24px" }}>
       {ts.length ? (
@@ -181,11 +190,11 @@ function Archived() {
                 <span className="faint hide-m" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
                   {at ? "Archived " + ago(at) : "Archived"}
                 </span>
-                <button className="btn btn-secondary btn-sm" onClick={() => restoreTask(t.id)}>
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => restoreTask(t.id)}>
                   <Ic n="rotate-ccw" s={13} />
                   Restore
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   className="ibtn ibtn-sm"
                   onClick={() => purgeTask(t.id)}
                   data-tip="Delete permanently"
@@ -193,7 +202,7 @@ function Archived() {
                   style={{ color: "var(--red)" }}
                 >
                   <Ic n="trash-2" s={15} />
-                </button>
+                </ActionButton>
               </div>
             );
           })}

@@ -1,0 +1,26 @@
+name: Release flow
+# Every change goes into stage first; main only takes stage (CLAUDE.md, Branches and releases). And the
+# each release group keeps its own version and changelog (scripts/release.py).
+# Its own workflow so it also runs when a pull request is edited: retargeting one from main to stage
+# re-checks it, without running all of CI again for a changed title or description.
+on:
+  push:
+    branches: [main, stage]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  release-flow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Pull requests into main come from stage
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'stage'
+        run: |
+          echo "::error::Open this pull request into stage. main only takes stage (CLAUDE.md, Branches and releases)."
+          exit 1
+      - name: Component versions agree internally and have release notes
+        run: python3 scripts/release.py check

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from .email import EmailMessage
 
 PRODUCT = "dotrix"
-BRAND = "#155dfc"  # the app's brand colour (--brand, light theme)
+BRAND = "#15110c"  # Astryx website theme: primary ink in light mode
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ def _text(content: EmailContent) -> str:
 def _html(content: EmailContent) -> str:
     e = html.escape
     paragraphs = "".join(
-        f'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#27272a">{e(p)}</p>'
+        f'<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#15110c">{e(p)}</p>'
         for p in content.paragraphs
     )
     action = ""
@@ -53,32 +53,32 @@ def _html(content: EmailContent) -> str:
         url = e(content.action_url, quote=True)
         action = (
             '<table role="presentation" cellspacing="0" cellpadding="0" style="margin:8px 0 20px">'
-            f'<tr><td style="border-radius:8px;background:{BRAND}">'
+            f'<tr><td style="border-radius:999px;background:{BRAND}">'
             f'<a href="{url}" style="display:inline-block;padding:12px 20px;font-size:15px;font-weight:600;'
-            f'color:#ffffff;text-decoration:none;border-radius:8px">{e(content.action_label)}</a>'
+            f'color:#ffffff;text-decoration:none;border-radius:999px">{e(content.action_label)}</a>'
             "</td></tr></table>"
-            '<p style="margin:0 0 16px;font-size:13px;line-height:1.5;color:#71717a">'
+            '<p style="margin:0 0 16px;font-size:13px;line-height:1.5;color:#4e606f">'
             f'Or copy this link into your browser:<br><a href="{url}" style="color:{BRAND};word-break:break-all">{url}</a></p>'
         )
     note = (
-        f'<p style="margin:0;font-size:13px;line-height:1.5;color:#71717a">{e(content.note)}</p>' if content.note else ""
+        f'<p style="margin:0;font-size:13px;line-height:1.5;color:#4e606f">{e(content.note)}</p>' if content.note else ""
     )
     return (
         "<!doctype html>"
         '<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{e(content.subject)}</title></head>"
-        '<body style="margin:0;padding:0;background:#f4f4f5">'
-        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5">'
+        '<body style="margin:0;padding:0;background:#f8f4ed">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8f4ed">'
         '<tr><td align="center" style="padding:32px 16px">'
         '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
-        'style="max-width:520px;background:#ffffff;border-radius:12px;border:1px solid #e4e4e7">'
+        'style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #e4e4e7">'
         '<tr><td style="padding:28px 32px 8px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">'
         f'<p style="margin:0 0 24px;font-size:14px;font-weight:700;color:{BRAND};letter-spacing:.2px">{PRODUCT}</p>'
-        f'<h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:#18181b">{e(content.heading)}</h1>'
+        f'<h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:#15110c">{e(content.heading)}</h1>'
         f"{paragraphs}{action}{note}"
         "</td></tr>"
         '<tr><td style="padding:16px 32px 28px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">'
-        f'<p style="margin:0;font-size:12px;color:#a1a1aa">Sent by {PRODUCT}. You get this email because of '
+        f'<p style="margin:0;font-size:12px;color:#4e606f">Sent by {PRODUCT}. You get this email because of '
         "your account or an invitation.</p>"
         "</td></tr></table></td></tr></table></body></html>"
     )

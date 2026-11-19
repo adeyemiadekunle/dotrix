@@ -32,6 +32,7 @@ from dotrix_backend.modules.api_tokens.service import ApiTokenService, is_api_to
 from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.auth.repository import AuthSessionRepository, UserRepository
 from dotrix_backend.modules.web.session import ACCESS_COOKIE, require_web_header
+from dotrix_backend.modules.workspaces.availability import available
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
@@ -106,10 +107,11 @@ SessionUser = Annotated[User, Depends(get_session_user)]
 
 
 async def get_membership(
-    workspace_id: uuid.UUID, user: CurrentUser, session: SessionDep
+    workspace_id: uuid.UUID, user: CurrentUser, session: SessionDep, settings: SettingsDep
 ) -> Membership:
     membership = await MembershipRepository(session).get(workspace_id, user.id)
-    if membership is None:
+    # An organisation while they're turned off is hidden like one you don't belong to.
+    if membership is None or not available(membership.workspace, settings):
         raise NotFound("Workspace not found")
     return membership
 

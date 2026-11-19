@@ -70,8 +70,17 @@ const review = (number: number) => ({
   ],
 });
 
-/** One of the session header's side-panel buttons (Changes, Files, Terminal, Review). */
-const view = (page: Page, name: string) => page.getByRole("group", { name: "Side panel" }).getByRole("button", { name, exact: true });
+/** A pane beside the session (Changes, Files, Terminal, Review); several can be open, stacked. */
+const pane = (page: Page, name: string) => page.locator(`.side-panel section.pane[aria-label="${name}"]`);
+/** Opens or closes a pane from the session bar's menu of panes (the "…"). */
+async function toggle(page: Page, name: string) {
+  const menuButton = page.getByRole("button", { name: "Panes", exact: true });
+  await menuButton.click();
+  await page.getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) }).click();
+  await menuButton.click();
+}
+/** The session bar's own buttons for Changes and Files. */
+const barButton = (page: Page, name: string) => page.getByRole("group", { name: "Session panes" }).getByRole("button", { name, exact: true });
 
 async function mockWorkspace(
   page: Page,
@@ -80,6 +89,7 @@ async function mockWorkspace(
   search = "codes?session=session1",
   openPanel = true,
   reviewAvailable = () => true,
+  before: () => Promise<void> = async () => {},
 ) {
   await context.addCookies([{ name: "dx_session", value: "1", url: baseURL }]);
   await page.route("**/v1/**", async (route) => {
@@ -134,70 +144,91 @@ async function mockWorkspace(
     }
     await route.fulfill({ status: 200, json: data });
   });
+  await before(); // routes added here win over the ones above
   await page.goto(`/w/test-workspace/${search}`);
-  if (openPanel) await view(page, "Changes").click();
+  if (openPanel) await barButton(page, "Changes").click();
 }
 
-test("the session header opens each view of the side panel, and Juno's findings show on their lines", async ({ page, context, baseURL }) => {
+test("the session bar opens panes beside it, stacked, and Juno's findings show on their lines", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!);
-  const panel = page.locator(".side-panel");
-  await expect(view(page, "Changes")).toHaveAttribute("aria-pressed", "true");
-  await expect(panel.getByText(path, { exact: true })).toBeVisible();
-  // Juno's finding on line 2 sits under that line in the diff, and opens the review.
-  await panel.getByRole("button", { name: /Juno's finding on line 2: Keyboard focus is difficult to see/ }).click();
-  await expect(view(page, "Review")).toHaveAttribute("aria-pressed", "true");
-  await view(page, "Files").click();
-  await panel.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
-  await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
-  await view(page, "Terminal").click();
-  await expect(panel.getByText("Recorded output · read-only")).toBeVisible();
-  await expect(panel.getByText("24 tests passed")).toBeVisible();
-  await view(page, "Files").click();
-  await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
-  await expect(view(page, "Browser")).toHaveCount(0); // a live browser comes later
-  await view(page, "Review").click();
-  await expect(panel.getByText("Keyboard focus is difficult to see")).toBeVisible();
+  const changes = pane(page, "Changes");
+  await expect(barButton(page, "Changes")).toHaveAttribute("aria-pressed", "true");
+  await expect(changes.getByText(path, { exact: true })).toBeVisible();
+  // Juno's finding on line 2 sits under that line in the diff, and opens the review beside it.
+  await changes.getByRole("button", { name: /Juno's finding on line 2: Keyboard focus is difficult to see/ }).click();
+  const review = pane(page, "Review");
+  await expect(review).toBeVisible();
+  await expect(changes).toBeVisible(); // panes stack: Changes stays open
+  await barButton(page, "Files").click();
+  const files = pane(page, "Files");
+  await files.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
+  await expect(files.getByRole("button", { name: "Back to the files" })).toBeVisible();
+  await toggle(page, "Terminal");
+  const terminal = pane(page, "Terminal");
+  await expect(terminal.getByText("Recorded output · read-only")).toBeVisible();
+  await expect(terminal.getByText("24 tests passed")).toBeVisible();
+  await expect(page.getByRole("menuitemcheckbox", { name: /^Browser/ })).toHaveCount(0); // the Browser pane is in the desktop app only
+  await expect(review.getByText("Keyboard focus is difficult to see")).toBeVisible();
   // Juno's review details are keyboard tabs.
-  await panel.getByRole("tab", { name: /^Findings/ }).click();
-  await panel.getByRole("tab", { name: /^Findings/ }).press("ArrowRight");
-  await expect(panel.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true");
-  await panel.getByRole("tab", { name: "Summary" }).click();
-  await panel.getByRole("tab", { name: /^Findings/ }).click();
-  await panel.getByRole("button", { name: "Ask Kai to fix" }).click();
-  await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
-  await panel.getByRole("button", { name: `${path}:2` }).click();
-  await expect(view(page, "Files")).toHaveAttribute("aria-pressed", "true");
-  await expect(panel.locator(".kp-line-reference")).toContainText("const href = '#plans'");
-  await panel.getByRole("button", { name: "Back to the files" }).click();
-  await view(page, "Review").click();
-  await panel.getByRole("button", { name: `${path}:2` }).click();
-  await expect(panel.locator(".kp-line-reference")).toBeVisible();
-  await panel.getByLabel("Turn").selectOption("turn1");
-  await view(page, "Review").click();
-  await expect(panel.getByText("Earlier finding")).toBeVisible();
-  await expect(panel.getByText("Superseded by a later coding turn")).toBeVisible();
-  // The open view's button closes the panel, and the shortcut opens Changes again.
-  await view(page, "Review").click();
-  await expect(panel).toHaveCount(0);
+  await review.getByRole("tab", { name: /^Findings/ }).click();
+  await review.getByRole("tab", { name: /^Findings/ }).press("ArrowRight");
+  await expect(review.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true");
+  await review.getByRole("tab", { name: "Summary" }).click();
+  await review.getByRole("tab", { name: /^Findings/ }).click();
+  await review.getByRole("button", { name: "Ask Kai to fix" }).click();
+  await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveValue(/Keyboard focus is difficult to see/);
+  // A reference in the review opens its line in Files.
+  await toggle(page, "Terminal");
+  await review.getByRole("button", { name: `${path}:2` }).click();
+  await expect(files.locator(".kp-line-reference")).toContainText("const href = '#plans'");
+  await files.getByRole("button", { name: "Back to the files" }).click();
+  await review.getByRole("button", { name: `${path}:2` }).click();
+  await expect(files.locator(".kp-line-reference")).toBeVisible();
+  // A turn's changes chip in the transcript shows that turn in every pane.
+  await page.locator(".kt").first().locator(".kt-lines").first().click();
+  await expect(review.getByText("Earlier finding")).toBeVisible();
+  await expect(review.getByText("Superseded by a later coding turn")).toBeVisible();
+  // A pane's close button closes just that pane; "Close all panes" the rest; the shortcut opens Changes again.
+  await review.getByRole("button", { name: "Close Review" }).click();
+  await expect(review).toHaveCount(0);
+  await expect(changes).toBeVisible();
+  await page.getByRole("button", { name: "Panes", exact: true }).click();
+  await page.getByRole("menuitem", { name: /Close all panes/ }).click();
+  await expect(page.locator(".side-panel")).toHaveCount(0);
   await page.keyboard.press("Control+Shift+D");
-  await expect(view(page, "Changes")).toHaveAttribute("aria-pressed", "true");
+  await expect(barButton(page, "Changes")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a pane expands to the whole column and back", async ({ page, context, baseURL }) => {
+  await mockWorkspace(page, context, baseURL!);
+  await barButton(page, "Files").click();
+  await pane(page, "Changes").getByRole("button", { name: "Expand Changes" }).click();
+  await expect(pane(page, "Files")).toHaveCount(0);
+  await pane(page, "Changes").getByRole("button", { name: "Show the other panes" }).click();
+  await expect(pane(page, "Files")).toBeVisible();
+  await expect(page).toHaveURL(/panel=changes%2Cfiles|panel=changes,files/);
 });
 
 test("the session shows Kai, never the engine underneath", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!, undefined, false);
   const main = page.locator(".conv-main");
   await expect(main.getByText("Kai", { exact: true }).first()).toBeVisible();
-  await expect(page.getByLabel("Follow-up")).toHaveAttribute("placeholder", /Ask Kai/);
+  await expect(page.getByRole("combobox", { name: "Follow-up mode", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Code options", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Build", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveAttribute("placeholder", /Ask Kai/);
   await expect(page.locator(".chat-list")).not.toContainText("Codex");
   await expect(main).not.toContainText("Codex");
 });
 
-test("a file path in the session opens it in Files", async ({ page, context, baseURL }) => {
+test("a file in the session's details opens it in Files", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!, undefined, false);
-  await page.locator(".chat-col").getByRole("button", { name: path, exact: true }).first().click();
-  const panel = page.locator(".side-panel");
-  await expect(view(page, "Files")).toHaveAttribute("aria-pressed", "true");
-  await expect(panel.getByRole("button", { name: "Back to the files" })).toBeVisible();
+  const details = page.getByRole("complementary", { name: "Session details" });
+  await expect(details.getByText("Cloud")).toBeVisible();
+  await details.getByRole("button", { name: `Open ${path} in Files` }).click();
+  await expect(barButton(page, "Files")).toHaveAttribute("aria-pressed", "true");
+  await expect(pane(page, "Files").getByRole("button", { name: "Back to the files" })).toBeVisible();
   await expect(page).toHaveURL(/file=/);
 });
 
@@ -206,27 +237,27 @@ test("a linked review reference opens its turn and file directly, from an older 
   const search = new URLSearchParams({ tab: "coding", session: "session1", turn: "turn2", file: path, line: "2" });
   await mockWorkspace(page, context, baseURL!, `chat?${search}`, false);
   await expect(page).toHaveURL(/\/codes\?session=session1/);
-  const panel = page.locator(".side-panel");
-  await expect(view(page, "Files")).toHaveAttribute("aria-pressed", "true");
-  await expect(panel.locator(".kp-line-reference")).toContainText("const href = '#plans'");
-  await panel.getByRole("button", { name: "Close Files" }).click();
-  await expect(panel).toHaveCount(0);
+  const files = pane(page, "Files");
+  await expect(barButton(page, "Files")).toHaveAttribute("aria-pressed", "true");
+  await expect(files.locator(".kp-line-reference")).toContainText("const href = '#plans'");
+  await files.getByRole("button", { name: "Close Files" }).click();
+  await expect(page.locator(".side-panel")).toHaveCount(0);
   await expect(page).not.toHaveURL(/file=/);
 });
 
 test("an unavailable review can be retried without showing a different turn's review", async ({ page, context, baseURL }) => {
   let available = false;
   await mockWorkspace(page, context, baseURL!, undefined, true, () => available);
-  const panel = page.locator(".side-panel");
-  await view(page, "Review").click();
-  await expect(panel.getByText("Some reviews couldn't be loaded.")).toBeVisible({ timeout: 20_000 });
-  await expect(panel.getByText("Earlier finding")).toHaveCount(0);
+  await toggle(page, "Review");
+  const review = pane(page, "Review");
+  await expect(review.getByText("Some reviews couldn't be loaded.")).toBeVisible({ timeout: 20_000 });
+  await expect(review.getByText("Earlier finding")).toHaveCount(0);
   available = true;
-  await panel.getByRole("button", { name: "Try again" }).click();
-  await expect(panel.getByText("Keyboard focus is difficult to see")).toBeVisible();
+  await review.getByRole("button", { name: "Try again" }).click();
+  await expect(review.getByText("Keyboard focus is difficult to see")).toBeVisible();
 });
 
-test("the work panel is closeable and keyboard accessible on mobile", async ({ page, context, baseURL }) => {
+test("the panes are closeable and keyboard accessible on mobile", async ({ page, context, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockWorkspace(page, context, baseURL!);
   const panel = page.locator(".side-panel");
@@ -234,9 +265,248 @@ test("the work panel is closeable and keyboard accessible on mobile", async ({ p
   await expect(panel.getByRole("button", { name: "Close Changes" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  await expect(view(page, "Changes")).toBeFocused();
-  await view(page, "Review").click();
-  await panel.getByRole("button", { name: "Ask Kai to fix" }).click();
+  await expect(barButton(page, "Changes")).toBeFocused();
+  // The session bar stays above the panes, so its menu opens other panes over them.
+  await toggle(page, "Review");
+  await pane(page, "Review").getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(page.getByLabel("Follow-up")).toHaveValue(/Keyboard focus is difficult to see/);
+  await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveValue(/Keyboard focus is difficult to see/);
 });
+
+test("live session menus still pin using the current workspace and project scope", async ({ page, context, baseURL }) => {
+  await mockWorkspace(page, context, baseURL!, "codes", false);
+  await page.route("**/coding/sessions/session1", (route) =>
+    route.request().method() === "PATCH" ? route.fulfill({ json: { ...session, pinned: true } }) : route.fallback(),
+  );
+  await page.getByRole("button", { name: "More for TEST-1", exact: true }).click();
+  const pin = page.getByRole("menu").getByRole("button", { name: "Pin", exact: true });
+  await expect(pin).toBeEnabled();
+  const submitted = page.waitForRequest((request) => request.method() === "PATCH" && new URL(request.url()).pathname.endsWith("/coding/sessions/session1"));
+  await pin.click();
+  const request = await submitted;
+  expect(new URL(request.url()).pathname).toBe("/v1/workspaces/w1/projects/p1/coding/sessions/session1");
+  expect(request.postDataJSON()).toEqual({ pinned: true });
+});
+
+test("a working turn is followed over a stream: what Kai does appears without polling", async ({ page, context, baseURL }) => {
+  const working = { ...turn(2), status: "running", summary: null, files_changed: [], review_run_id: null, event_count: 1 };
+  const said = (text: string) => ({ seq: 0, kind: "text", text, at: date });
+  let reads = 0;
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", async (route) => {
+      reads += 1;
+      await route.fulfill({ status: 200, json: [turn(1), { ...working, events: [said("Reading the navigation")] }] });
+    });
+    // The stream: the turn as it works, then (once the test lets it) finished, and the end.
+    await page.route("**/coding/sessions/session1/stream", async (route) => {
+      await held;
+      const frame = (turns: unknown) => `event: turns\ndata: ${JSON.stringify(turns)}\n\n`;
+      const done = { ...turn(2), summary: "Pointed the plans link at the page's own section.", events: [said("Reading the navigation")] };
+      await route.fulfill({ status: 200, contentType: "text/event-stream", body: frame([turn(1), done]) + "event: end\ndata: {}\n\n" });
+    });
+  });
+  await expect(page.getByText("Kai is working")).toBeVisible();
+  release();
+  await expect(page.getByText("Pointed the plans link at the page's own section.")).toBeVisible();
+  // The finished turn came over the stream: the page didn't ask for the session again.
+  expect(reads).toBe(1);
+});
+
+test("file/diff text, line annotations, syntax colors and path copying survive both themes", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseURL! });
+  await page.emulateMedia({ colorScheme: "light" });
+  await mockWorkspace(page, context, baseURL!);
+  const changes = pane(page, "Changes");
+  await expect(changes.locator(".kp-line.del .kp-text")).toHaveText("const href = '/plans';");
+  await expect(changes.locator(".kp-line.add .kp-text")).toHaveText("const href = '#plans';");
+  await expect(changes.locator(".kp-line.add .kp-no")).toHaveText(["", "2"]);
+  await expect(changes.locator(".kp-line.del .kp-no")).toHaveText(["2", ""]);
+  const finding = changes.getByRole("button", { name: /Juno's finding on line 2:/ });
+  await expect(finding).toBeVisible();
+  expect(await finding.evaluate((el) => el.previousElementSibling?.classList.contains("add"))).toBe(true);
+  const token = changes.locator(".kp-line.add .kp-tok").first();
+  await expect(token).toBeVisible();
+  const light = await token.evaluate((el) => getComputedStyle(el).color);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(token).not.toHaveCSS("color", light);
+  await barButton(page, "Files").click();
+  const files = pane(page, "Files");
+  await files.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
+  await expect(files.locator(".kp-source .kp-text")).toHaveText(["const nav = true;", "const href = '#plans';"]);
+  await expect(files.getByRole("rowheader")).toHaveText(["1", "2"]);
+  await files.getByRole("button", { name: "Copy the path", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(path);
+});
+
+test("unknown-language files keep whitespace/escaped text and scroll inside the mobile pane", async ({ page, context, baseURL }) => {
+  const source = '\t<not-an-element> & "literal"\n' + "long_" + "x".repeat(700) + "\n";
+  const rawPath = "raw.unknown-dotrix-language";
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockWorkspace(page, context, baseURL!, `codes?session=session1&file=${rawPath}&line=2`, false, undefined, async () => {
+    await page.route("**/coding/runs/*/file?**", (route) =>
+      route.fulfill({ json: { path: rawPath, status: "modified", after: source, binary: false, too_large: false } }),
+    );
+  });
+  const files = pane(page, "Files");
+  const viewer = files.locator(".kp-source");
+  await expect.poll(() => viewer.locator(".kp-text").allTextContents()).toEqual(source.split("\n").slice(0, -1));
+  await expect(viewer.locator("not-an-element, .kp-tok")).toHaveCount(0);
+  await expect(viewer.locator(".kp-line-reference")).toContainText("long_");
+  expect(await viewer.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+for (const state of ["binary", "too_large", "deleted"] as const) {
+  test(`file viewer protects the ${state} state without displaying hidden content`, async ({ page, context, baseURL }) => {
+    await mockWorkspace(page, context, baseURL!, `codes?session=session1&file=${path}`, false, undefined, async () => {
+      await page.route("**/coding/runs/*/file?**", (route) =>
+        route.fulfill({
+          json: {
+            path,
+            status: state === "deleted" ? "deleted" : "modified",
+            after: "must not be rendered",
+            binary: state === "binary",
+            too_large: state === "too_large",
+          },
+        }),
+      );
+    });
+    const files = pane(page, "Files");
+    await expect(
+      files.getByText(state === "binary" ? "A binary file: not shown." : state === "too_large" ? "Over 1 MB: not shown." : "The turn deleted this file.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(files.locator(".kp-source")).toHaveCount(0);
+    await expect(files.getByText("must not be rendered")).toHaveCount(0);
+  });
+}
+
+test("new Chat models remain selectable before the send action", async ({ page, context, baseURL }) => {
+  await mockWorkspace(
+    page,
+    context,
+    baseURL!,
+    "chat?new=1",
+    false,
+    () => true,
+    async () => {
+      await page.route("**/models", (route) =>
+        route.fulfill({
+          json: [
+            { id: "openai:gpt-5.4", name: "GPT-5.4", provider: "openai", source: "personal" },
+            { id: "anthropic:claude-sonnet-5-5", name: "Sonnet 5.5", provider: "anthropic", source: "personal" },
+          ],
+        }),
+      );
+    },
+  );
+  const model = page.locator(".composer-model").getByRole("combobox", { name: "Model", exact: true });
+  await expect(model).toContainText("GPT-5.4");
+  await model.click();
+  await page.getByRole("option", { name: "Sonnet 5.5", exact: true }).click();
+  await expect(model).toContainText("Sonnet 5.5");
+  const input = page.getByLabel("Message", { exact: true });
+  await input.fill("Review this draft");
+  await input.press("End");
+  await input.press("Shift+Enter");
+  await page.keyboard.insertText("Keep this second line");
+  await page.route("**/conversations/runs", (route) => route.fulfill({ status: 422, json: { detail: "Test only" } }));
+  const submitted = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/conversations/runs"));
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  expect((await submitted).postDataJSON()).toMatchObject({ model: "anthropic:claude-sonnet-5-5", message: "Review this draft\nKeep this second line" });
+});
+
+for (const width of [390, 1440]) {
+  test(`new Codes models remain selectable before Send at ${width}px`, async ({ page, context, baseURL }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockWorkspace(
+      page,
+      context,
+      baseURL!,
+      "codes?new=1&issue=TEST-1",
+      false,
+      () => true,
+      async () => {
+        await page.route(/\/issues(?:\?.*)?$/, (route) =>
+          route.fulfill({
+            json: [
+              {
+                id: "i1",
+                key: "TEST-1",
+                project_id: "p1",
+                title: "Fix navigation",
+                type: "task",
+                status: "todo",
+                priority: "none",
+                labels: [],
+                checklist: [],
+                due: null,
+                description: "",
+                created_at: date,
+                updated_at: date,
+              },
+            ],
+          }),
+        );
+        await page.route("**/projects/p1/coding", (route) =>
+          route.fulfill({
+            json: {
+              available: true,
+              models: ["openai:gpt-5.4", "anthropic:claude-sonnet-5-5"],
+              default_model: "openai:gpt-5.4",
+              local_available: true,
+              local_runner: "Your computer",
+              local_tools: ["codex"],
+            },
+          }),
+        );
+      },
+    );
+    const model = page.locator(".composer-model").getByRole("combobox", { name: "Model", exact: true });
+    await expect(model).toContainText("GPT-5.4");
+    await model.click();
+    await page.getByRole("option", { name: "Sonnet 5.5", exact: true }).click();
+    await expect(model).toContainText("Sonnet 5.5");
+    const bounds = (await model.boundingBox())!;
+    const send = (await page.getByRole("button", { name: "Start coding", exact: true }).boundingBox())!;
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(send.x);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    await page.getByRole("button", { name: "Code options", exact: true }).click();
+    await page.getByRole("group", { name: "Where it codes", exact: true }).getByRole("button", { name: "Your computer", exact: true }).click();
+    await expect(page.locator(".composer-model")).toContainText("Model managed locally");
+    await page.getByRole("button", { name: "Code options", exact: true }).click();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Plan (read only)", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape");
+  });
+
+  test(`Codes keeps its pinned model before Stop at ${width}px`, async ({ page, context, baseURL }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockWorkspace(
+      page,
+      context,
+      baseURL!,
+      "codes?session=session1",
+      false,
+      () => true,
+      async () => {
+        await page.route("**/coding/sessions/session1", (route) =>
+          route.fulfill({ json: [{ ...turn(1), status: "running", can_stop: true, model: "openai:gpt-5.4" }] }),
+        );
+      },
+    );
+    const model = page.locator(".composer-model");
+    await expect(model).toContainText("GPT-5.4");
+    const stop = page.locator(".dotrix-composer").getByRole("button", { name: "Stop", exact: true });
+    await expect(stop).toBeEnabled();
+    const modelBounds = (await model.boundingBox())!;
+    const stopBounds = (await stop.boundingBox())!;
+    expect(modelBounds.x + modelBounds.width).toBeLessThanOrEqual(stopBounds.x);
+    expect(modelBounds.x + modelBounds.width).toBeLessThanOrEqual(width);
+    const halted = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/coding/runs/turn1/stop"));
+    await stop.click();
+    await halted;
+  });
+}

@@ -1,15 +1,34 @@
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { createPortal } from "react-dom";
+import { useLayer, useLayerDismissal, LayerDepthProvider, Calendar, type ISODateString } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Popovers: one floating menu at a
 // time (S.ui.pop), placed under what opened it and kept on screen; Escape or a click outside
 // closes it. Picks apply to a task, or to the open New task form ("__form").
-import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
-import { closePop, copy, openTask, projMove, setPref, setProjectStatus, setRole, toggleDone, toggleFavProj, toggleFavTask, updateTask } from "../core/actions";
-import { LABELS, PRIOS, PSTAT, STATUSES, type ProjectStatusId } from "../core/constants";
-import { useCloseSession, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
-import { useLiveProjectTasks } from "@/lib/workspace-data";
+import {
+  applyPatch,
+  changeSubtasks,
+  closePop,
+  copy,
+  openTask,
+  projMove,
+  setPref,
+  setProjectStatus,
+  setRole,
+  toggleDone,
+  toggleFavProj,
+  toggleFavTask,
+  updateTask,
+} from "../core/actions";
+import { GUIDE_URL, ISSUES_URL, LABELS, PRIOS, PSTAT, STATUSES, TYPES, type ProjectStatusId } from "../core/constants";
+import { useCloseSession, useDeleteSandbox, useDeleteSession, useUpdateSession, type CodingSession } from "@/lib/coding";
 import { confirmDlg, promptDlg } from "../core/more";
-import { isLive, live, liveCommentById, taskPatched } from "../data/live";
+import { isLive, live, liveCommentById } from "../data/live";
+import { useProjectTasks } from "../data/tasks";
 import { allowed, canInvite } from "../core/can";
+import { organisations } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import {
   archiveProject,
@@ -46,11 +65,13 @@ import {
   toggleOffline,
 } from "../core/more";
 import { currentSlug, go } from "../core/nav";
-import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
-import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, visibleProjects, people } from "../data/store";
+import { MOD, TODAY, dOff, fmtDate, iso } from "../core/utils";
+import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, people } from "../data/store";
+import { useMembers, useProjects } from "../data/lists";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import type { Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
+import { toast } from "../ui/toast";
 import { FIELDS, viewChange, viewOf } from "../shell/viewEngine";
 import { toggleReaction } from "./Drawer";
 import { taskForm } from "./Modals";
@@ -71,13 +92,6 @@ function setField(p: P, patch: Partial<Task>) {
     return;
   }
   updateTask(p.id as string, patch);
-}
-
-function startOfWeek(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  const diff = (x.getDay() - S.prefs.weekStart + 7) % 7;
-  return addD(x, -diff);
 }
 
 interface Item {
@@ -124,69 +138,38 @@ function PopList({ p, items, search, onPick }: { p: P; items: Item[]; search?: s
 }
 
 function MiniCal({ p, val, onPick }: { p: P; val: string | null | undefined; onPick: (v: string) => void }) {
-  const m = parse(p.m as string)!;
-  const start = startOfWeek(new Date(m.getFullYear(), m.getMonth(), 1));
-  const cells = Array.from({ length: 42 }, (_, i) => addD(start, i));
-  const wdn = Array.from({ length: 7 }, (_, i) => WD[(i + S.prefs.weekStart) % 7]!.slice(0, 2));
-  const month = (d: number) => {
-    p.m = iso(new Date(m.getFullYear(), m.getMonth() + d, 1));
-    render();
-  };
   return (
-    <div style={{ padding: "6px 6px 2px", width: 252 }}>
-      <div className="row" style={{ marginBottom: 6 }}>
-        <b style={{ fontWeight: 600, fontSize: 13, paddingLeft: 4 }}>
-          {MONL[m.getMonth()]} {m.getFullYear()}
-        </b>
-        <span className="sp" />
-        <button className="ibtn ibtn-xs" onClick={() => month(-1)} aria-label="Previous month">
-          <Ic n="chevron-left" s={14} />
-        </button>
-        <button className="ibtn ibtn-xs" onClick={() => month(1)} aria-label="Next month">
-          <Ic n="chevron-right" s={14} />
-        </button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, textAlign: "center", fontSize: 11 }}>
-        {wdn.map((d, i) => (
-          <span key={i} className="faint" style={{ padding: "3px 0" }}>
-            {d}
-          </span>
-        ))}
-        {cells.map((d) => {
-          const ds = iso(d);
-          const on = ds === val;
-          const today = diffD(d, TODAY) === 0;
-          return (
-            <button
-              key={ds}
-              className="num cal-day"
-              onClick={() => onPick(ds)}
-              aria-label={fmtDate(ds, true)}
-              style={{
-                height: 30,
-                borderRadius: 6,
-                fontSize: 12,
-                ...(on
-                  ? { background: "var(--acc)", color: "var(--on-accent)", fontWeight: 600 }
-                  : today
-                    ? { color: "var(--acc)", fontWeight: 600, boxShadow: "inset 0 0 0 1px var(--accent-line)" }
-                    : d.getMonth() !== m.getMonth()
-                      ? { color: "var(--text-3)" }
-                      : {}),
-              }}
-            >
-              {d.getDate()}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <Calendar
+      mode="single"
+      value={(val ?? null) as ISODateString | null}
+      onChange={onPick}
+      focusDate={String(p.m || val || iso(new Date())) as ISODateString}
+      onFocusDateChange={(date) => {
+        p.m = date;
+        render();
+      }}
+      weekStartsOn={S.prefs.weekStart === 1 ? "mon" : "sun"}
+    />
   );
 }
 
-function Mi({ icon, label, onClick, r, danger }: { icon: string; label: ReactNode; onClick: () => void; r?: ReactNode; danger?: boolean }) {
+function Mi({
+  icon,
+  label,
+  onClick,
+  r,
+  danger,
+  disabled,
+}: {
+  icon: string;
+  label: ReactNode;
+  onClick?: () => void;
+  r?: ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
   return (
-    <button className={`mi ${danger ? "danger" : ""}`} onClick={onClick}>
+    <button className={`mi ${danger ? "danger" : ""}`} disabled={disabled} onClick={onClick}>
       <Ic n={icon} s={15} />
       {label}
       {r != null && <span className="r">{r}</span>}
@@ -247,10 +230,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             onPick={(v) => {
               S.ui.pop = null;
               mutate(() => {
-                sb.assignee = v || null;
+                changeSubtasks(tk!, (items) => items.map((x) => (x.id === sb.id ? { ...x, assignee: v || null } : x)));
                 logActSub("assigned a subtask on", tk!, v ? `to ${mem(v)!.name}` : "(unassigned)");
               });
-              taskPatched(tk!, ["subtasks"]);
             }}
           />
         ),
@@ -264,6 +246,12 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             items={STATUSES.map((s, i) => ({ id: s.id, name: s.name, html: <StIcon st={s.id} />, on: t?.status === s.id, kbd: i + 1 }))}
             onPick={pick("status")}
           />
+        ),
+      };
+    case "issue-type":
+      return {
+        inner: (
+          <PopList p={p} items={TYPES.map((x) => ({ id: x.id, name: x.name, html: <Ic n={x.icon} s={14} />, on: t?.type === x.id }))} onPick={pick("type")} />
         ),
       };
     case "priority":
@@ -323,16 +311,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
       };
     case "project":
       return {
-        inner: (
-          <PopList
-            p={p}
-            search="Move to project…"
-            items={visibleProjects()
-              .filter((q) => canSee(q) && q.status !== "complete")
-              .map((q) => ({ id: q.id, name: q.name, html: <span className="pdot" style={css({ "--c": pColor(q) })} />, on: t?.project === q.id }))}
-            onPick={pick("project")}
-          />
-        ),
+        inner: <MoveToProject p={p} current={t?.project as string | undefined} onPick={pick("project")} />,
       };
     case "recur":
       return {
@@ -374,10 +353,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
           const sb = tk!.subtasks[p.i as number]!;
           S.ui.pop = null;
           mutate(() => {
-            sb.due = v || null;
+            changeSubtasks(tk!, (items) => items.map((x) => (x.id === sb.id ? { ...x, due: v || null } : x)));
             logActSub("set a subtask due date on", tk!, v ? fmtDate(v) : "(cleared)");
           });
-          taskPatched(tk!, ["subtasks"]);
           return;
         }
         pick(field)(v);
@@ -458,20 +436,22 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         ),
       };
     }
-    case "ws":
+    case "ws": {
+      // Older saved sample workspaces predate IDs; real workspaces always match by ID.
+      const selected = D().ws.id ?? (!isLive() ? D().workspaces.find((workspace) => workspace.name === D().ws.name)?.id : undefined);
       return {
         style: { width: 260 },
         inner: (
           <>
             <div className="mh">Workspaces</div>
             {D().workspaces.map((w) => (
-              <button key={w.id} className="mi" onClick={() => switchWs(w.id)}>
+              <button key={w.id} className="mi" role="menuitemradio" aria-checked={w.id === selected} onClick={() => switchWs(w.id)}>
                 <WsLogo w={w} px={20} />
-                <span className="grow">{w.name}</span>
+                <span className="grow trunc">{w.name}</span>
                 <span className="faint" style={{ fontSize: 11 }}>
                   {w.plan}
                 </span>
-                {w.name === D().ws.name && (
+                {w.id === selected && (
                   <span className="ck">
                     <Ic n="check" s={14} />
                   </span>
@@ -479,7 +459,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
               </button>
             ))}
             <Sep />
-            <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding"))} />
+            {organisations() && <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding?team=1"))} />}
             {allowed("workspace:manage") && (
               <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />
             )}
@@ -489,6 +469,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
           </>
         ),
       };
+    }
     case "session": {
       // A coding session's ⋮ (Chat's Code tab).
       const cs = p.session as CodingSession | undefined;
@@ -542,13 +523,20 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <>
             <div className="mh">Help &amp; resources</div>
+            <Mi icon="book-open" label="Getting started" onClick={() => (closePop(), window.open(GUIDE_URL, "_blank", "noopener"))} />
             <Mi icon="keyboard" label="Keyboard shortcuts" onClick={shortcuts} r={<kbd>?</kbd>} />
             <Mi icon="command" label="Command menu" onClick={() => (closePop(), openPaletteSoon())} r={<kbd>{MOD}K</kbd>} />
             <Mi icon="terminal" label="Connect the CLI" onClick={() => (closePop(), go("settings", { sec: "sessions" }))} />
-            <Sep />
-            <div className="mh">Prototype</div>
-            <Mi icon={S.ui.offline ? "wifi" : "wifi-off"} label={S.ui.offline ? "Go back online" : "Simulate offline"} onClick={toggleOffline} />
-            <Mi icon="rotate-ccw" label="Reset demo data" onClick={resetDemo} />
+            <Mi icon="bug" label="Report a problem" onClick={() => (closePop(), window.open(ISSUES_URL, "_blank", "noopener"))} />
+            {!isLive() && (
+              <>
+                {/* The sample workspace only: a real one has nothing to reset or simulate. */}
+                <Sep />
+                <div className="mh">Prototype</div>
+                <Mi icon={S.ui.offline ? "wifi" : "wifi-off"} label={S.ui.offline ? "Go back online" : "Simulate offline"} onClick={toggleOffline} />
+                <Mi icon="rotate-ccw" label="Reset demo data" onClick={resetDemo} />
+              </>
+            )}
           </>
         ),
       };
@@ -648,7 +636,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             <div className="mh">Visible columns</div>
             {(list ?? TCOLS.filter((c) => c[0] !== "title")).map((c) => (
               <label key={c[0]} className="mi" style={{ cursor: "pointer" }}>
-                <input
+                <SelectionInput
                   type="checkbox"
                   className="check"
                   checked={!v.hidden.includes(c[0])}
@@ -681,7 +669,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             </div>
             {FIELDS[f.f]!.opts().map((o) => (
               <label key={o.id} className="mi" style={{ cursor: "pointer" }}>
-                <input
+                <SelectionInput
                   type="checkbox"
                   className="check"
                   checked={f.v.includes(o.id)}
@@ -701,9 +689,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <div className="row" style={{ gap: 2, padding: 2 }}>
             {["👍", "🎉", "❤️", "👀", "🚀", "✅"].map((e) => (
-              <button key={e} className="ibtn" style={{ fontSize: 16 }} aria-label={`React ${e}`} onClick={() => react(p.id as string, e)}>
+              <ActionButton key={e} className="ibtn" style={{ fontSize: 16 }} aria-label={`React ${e}`} onClick={() => react(p.id as string, e)}>
                 {e}
-              </button>
+              </ActionButton>
             ))}
           </div>
         ),
@@ -720,8 +708,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
 
 /** "Blocked by" candidates: the project's other issues, live when signed in. */
 function DepsMenu({ p, tk }: { p: P; tk: Task }) {
-  const liveTasks = useLiveProjectTasks(live.ws?.id, tk.project, isLive());
-  const cands = isLive() ? (liveTasks ?? []).filter((x) => x.id !== tk.id) : D().tasks.filter((x) => x.project === tk.project && x.id !== tk.id && !x.archived);
+  const cands = useProjectTasks(tk.project).tasks.filter((x) => x.id !== tk.id);
   return (
     <PopList
       p={p}
@@ -744,7 +731,8 @@ function BulkMenu({ p }: { p: P }) {
   const set = (f: keyof Task, v: string | null) => {
     const ids = [...S.ui.sel];
     S.ui.pop = null;
-    mutate(() => ids.forEach((id) => task(id) && Object.assign(task(id)!, { [f]: v, updated: Date.now() })));
+    // Each through applyPatch, so a real workspace saves it (and the activity says so).
+    mutate(() => ids.forEach((id) => task(id) && applyPatch(task(id)!, { [f]: v })));
   };
   if (p.type === "bulk-status")
     return (
@@ -780,7 +768,17 @@ function BulkMenu({ p }: { p: P }) {
   );
 }
 
+/** "Move to project…": the projects you can open that aren't finished. (PopInner is a plain function, so the list's hook lives here.) */
+function MoveToProject({ p, current, onPick }: { p: P; current: string | undefined; onPick: (v: string) => void }) {
+  const items = useProjects()
+    .items.filter((q) => canSee(q) && q.status !== "complete")
+    .map((q) => ({ id: q.id, name: q.name, html: <span className="pdot" style={css({ "--c": pColor(q) })} />, on: current === q.id }));
+  return <PopList p={p} search="Move to project…" items={items} onPick={onPick} />;
+}
+
 function CtxMenu({ p }: { p: P }) {
+  const { items: projects } = useProjects();
+  const { items: members } = useMembers();
   const id = p.id as string;
   const to = (type: string) => () => {
     S.ui.pop = { ...S.ui.pop!, type, q: "" };
@@ -821,7 +819,7 @@ function CtxMenu({ p }: { p: P }) {
   if (p.ctx === "project") {
     const pr = proj(id);
     if (!pr) return null;
-    const vis = visibleProjects();
+    const vis = projects;
     return (
       <>
         <Mi icon="arrow-up-right" label="Open" onClick={() => (closePop(), go("project", { id: pr.key }))} />
@@ -858,7 +856,7 @@ function CtxMenu({ p }: { p: P }) {
   if (p.ctx === "member") {
     const m = mem(id);
     if (!m) return null;
-    const myRole = D().members.find((x) => x.id === D().me)?.role;
+    const myRole = members.find((x) => x.id === D().me)?.role;
     const canRm = m.role !== "Owner" && m.id !== D().me && (myRole === "Owner" || myRole === "Admin");
     const invited = m.status === "invited";
     return (
@@ -907,9 +905,9 @@ function FilterBuilder({ p }: { p: P }) {
       <div className="mh fb-h">
         Filter by
         {v.filters.length > 0 && (
-          <button className="btn btn-sm btn-ghost" onClick={() => viewChange(k, (vv) => (vv.filters = []))}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => viewChange(k, (vv) => (vv.filters = []))}>
             Clear all
-          </button>
+          </ActionButton>
         )}
       </div>
       {v.filters.length ? (
@@ -938,15 +936,15 @@ function FilterBuilder({ p }: { p: P }) {
                     <span className="trunc grow">{names.length ? names.join(", ") : <span className="faint">Select…</span>}</span>
                     <Ic n="chevron-down" s={12} />
                   </button>
-                  <button className="ibtn ibtn-xs" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
+                  <ActionButton className="ibtn ibtn-xs" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
                     <Ic n="trash-2" s={13} />
-                  </button>
+                  </ActionButton>
                 </div>
                 {open && (
                   <div style={{ marginLeft: 50, border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 4, maxHeight: 200, overflow: "auto" }}>
                     {opts.map((o) => (
                       <label key={o.id} className="mi" style={{ cursor: "pointer", minHeight: 28 }}>
-                        <input
+                        <SelectionInput
                           type="checkbox"
                           className="check"
                           checked={f.v.includes(o.id)}
@@ -984,20 +982,50 @@ function FilterBuilder({ p }: { p: P }) {
   );
 }
 
-/** The one floating popover. */
-/** A coding session's actions, on the API. */
-function SessionMenu({ cs }: { cs: CodingSession }) {
-  const scope = live.ws ? { workspaceId: live.ws.id, projectId: cs.project_id } : undefined;
-  const update = useUpdateSession(scope, cs.session_id, cs.issue_key);
-  const close = useCloseSession(scope, cs.session_id, cs.issue_key);
-  const remove = useDeleteSession(scope, cs.session_id, cs.issue_key);
-  const it = isLive() ? { id: cs.issue_key } : D().tasks.find((t) => t.key === cs.issue_key);
+/** Navigation shared by live and sample session menus. */
+function SessionLinks({ cs }: { cs: CodingSession }) {
+  const it = isLive() ? { id: cs.issue_key } : D().tasks.find((task) => task.key === cs.issue_key);
   const act = (f: () => void) => () => (closePop(), f());
   return (
     <>
       {cs.pr_url && <Mi icon="git-pull-request" label="Open PR" onClick={act(() => window.open(cs.pr_url!, "_blank", "noopener"))} />}
       {it && <Mi icon="panel-right-open" label="Open issue" onClick={act(() => openTask(it.id))} />}
       <Sep />
+    </>
+  );
+}
+
+// Sample menus never mount the live mutation hooks, even for a signed-in browser viewing the demo.
+function SessionMenu({ cs }: { cs: CodingSession }) {
+  const workspace = isLive() ? live.ws : null;
+  if (!workspace)
+    return (
+      <>
+        <SessionLinks cs={cs} />
+        <div className="faint" style={{ padding: "6px 10px", fontSize: 12 }}>
+          {live.mode === "demo" ? "Sample session · Read-only" : "Session actions unavailable"}
+        </div>
+        <Mi icon={cs.pinned ? "pin-off" : "pin"} label={cs.pinned ? "Unpin" : "Pin"} disabled />
+        <Mi icon="pencil" label="Rename" disabled />
+        {cs.state !== "closed" && <Mi icon="power" label="Close session" disabled />}
+        {cs.sandbox && <Mi icon="box" label="Delete sandbox" disabled />}
+        <Mi icon="archive" label={cs.archived ? "Unarchive" : "Archive"} disabled />
+        <Mi icon="trash-2" label="Delete" danger disabled />
+      </>
+    );
+  return <LiveSessionMenu cs={cs} workspaceId={workspace.id} />;
+}
+
+function LiveSessionMenu({ cs, workspaceId }: { cs: CodingSession; workspaceId: string }) {
+  const scope = { workspaceId, projectId: cs.project_id };
+  const update = useUpdateSession(scope, cs.session_id, cs.issue_key);
+  const close = useCloseSession(scope, cs.session_id, cs.issue_key);
+  const remove = useDeleteSession(scope, cs.session_id, cs.issue_key);
+  const dropSandbox = useDeleteSandbox(scope, cs.session_id, cs.issue_key);
+  const act = (f: () => void) => () => (closePop(), f());
+  return (
+    <>
+      <SessionLinks cs={cs} />
       <Mi icon={cs.pinned ? "pin-off" : "pin"} label={cs.pinned ? "Unpin" : "Pin"} onClick={act(() => update.mutate({ pinned: !cs.pinned }))} />
       <Mi
         icon="pencil"
@@ -1008,6 +1036,27 @@ function SessionMenu({ cs }: { cs: CodingSession }) {
       />
       <Sep />
       {cs.state !== "closed" && <Mi icon="power" label="Close session" onClick={act(() => close.mutate())} />}
+      {cs.sandbox && (
+        <Mi
+          icon="box"
+          label="Delete sandbox"
+          onClick={act(() =>
+            confirmDlg({
+              title: "Delete this session's sandbox?",
+              body:
+                (cs.sandbox === "asleep" ? "It's asleep and would be deleted after 7 days anyway. " : "") +
+                "Installed dependencies and anything not committed go. The session, its branch, pull request, and conversation stay; the next turn starts a fresh sandbox.",
+              ok: "Delete sandbox",
+              danger: true,
+              run: () =>
+                dropSandbox.mutateAsync().then(
+                  () => toast("Sandbox deleted"),
+                  () => {},
+                ),
+            }),
+          )}
+        />
+      )}
       <Mi icon="archive" label={cs.archived ? "Unarchive" : "Archive"} onClick={act(() => update.mutate({ archived: !cs.archived }))} />
       <Mi
         icon="trash-2"
@@ -1038,6 +1087,15 @@ export function PopLayer() {
   const p = S.ui.pop as P | null;
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
+    if (p?.type !== "ws") return;
+    const trigger = document.activeElement as HTMLElement | null;
+    const frame = requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus());
+    return () => {
+      cancelAnimationFrame(frame);
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, [p?.type]);
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !p) return;
     const w = el.offsetWidth;
@@ -1049,29 +1107,33 @@ export function PopLayer() {
     el.style.left = x + "px";
     el.style.top = y + "px";
   });
-  useEffect(() => {
-    if (!p) return;
-    const down = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) closePop();
-    };
-    const key = (e: KeyboardEvent) => e.key === "Escape" && closePop();
-    // after the click that opened it
-    const t = setTimeout(() => document.addEventListener("mousedown", down), 0);
-    document.addEventListener("keydown", key);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener("mousedown", down);
-      document.removeEventListener("keydown", key);
-    };
-  }, [p]);
+  const layer = useLayer({ mode: "fixed", lightDismiss: true, onHide: closePop });
+  useLayerDismissal({ isActive: Boolean(p), onDismiss: closePop, getContainer: () => ref.current });
+  const { show, hide } = layer;
+  useLayoutEffect(() => {
+    if (p) show();
+    else hide();
+  }, [p, show, hide]);
   if (!p) return null;
   const out = PopInner({ p });
   if (!out) return null;
-  return (
-    <div ref={ref} className={`pop floating enter ${out.cls ?? ""}`} role="menu" style={{ left: p.x as number, top: p.y as number, ...out.style }}>
-      {out.inner}
-    </div>
+  const content = layer.render(
+    <LayerDepthProvider>
+      <div
+        ref={ref}
+        id={p.type === "ws" ? "workspace-menu" : undefined}
+        aria-label={p.type === "ws" ? "Workspaces" : undefined}
+        className={`pop floating enter ${out.cls ?? ""}`}
+        role="menu"
+        style={{ left: p.x as number, top: p.y as number, ...out.style }}
+      >
+        {out.inner}
+      </div>
+    </LayerDepthProvider>,
+    { x: p.x as number, y: p.y as number },
   );
+  const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
+  return dialog ? createPortal(content, dialog) : content;
 }
 
 /** The table's columns (views/table): id, name, width. */

@@ -1,16 +1,65 @@
 # Deploying dotrix with Dokploy
 
-One VPS running [Dokploy](https://dokploy.com): the web app, the API, the background worker,
-Postgres (with pgvector), Redis, and MinIO, and coding runs in sandboxes on the same machine's
-Docker. Nobody who uses dotrix installs anything.
+One VPS running [Dokploy](https://dokploy.com): the web app, the public site, the admin console,
+the API, the background worker, Postgres (with pgvector), Redis, and RustFS (S3-compatible
+storage). Coding turns run in sandboxes, on Docker Cloud (recommended) or the same machine's
+Docker. Nobody who uses dotrix installs anything; each person connects their own model key in
+Account → Your models.
 
 ```
 VPS
 └── Docker
     ├── Dokploy, Traefik (TLS, your domain)
-    ├── dotrix: web (nginx) → api, worker, migrate (once), postgres, redis, minio, docker-proxy
-    └── coding sandboxes, two containers per run: dotrix-run-<id> and dotrix-run-<id>-egress
+    ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc),
+    │   admin (nginx, admin.dotrix.cc, /v1/admin only) → api, worker, migrate (once),
+    │   postgres, redis, storage (RustFS), docker-proxy
+    └── coding sandboxes on the VPS (not with docker-cloud): two containers per run,
+        dotrix-run-<id> and dotrix-run-<id>-egress
 ```
+
+## Your checklist
+
+What only you (whoever runs dotrix) can do; the code can't.
+
+**Before the first production deploy**
+
+- [ ] A domain with HTTPS for the web app, the admin console and the public site ([Set up](#set-up), step 3).
+- [ ] Every value marked REQUIRED in Dokploy's Environment tab, from `deploy/dokploy.env.example`, including
+      `KAI_PACKAGES_TOKEN` (a classic token with `read:packages` only: the images install the Kai runtime from
+      GitHub Packages with it). Keep a copy of
+      `DOTRIX_ENCRYPTION_KEY` somewhere safe: people's model keys, saved coding sessions and admins'
+      two-factor secrets can't be read without it.
+- [ ] `DOTRIX_ADMIN_URL` (so admin invites are emailed) and `DOTRIX_ALERT_EMAILS` (who hears when something
+      needs attention; empty, the active admin owners).
+- [ ] The GitHub App: callback and webhook URLs on your `DOTRIX_APP_URL`; permissions Contents, Pull requests
+      and Issues (write), Actions and Checks (read); the Push, Pull request and Check suite events (GitHub
+      sends installation events on its own). Details in [infra/coding/README.md](../infra/coding/README.md).
+- [ ] Email: a Sendly key and a From address on a verified domain (`DOTRIX_SENDLY_API_KEY`, `DOTRIX_EMAIL_FROM`).
+- [ ] On GitHub, in the repository's settings: protect `stage` and `main` (a pull request and the CI checks,
+      including `release-flow`, before merging), and set Actions → General → Workflow permissions to
+      read-only.
+
+**After the first deploy**
+
+- [ ] Check the database: `deploy/migrate.sh check` ([Database migrations](#database-migrations)).
+- [ ] Create the first admin console owner ([Admin console accounts](#admin-console-accounts)), sign in, and
+      set up two-factor sign-in. Then remove `DOTRIX_ADMIN_BOOTSTRAP_TOKEN`.
+- [ ] Open the console's Overview: every dependency should read OK.
+
+**Every release**
+
+- [ ] Back up the database before deploying: `deploy/migrate.sh backup`.
+- [ ] Deploy. The `migrate` service applies new migrations before the API and worker start; then run
+      `deploy/migrate.sh check`. The release notes (`CHANGELOG.md`) say which settings are new.
+
+**Once, for this release (the storage limit, admin roles, two-factor sign-in, alerts)**
+
+- [ ] Before deploying, run the [storage usage query](#storage-limit-per-workspace): no workspace should already
+      be over the 1 GB default. Raise `DOTRIX_WORKSPACE_STORAGE_MB`, or set a workspace's own limit in the
+      console afterwards, if one is.
+- [ ] After deploying, tell your admins they'll be asked to set up an authenticator app at their next sign-in.
+- [ ] In the desktop app, try GitHub sign-in with an organisation that requires SAML single sign-on. The app's
+      window allows GitHub's sign-in and two-factor pages; an organisation's SSO pages may still need adding.
 
 ## Sizing
 
@@ -19,7 +68,7 @@ The defaults in `dokploy.env.example` fit 6 vCPUs and 12 GB of memory:
 | What | Memory |
 | --- | --- |
 | Dokploy and Traefik | about 0.5 GB |
-| Postgres, Redis, MinIO | about 1.5 GB |
+| Postgres, Redis, RustFS | about 1.5 GB |
 | API and worker | about 1.5 GB |
 | Coding: 2 runs at once × 3 GB (`DOTRIX_CODING_MAX_RUNS`, `DOTRIX_CODING_MEMORY`) | up to 6 GB |
 
@@ -36,11 +85,113 @@ enforcement are removed; a person can still choose a limit for their project or 
 1. **Dokploy:** create a project, then a **Docker Compose** service from this repository, with the
    compose path `deploy/docker-compose.dokploy.yml`.
 2. **Environment:** paste `deploy/dokploy.env.example` into the service's Environment tab and fill
-   it in. The GitHub App's callback and webhook URLs use your `DOTRIX_APP_URL`.
-3. **Domain:** add your domain to the `web` service, port 80, with HTTPS. Nothing else needs a
-   domain: the API is reached through `web`, on the same origin.
-4. **Deploy.** The first deploy builds the three images on the VPS (the backend, the web app, and
-   the coding image the worker starts), runs the migrations, then starts everything.
+   it in. `KAI_PACKAGES_TOKEN` is a GitHub token with `read:packages` for the kunemi-group
+   organisation: the backend image's build installs Chat's fx host, the Kai runtime
+   (`@kunemi-group/kai`), from GitHub Packages with it, as a build secret kept out of the image. The GitHub App's callback and webhook URLs use your `DOTRIX_APP_URL`.
+3. **Domains:** add the app's domain (`app.dotrix.cc`, the same as `DOTRIX_APP_URL`) to the `web`
+   service, the public site's (`dotrix.cc`, and `www.dotrix.cc` if you like) to the `site`
+   service, and the admin console's (`admin.dotrix.cc`) to the `admin` service, each on port 80
+   with HTTPS. The admin console forwards only `/v1/admin` to the API; its accounts are its own
+   ([Admin console accounts](#admin-console-accounts)). Nothing else needs a
+   domain: the API is reached through `web`, on the same origin. The site has no API; its Sign in, Get started and Open dotrix links go
+   to `DOTRIX_APP_URL`, and its downloads to the repository's latest release.
+4. **Deploy.** The first deploy builds the images on the VPS (the backend, the web app, the public
+   site, the admin console, and the coding image the worker starts), runs the migrations (the
+   `migrate` service, once, before the API and worker start), then starts everything. Check the
+   result with `deploy/migrate.sh check` ([Database migrations](#database-migrations)).
+5. **Desktop downloads and updates:** set the repository variable `DOTRIX_APP_URL` to the same
+   address before cutting a release. Each release then carries the Windows installer and CLI, built
+   for that address, and installed apps update themselves from it.
+
+## Database migrations
+
+Every deploy applies them on its own: the `migrate` service runs `alembic upgrade head` once, before the
+API and worker start, and they don't start if it fails. `deploy/migrate.sh` is for everything around that,
+run on the VPS (as a user in the docker group, from a checkout of this repository or with the script
+copied there):
+
+```bash
+deploy/migrate.sh status    # where the database is, and what's waiting to be applied
+deploy/migrate.sh backup    # a pg_dump into ./backups (BACKUP_DIR), with the command that restores it
+deploy/migrate.sh upgrade   # apply what's waiting (refuses when the code has two migration heads)
+deploy/migrate.sh check     # exit 0 only when the database is at the code's head
+deploy/migrate.sh           # all of it: status, backup, upgrade once you confirm (YES=1 skips asking), check
+IMAGE=dotrix-backend:0.2.0 deploy/migrate.sh check   # against a given release's migrations
+```
+
+It finds the running `api` and `postgres` containers by their compose labels, so it needs neither the
+compose file nor Dokploy's env file. Migrations run inside the API container, which has the code and the
+database URL. If more than one dotrix runs on the machine, name the one you mean with
+`COMPOSE_PROJECT=<name>` (Dokploy's project name for the service), or pass `API_CONTAINER` and
+`PG_CONTAINER`.
+
+When a deploy fails at `migrate`, the API and worker keep running the previous version, and the previous
+version's code knows only the previous migrations. So name the release you're deploying: with
+`IMAGE=dotrix-backend:<version>` (the backend image the deploy built; `docker images dotrix-backend` lists
+them), the script runs the migrations from that image in a one-off container on Postgres's network, with the
+running API's database URL (or `DOTRIX_DATABASE_URL` when no API is running). Read the migrate container's log
+in Dokploy, fix the cause, then `IMAGE=dotrix-backend:<version> deploy/migrate.sh` and deploy again. `check`
+with the same `IMAGE` confirms the database is at that release's head. A backup restores with the
+`pg_restore` command `backup` prints. Restore only into the version that made it, since a newer version's
+code expects its own migrations.
+
+Keep backups off the VPS too: copy the `.dump` files somewhere else, or back up the `pgdata` volume with
+your host's snapshots.
+
+## Admin console accounts
+
+The admin console (`admin.dotrix.cc`) has accounts of its own, separate from dotrix's. An account is an
+**owner** (everything, including managing admins and changing a workspace's storage limit) or a
+**viewer** (reads the console).
+
+- **The first owner:** sign up in the console with `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` (the form asks for it;
+  without the variable, sign-up stays closed). Or create one from the server:
+  `docker compose exec api python -m dotrix_backend.admin_cli create --email … --name …`. Either way,
+  remove the bootstrap token afterwards.
+- **More admins:** an owner invites them from the console's Admins page. The invite is emailed when
+  `DOTRIX_ADMIN_URL` is the console's address; otherwise the console shows the link to pass on. Owners
+  also change roles, disable or remove an admin, and revoke invites. The last active owner can't be removed.
+- **Two-factor sign-in:** with `DOTRIX_ENCRYPTION_KEY` set, every admin sets up an authenticator app at
+  their next sign-in and gets ten single-use recovery codes. Without the key, the console uses a password
+  alone.
+- **Locked out:** an owner resets another admin's two-factor from the Admins page. From the server:
+  `admin_cli reset-two-factor --email …` (a lost device) or `admin_cli reset-password --email …` (a
+  forgotten password; it also signs that admin out everywhere). `admin_cli list` shows every admin. The
+  password is prompted for, or read from `DOTRIX_ADMIN_PASSWORD`, never typed on the command line.
+- **What admins did:** the console's Admin activity page (owners only) lists sign-ins, failed sign-ins, and
+  every change to an admin account or a storage limit, for 400 days.
+
+## Alerts
+
+The worker checks the deployment's health every five minutes (`DOTRIX_ALERT_INTERVAL_MINUTES`) and emails the
+operators when something needs attention and again when it clears. Set `DOTRIX_ALERT_EMAILS` to a comma-separated
+list; empty, the admin console's active owners are emailed. A condition is emailed once it holds on two checks in
+a row, and only once until it clears. The conditions, which the Overview also lists:
+
+- Redis, file storage, or another dependency is down.
+- No worker has checked in recently.
+- A run's lease lapsed more than 10 minutes ago and the sweep hasn't recovered it.
+- The run queue's oldest dispatch has waited more than 10 minutes.
+- Coding turns are waiting to be recovered.
+- At least 10 runs finished in 24 hours and more than half failed.
+- Notification emails have been unsent for over an hour.
+
+The emails give counts only, never a workspace's name or what people wrote.
+
+## Storage limit per workspace
+
+`DOTRIX_WORKSPACE_STORAGE_MB` (default `1024`, i.e. 1 GB; `0` is unlimited) caps what one workspace
+stores in uploads: document originals and task attachments. Knowledge text, coding screenshots,
+saved sessions and profile photos aren't counted. An upload that would pass the limit is refused
+(nothing is deleted; reading, downloading and deleting still work). The admin console's Workspaces
+page shows each workspace's use and sets its own limit. Before the first deploy with the default,
+check that no existing workspace is already over it:
+
+```sql
+select workspace_id, sum(size) as bytes from (
+  select workspace_id, size from documents union all select workspace_id, size from issue_attachments
+) u group by workspace_id order by bytes desc limit 10;
+```
 
 ## What survives a restart
 
@@ -52,12 +203,57 @@ matters:
   twice. After three tries the run shows Continue to whoever asked.
 - **Coding runs** hold a lease too (`DOTRIX_CODING_LEASE_SECONDS`). One whose worker stopped is
   settled from what GitHub shows: its PR is adopted when the push landed, the turn runs again
-  when nothing was published, and anything unclear waits for Recover in the Code tab.
+  when nothing was published, and anything unclear waits for Recover in Codes.
 - **What a run did** is kept in Postgres as it happens, so a reload, a redeploy of the API, or
   Redis restarting doesn't lose a reply mid-way.
 
 Redis is still needed (the queue, live streams, rate limits); its data can be lost without
 losing runs.
+
+## Coding sandboxes on Docker Cloud (recommended)
+
+With `DOTRIX_CODING_SANDBOX=docker-cloud`, Kai's turns run in Docker Cloud sandboxes (the Docker
+Agentic Platform) instead of on this VPS. Each turn gets a microVM of its own; the API, worker,
+Postgres and Redis stay here. Docker enforces the network policy (only the model API of the turn's
+engine is reachable), so the egress proxy isn't needed. The worker still clones and pushes, so no
+GitHub token ever reaches a sandbox.
+
+1. **Subscribe** to the Docker Agentic Platform with the Docker account the sandboxes bill to.
+2. **A personal access token** for that account with **Allow Cloud Sandboxes access** (`sandbox:use`).
+   Put the Docker ID in `DOTRIX_DOCKER_CLOUD_ID` and the token in `DOTRIX_DOCKER_CLOUD_PAT` (Dokploy's
+   Environment tab, as a secret).
+3. **Publish the coding image** to a registry Docker can pull from. In GitHub: the repository variable
+   `CODING_IMAGE` (e.g. `docker.io/acme/dotrix-coding`) and the secrets `DOCKERHUB_USERNAME` and
+   `DOCKERHUB_TOKEN` in the `coding-image` environment. Run `.github/workflows/coding-image.yml`
+   manually and select publication explicitly. Set `DOTRIX_CODING_IMAGE` to the resulting immutable
+   build tag, e.g. `docker.io/acme/dotrix-coding:sha-<12-character-commit>`.
+4. **Size:** `DOTRIX_CODING_CPUS` picks the sandbox size (Docker pairs 2 GiB of memory with each CPU:
+   1, 2, 4, 8 or 16 CPUs); `DOTRIX_CODING_MEMORY` and `DOTRIX_CODING_DOCKER_RUNTIME` don't apply.
+
+The VPS then needs no room for sandboxes: 2 vCPUs and 4 GB run the rest. An account runs 10
+sandboxes at once by default; `DOTRIX_CODING_MAX_RUNS` (per worker) stays below that. Docker labels
+the API experimental.
+
+**The key stays out of the sandbox.** Each person's model key is stored as a Docker secret for the
+session; the sandbox holds a placeholder and Docker writes the real key only into requests to the
+model API (`DOTRIX_DOCKER_CLOUD_KEY_INJECTION`, on by default).
+
+**Sessions sleep between turns.** After a turn (and the warm idle time) a session's sandbox is
+stopped, keeping its files and installed dependencies, and the next turn wakes it. A sleeping
+sandbox is deleted after `DOTRIX_CODING_SLEEP_DAYS` (7); straight away when its session is closed or
+deleted, or when someone deletes it ("Delete sandbox" in the session's menu); and the workspace's
+oldest when more than `DOTRIX_CODING_SLEEP_MAX` (5) are asleep. The worker sweeps every 10
+minutes, and also deletes stopped dotrix sandboxes and secrets nothing refers to (a crash's). An
+account stores 50 sandboxes by default, sleeping ones included. A sandbox whose worker crashed stops
+itself after the turn time plus the idle time (and 10 minutes), so it stops billing.
+
+**Network.** Owners and admins can let sandboxes reach package registries or other hosts in
+Settings → Network. Those apply only to Docker Cloud sandboxes, because there the key stays
+out; the other sandbox kinds refuse a turn while any are set.
+
+Not yet checked against a real account (the client is tested against a fake of the documented API,
+`tests/unit/test_docker_cloud.py`): whether Docker pulls a private image without extra setup, and how
+long a sandbox takes to start.
 
 ## Coding sandboxes on the VPS
 
@@ -68,8 +264,8 @@ the API, migrations, and web cannot reach the proxy. The worker also joins the a
 for the database, queue, and storage. The socket itself is never mounted into a dotrix container. Each
 run's agent container has no route out except its egress proxy, which reaches only the model API
 of the tool Kai runs: Claude Code and Codex by default, or OpenCode on the provider set in
-`DOTRIX_CODING_OPENCODE_MODEL` (`DOTRIX_CODING_AGENT=opencode`). Runs use the requester's own key
-where the organisation allows it, else the workspace's (Settings → Models), else the server's.
+the session's model (Claude Code, Codex, OpenCode or fx). Every run uses only the requester's own
+key, from Account → Your models; there are no workspace or server keys.
 
 ## Outbound access
 
@@ -78,14 +274,15 @@ setup. If you put a firewall or an egress proxy in front of the VPS, allow HTTPS
 
 | Host | What for |
 | --- | --- |
-| `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, `api.x.ai`, `api.deepseek.com`, `api.mistral.ai`, `api.groq.com`, `openrouter.ai` | People's model keys: chat, specialists, coding (only the providers people connect) |
+| `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`, `api.x.ai`, `api.deepseek.com`, `api.mistral.ai`, `api.groq.com`, `openrouter.ai`, `integrate.api.nvidia.com` | People's model keys: chat, specialists, coding (only the providers people connect) |
 | `github.com`, `api.github.com` | Sign-in, the GitHub App, checkouts, pushes and PRs |
+| `connect.docker.com`, `hub.docker.com`, and each sandbox's endpoint host | Docker Cloud sandboxes (`docker-cloud`): the Sandboxes API, signing in, and a sandbox's files and commands |
 | `api.osv.dev` | `dependency_advisories`: known vulnerabilities in a repository's dependencies. Without it the tool says OSV can't be reached; nothing else breaks |
 | `api.sendlyai.com` | Email |
-| `api.tavily.com`, and the pages research reads | Web research (optional) |
+| `your private SearXNG service`, and the pages research reads | Web research (optional) |
 
 Building the coding image (`coding-image`) also needs Docker Hub, `registry.npmjs.org`,
-`releases.fx.sh`, Debian's package mirrors and Playwright's browser download. The coding sandboxes
+`npm.pkg.github.com` (Kai's fx command, with `KAI_PACKAGES_TOKEN`), Debian's package mirrors and Playwright's browser download. The coding sandboxes
 themselves need nothing here: their egress proxy reaches only the model API of the run's tool.
 
 To check OSV from the worker:
@@ -118,11 +315,49 @@ uv run python -m dotrix_backend.worker   # or as a systemd service
 
 Then remove the `worker` and `docker-proxy` services from the compose file.
 
-## Hardening (recommended before other people's code runs here)
+## Isolation requirements and host verification
 
-- **gVisor:** install `runsc` on the VPS ([gvisor.dev](https://gvisor.dev/docs/user_guide/install/)),
+- **gVisor is required for `DOTRIX_CODING_SANDBOX=docker` in staging and production.** Install
+  `runsc` on the Docker host ([gvisor.dev](https://gvisor.dev/docs/user_guide/install/)),
   register it in `/etc/docker/daemon.json`, restart Docker (this restarts every Dokploy app), then set
-  `DOTRIX_CODING_DOCKER_RUNTIME=runsc`. Each sandbox then runs on its own kernel layer.
+  `DOTRIX_CODING_DOCKER_RUNTIME=runsc`. The deployment example sets this explicitly. An unset or
+  ordinary runtime is refused at API/worker startup. If gVisor cannot start, coding fails; it never
+  retries using ordinary Docker. Both the agent and egress containers use it, and their actual
+  runtime is checked before any repository content is copied. Docker Cloud uses its own microVMs;
+  this Docker runtime requirement does not apply to it. Keep coding `off` until the selected
+  backend is ready.
+- **Finite capacity:** `DOTRIX_CODING_MAX_RUNS` must be positive when deployed coding is enabled.
+  This limits active turns per worker process, not across workers or per workspace. Agent memory,
+  CPU and process limits remain in effect; swap is disabled. Egress is separately limited to
+  256 MiB, 0.25 CPU and 128 processes. Idle cached sandboxes can retain processes and memory;
+  budget for them separately or set `DOTRIX_CODING_WARM_MAX=0`. Distributed workspace limits
+  are still pending.
 - **A second VPS for coding:** keeps untrusted code off the machine with your database. Run the
   worker there (as above), pointing at this VPS's Postgres and Redis over a private network.
-- **Snapshots:** take one before upgrading; back up the `pgdata` and `miniodata` volumes.
+- **Snapshots:** take one before upgrading; back up the `pgdata` and `storagedata` volumes.
+
+Before enabling Docker coding, run `docker info --format '{{json .Runtimes}}'` against the
+worker's Docker daemon and verify `runsc` is registered. Then run the real Docker sandbox
+regressions on that host with `DOTRIX_CODING_DOCKER_RUNTIME=runsc` and the coding image built:
+
+```shell
+uv run pytest apps/backend/tests/unit/test_coding_docker.py -v
+```
+
+These exercise file edits, network restrictions, read-only system paths, Stop and cleanup with
+the selected runtime. Finally run an explicitly authorised coding turn through the deployed
+worker and record its checks, PR and container runtime. Configuration/unit tests alone do not
+verify the host's isolation or establish production readiness. No host runtime installation or
+Docker restart is performed by the application.
+
+
+
+### Included web search
+
+The Compose stack includes SearXNG with JSON enabled and a pinned image. Set
+`SEARXNG_SECRET` in Dokploy before redeploying (`openssl rand -hex 32`). Both API
+and worker use `http://searxng:8080` and wait for its health check. Keep this service
+private: assign no public domain or host port. SearXNG needs outbound HTTPS to its
+upstream search engines. No search-provider API key is required. See
+[coding environments and search](../docs/cloud-environments.md) for native setup,
+validation and TLS-proxy guidance.

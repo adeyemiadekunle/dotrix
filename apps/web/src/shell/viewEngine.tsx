@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Filter engine: each view's filters (is / is not),
 // search, sort, grouping, and the toolbar every task view shares.
 import type { ReactNode } from "react";
@@ -6,7 +8,7 @@ import { closePop, openPop } from "../core/actions";
 import { LABELS, PR, PRIOS, STATUSES, type StatusId } from "../core/constants";
 import { Ic } from "../core/icons";
 import { DAY, TODAY, diffD, parse } from "../core/utils";
-import { D, S, canSee, isOver, mem, pColor, proj, render, save, visibleProjects, type View, people } from "../data/store";
+import { D, S, canSee, isOver, mem, pColor, proj, render, save, visibleProjects, who, type View, people } from "../data/store";
 import type { Filter, Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
 
@@ -115,13 +117,22 @@ export function sortTasks(ts: Task[], s: { f: string; dir: number }): Task[] {
         assignee: (t: Task) => mem(t.assignee)?.name || "zzz",
         created: (t: Task) => -t.created,
         updated: (t: Task) => -t.updated,
-        estimate: (t: Task) => t.estimate || "zzz",
+        estimate: (t: Task) => {
+          if (!t.estimate) return Number.POSITIVE_INFINITY;
+          const num = parseFloat(t.estimate);
+          return Number.isNaN(num) ? t.estimate : num;
+        },
         project: (t: Task) => proj(t.project)?.name ?? "",
       } as Record<string, (t: Task) => string | number>
     )[s.f] || ((t: Task) => t.order);
+  // Numbers sort before text (a non-numeric estimate), and tasks without an estimate come last.
+  const rank = (k: string | number) => (typeof k === "number" ? (k === Number.POSITIVE_INFINITY && s.f === "estimate" ? 2 : 0) : s.f === "estimate" ? 1 : 0);
   return [...ts].sort((x, y) => {
     const p = key(x);
     const q = key(y);
+    const rp = rank(p);
+    const rq = rank(q);
+    if (rp !== rq) return (rp - rq) * d;
     return (p > q ? 1 : p < q ? -1 : 0) * d;
   });
 }
@@ -135,11 +146,16 @@ export interface Group {
 export function groupTasks(ts: Task[], g: string): Group[] {
   if (g === "none") return [{ key: "all", name: "All tasks", html: null, tasks: ts }];
   let groups: Omit<Group, "tasks">[];
+  const known = new Set(people().map((m) => m.id));
+  const others: string[] = [];
+  if (g === "assignee") for (const t of ts) if (t.assignee && !known.has(t.assignee) && !others.includes(t.assignee)) others.push(t.assignee);
   if (g === "status") groups = STATUSES.map((s) => ({ key: s.id, name: s.name, html: <StIcon st={s.id} />, set: { status: s.id as StatusId } }));
   else if (g === "priority") groups = PRIOS.map((p) => ({ key: p.id, name: p.name, html: <PrIcon p={p.id} />, set: { priority: p.id } }));
   else if (g === "assignee")
     groups = [
       ...people().map((m) => ({ key: m.id, name: m.name, html: <Av id={m.id} cls="sm" tip={false} />, set: { assignee: m.id } })),
+      // Agents (such as Kai) and people who have left: shown, but a row can't be dragged onto them.
+      ...others.map((id) => ({ key: id, name: who(id)?.name ?? "Former member", html: <Av id={id} cls="sm" tip={false} /> })),
       { key: "none", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, set: { assignee: null } },
     ];
   else if (g === "project")
@@ -152,13 +168,20 @@ export function groupTasks(ts: Task[], g: string): Group[] {
       { key: "today", name: "Today" },
       { key: "week", name: "Next 7 days" },
       { key: "later", name: "Later" },
+      { key: "past", name: "Past" },
       { key: "nodate", name: "No due date" },
     ].map((x) => ({ ...x, html: <Ic n="calendar" s={14} /> }));
+  const bucket = (t: Task) => {
+    if (!t.due) return "nodate";
+    const n = diffD(parse(t.due)!, TODAY);
+    if (n < 0) return t.status === "done" ? "past" : "overdue";
+    return n === 0 ? "today" : n <= 7 ? "week" : "later";
+  };
   const out = groups.map((G) => ({
     ...G,
     tasks: ts.filter((t) => {
       if (g === "assignee") return (t.assignee || "none") === G.key;
-      if (g === "due") return matchF(t, { f: "due", op: "is", v: [G.key] });
+      if (g === "due") return bucket(t) === G.key;
       return String((t as unknown as Record<string, unknown>)[g]) === G.key;
     }),
   }));
@@ -197,21 +220,21 @@ function FilterChips({ k }: { k: string }) {
                 <Ic n={F.icon} s={12} />
                 <b>{F.name}</b> {f.op === "not" ? "is not" : "is"} <span>{val}</span>
               </button>
-              <button className="ibtn" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
+              <ActionButton className="ibtn" aria-label="Remove filter" onClick={() => viewChange(k, (vv) => vv.filters.splice(i, 1))}>
                 <Ic n="x" s={12} />
-              </button>
+              </ActionButton>
             </span>
           </span>
         );
       })}
-      <button className="btn btn-sm btn-ghost" onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
+      <ActionButton className="btn btn-sm btn-ghost" onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
         <Ic n="plus" s={12} />
         Add
-      </button>
+      </ActionButton>
       <span className="sp" />
-      <button className="btn btn-sm btn-ghost" onClick={() => clearFilters(k)}>
+      <ActionButton className="btn btn-sm btn-ghost" onClick={() => clearFilters(k)}>
         Clear all
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -251,7 +274,7 @@ export function ViewToolbar({
       <div className="toolbar" role="toolbar">
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input
+          <DesignInput
             className="input search-sm"
             id={`vq-${k}`}
             placeholder="Search tasks"
@@ -260,7 +283,7 @@ export function ViewToolbar({
             aria-label="Search tasks"
           />
         </div>
-        <button className={`btn btn-ghost ${v.filters.length ? "on" : ""}`} onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
+        <ActionButton className={`btn btn-ghost ${v.filters.length ? "on" : ""}`} onClick={(e) => openPop(e.currentTarget, "filter", { key: k })}>
           <Ic n="list-filter" s={14} />
           Filter
           {v.filters.length > 0 && (
@@ -268,22 +291,22 @@ export function ViewToolbar({
               {v.filters.length}
             </span>
           )}
-        </button>
-        <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "sort", { key: k })}>
+        </ActionButton>
+        <ActionButton className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "sort", { key: k })}>
           <Ic n="arrow-up-down" s={14} />
           <span className="hide-m">Sort:</span> {SORT_NAMES[v.sort.f]}
-        </button>
+        </ActionButton>
         {group && (
-          <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "group", { key: k })}>
+          <ActionButton className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "group", { key: k })}>
             <Ic n="rows-3" s={14} />
             <span className="hide-m">Group:</span> {GROUP_NAMES[v.group]}
-          </button>
+          </ActionButton>
         )}
         {cols && (
-          <button className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "cols", { key: k, list: Array.isArray(cols) ? cols : undefined })}>
+          <ActionButton className="btn btn-ghost" onClick={(e) => openPop(e.currentTarget, "cols", { key: k, list: Array.isArray(cols) ? cols : undefined })}>
             <Ic n="columns-3" s={14} />
             Columns
-          </button>
+          </ActionButton>
         )}
         {extra}
         <span className="sp" />

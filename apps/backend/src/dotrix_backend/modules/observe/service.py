@@ -1,4 +1,4 @@
-"""The observability reads behind Ops: the workspace's health in one query set, and a
+"""Workspace observability reads: the workspace's health in one query set, and a
 unified run history across chat and coding. Reads only — the numbers come from the modules'
 own tables. Runs stay under the same privacy as everywhere else (each person sees their own,
 plus what's waiting on a decision they may make)."""
@@ -41,10 +41,6 @@ class ObserveService:
     async def overview(self, member: Membership) -> ObserveOverview:
         """Workspace counts, visible runs and dispatches, and runs with lapsed leases."""
         return await self._overview(member)
-
-    async def platform_overview(self) -> ObserveOverview:
-        """The same overview for the whole deployment: ops sees every workspace's runs."""
-        return await self._overview(None)
 
     async def _overview(self, member: Membership | None) -> ObserveOverview:
         ws = member.workspace_id if member else None  # None: the whole deployment
@@ -221,17 +217,6 @@ class ObserveService:
             else None,
         )
 
-    async def platform_runs(
-        self,
-        *,
-        kind: Literal["chat", "coding"] | None = None,
-        before: datetime | None = None,
-        before_id: uuid.UUID | None = None,
-        limit: int = 50,
-    ) -> list[ObservedRun]:
-        """Every workspace's runs, newest first (the ops console sees the whole platform)."""
-        return await self._runs(None, kind=kind, before=before, before_id=before_id, limit=limit)
-
     async def runs(
         self,
         member: Membership,
@@ -252,8 +237,10 @@ class ObserveService:
         member: Membership | None,
         *,
         kind: Literal["chat", "coding"] | None = None,
+        failed: bool = False,
         before: datetime | None = None,
         before_id: uuid.UUID | None = None,
+        offset: int = 0,
         limit: int = 50,
     ) -> list[ObservedRun]:
         ws = member.workspace_id if member else None
@@ -273,9 +260,10 @@ class ObserveService:
                 .where(
                     *( [AgentRun.workspace_id == ws] if ws is not None else [] ),
                     runs_visible_to(member) if member else true(),
+                    AgentRun.status == RunStatus.FAILED if failed else true(),
                 )
                 .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
-                .limit(limit)
+                .limit(offset + limit)
             )
             if (clause := keyset(AgentRun)) is not None:
                 stmt = stmt.where(clause)
@@ -284,6 +272,7 @@ class ObserveService:
                     ObservedRun(
                         kind="chat",
                         id=r.id,
+                        workspace_id=r.workspace_id,
                         status=r.status.value,
                         label=r.title or r.message[:100],
                         project_id=r.project_id,
@@ -307,9 +296,10 @@ class ObserveService:
                 .where(
                     *( [CodingRun.workspace_id == ws] if ws is not None else [] ),
                     visible_runs(member) if member else true(),
+                    CodingRun.status.in_((CodingRunStatus.FAILED, CodingRunStatus.RECOVERY_REQUIRED)) if failed else true(),
                 )
                 .order_by(CodingRun.created_at.desc(), CodingRun.id.desc())
-                .limit(limit)
+                .limit(offset + limit)
             )
             if (clause := keyset(CodingRun)) is not None:
                 stmt = stmt.where(clause)
@@ -318,6 +308,8 @@ class ObserveService:
                     ObservedRun(
                         kind="coding",
                         id=r.id,
+                        workspace_id=r.workspace_id,
+                        started_at=r.started_at,
                         status=r.status.value,
                         label=r.issue_key,
                         project_id=r.project_id,
@@ -335,4 +327,4 @@ class ObserveService:
                 )
 
         found.sort(key=lambda r: (r.created_at, r.id), reverse=True)
-        return found[:limit]
+        return found[offset : offset + limit]

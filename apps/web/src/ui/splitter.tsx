@@ -1,43 +1,38 @@
 // A drag handle between two areas: drag it, or focus it and use the arrow keys. Sizes a person sets
 // are kept in this browser (a convenience: they come back to the defaults when storage is gone).
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useState } from "react";
+import { ResizeHandle, useResizable } from "@dotrix/ui/astryx";
 
-export function Splitter({ dir, onDrag, label, className = "" }: { dir: "col" | "row"; onDrag: (delta: number) => void; label: string; className?: string }) {
-  const start = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    let last = dir === "col" ? e.clientX : e.clientY;
-    const move = (ev: PointerEvent) => {
-      const now = dir === "col" ? ev.clientX : ev.clientY;
-      if (now !== last) onDrag(now - last);
-      last = now;
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      document.body.classList.remove("resizing-col", "resizing-row");
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    document.body.classList.add(dir === "col" ? "resizing-col" : "resizing-row");
-  };
+export function Splitter({
+  dir,
+  size,
+  min,
+  max,
+  onResize,
+  reversed = false,
+  label,
+  className = "",
+}: {
+  dir: "col" | "row";
+  size: number;
+  min: number;
+  max: number;
+  onResize: (size: number) => void;
+  reversed?: boolean;
+  label: string;
+  className?: string;
+}) {
+  const direction = dir === "col" ? "horizontal" : "vertical";
+  const region = useResizable({ defaultSize: size, minSize: min, maxSize: max, direction, onSizeChange: onResize });
   return (
-    <div
-      role="separator"
-      aria-orientation={dir === "col" ? "vertical" : "horizontal"}
-      aria-label={label}
-      tabIndex={0}
+    <ResizeHandle
+      direction={direction}
+      label={label}
+      resizable={region}
+      isReversed={reversed}
       className={`splitter ${dir} ${className}`}
-      onPointerDown={start}
-      onKeyDown={(e) => {
-        const step = e.shiftKey ? 64 : 16;
-        const back = dir === "col" ? "ArrowLeft" : "ArrowUp";
-        const fwd = dir === "col" ? "ArrowRight" : "ArrowDown";
-        if (e.key === back || e.key === fwd) {
-          e.preventDefault();
-          onDrag(e.key === back ? -step : step);
-        }
-      }}
+      hasDivider
+      isAlwaysVisible={false}
     />
   );
 }

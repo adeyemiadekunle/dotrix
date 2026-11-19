@@ -11,10 +11,16 @@
   agent's container has a read-only system, no capabilities, and an unprivileged user; the repo
   sits on a volume deleted with it. Unlike OpenShell, the model key is in the agent's environment:
   the proxy is what keeps it from going anywhere but the model API.
+- Docker Cloud (`docker-cloud`): a Docker Sandboxes microVM per run, its network limited to the
+  model API by Docker's own policy (docker_cloud.py).
 - Local (`local`): a temporary folder on this machine, with no isolation at all. For
   development only; refused in production.
 
-Neither ever receives a GitHub token: the worker clones and pushes outside the sandbox.
+None ever receives a GitHub token: the worker clones and pushes outside the sandbox.
+
+Extra hosts owners and admins allow (Settings → Network, network.py) reach only Docker Cloud
+sandboxes, which keep the key out of the sandbox; the others refuse a turn rather than open a way
+for the key to leave.
 """
 from __future__ import annotations
 
@@ -62,6 +68,7 @@ class ExecResult:
     timed_out: bool = False
     cancelled: bool = False
     truncated: bool = False
+    raw: bytes = b""  # stdout exactly as the command wrote it (stdout is decoded with replacements)
 
 
 LineHandler = Callable[[str], Awaitable[None]]
@@ -78,9 +85,12 @@ class SandboxSession(Protocol):
 class CodingSandbox(Protocol):
     kind: str
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
         """A sandbox holding a copy of `source` (a folder named `repo`), where commands run in the
-        repo, and `tool` can reach its model with `model_key`."""
+        repo, and `tool` can reach its model with `model_key`, and the `allow` hosts (owners' and admins'
+        Settings → Network; exact, or `*.domain`) besides."""
         ...
 
 
@@ -177,6 +187,7 @@ async def _run_async(
     return ExecResult(
         code=process.returncode, stdout=b"".join(kept).decode(errors="replace"),
         stderr=err.decode(errors="replace"), timed_out=timed_out, cancelled=cancelled, truncated=truncated,
+        raw=b"".join(kept),
     )
 
 
@@ -252,7 +263,7 @@ async def _run_threaded(
     with lock:
         stderr = err.decode(errors="replace")
     return ExecResult(code=process.returncode, stdout=b"".join(kept).decode(errors="replace"), stderr=stderr,
-                      timed_out=timed_out, cancelled=cancelled, truncated=truncated)
+                      timed_out=timed_out, cancelled=cancelled, truncated=truncated, raw=b"".join(kept))
 
 
 def _kill(process: asyncio.subprocess.Process) -> None:
@@ -272,6 +283,14 @@ def _kill(process: asyncio.subprocess.Process) -> None:
 
 TURN_PID = "/tmp/dotrix-turn.pid"  # the command a stoppable exec runs, so Stop can signal it in the sandbox
 STOP_GRACE = 5.0  # seconds between SIGINT (finish cleanly) and SIGKILL
+# Every process under the turn's, frozen as it's found (so none forks or is reparented away while the
+# tree is read), then killed. POSIX sh and procps' pgrep, which the coding image and OpenShell have.
+_KILL_TREE = (
+    'p=$(cat {pid} 2>/dev/null) || exit 0; kill -STOP "$p" 2>/dev/null; all="$p"; level="$p"; '
+    'while [ -n "$level" ]; do next=""; for q in $level; do '
+    'for c in $(pgrep -P "$q" 2>/dev/null); do kill -STOP "$c" 2>/dev/null; next="$next $c"; done; done; '
+    'all="$all $next"; level="$next"; done; kill -KILL $all 2>/dev/null; exit 0'
+)
 
 Exec = Callable[..., Awaitable[ExecResult]]
 
@@ -288,8 +307,9 @@ async def interruptible(
         return await run(argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=None)
 
     async def signal_inside(sig: str) -> None:
-        script = (f'p=$(cat {TURN_PID} 2>/dev/null) && kill -INT "$p"' if sig == "INT"
-                  else f'p=$(cat {TURN_PID} 2>/dev/null) && {{ pkill -KILL -P "$p"; kill -KILL "$p"; }}')
+        # SIGINT goes to the engine alone, so it ends its turn cleanly. SIGKILL ends the whole tree it
+        # started: a test runner or dev server under its shell tool, not just its direct children.
+        script = f'p=$(cat {TURN_PID} 2>/dev/null) && kill -INT "$p"' if sig == "INT" else _KILL_TREE.format(pid=TURN_PID)
         try:
             await run(["sh", "-c", script], stdin=None, on_line=None, timeout=30, cancel=None)
         except SandboxError as exc:
@@ -373,7 +393,12 @@ class OpenShellSandbox:
             raise SandboxError(f"openshell {args[0]} {args[1]} failed: {lines[-1][:300] if lines else result.code}")
         return result.stdout
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
+        if allow:  # its policy reaches the model provider only; not the hosts owners allow
+            raise SandboxError("OpenShell sandboxes don't take the extra hosts in Settings → Network: "
+                               "those need Docker Cloud sandboxes; or remove the hosts.")
         # OpenShell names are at most 19 characters; a UUIDv7's last 16 hex digits are its random part.
         name = provider = f"pm-{run_id.hex[-16:]}"
         scratch = Path(tempfile.mkdtemp(prefix="dotrix-openshell-"))
@@ -404,6 +429,11 @@ EGRESS_PORT = 3128
 def egress_allow(tool: CodingTool) -> str:
     """Where the egress proxy lets the tool go: its model API, nothing else."""
     return f"{tool.api_host}:443"
+
+
+EXTRA_HOSTS_REFUSED = ("The key is inside this sandbox, so it can't reach the extra hosts in Settings → "
+                       "Network (the agent could send the key there). Those need Docker Cloud sandboxes, which "
+                       "keep the key out; or remove the hosts.")
 
 
 def _tar_of(source: Path) -> bytes:
@@ -449,6 +479,18 @@ class DockerSandbox:
         self.image = settings.coding_image
         self.memory, self.cpus, self.runtime = settings.coding_memory, settings.coding_cpus, settings.coding_docker_runtime
 
+    async def pin_image(self, reference: str) -> DockerSandbox:
+        """Resolve once, use the content ID for both agent and egress containers; never mutate the shared factory."""
+        import copy
+        import re
+
+        identity = (await self.cli("image", "inspect", "--format", "{{.Id}}", reference)).strip()
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", identity):
+            raise SandboxError("The coding image has no valid immutable identity")
+        pinned = copy.copy(self)
+        pinned.image = identity
+        return pinned
+
     def cli_env(self, **extra: str) -> dict[str, str]:
         """The CLI finds its daemon in the worker's environment; nothing else of ours reaches it."""
         keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "TEMP",
@@ -464,7 +506,19 @@ class DockerSandbox:
             raise SandboxError(f"docker {args[0]} failed: {lines[-1][:300] if lines else result.code}")
         return result.stdout
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def _check_runtime(self, name: str) -> None:
+        """Do not copy repository content into a container using an unexpected runtime."""
+        if self.runtime is not None:
+            actual = await self.cli("inspect", "--format", "{{.HostConfig.Runtime}}", name)
+            if actual.strip() != self.runtime:
+                raise SandboxError("The coding sandbox did not use its configured isolation runtime; "
+                                   "check the Docker host's runtime configuration")
+
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
+        if allow:
+            raise SandboxError(EXTRA_HOSTS_REFUSED)
         name = f"dotrix-run-{run_id.hex[-16:]}"
         label = f"dotrix.run={run_id}"
         try:
@@ -476,11 +530,16 @@ class DockerSandbox:
         try:
             # A network with no route out. The proxy is on it (as "egress") and on the default bridge.
             await self.cli("network", "create", "--internal", "--label", label, name)
-            await self.cli("run", "-d", "--name", f"{name}-egress", "--label", label, "--read-only",
+            # Attach both networks before starting gVisor: its network stack is initialized at start.
+            await self.cli("create", "--name", f"{name}-egress", "--label", label, "--read-only",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m",
-                           "--pids-limit", "128", "-e", f"DOTRIX_EGRESS_ALLOW={egress_allow(tool)}",
+                           "--memory-swap", "256m", "--cpus", "0.25", "--pids-limit", "128",
+                           *(["--runtime", self.runtime] if self.runtime else []),
+                           "-e", f"DOTRIX_EGRESS_ALLOW={egress_allow(tool)}",
                            self.image, "node", "/opt/dotrix/egress-proxy.mjs")
             await self.cli("network", "connect", "--alias", "egress", name, f"{name}-egress")
+            await self.cli("start", f"{name}-egress")
+            await self._check_runtime(f"{name}-egress")
             # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
             proxy = f"http://egress:{EGRESS_PORT}"
             # localhost stays local: the agent's own dev server, opened by its browser.
@@ -492,7 +551,8 @@ class DockerSandbox:
             await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
                            "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
-                           "--memory", self.memory, "--cpus", f"{self.cpus:g}", "--pids-limit", "512",
+                           "--memory", self.memory, "--memory-swap", self.memory,
+                           "--cpus", f"{self.cpus:g}", "--pids-limit", "512",
                            *(["--runtime", self.runtime] if self.runtime else []),
                            *[a for k in credentials for a in ("-e", k)],
                            *[a for k, value in container_env.items() for a in ("-e", f"{k}={value}")],
@@ -500,6 +560,7 @@ class DockerSandbox:
                            # Docker's TCP daemon must not use the agent-only egress proxy.
                            # Credentials stay off argv; the fixed, non-secret container settings don't.
                            env=self.cli_env(**credentials))
+            await self._check_runtime(name)
             await self.cli("exec", "-i", "-w", DOCKER_HOME, name, "tar", "-x", "-f", "-",
                            stdin=await asyncio.to_thread(_tar_of, source))
         except BaseException:
@@ -532,7 +593,9 @@ class LocalSandbox:
 
     kind = "local"
 
-    async def open(self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str) -> SandboxSession:
+    async def open(
+        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+    ) -> SandboxSession:
         root = Path(tempfile.mkdtemp(prefix=f"dotrix-coding-{run_id.hex[:8]}-"))
         await asyncio.to_thread(shutil.copytree, source, root / "repo", symlinks=True)
         (root / "home").mkdir()
@@ -546,6 +609,10 @@ def build_sandbox(settings: Settings) -> CodingSandbox | None:
         return OpenShellSandbox(settings)
     if settings.coding_sandbox == "docker":
         return DockerSandbox(settings)
+    if settings.coding_sandbox == "docker-cloud":
+        from .docker_cloud import DockerCloudSandbox  # (imports this module)
+
+        return DockerCloudSandbox(settings)
     if settings.coding_sandbox == "local":
         return LocalSandbox()
     return None

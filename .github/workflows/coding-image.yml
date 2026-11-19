@@ -1,0 +1,53 @@
+name: Coding image
+# Kai's sandbox image (infra/coding), published to a registry for Docker Cloud sandboxes to pull
+# (DOTRIX_CODING_SANDBOX=docker-cloud). Independent manual build/publication, never a desktop release side effect. Needs the repository
+# variable CODING_IMAGE (e.g. docker.io/acme/dotrix-coding) and the secrets DOCKERHUB_USERNAME and
+# DOCKERHUB_TOKEN (a token that may push to it); without them it says so and publishes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Push the coding image to the configured registry (otherwise build only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: coding-image
+    env:
+      IMAGE: ${{ vars.CODING_IMAGE || 'dotrix-coding' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Validate explicit publication
+        if: inputs.publish
+        env:
+          USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          REGISTRY_IMAGE: ${{ vars.CODING_IMAGE }}
+        run: |
+          if [ -z "$REGISTRY_IMAGE" ] || [ -z "$USERNAME" ]; then
+            echo '::error::Configure CODING_IMAGE and coding-image environment registry credentials before publishing'
+            exit 1
+          fi
+      - name: Choose immutable build tag
+        id: configured
+        run: echo "version=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        if: inputs.publish
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: infra/coding
+          # Kai's fx command comes from GitHub Packages (infra/coding/Dockerfile): KAI_PACKAGES_TOKEN has read:packages.
+          secrets: |
+            kai_packages_token=${{ secrets.KAI_PACKAGES_TOKEN }}
+          platforms: linux/amd64
+          push: ${{ inputs.publish }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.configured.outputs.version }}

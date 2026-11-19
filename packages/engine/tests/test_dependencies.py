@@ -74,3 +74,37 @@ def test_a_file_that_doesn_t_parse_is_reported_not_guessed(tmp_path: Path) -> No
     found = read_dependencies(tmp_path, paths)
     assert found.dependencies == []
     assert sorted(p for p, _ in found.unread) == ["package.json", "pnpm-lock.yaml"]
+
+
+def test_hash_pinned_requirements_give_clean_versions(tmp_path: Path) -> None:
+    paths = _write(tmp_path, {"requirements.txt": (
+        "--index-url https://example.com/simple\n-r base.txt\n-e .\n"
+        "requests==2.32.3 \\\n    --hash=sha256:aaaa \\\n    --hash=sha256:bbbb\n"
+        "urllib3==2.2.3 --hash=sha256:cccc\n"
+        'colorama==0.4.6 ; sys_platform == "win32" --hash=sha256:dddd\n'
+    )})
+    found = _by(read_dependencies(tmp_path, paths), "requirements.txt")
+    assert {n: d.locked for n, d in found.items()} == {"requests": "2.32.3", "urllib3": "2.2.3", "colorama": "0.4.6"}
+    assert all(" " not in (d.locked or "") and "\\" not in (d.locked or "") for d in found.values())
+
+
+def test_a_continued_requirement_without_hashes_is_one_dependency(tmp_path: Path) -> None:
+    paths = _write(tmp_path, {"requirements.txt": "django>=4.2,\\\n    <5\n"})
+    found = read_dependencies(tmp_path, paths)
+    assert [d.name for d in found.dependencies] == ["django"]
+    assert found.dependencies[0].declared == ">=4.2,<5" and found.dependencies[0].locked is None
+
+
+def test_unexpected_shapes_are_unread_not_errors(tmp_path: Path) -> None:
+    paths = _write(tmp_path, {
+        "good/package.json": json.dumps({"dependencies": {"left-pad": "^1.3.0"}}),
+        "a/package.json": json.dumps({"dependencies": ["a", "b"]}),
+        "b/pyproject.toml": '[tool.poetry.group]\ndev = "x"\n',
+        "c/Cargo.toml": 'dependencies = ["a"]\n',
+        "d/pyproject.toml": '[project]\ndependencies = "requests"\n',
+    })
+    found = read_dependencies(tmp_path, paths)
+    assert [d.name for d in found.dependencies] == ["left-pad"]
+    assert sorted(p for p, _ in found.unread) == [
+        "a/package.json", "b/pyproject.toml", "c/Cargo.toml", "d/pyproject.toml"]
+    assert all(why for _, why in found.unread)

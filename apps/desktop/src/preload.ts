@@ -1,4 +1,5 @@
-// Bridge between the web UI and native features. Expose only narrow, explicit APIs. The main process
+// Bridge between the web UI and native features (the web's core/desktop.ts): runners, worktrees, the
+// app's version and What's new, updates, system notifications, and the Browser pane's profile. Expose only narrow, explicit APIs. The main process
 // checks each call comes from the app's own page (main.ts, `handle`), and the worktree calls reach
 // only folders inside ~/.dotrix/worktrees (runner.ts, `ownWorktree`).
 import { contextBridge, ipcRenderer } from "electron";
@@ -16,6 +17,52 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
       ipcRenderer.on("dotrix:runners", wrapped);
       return () => ipcRenderer.removeListener("dotrix:runners", wrapped);
     },
+  },
+  app: {
+    info: () => ipcRenderer.invoke("dotrix:app:info"),
+    changelog: () => ipcRenderer.invoke("dotrix:app:changelog"),
+  },
+  updates: {
+    state: () => ipcRenderer.invoke("dotrix:updates:state"),
+    check: () => ipcRenderer.invoke("dotrix:updates:check"),
+    install: () => ipcRenderer.invoke("dotrix:updates:install"),
+    onChange: (listener: (state: unknown) => void) => {
+      const wrapped = (_event: unknown, state: unknown) => listener(state);
+      ipcRenderer.on("dotrix:updates", wrapped);
+      return () => ipcRenderer.removeListener("dotrix:updates", wrapped);
+    },
+  },
+  notify: {
+    supported: () => ipcRenderer.invoke("dotrix:notify:supported"),
+    show: (notice: { id: string; title: string; body: string; actions: string[] }) => ipcRenderer.invoke("dotrix:notify:show", notice),
+    onAction: (listener: (id: string, action: string | null) => void) => {
+      const wrapped = (_event: unknown, id: string, action: string | null) => listener(id, action);
+      ipcRenderer.on("dotrix:notify", wrapped);
+      return () => ipcRenderer.removeListener("dotrix:notify", wrapped);
+    },
+  },
+  browser: {
+    settings: () => ipcRenderer.invoke("dotrix:browser:settings"),
+    setKeepCookies: (keep: boolean) => ipcRenderer.invoke("dotrix:browser:keep-cookies", keep),
+    clear: () => ipcRenderer.invoke("dotrix:browser:clear"),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke("dotrix:browser:enabled", enabled),
+    setKaiAllowed: (allowed: boolean) => ipcRenderer.invoke("dotrix:browser:kai-allowed", allowed),
+    kaiRequests: () => ipcRenderer.invoke("dotrix:browser:kai-request"),
+    kaiReady: (id: number, contentsId: number) => ipcRenderer.invoke("dotrix:browser:kai-ready", id, contentsId),
+    onKai: (listener: (request: { id: number; url: string; sessionId: string; issueKey: string }) => void) => {
+      const wrapped = (_event: unknown, request: { id: number; url: string; sessionId: string; issueKey: string }) => listener(request);
+      ipcRenderer.on("dotrix:browser:kai", wrapped);
+      return () => ipcRenderer.removeListener("dotrix:browser:kai", wrapped);
+    },
+    onOpen: (listener: (url: string) => void) => {
+      const wrapped = (_event: unknown, url: string) => listener(url);
+      ipcRenderer.on("dotrix:browser:open", wrapped);
+      return () => ipcRenderer.removeListener("dotrix:browser:open", wrapped);
+    },
+  },
+  devServers: {
+    list: () => ipcRenderer.invoke("dotrix:dev-servers:list"),
+    save: (folder: string, command: { command: string; port: number | null } | null) => ipcRenderer.invoke("dotrix:dev-servers:save", folder, command),
   },
   worktree: {
     tree: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:tree", worktree),

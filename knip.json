@@ -4,23 +4,26 @@
   "ignoreWorkspaces": ["apps/backend", "apps/cli", "packages/engine"],
   "workspaces": {
     "apps/web": {
-      "entry": ["lib/*.ts"],
       "project": ["**/*.{ts,tsx,css}"],
       "ignoreDependencies": ["tailwindcss"]
+    },
+    "apps/site": {
+      "entry": ["src/entry-server.tsx"],
+      "project": ["src/**/*.{ts,tsx,css}"]
     },
     "apps/desktop": {
       "entry": ["src/preload.ts"],
       "project": ["src/**/*.ts"]
     },
     "packages/ui": {
-      "entry": ["src/components/*.tsx", "src/hooks/*.ts", "src/lib/*.ts"],
+      "entry": ["src/components/*.tsx", "src/hooks/*.ts", "src/lib/*.ts", "src/theme/source.tsx", "src/theme/reduced.ts"],
       "project": ["src/**/*.{ts,tsx,css}"]
     },
     "packages/api-client": {
       "project": ["src/**/*.ts"]
     }
   },
-  "ignore": ["infra/coding/egress-proxy.mjs", "infra/coding/fx-acp.mjs", "packages/engine/src/dotrix_engine/runtimes/fx_host/**"],
+  "ignore": ["infra/coding/egress-proxy.mjs", "infra/coding/fx-acp.mjs", "infra/coding/mcp-check.mjs", "packages/engine/src/dotrix_engine/runtimes/fx_host/**"],
   "ignoreIssues": {
     "packages/api-client/src/schema.ts": ["types"]
   }

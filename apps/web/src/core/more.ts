@@ -3,44 +3,26 @@
 // files, saved views), with their wording and undo.
 import { allowed, canInvite } from "./can";
 import { PR } from "./constants";
-import { applyPatch, closePop, copy, createTask, guarded, nextKey, openTask } from "./actions";
+import { applyPatch, changeTask, closePop, copy, createTask, guarded, openTask } from "./actions";
 import { go, routeOf } from "./nav";
 import { dOff, uid } from "./utils";
-import {
-  D,
-  DEFAULT_PREFS,
-  S,
-  allTasks,
-  canSee,
-  commentsOf,
-  logAct,
-  me,
-  mem,
-  mutate,
-  proj,
-  render,
-  save,
-  task,
-  tasksOf,
-  visibleProjects,
-  type Modal,
-} from "../data/store";
+import { D, DEFAULT_PREFS, S, allTasks, canSee, logAct, me, mem, mutate, proj, render, save, task, tasksOf, visibleProjects, type Modal } from "../data/store";
 import {
   fileDeleted,
   fileDuplicated,
   fileRenamed,
   isLive,
-  liveCommentsOf,
+  live,
   projectChanged,
   projectCreated,
   projectDeleted,
   showDemo,
   signOutLive,
-  taskPatched,
   tasksDeleted,
 } from "../data/live";
 import { inviteResent, isInvite, memberRemoved, ownershipTransferred } from "../data/account";
 import { seed } from "../data/seed";
+import { commentCount } from "../data/tasks";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -55,14 +37,18 @@ export function restore(snap: string) {
   render();
 }
 
-/** Undo for real workspaces: put the snapshot back, then send the restored field again.
- * (resend re-finds what changed — the restored copies are new objects.) */
+/** Undo a change to some tasks' `key`: the sample puts its snapshot back; a real workspace saves what
+ * each one had (its lists are the query cache, so there is no snapshot to put back). */
 function restoreSend(snap: string, ids: string[], key: "archived" | "status") {
-  restore(snap);
-  for (const id of ids) {
-    const t = task(id);
-    if (t) taskPatched(t, [key]);
-  }
+  if (!isLive()) return restore(snap);
+  const was = new Map((JSON.parse(snap) as { tasks: Task[] }).tasks.map((t) => [t.id, t]));
+  mutate(() => {
+    for (const id of ids) {
+      const t = task(id);
+      const before = was.get(id);
+      if (t && before) changeTask(t, { [key]: before[key] });
+    }
+  });
 }
 
 /* ---------- modals ---------- */
@@ -223,9 +209,11 @@ export function createProject(f: { name: string; desc?: string; icon: string; co
     milestones: [],
     last: 0,
   };
-  D().projects.push(p);
+  // A real workspace lists it through its save (the cache); the sample adds it to the store.
+  if (!isLive()) D().projects.push(p);
   D().projOrder.unshift(p.id);
-  D().activity.unshift({ id: uid("a"), by: D().me, verb: "created project", task: null, project: p.id, at: Date.now(), extra: "" });
+  // A real workspace's activity comes from the API.
+  if (!isLive()) D().activity.unshift({ id: uid("a"), by: D().me, verb: "created project", task: null, project: p.id, at: Date.now(), extra: "" });
   const tm = TEMPLATES.find((t) => t.id === tmplId);
   (tm?.tasks || []).forEach((title, i) => createTask({ project: p.id, title, status: i ? "todo" : "progress" }));
   projectCreated(p);
@@ -233,6 +221,10 @@ export function createProject(f: { name: string; desc?: string; icon: string; co
 }
 export function newProject() {
   if (!allowed("projects:manage")) return;
+  if (isLive() && live.ws) {
+    location.assign(`/onboarding?${new URLSearchParams({ workspace: live.ws.id, mode: "project" })}`);
+    return;
+  }
   openModal({ type: "project", form: { name: "", desc: "", icon: "folder", color: "indigo", lead: D().me, due: dOff(30), tmpl: "blank" } });
 }
 export function editProject(id: string) {
@@ -252,20 +244,21 @@ export function invite() {
 }
 export function deleteTasks(ids: string[], { send = true } = {}) {
   const set = new Set(ids);
-  if (send) tasksDeleted(D().tasks.filter((t) => set.has(t.id)));
+  if (S.ui.drawer && set.has(S.ui.drawer)) S.ui.drawer = null;
+  ids.forEach((i) => S.ui.sel.delete(i));
+  // A real workspace takes them out of the lists through the save (the cache); the sample edits the store.
+  if (isLive()) return void (send && tasksDeleted(D().tasks.filter((t) => set.has(t.id))));
   D().tasks = D().tasks.filter((t) => !set.has(t.id));
   D().tasks.forEach((t) => (t.deps = t.deps.filter((d) => !set.has(d))));
   D().comments = D().comments.filter((c) => !set.has(c.task));
-  if (S.ui.drawer && set.has(S.ui.drawer)) S.ui.drawer = null;
-  ids.forEach((i) => S.ui.sel.delete(i));
 }
 export function dupTask(id: string) {
   const t = task(id)!;
   S.ui.pop = null;
   let n: Task | undefined;
   mutate(() => {
+    // createTask gives it the project's next key (a real workspace's, the API's).
     n = createTask({ ...JSON.parse(JSON.stringify(t)), id: uid("t"), key: undefined, title: t.title + " (copy)", created: Date.now(), fav: false });
-    n.key = nextKey(proj(n.project)!);
   });
   toast("Task duplicated", { action: "Open", onAction: () => openTask(n!.id) });
 }
@@ -277,17 +270,16 @@ export function archiveTask(id: string) {
   S.ui.pop = null;
   if (S.ui.drawer === t.id) S.ui.drawer = null;
   mutate(() => {
-    t.archived = true;
+    changeTask(t, { archived: true });
     logAct("archived", t);
   });
-  taskPatched(t, ["archived"]);
   toast(`Archived “${t.title}”`, { action: "Undo", onAction: () => restoreSend(snap, [t.id], "archived") });
 }
 export function delTask(id: string) {
   const t = task(id);
   S.ui.pop = null;
   if (!t) return;
-  const n = isLive() ? (t.commentCount ?? liveCommentsOf(t).length) : commentsOf(t.id).length;
+  const n = commentCount(t);
   const undoable = !isLive(); // a real workspace's delete is for good
   confirmDlg({
     title: "Delete task?",
@@ -322,15 +314,15 @@ export function archiveProject(id: string) {
     icon: "archive",
     run: () => {
       const snap = snapshot();
-      if (guarded(() => (p.archived = true))) {
-        void projectChanged(p, ["archived"]);
+      if (guarded(() => !isLive() && (p.archived = true))) {
+        void projectChanged({ ...p, archived: true }, ["archived"]);
         if (here().route === "project") go("projects");
         toast(`Archived ${p.name}`, {
           action: "Undo",
           onAction: () => {
-            restore(snap);
+            if (!isLive()) return restore(snap);
             const r = proj(p.id);
-            if (r) void projectChanged(r, ["archived"]);
+            if (r) void projectChanged({ ...r, archived: false }, ["archived"]);
           },
         });
       }
@@ -351,7 +343,9 @@ export function delProject(id: string) {
       const snap = snapshot();
       if (
         guarded(() => {
-          // Deleting the project deletes its issues on the API: none are sent one by one.
+          D().projOrder = D().projOrder.filter((x) => x !== p.id);
+          // A real workspace takes it and its issues out of the lists through its save (projectDeleted).
+          if (isLive()) return;
           deleteTasks(
             D()
               .tasks.filter((t) => t.project === p.id)
@@ -359,7 +353,6 @@ export function delProject(id: string) {
             { send: false },
           );
           D().projects = D().projects.filter((x) => x !== p);
-          D().projOrder = D().projOrder.filter((x) => x !== p.id);
           D().files = D().files.filter((f) => f.project !== p.id);
         })
       ) {
@@ -434,8 +427,7 @@ export function colArchive(key: string) {
   const ts = colTasks(key, "done");
   S.ui.pop = null;
   const snap = snapshot();
-  if (guarded(() => ts.forEach((t) => (t.archived = true)))) {
-    ts.forEach((t) => taskPatched(t, ["archived"]));
+  if (guarded(() => ts.forEach((t) => changeTask(t, { archived: true })))) {
     toast(`Archived ${ts.length} completed tasks`, {
       action: "Undo",
       onAction: () =>
@@ -509,13 +501,10 @@ export function removeMember(id: string) {
     run: () => {
       if (isLive()) {
         // Permanent on the API: no undo. The store follows once it's done.
+        // memberRemoved takes them out of the cached lists; the refetch unassigns their issues.
         void memberRemoved(m)
           .then(() => {
-            mutate(() => {
-              D().members = D().members.filter((x) => x.id !== m.id);
-              D().tasks.forEach((t) => t.assignee === m.id && (t.assignee = null));
-              D().projects.forEach((p) => (p.members = p.members.filter((x) => x !== m.id)));
-            });
+            render();
             if (here().route === "member") go("members");
             toast(pending ? `Revoked the invite to ${m.email}` : `Removed ${m.name}`);
           })
@@ -555,11 +544,12 @@ export function renameFile(id: string) {
     run: (v) => {
       if (!v || v === f.name) return;
       const was = f.name;
+      // A real workspace shows the new name through its save (the cache); the sample edits the file.
+      if (isLive()) return fileRenamed({ ...f, name: v, type: fileType(v) }, was);
       mutate(() => {
         f.name = v;
         f.type = fileType(v);
       });
-      fileRenamed(f, was);
     },
   });
 }
@@ -588,7 +578,6 @@ export function delFile(id: string) {
     danger: true,
     run: () => {
       if (isLive()) {
-        mutate(() => (D().files = D().files.filter((x) => x !== f)));
         fileDeleted(f);
         toast(`Deleted ${f.name}`);
         return;
@@ -687,7 +676,7 @@ export function escapeHtml(s: string) {
 
 export function restoreProject(id: string) {
   const p = proj(id)!;
-  mutate(() => (p.archived = false));
-  void projectChanged(p, ["archived"]);
+  mutate(() => !isLive() && (p.archived = false));
+  void projectChanged({ ...p, archived: false }, ["archived"]);
   toast(`Restored ${p.name}`);
 }

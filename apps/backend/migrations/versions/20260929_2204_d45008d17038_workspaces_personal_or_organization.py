@@ -1,6 +1,6 @@
 """workspaces personal or organization
 
-Organisations fold into workspaces (docs/agents-v2.md §0, D6): a workspace is personal or an
+Organisations fold into workspaces (docs/architecture.md): a workspace is personal or an
 organisation. Team and business workspaces become organisations; an organisation's owner who
 saw a workspace only through the organisation becomes its owner; the organisations layer goes.
 

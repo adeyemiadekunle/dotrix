@@ -20,8 +20,6 @@ from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.issues.service import IssueService
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
-from dotrix_backend.modules.lessons.models import LessonSource
-from dotrix_backend.modules.lessons.service import propose as propose_lesson
 from dotrix_backend.modules.model_keys.service import may_choose, run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
@@ -194,6 +192,7 @@ class AgentService:
         mode: str | None = None,
         automation_id: uuid.UUID | None = None,
         queued_input: ChatInput | None = None,
+        repository_write_paths: list[str] | None = None,
     ) -> AgentRunRead:
         """Start a run. A new thread gets a title: `title` if given (built-in requests), else one
         made from the message (`titles.py`; no model call), and its model, fixed from then on.
@@ -254,6 +253,19 @@ class AgentService:
                     )
                 if available is not None and model not in available:
                     raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
+        selected_plan = None
+        if data.plan_id is not None and (data.work_mode is not WorkMode.BUILD or data.thread_id is None):
+            raise Unprocessable("A selected plan requires Build mode and its existing conversation")
+        if data.work_mode is WorkMode.BUILD and data.thread_id is not None:
+            query = select(ConversationPlan).where(
+                ConversationPlan.workspace_id == project.workspace_id,
+                ConversationPlan.project_id == project.id, ConversationPlan.thread_id == data.thread_id,
+            )
+            if data.plan_id is not None:
+                query = query.where(ConversationPlan.id == data.plan_id)
+            selected_plan = await self.session.scalar(query.order_by(ConversationPlan.version.desc()).limit(1))
+            if data.plan_id is not None and selected_plan is None:
+                raise NotFound("Plan not found in this conversation")
         keys = run_key.keys
         if runtime is ChatRuntime.FX:
             from .fx_pilot import validate_fx_pilot_model
@@ -276,6 +288,7 @@ class AgentService:
             agent=None if data.agent in ("auto", PM_ROLE) else data.agent,
             mode=mode,
             work_mode=data.work_mode,
+            selected_plan_id=selected_plan.id if selected_plan else None,
             # Automations work in Manual (their own switch governs changes without approval).
             approval_mode=effective(data.approval_mode if automation_id is None else None, member).value,
             automation_id=automation_id,
@@ -286,6 +299,7 @@ class AgentService:
             updated_at=now,
             # Nova's specialists are child runs under the platform's scheduler (delegation.py), on either runtime.
             orchestration=interactive,
+            repository_write_paths=repository_write_paths if mode == "docs.repository" else None,
         )
         self.session.add(run)
         if interactive and data.thread_id is not None:
@@ -380,6 +394,7 @@ class AgentService:
                         f"paths changed): {', '.join(stale)}.")
         return await self.create_run(
             access, RunCreate(message=message, agent=DOCS), title="Explain the repository", mode="docs.repository",
+            repository_write_paths=stale if stale else None,
         )
 
     async def briefing(self, access: ProjectAccess) -> AgentRunRead:
@@ -647,14 +662,6 @@ class AgentService:
                 approved=len(decided) - len(rejected), rejected=len(rejected),
                 reason=next((a.reason for a in rejected if a.reason), None), actor_user_id=member.user_id,
             )
-        for approval in changes:
-            if approval.status is ApprovalStatus.REJECTED:
-                # A reason is something the agent could learn (owners and admins decide).
-                propose_lesson(
-                    self.session, access.project, agent=run.agent, source=LessonSource.REJECTION,
-                    subject=f"A change to {approval.target or approval.tool}", reason=approval.reason,
-                    run_id=run.id, by=member.user_id,
-                )
         interrupt_ids = [a.interrupt_id for a in pending]
         decisions = [_engine_decision(a, by_id[a.id]) for a in pending]
         # Answering only checkpoints approves nothing.
@@ -770,14 +777,6 @@ class AgentService:
         if row is None or not 0 <= index < len(row.items):
             raise NotFound("No such result item in this run")
         items = [dict(item) for item in row.items]
-        if data.state == "dismissed" and items[index].get("state") != "dismissed":
-            data_ = items[index].get("data") or {}
-            title = str(data_.get("title") or data_.get("claim") or data_.get("step") or data_.get("path") or "")[:120]
-            propose_lesson(
-                self.session, access.project, agent=row.agent, source=LessonSource.DISMISSAL,
-                subject=f'The {row.schema_name} "{title}"' if title else f"A {row.schema_name}",
-                reason=data.reason, run_id=run_id, by=access.member.user_id,
-            )
         items[index] |= {
             "state": data.state,
             "reason": data.reason if data.state == "dismissed" else None,

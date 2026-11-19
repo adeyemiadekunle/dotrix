@@ -1,5 +1,5 @@
 import { Button } from "@dotrix/ui/components/button";
-import { MailIcon } from "lucide-react";
+import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { Link } from "@/lib/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -34,7 +34,7 @@ export function LoginForm({
     setError(null);
     try {
       if (mode === "link") {
-        await unwrap(api.POST("/v1/auth/magic-link/request", { body: { email } }));
+        await unwrap(api.POST("/v1/auth/magic-link/request", { body: { email, next: next ? safeNext(next) : undefined } }));
         setSentTo(email);
         setPending(false);
         return;
@@ -125,7 +125,7 @@ export function LoginForm({
         >
           {mode === "password" ? (
             <>
-              <MailIcon /> Email me a sign-in link instead
+              <EnvelopeSimpleIcon /> Email me a sign-in link instead
             </>
           ) : (
             "Sign in with a password instead"

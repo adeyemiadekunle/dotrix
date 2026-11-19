@@ -1,18 +1,26 @@
 // Settings and Members against the API, for a real workspace (live.ts loads the rest). Your
 // account (profile, sign-in methods, password, notifications, where you're signed in), the
-// workspace (name, what members can do, turning a personal one into an organisation), its people
+// workspace (name and what members can do), its people
 // (invites, removing, handing over ownership, who sees a restricted project), and the agents'
 // settings (contracts, rules, skills, GitHub). Sections load what they show when they open
 // (useApi); the seeded demo keeps its own behaviour.
 import { useEffect, useState } from "react";
 
 import { api, unwrap, type Schemas } from "@/lib/api";
-import { invalidateLiveQueries } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 
-/** Writes also refresh the TanStack caches the migrated screens read. */
-const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>) =>
+/** What a save in Settings can change, by the first part of a query's key: refetched once the API has it. */
+const NOTHING: readonly string[] = [];
+const MODELS = ["my-models", "model-access", "models", "project-readiness", "chat-runtime-options", "coding", "coding-sessions"];
+const PEOPLE = ["members", "projects", "issues", "notifications", "audit"];
+const WORKSPACE = ["workspaces", "members", "projects", "approvals", "agents", "builtin-team", "model-access", "chat-runtime-options", "audit"];
+const AGENTS = ["agents", "builtin-team", "chat-runtime-options", "model-access", "audit"];
+const REPOSITORY = ["projects", "project-readiness", "repository-readiness", "repo-knowledge", "coding", "coding-sessions", "onboarding-repos", "audit"];
+
+/** A Settings save: sent, then the kinds of query it can change refetched. (Settings' own sections reload what they show.) */
+const send = <T>(p: Promise<{ data?: T; error?: unknown; response: Response }>, kinds: readonly string[]) =>
   unwrap(p).then((r) => {
-    invalidateLiveQueries();
+    if (kinds.length) void queryClient.invalidateQueries({ predicate: (q) => kinds.includes(q.queryKey[0] as string) });
     return r;
   });
 
@@ -48,43 +56,49 @@ export function useApi<T>(load: () => Promise<T>, deps: unknown[] = []): { data:
 /* ---------- your account ---------- */
 
 export const myCodingToolSaved = (tool: Schemas["DefaultCodingToolSave"]["default_coding_tool"]) =>
-  send(api.PUT("/v1/me/coding-tool", { body: { default_coding_tool: tool } }));
+  send(api.PUT("/v1/me/coding-tool", { body: { default_coding_tool: tool } }), MODELS);
+
+export const myCodeMode = () => unwrap(api.GET("/v1/me/code-mode"));
+export const myCodeModeSaved = (enabled: boolean) => send(api.PUT("/v1/me/code-mode", { body: { enabled } }), NOTHING);
 
 export async function profileSaved(name: string, title: string) {
-  await send(api.PATCH("/v1/me", { body: { display_name: name, title } }));
+  await send(api.PATCH("/v1/me", { body: { display_name: name, title } }), ["members", "projects", "onboarding-profile"]);
 }
 
 export const signInMethods = () => unwrap(api.GET("/v1/me/sign-in-methods"));
-export const unlinkGitHub = () => send(api.DELETE("/v1/me/sign-in-methods/{provider}", { params: { path: { provider: "github" } } }));
+export const unlinkGitHub = () => send(api.DELETE("/v1/me/sign-in-methods/{provider}", { params: { path: { provider: "github" } } }), ["auth-providers"]);
 /** GitHub links through a top-level redirect; it comes back here. */
 export function linkGitHub() {
   location.assign(`/api/auth/github?link=1&next=${encodeURIComponent(location.pathname)}`);
 }
 
 export const passwordChanged = (current: string | null, next: string) =>
-  send(api.PUT("/v1/me/password", { body: { current_password: current, new_password: next } }));
+  send(api.PUT("/v1/me/password", { body: { current_password: current, new_password: next } }), NOTHING);
 export async function passwordResetRequested(email: string) {
-  await send(api.POST("/v1/auth/password-reset/request", { body: { email } }));
+  await send(api.POST("/v1/auth/password-reset/request", { body: { email } }), NOTHING);
 }
 
 export type NotifSettings = Schemas["NotificationSettings"];
 export const notifSettings = () => unwrap(api.GET("/v1/me/notification-settings"));
-export const notifSettingsSaved = (s: NotifSettings) => send(api.PUT("/v1/me/notification-settings", { body: s }));
+export const notifSettingsSaved = (s: NotifSettings) => send(api.PUT("/v1/me/notification-settings", { body: s }), ["notifications"]);
 
 export const sessions = () => unwrap(api.GET("/v1/me/sessions"));
-export const sessionSignedOut = (id: string) => send(api.DELETE("/v1/me/sessions/{session_id}", { params: { path: { session_id: id } } }));
-export const otherSessionsSignedOut = () => send(api.POST("/v1/me/sessions/sign-out-others"));
+export const sessionSignedOut = (id: string) => send(api.DELETE("/v1/me/sessions/{session_id}", { params: { path: { session_id: id } } }), NOTHING);
+export const otherSessionsSignedOut = () => send(api.POST("/v1/me/sessions/sign-out-others"), NOTHING);
 
 export const tokens = () => unwrap(api.GET("/v1/me/tokens"));
 export const tokenCreated = (name: string, days: number | null) =>
-  send(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }));
-export const tokenRevoked = (id: string) => send(api.DELETE("/v1/me/tokens/{token_id}", { params: { path: { token_id: id } } }));
+  send(api.POST("/v1/me/tokens", { body: { name, scopes: ["read", "write"], expires_in_days: days } }), NOTHING);
+export const tokenRevoked = (id: string) => send(api.DELETE("/v1/me/tokens/{token_id}", { params: { path: { token_id: id } } }), NOTHING);
 
 /* ---------- the workspace ---------- */
 
+/** What the workspace has stored in uploads, and its limit. */
+export const workspaceStorage = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/storage", wsPath()));
+
 /** Rename the workspace (the store shows the new name already). */
 export async function workspaceRenamed(name: string) {
-  const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { name } }));
+  const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { name } }), ["workspaces", "audit"]);
   live.ws = { ...live.ws!, name: w.name };
   const listed = D().workspaces.find((x) => x.id === w.id);
   if (listed) listed.name = w.name;
@@ -103,7 +117,7 @@ export async function memberPermissionsSaved(perms: Schemas["Permission"][]) {
   live.ws = { ...live.ws!, member_permissions: perms };
   render();
   try {
-    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { member_permissions: perms } }));
+    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { member_permissions: perms } }), WORKSPACE);
     live.ws = { ...live.ws!, member_permissions: w.member_permissions };
   } catch (e) {
     live.ws = { ...live.ws!, member_permissions: was };
@@ -115,7 +129,7 @@ export async function memberPermissionsSaved(perms: Schemas["Permission"][]) {
 /** The highest approval mode people may work in here: owners raise it, owners and admins lower it. */
 export async function approvalCap(mode: "manual" | "accept_edits" | "auto") {
   try {
-    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { approval_mode_cap: mode } }));
+    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { approval_mode_cap: mode } }), WORKSPACE);
     live.ws = { ...live.ws!, approval_mode_cap: w.approval_mode_cap, default_approval_mode: w.default_approval_mode };
     toast("Approval modes updated");
   } catch (e) {
@@ -130,7 +144,7 @@ export async function unattendedPaused(on: boolean) {
   live.ws = { ...live.ws!, unattended_paused: on };
   render();
   try {
-    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { unattended_paused: on } }));
+    const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { unattended_paused: on } }), WORKSPACE);
     live.ws = { ...live.ws!, unattended_paused: w.unattended_paused };
     toast(on ? "Agents ask before every change" : "Agents' standing rules are back on");
   } catch (e) {
@@ -138,13 +152,6 @@ export async function unattendedPaused(on: boolean) {
     failed("Pausing changes without approval", e);
   }
   render();
-}
-
-/** A personal workspace becomes an organisation (you get a new, empty personal one); reloaded. */
-export async function convertedToOrganization(name: string | null) {
-  const w = await send(api.POST("/v1/workspaces/{workspace_id}/convert-to-organization", { ...wsPath(), body: { name } }));
-  await loadWorkspace(w.slug);
-  return w;
 }
 
 /* ---------- people ---------- */
@@ -173,17 +180,19 @@ function toInvited(i: Schemas["InviteRead"]): Member {
   };
 }
 
-/** Pending email invites, shown with the members as "Invite pending" (owners and admins see them). */
+/** The pending invites the store lists with the members (lib/store-slots.ts), once that list has loaded. */
+const invitesKey = () => ["members", live.ws!.id, "invites"] as const;
+/** Change the pending invites; false while they haven't loaded (the store's own list takes the change). */
+function patchInvites(fn: (is: Schemas["InviteRead"][]) => Schemas["InviteRead"][]): boolean {
+  if (queryClient.getQueryData(invitesKey()) === undefined) return false;
+  queryClient.setQueryData<Schemas["InviteRead"][]>(invitesKey(), (is) => is && fn(is));
+  return true;
+}
+
+/** Pending email invites, shown with the members as "Invite pending" (owners and admins see them): fetched again. */
 export async function loadInvites() {
   if (!isLive() || live.ws!.kind !== "organization") return;
-  try {
-    const invites = await unwrap(api.GET("/v1/workspaces/{workspace_id}/invites", wsPath()));
-    const pending = invites.filter((i) => i.kind === "email" && i.email).map(toInvited);
-    D().members = [...D().members.filter((m) => !isInvite(m.id)), ...pending];
-    render();
-  } catch {
-    /* members only: no invites to show */
-  }
+  await queryClient.invalidateQueries({ queryKey: invitesKey() });
 }
 
 /** Invite people by email; each one sent is listed as pending. Returns how many were sent. */
@@ -194,13 +203,13 @@ export async function invitesSent(emails: string[], role: Member["role"]): Promi
       const i = await unwrap(
         api.POST("/v1/workspaces/{workspace_id}/invites", { ...wsPath(), body: { email, role: role.toLowerCase() as Schemas["EmailInviteCreate"]["role"] } }),
       );
-      D().members = [...D().members.filter((m) => m.email.toLowerCase() !== email.toLowerCase() || !isInvite(m.id)), toInvited(i)];
+      const other = (x: { email?: string | null }) => (x.email ?? "").toLowerCase() !== email.toLowerCase();
+      if (!patchInvites((is) => [...is.filter(other), i])) D().members = [...D().members.filter((m) => other(m) || !isInvite(m.id)), toInvited(i)];
       sent++;
     } catch (e) {
       failed(`The invite to ${email}`, e);
     }
   }
-  invalidateLiveQueries();
   render();
   return sent;
 }
@@ -209,7 +218,10 @@ export async function invitesSent(emails: string[], role: Member["role"]): Promi
 export async function inviteLinkCreated(role: Member["role"]): Promise<string> {
   // A link brings people in as members or guests; admins are invited by email.
   const r = role === "Guest" ? "guest" : "member";
-  const l = await send(api.POST("/v1/workspaces/{workspace_id}/invites/links", { ...wsPath(), body: { role: r, max_uses: null, expires_in_days: 7 } }));
+  const l = await send(
+    api.POST("/v1/workspaces/{workspace_id}/invites/links", { ...wsPath(), body: { role: r, max_uses: null, expires_in_days: 7 } }),
+    NOTHING,
+  );
   return l.url;
 }
 
@@ -218,8 +230,10 @@ async function inviteRevoked(m: Member) {
     api.DELETE("/v1/workspaces/{workspace_id}/invites/{invite_id}", {
       params: { path: { workspace_id: live.ws!.id, invite_id: m.id.slice(INVITE_ID.length) } },
     }),
+    ["members"],
   );
-  D().members = D().members.filter((x) => x.id !== m.id);
+  const id = m.id.slice(INVITE_ID.length);
+  if (!patchInvites((is) => is.filter((i) => i.id !== id))) D().members = D().members.filter((x) => x.id !== m.id);
   render();
 }
 
@@ -232,12 +246,15 @@ export async function inviteResent(m: Member) {
 /** Take someone out of the workspace (the API unassigns their issues). */
 export async function memberRemoved(m: Member) {
   if (isInvite(m.id)) return inviteRevoked(m);
-  await send(api.DELETE("/v1/workspaces/{workspace_id}/members/{user_id}", { params: { path: { workspace_id: live.ws!.id, user_id: m.id } } }));
+  await send(api.DELETE("/v1/workspaces/{workspace_id}/members/{user_id}", { params: { path: { workspace_id: live.ws!.id, user_id: m.id } } }), PEOPLE);
+  // Gone from the members list (and the copy projects read) now; the refetch confirms it and unassigns their issues.
+  queryClient.setQueriesData<Schemas["MemberRead"][]>({ queryKey: ["members", live.ws!.id] }, (rows) => rows?.filter((r) => r.user_id !== m.id));
 }
 
 /** Hand the workspace to another member; you become an admin. */
 export async function ownershipTransferred(m: Member) {
-  await send(api.POST("/v1/workspaces/{workspace_id}/transfer-ownership", { ...wsPath(), body: { user_id: m.id } }));
+  // Loading the workspace again refetches everything it shows.
+  await send(api.POST("/v1/workspaces/{workspace_id}/transfer-ownership", { ...wsPath(), body: { user_id: m.id } }), NOTHING);
   await loadWorkspace(live.slug!);
 }
 
@@ -273,6 +290,7 @@ export const projectAgentModelsSaved = (projectId: string, body: Pick<Schemas["P
       params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
       body,
     }),
+    ["projects", ...MODELS],
   );
 
 export type AgentFields = Schemas["AgentFields"];
@@ -320,15 +338,15 @@ export const agentSaved = (handle: string, agent: AgentFields, base: number | nu
   );
 /** A built-in back to its default, or a custom agent removed. */
 export const agentReset = (handle: string) =>
-  send(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }));
+  send(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }), AGENTS);
 
 /* ---------- models: the organisation's own keys, your own, and each agent's model ---------- */
 
 export const myModels = () => unwrap(api.GET("/v1/me/models"));
-export const myDefaultModelSaved = (model: string | null) => send(api.PUT("/v1/me/models", { body: { default_model: model } }));
+export const myDefaultModelSaved = (model: string | null) => send(api.PUT("/v1/me/models", { body: { default_model: model } }), MODELS);
 export const myKeySaved = (provider: string, apiKey: string) =>
-  send(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } }));
-export const myKeyRemoved = (provider: string) => send(api.DELETE("/v1/me/model-keys/{provider}", { params: { path: { provider } } }));
+  send(api.PUT("/v1/me/model-keys/{provider}", { params: { path: { provider } }, body: { api_key: apiKey } }), MODELS);
+export const myKeyRemoved = (provider: string) => send(api.DELETE("/v1/me/model-keys/{provider}", { params: { path: { provider } } }), MODELS);
 export const myAgents = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/my-agents", wsPath()));
 export const myAgentSaved = (handle: string, instructions: string, model: string | null) =>
   unwrap(
@@ -368,21 +386,61 @@ export const installationRemoved = (ref: string) =>
       params: { path: { workspace_id: live.ws!.id, installation_ref: ref } },
     }),
   );
-export function installGitHub(status: Schemas["GitHubStatus"]) {
+export function installGitHub(status: Schemas["GitHubStatus"], workspaceId = live.ws!.id, next = location.pathname + location.search) {
   if (!status.install_url) return;
-  const params = new URLSearchParams({ workspace: live.ws!.id, install_url: status.install_url, next: location.pathname });
+  const params = new URLSearchParams({ workspace: workspaceId, install_url: status.install_url, next });
   location.assign(`/api/github/install?${params}`);
 }
 export async function repoConnected(pid: string, r: Schemas["RepoOption"] | null) {
   const params = { params: { path: { workspace_id: live.ws!.id, project_id: pid } } };
   if (!r) {
-    await send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", params));
+    await send(api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", params), REPOSITORY);
     return null;
   }
   return unwrap(
     api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/repository", {
       ...params,
       body: { installation_ref: r.installation_ref, github_repo_id: r.github_repo_id },
+    }),
+  );
+}
+
+/* ---------- Network: the hosts Kai's sandboxes may reach besides the model API ---------- */
+export type SandboxNetwork = Schemas["SandboxNetworkRead"];
+type NetworkBody = Schemas["SandboxNetworkUpdate"];
+
+export async function sandboxNetwork(projectId?: string): Promise<SandboxNetwork> {
+  if (!projectId) return unwrap(api.GET("/v1/workspaces/{workspace_id}/coding/network", wsPath()));
+  return unwrap(
+    api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+    }),
+  );
+}
+
+export async function sandboxNetworkSaved(body: NetworkBody, projectId?: string): Promise<SandboxNetwork> {
+  if (!projectId) return unwrap(api.PUT("/v1/workspaces/{workspace_id}/coding/network", { ...wsPath(), body }));
+  return unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+      body,
+    }),
+  );
+}
+
+export type CloudEnvironment = Schemas["EnvironmentRead"];
+export async function cloudEnvironment(projectId: string): Promise<CloudEnvironment> {
+  return unwrap(
+    api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+    }),
+  );
+}
+export async function cloudEnvironmentSaved(projectId: string, body: Schemas["EnvironmentUpdate"]): Promise<CloudEnvironment> {
+  return unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment", {
+      params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
+      body,
     }),
   );
 }

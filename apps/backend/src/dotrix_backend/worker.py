@@ -13,6 +13,7 @@ import logging
 import sys
 import uuid
 from contextlib import AsyncExitStack
+from datetime import UTC, datetime
 from typing import Any
 
 from arq import cron, func
@@ -27,7 +28,14 @@ from .core.logging import configure_logging
 from .core.settings import get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
-from .jobs import JOBS, cleanup_expired, email_notifications, index_knowledge, run_automations
+from .jobs import (
+    JOBS,
+    check_operator_alerts,
+    cleanup_expired,
+    email_notifications,
+    index_knowledge,
+    run_automations,
+)
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -76,7 +84,9 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["jobs"] = JobContext(
         sessionmaker, settings, build_email_sender(settings), storage, embedder, checkouts,
         runner=dispatcher, coding=build_coding_worker(settings, sessionmaker, dispatcher, storage),
+        jobs=QueuedJobs(redis, session_factory=sessionmaker),
     )
+    runs = RunQueue(redis)
     ctx["runner"] = AgentRunner(
         session_factory=sessionmaker,
         checkpointer=checkpointer,
@@ -89,7 +99,8 @@ async def startup(ctx: dict[str, Any]) -> None:
         secrets=Secrets.from_settings(settings),
         settings=settings,
         inline=True,  # this process executes the runs
-        stop_reasons=RunQueue(redis),
+        stop_reasons=runs,
+        outbox=runs,  # follow-ups it delivers are dispatched like the API's runs
         streams=RedisRunStreams(redis),
     )
     # A coding run asked for from a conversation that starts at once: dispatched like any other.
@@ -174,6 +185,14 @@ async def reconcile_coding_runs(ctx: dict[str, Any]) -> None:
         await recover_uncertain_runs(runner.session_factory, coding.app, coding.settings, requeue)
 
 
+async def sandboxes(ctx: dict[str, Any]) -> None:
+    """Delete coding sandboxes asleep too long or of closed sessions, and what nothing refers to any more
+    (Docker Cloud; a no-op for sandboxes that don't sleep)."""
+    coding = ctx["jobs"].coding
+    if coding is not None:
+        await coding.sweep_sandboxes()
+
+
 async def cleanup(ctx: dict[str, Any]) -> None:
     await cleanup_expired(ctx["jobs"])
 
@@ -190,6 +209,14 @@ async def emails(ctx: dict[str, Any]) -> None:
     await email_notifications(ctx["jobs"])
 
 
+async def alerts(ctx: dict[str, Any]) -> None:
+    """The operator alerts, every `alert_interval_minutes` (the cron runs each minute; arq's cron entries
+    can't read settings when the class is defined)."""
+    jobs = ctx["jobs"]
+    if datetime.now(UTC).minute % jobs.settings.alert_interval_minutes == 0:
+        await check_operator_alerts(jobs)
+
+
 class WorkerSettings:
     functions = [
         func(run_agent, timeout=RUN_TIMEOUT_SECONDS, max_tries=RUN_MAX_TRIES),
@@ -203,9 +230,11 @@ class WorkerSettings:
         cron(dispatch_runs, second={0, 15, 30, 45}, run_at_startup=True),
         cron(reconcile_coding_runs, second={5}, run_at_startup=True),
         cron(cleanup, minute={17}, run_at_startup=True),
+        cron(sandboxes, minute=set(range(3, 60, 10)), timeout=5 * 60),
         cron(index, run_at_startup=True, timeout=10 * 60),
         cron(automations, timeout=2 * 60),
         cron(emails, timeout=2 * 60),
+        cron(alerts, timeout=2 * 60),
     ]
     queue_name = QUEUE_NAME
     on_startup = startup

@@ -1,14 +1,32 @@
+import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { Switch, Selector, SegmentedControl, SegmentedControlItem } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
 // GitHub, What members can do, Audit log; and Devices and tokens (the CLI) under Security.
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 import { copy, openPop, setPref } from "../core/actions";
 import { ACTION_OF } from "../core/agents";
 import { allowed, canInvite, type Perm } from "../core/can";
+import {
+  desktopBrowser,
+  desktopDevServers,
+  setBrowserSettings,
+  useBrowserSettings,
+  useDesktopRunners,
+  type BrowserSettings,
+  type DevCommand,
+} from "../core/desktop";
+import { CODING_AGENT } from "../data/seed-dotrix";
+import { organisations, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
+import { storageLine } from "../core/storage";
 import { ago, dOff, fmtDate, uid } from "../core/utils";
 import { ApiError } from "@/lib/api";
 import { useBuiltinTeam } from "@/lib/team";
@@ -20,7 +38,6 @@ import {
   agentDetail,
   agentReset,
   agentSaved,
-  convertedToOrganization,
   fieldsOf,
   githubRepos,
   githubStatus,
@@ -32,6 +49,8 @@ import {
   myAgents,
   myDefaultModelSaved,
   myCodingToolSaved,
+  myCodeMode,
+  myCodeModeSaved,
   myKeyRemoved,
   myKeySaved,
   myModels,
@@ -55,15 +74,21 @@ import {
   tokenCreated,
   tokenRevoked,
   tokens,
+  cloudEnvironment,
+  cloudEnvironmentSaved,
+  type CloudEnvironment,
+  sandboxNetwork,
+  sandboxNetworkSaved,
   unlinkGitHub,
   useApi,
   workspaceRenamed,
+  workspaceStorage,
   type AgentFields,
   type NotifSettings,
 } from "../data/account";
 import { automationAdded, automationRemoved, automationToggled, isLive, live, reloadAgents } from "../data/live";
-import { useLiveAgents } from "../../lib/workspace-data";
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
+import { useAgents, useAudit, useAutomations, useMembers, useProjects } from "../data/lists";
 import { SHORTCUTS } from "../overlays/Modals";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -94,6 +119,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["agents", "Agents", "bot"],
       ["github", "GitHub", "github"],
+      ["sandbox", "Environments & network", "shield-check"],
       ["audit", "Audit log", "list-checks"],
     ],
     true,
@@ -105,6 +131,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
       ["profile", "Profile", "user"],
       ["my-models", "Your models", "key-round"],
       ["my-agents", "Your agents", "bot"],
+      ["browser", "Browser", "globe"],
       ["preferences", "Preferences", "sliders-horizontal"],
     ],
   ],
@@ -140,7 +167,7 @@ function SRow({ t, d, children }: { t: ReactNode; d?: ReactNode; children?: Reac
   );
 }
 function Tog({ on, set, label, disabled }: { on: boolean; set: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
+  return <Switch value={on} onChange={set} label={label} isLabelHidden isDisabled={disabled} />;
 }
 const PTog = ({ k, def = true }: { k: string; def?: boolean }) => <Tog on={P()[k] === undefined ? def : Boolean(P()[k])} set={(v) => setP(k, v)} label={k} />;
 const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
@@ -148,37 +175,30 @@ const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
 );
 function Sel({ k, opts, v }: { k: string; opts: (string | [string, string])[]; v: unknown }) {
   return (
-    <select
-      className="select"
-      style={{ width: "auto", minWidth: 180 }}
+    <Selector
+      label={k}
+      isLabelHidden
       value={String(v)}
-      onChange={(e) => setP(k, k === "weekStart" ? +e.target.value : e.target.value)}
-      aria-label={k}
-    >
-      {opts.map((o) => {
-        const [val, n] = Array.isArray(o) ? o : [o, o];
-        return (
-          <option key={val} value={val}>
-            {n}
-          </option>
-        );
+      onChange={(value) => setP(k, k === "weekStart" ? Number(value) : value)}
+      options={opts.map((o) => {
+        const [value, label] = Array.isArray(o) ? o : [o, o];
+        return { value, label };
       })}
-    </select>
+    />
   );
 }
 function Seg({ k, opts }: { k: "side" | "density"; opts: string[] }) {
   return (
-    <div className="seg">
-      {opts.map((o) => (
-        <button key={o} className={S.prefs[k] === o ? "on" : ""} onClick={() => setPref(k, o)}>
-          {o[0]!.toUpperCase() + o.slice(1)}
-        </button>
+    <SegmentedControl label={k} value={S.prefs[k]} onChange={(value) => setPref(k, value)}>
+      {opts.map((value) => (
+        <SegmentedControlItem key={value} value={value} label={value[0]!.toUpperCase() + value.slice(1)} />
       ))}
-    </div>
+    </SegmentedControl>
   );
 }
 
 const ACCENTS: [string, string][] = [
+  ["astryx", "#15110C"],
   ["indigo", "#4B5BD6"],
   ["blue", "#2F6CD4"],
   ["violet", "#7348CC"],
@@ -188,8 +208,8 @@ const ACCENTS: [string, string][] = [
 ];
 
 function ThemeCards() {
-  const L = { bg: "#FBFAF8", s: "#F2F1EE", t: "#1D1C1A", b: "#E3E1DC", a: "#4B5BD6" };
-  const Dk = { bg: "#1D1D1C", s: "#151514", t: "#ECEAE5", b: "#333230", a: "#8E9AF3" };
+  const L = { bg: "#F8F4ED", s: "#FFFFFF", t: "#15110C", b: "#DFE2E5", a: "#15110C" };
+  const Dk = { bg: "#111112", s: "#202124", t: "#DFE2E5", b: "#383B3E", a: "#DFE2E5" };
   const pv = (c: typeof L) => (
     <>
       <div className="s" style={{ background: c.s }}>
@@ -277,6 +297,45 @@ function StrengthMeter({ pw }: { pw: string }) {
 
 /* ---------- sections ---------- */
 
+/** Uploaded documents and task attachments against the workspace's limit; the seeded workspace shows a sample figure. */
+function StorageUsage() {
+  const live_ = isLive();
+  const u = useApi(workspaceStorage);
+  if (live_ && u.error) return <div className="hint">Storage usage didn't load.</div>;
+  if (live_ && !u.data) return null;
+  const line = live_ ? storageLine(u.data!.used_bytes, u.data!.limit_bytes) : storageLine(312_000_000, 1_000_000_000);
+  return (
+    <div className="sblock">
+      <h2>Storage</h2>
+      <div className="col" style={{ gap: 8, maxWidth: 440 }}>
+        <div className="row" style={{ gap: 8 }}>
+          <span className="grow">{line.text}</span>
+          {!live_ && <span className="hint">Sample data</span>}
+        </div>
+        {line.ratio !== null && (
+          <div
+            className={`prog ${line.tone === "full" ? "red" : line.tone === "warn" ? "amber" : ""}`}
+            style={css({ "--p": line.ratio, flex: "none", width: "100%" })}
+            role="progressbar"
+            aria-label="Storage used"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(line.ratio * 100)}
+          >
+            <i />
+          </div>
+        )}
+        {line.note && (
+          <span className="hint" style={{ color: "var(--red)" }}>
+            {line.note}
+          </span>
+        )}
+        <span className="hint">Counts uploaded documents and task attachments.</span>
+      </div>
+    </div>
+  );
+}
+
 function Workspace() {
   const d = D();
   const [name, setName] = useState(d.ws.name);
@@ -298,20 +357,6 @@ function Workspace() {
     }
     mutate(() => Object.assign(d.ws, { name: name.trim(), url: url.trim() }));
     toast("Workspace saved");
-  };
-  const convert = () => {
-    if (!isLive()) return toast("Turned into an organisation");
-    confirmDlg({
-      title: "Turn into an organisation?",
-      body: "This workspace and its projects become an organisation that can invite people. You get a new, empty personal workspace.",
-      ok: "Turn into an organisation",
-      icon: "building-2",
-      run: () => {
-        convertedToOrganization(null)
-          .then(() => toast("It's an organisation now: invite people from Members"))
-          .catch((er: unknown) => toast(`It didn't change: ${errText(er)}`, { kind: "err" }));
-      },
-    });
   };
   return (
     <>
@@ -342,7 +387,7 @@ function Workspace() {
               <label className="label" htmlFor="ws-name">
                 Workspace name
               </label>
-              <input className="input" id="ws-name" value={name} onChange={(e) => setName(e.target.value)} />
+              <DesignInput aria-label="Workspace name" className="input" id="ws-name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="field">
               <label className="label" htmlFor="ws-url">
@@ -363,7 +408,8 @@ function Workspace() {
                 >
                   dotrix.app/w/
                 </span>
-                <input
+                <DesignInput
+                  aria-label="Workspace URL"
                   className="input"
                   id="ws-url"
                   value={url}
@@ -375,33 +421,40 @@ function Workspace() {
               <span className="hint">{isLive() ? "The address is fixed when the workspace is created." : "Changing the URL will break existing links."}</span>
             </div>
             <div>
-              <button className="btn btn-primary" type="submit">
+              <ActionButton className="btn btn-primary" type="submit">
                 Save changes
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>
       </form>
-      {d.ws.kind === "personal" && (
+      <StorageUsage />
+      {d.ws.kind === "personal" && organisations() && (
         <div className="sblock">
-          <h2>Turn into an organisation</h2>
-          <SRow t="Work with a team" d="A personal workspace is just for you. An organisation can invite people; you get a new personal workspace.">
-            <button className="btn btn-secondary" onClick={convert} disabled={isLive() && live.ws?.role !== "owner"}>
-              Turn into an organisation
-            </button>
+          <h2>Work with a team</h2>
+          <SRow t="Create an organisation" d="Keep this workspace personal. Create a separate organisation, then move selected projects when needed.">
+            {isLive() ? (
+              <a className="btn btn-secondary" href="/onboarding?mode=project&team=1">
+                Create organisation workspace
+              </a>
+            ) : (
+              <ActionButton className="btn btn-secondary" onClick={() => toast("Sample workspace setup is read-only")}>
+                Create organisation workspace
+              </ActionButton>
+            )}
           </SRow>
         </div>
       )}
       <div className="sblock">
         <h2 style={{ color: "var(--red)" }}>Danger zone</h2>
         <SRow t="Delete workspace" d="Permanently delete this workspace, its projects, tasks, documents, and files. This cannot be undone.">
-          <button
+          <ActionButton
             className="btn btn-danger-ghost"
             style={{ border: "1px solid color-mix(in srgb,var(--red) 35%,transparent)" }}
             onClick={() => toast("Deleting a workspace isn't available yet", { kind: "info" })}
           >
             Delete workspace
-          </button>
+          </ActionButton>
         </SRow>
       </div>
     </>
@@ -412,7 +465,7 @@ const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : "
 
 /** An agent's contract in a real workspace: loaded from the API, saved as a new version. */
 function LiveAgent({ handle }: { handle: string }) {
-  const liveAgents = useLiveAgents(live.ws?.id, isLive());
+  const { items: agents } = useAgents();
   const a = useApi(() => agentDetail(handle), [handle]);
   const cat = useApi(agentCatalog);
   const ms = useApi(models);
@@ -425,7 +478,7 @@ function LiveAgent({ handle }: { handle: string }) {
   const ag = a.data;
   const v = f ?? fieldsOf(ag);
   const set = (patch: Partial<AgentFields>) => setF({ ...v, ...patch });
-  const look = (isLive() ? (liveAgents ?? []) : D().agents).find((x) => x.handle === handle);
+  const look = agents.find((x) => x.handle === handle);
   const save = () => {
     if (!v.instructions.trim()) return toast("Give the agent instructions", { kind: "err" });
     setBusy(true);
@@ -459,10 +512,10 @@ function LiveAgent({ handle }: { handle: string }) {
   const toggleTool = (id: string) => set({ tools: v.tools.includes(id) ? v.tools.filter((t) => t !== id) : [...v.tools, id] });
   return (
     <>
-      <button className="btn btn-sm btn-ghost" onClick={back} style={{ margin: "-4px 0 12px -8px" }}>
+      <ActionButton className="btn btn-sm btn-ghost" onClick={back} style={{ margin: "-4px 0 12px -8px" }}>
         <Ic n="arrow-left" s={14} />
         All agents
-      </button>
+      </ActionButton>
       <div className="row" style={{ gap: 12, marginBottom: 16 }}>
         <Face c={look?.c ?? "#57544E"} size={36} mood={moodOf(handle)} />
         <div className="grow" style={{ minWidth: 0 }}>
@@ -479,16 +532,16 @@ function LiveAgent({ handle }: { handle: string }) {
         {ag.version != null && <span className="badge mono">v{ag.version}</span>}
       </div>
       <SRow t="Name">
-        <input className="input" style={{ width: 220 }} value={v.name} readOnly aria-label="Name" />
+        <DesignInput className="input" style={{ width: 220 }} value={v.name} readOnly aria-label="Name" />
       </SRow>
       <SRow t="Description" d="One line, shown in Chat's agent picker.">
-        <input className="input" style={{ width: 320 }} value={v.description} readOnly aria-label="Description" />
+        <DesignInput className="input" style={{ width: 320 }} value={v.description} readOnly aria-label="Description" />
       </SRow>
       {handle === "coding-agent" ? (
         <SRow t="Coding tool and model" d="Kai uses your coding preferences and credentials.">
-          <button className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+          <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
             Your models
-          </button>
+          </ActionButton>
         </SRow>
       ) : (
         <SRow t="Model" d="Which model this agent uses. Specialists use the project's specialist model when unset.">
@@ -512,7 +565,7 @@ function LiveAgent({ handle }: { handle: string }) {
       {handle !== "coding-agent" && (
         <>
           <SRow t="Token budget" d="Tokens one run it leads may use; empty uses the project's.">
-            <input
+            <DesignInput
               className="input"
               inputMode="numeric"
               style={{ width: 140 }}
@@ -582,9 +635,9 @@ function LiveAgent({ handle }: { handle: string }) {
       )}
       <div className="sblock">
         <h2>Built-in instructions</h2>
-        <textarea className="textarea" rows={6} value={ag.instructions} readOnly aria-label="Built-in instructions" />
+        <DesignTextarea className="textarea" rows={6} value={ag.instructions} readOnly aria-label="Built-in instructions" />
         <h2>Additional instructions</h2>
-        <textarea
+        <DesignTextarea
           className="textarea"
           rows={10}
           value={v.additional_instructions ?? ""}
@@ -593,19 +646,19 @@ function LiveAgent({ handle }: { handle: string }) {
           aria-label="Additional instructions"
         />
         <div className="row" style={{ marginTop: 10, gap: 6 }}>
-          <button className="btn btn-primary" onClick={save} disabled={busy || !f}>
+          <ActionButton className="btn btn-primary" onClick={save} disabled={busy || !f}>
             Save
-          </button>
+          </ActionButton>
           {f && (
-            <button className="btn btn-ghost" onClick={() => setF(null)}>
+            <ActionButton className="btn btn-ghost" onClick={() => setF(null)}>
               Discard
-            </button>
+            </ActionButton>
           )}
           <span className="sp" />
           {ag.source === "customised" && (
-            <button className="btn btn-secondary" onClick={reset}>
+            <ActionButton className="btn btn-secondary" onClick={reset}>
               Reset to default
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
@@ -616,18 +669,17 @@ function LiveAgent({ handle }: { handle: string }) {
 function Agents() {
   const [guidance, setGuidance] = useState<Record<string, string>>({});
   const [kaiGuidance, setKaiGuidance] = useState("");
-  const liveAgents = useLiveAgents(live.ws?.id, isLive());
+  const { items: agents } = useAgents();
   const roster = useBuiltinTeam(isLive() ? live.ws?.id : undefined);
-  const agents = isLive() ? (liveAgents ?? []) : D().agents;
   const sel = agents.find((a) => a.handle === S.ui.agentSel);
   if (isLive() && (sel || S.ui.agentSel === "coding-agent")) return <LiveAgent key={S.ui.agentSel} handle={S.ui.agentSel!} />;
   if (!isLive() && S.ui.agentSel === "coding-agent")
     return (
       <>
-        <button className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())}>
           <Ic n="arrow-left" s={14} />
           All agents
-        </button>
+        </ActionButton>
         <h2>
           Kai <span className="badge">Built-in</span>
           {kaiGuidance && <span className="badge">Customised</span>}
@@ -635,21 +687,21 @@ function Agents() {
         <p className="muted">Implements instructed work through Nova in Build mode.</p>
         <div className="sblock">
           <h2>Built-in instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             readOnly
             value="You are Kai, the built-in coding agent. Work only on the instructed change."
             aria-label="Built-in instructions"
           />
           <h2>Additional instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             value={guidance["coding-agent"] ?? kaiGuidance}
             onChange={(event) => setGuidance({ ...guidance, "coding-agent": event.target.value })}
             aria-label="Additional instructions"
           />
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
-            <button
+            <ActionButton
               className="btn btn-primary"
               onClick={() => {
                 setKaiGuidance(guidance["coding-agent"] ?? kaiGuidance);
@@ -657,9 +709,9 @@ function Agents() {
               }}
             >
               Save
-            </button>
+            </ActionButton>
             {kaiGuidance && (
-              <button
+              <ActionButton
                 className="btn btn-secondary"
                 onClick={() => {
                   setKaiGuidance("");
@@ -668,7 +720,7 @@ function Agents() {
                 }}
               >
                 Reset to default
-              </button>
+              </ActionButton>
             )}
           </div>
         </div>
@@ -677,10 +729,10 @@ function Agents() {
   if (sel)
     return (
       <>
-        <button className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())} style={{ margin: "-4px 0 12px -8px" }}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => ((S.ui.agentSel = null), render())} style={{ margin: "-4px 0 12px -8px" }}>
           <Ic n="arrow-left" s={14} />
           All agents
-        </button>
+        </ActionButton>
         <div className="row" style={{ gap: 12, marginBottom: 16 }}>
           <Face c={sel.c} size={36} />
           <div>
@@ -750,7 +802,7 @@ function Agents() {
         </div>
         <div className="sblock">
           <h2>Built-in instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             rows={3}
             readOnly
@@ -758,7 +810,7 @@ function Agents() {
             aria-label="Built-in instructions"
           />
           <h2>Additional instructions</h2>
-          <textarea
+          <DesignTextarea
             className="textarea"
             rows={6}
             value={guidance[sel.handle] ?? sel.additionalInstructions ?? ""}
@@ -767,7 +819,7 @@ function Agents() {
             aria-label="Additional instructions"
           />
           <div className="row" style={{ marginTop: 10, gap: 6 }}>
-            <button
+            <ActionButton
               className="btn btn-primary"
               onClick={() => (
                 mutate(() => {
@@ -778,9 +830,9 @@ function Agents() {
               )}
             >
               Save
-            </button>
+            </ActionButton>
             {sel.customised && (
-              <button
+              <ActionButton
                 className="btn btn-secondary"
                 onClick={() => {
                   mutate(() => {
@@ -793,7 +845,7 @@ function Agents() {
                 }}
               >
                 Reset to default
-              </button>
+              </ActionButton>
             )}
           </div>
         </div>
@@ -957,19 +1009,19 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
         {canEdit && !editing && (
           <span className="row" style={{ gap: 6 }}>
             {k.connected && (
-              <button className="btn btn-sm btn-ghost" onClick={onRemove}>
+              <ActionButton className="btn btn-sm btn-ghost" onClick={onRemove}>
                 Remove
-              </button>
+              </ActionButton>
             )}
-            <button className="btn btn-sm btn-secondary" onClick={() => setEditing(true)}>
+            <ActionButton className="btn btn-sm btn-secondary" onClick={() => setEditing(true)}>
               {k.connected ? "Replace" : "Connect"}
-            </button>
+            </ActionButton>
           </span>
         )}
       </SRow>
       {editing && (
         <div className="row" style={{ gap: 6, marginTop: 6 }}>
-          <input
+          <DesignInput
             className="input"
             type="password"
             autoComplete="off"
@@ -981,12 +1033,12 @@ function KeyRow({ k, canEdit, onSave, onRemove }: { k: KeyLook; canEdit: boolean
             autoFocus
             style={{ flex: 1 }}
           />
-          <button className="btn btn-sm btn-ghost" onClick={() => (setEditing(false), setValue(""))}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => (setEditing(false), setValue(""))}>
             Cancel
-          </button>
-          <button className="btn btn-sm btn-primary" onClick={save} disabled={busy || !value.trim()}>
+          </ActionButton>
+          <ActionButton className="btn btn-sm btn-primary" onClick={save} disabled={busy || !value.trim()}>
             Save key
-          </button>
+          </ActionButton>
         </div>
       )}
       {k.limit_reached_at && (
@@ -1018,18 +1070,59 @@ const DEMO_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "Claude Haiku 5.5",
 
 /* ---------- Personal: your own keys and model, your touches to the agents ---------- */
 
+function CodeModeSettings() {
+  const loaded = useApi(myCodeMode);
+  const [sample, setSample] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const data = isLive() ? loaded.data : { enabled: sample, available: true };
+  if (loaded.error) return <div className="alert danger">{loaded.error}</div>;
+  if (!data) return <div className="faint">Loading Code Mode…</div>;
+  return (
+    <SRow
+      t="Code Mode"
+      d={
+        data.available
+          ? "Let Nova combine reads and filter results in a script. Applies to new chat turns. Experimental; savings depend on the model and task."
+          : "Code Mode is not enabled on this server."
+      }
+    >
+      <Tog
+        label="Code Mode"
+        on={data.available && data.enabled}
+        disabled={saving || !data.available}
+        set={(enabled) => {
+          if (!isLive()) {
+            setSample(enabled);
+            return;
+          }
+          setSaving(true);
+          void myCodeModeSaved(enabled)
+            .then(() => {
+              toast("Code Mode preference saved");
+              loaded.reload();
+            })
+            .catch((error: unknown) => toast(errText(error), { kind: "err" }))
+            .finally(() => setSaving(false));
+        }}
+      />
+    </SRow>
+  );
+}
+
 function MyModels() {
-  const demo = async (): Promise<{ keys: KeyLook[]; default_model: string | null; models: string[] }> => ({
+  const demo = {
     keys: DEMO_KEYS.map((k) => ({ ...k, connected: false, last4: null, limit_reached_at: null })),
     default_model: null,
+    default_coding_tool: "codex" as const,
     models: DEMO_MODELS,
-  });
-  const data = useApi<{
+  };
+  const loaded = useApi<{
     keys: KeyLook[];
     default_model?: string | null;
     default_coding_tool?: "codex" | "claude-code" | "opencode" | "fx" | null;
     models: string[];
-  }>(isLive() ? myModels : demo);
+  }>(myModels);
+  const data = isLive() ? loaded : { ...loaded, data: demo };
   if (data.error) return <div className="alert danger">{data.error}</div>;
   if (!data.data) return <div className="faint">Loading…</div>;
   const d = data.data;
@@ -1039,6 +1132,7 @@ function MyModels() {
     <>
       <div className="sblock" style={{ marginTop: 0 }}>
         <h2>Your keys</h2>
+        {!isLive() && <p className="hint">Sample settings · Sign in to connect your own model keys.</p>}
         <p className="muted" style={{ fontSize: 13 }}>
           Your own provider keys pay for your chat, coding, and scheduled runs in every workspace. Stored encrypted; only the last four characters are shown.
           Every person connects their own key.
@@ -1047,7 +1141,7 @@ function MyModels() {
           <KeyRow
             key={k.provider}
             k={k}
-            canEdit
+            canEdit={isLive()}
             onSave={(v) =>
               isLive() ? save(myKeySaved(k.provider, v), `Your ${k.label} key is saved`) : Promise.resolve(toast(`Your ${k.label} key is saved`))
             }
@@ -1132,7 +1226,7 @@ function MyAgentRow({
       <p className="muted" style={{ fontSize: 13 }}>
         {a.desc}
       </p>
-      <textarea
+      <DesignTextarea
         className="textarea"
         rows={3}
         maxLength={2000}
@@ -1143,9 +1237,9 @@ function MyAgentRow({
       />
       <div className="row" style={{ gap: 8, marginTop: 8 }}>
         {a.handle === "coding-agent" ? (
-          <button className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "my-models" })}>
+          <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "my-models" })}>
             Coding tool and model
-          </button>
+          </ActionButton>
         ) : (
           <select
             className="select"
@@ -1166,21 +1260,20 @@ function MyAgentRow({
           {text.length}/2000
         </span>
         <span className="sp" />
-        <button
+        <ActionButton
           className="btn btn-primary btn-sm"
           disabled={!changed || busy}
           onClick={() => (setBusy(true), void onSave(text, model || null).finally(() => setBusy(false)))}
         >
           Save
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
 }
 
 function MyAgents() {
-  const liveAgents = useLiveAgents(live.ws?.id, isLive());
-  const agents = [...(isLive() ? (liveAgents ?? []) : D().agents), { handle: "coding-agent", name: "Kai", desc: "Implements your instructed coding work." }];
+  const agents = [...useAgents().items, { handle: "coding-agent", name: "Kai", desc: "Implements your instructed coding work." }];
   const prefs = useApi(isLive() ? myAgents : async () => [] as { handle: string; instructions: string; model?: string | null }[]);
   const ms = useApi(isLive() ? models : async () => DEMO_MODELS.map((m) => ({ id: m })));
   if (prefs.error) return <div className="alert danger">{prefs.error}</div>;
@@ -1230,9 +1323,16 @@ function VersionedText({
   const changed = text !== content;
   return (
     <>
-      <textarea className="textarea mono" rows={rows} value={text} onChange={(e) => setText(e.target.value)} style={{ fontSize: 12.5 }} aria-label={title} />
+      <DesignTextarea
+        className="textarea mono"
+        rows={rows}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        style={{ fontSize: 12.5 }}
+        aria-label={title}
+      />
       <div className="row" style={{ marginTop: 10, gap: 6 }}>
-        <button
+        <ActionButton
           className="btn btn-primary"
           disabled={busy || !changed}
           onClick={() => {
@@ -1247,7 +1347,7 @@ function VersionedText({
           }}
         >
           Save
-        </button>
+        </ActionButton>
         {ver > 0 && (
           <span className="faint mono" style={{ fontSize: 12 }}>
             v{ver}
@@ -1261,10 +1361,30 @@ function VersionedText({
 function LiveRules() {
   const r = useApi(rules);
   const sk = useApi(skills);
-  const [open, setOpen] = useState<string | null>(null);
   if (r.error || sk.error) return <div className="alert danger">{r.error || sk.error}</div>;
   if (!r.data || !sk.data) return <div className="faint">Loading…</div>;
-  const base = r.data.find((x) => x.handle === "base");
+  return (
+    <RulesEditor
+      base={r.data.find((item) => item.handle === "base")}
+      items={sk.data}
+      saveRule={(text, version) => ruleSaved("base", text, version).then((saved) => (r.reload(), saved))}
+      saveSkill={(name, text, version) => skillSaved(name, text, version).then((saved) => (sk.reload(), saved))}
+    />
+  );
+}
+
+function RulesEditor({
+  base,
+  items,
+  saveRule,
+  saveSkill,
+}: {
+  base: { content: string; version: number } | undefined;
+  items: { name: string; description: string; content: string; version: number }[];
+  saveRule: (text: string, version: number) => Promise<{ version: number }>;
+  saveSkill: (name: string, text: string, version: number) => Promise<{ version: number }>;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <>
       <div className="sblock" style={{ marginTop: 0 }}>
@@ -1272,19 +1392,14 @@ function LiveRules() {
         <p className="muted" style={{ fontSize: 13 }}>
           Layered under each project's own <span className="mono">agent-rules/</span>, so a project's rules win.
         </p>
-        <VersionedText
-          title="Rules"
-          content={base?.content ?? ""}
-          version={base?.version ?? 0}
-          save={(t, b) => ruleSaved("base", t, b).then((x) => (r.reload(), x))}
-        />
+        <VersionedText title="Rules" content={base?.content ?? ""} version={base?.version ?? 0} save={(t, b) => saveRule(t, b)} />
       </div>
       <div className="sblock">
         <h2>Skills</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           Procedures every project's agents can read when the work calls for one. A project's own skill of the same name wins.
         </p>
-        {sk.data.map((x) => (
+        {items.map((x) => (
           <div key={x.name}>
             <SRow
               t={
@@ -1295,26 +1410,20 @@ function LiveRules() {
               }
               d={x.description}
             >
-              <button className="btn btn-secondary btn-sm" onClick={() => setOpen(open === x.name ? null : x.name)}>
+              <ActionButton className="btn btn-secondary btn-sm" onClick={() => setOpen(open === x.name ? null : x.name)}>
                 {open === x.name ? "Close" : "Edit"}
-              </button>
+              </ActionButton>
             </SRow>
             {open === x.name && (
               <div style={{ padding: "4px 0 14px" }}>
-                <VersionedText
-                  title={x.name}
-                  content={x.content}
-                  version={x.version}
-                  rows={12}
-                  save={(t, b) => skillSaved(x.name, t, b).then((y) => (sk.reload(), y))}
-                />
+                <VersionedText title={x.name} content={x.content} version={x.version} rows={12} save={(t, b) => saveSkill(x.name, t, b)} />
               </div>
             )}
           </div>
         ))}
-        {!sk.data.length && <p className="faint">No workspace skills yet. Each project starts with its own in agent-rules/skills/.</p>}
+        {!items.length && <p className="faint">No workspace skills yet. Each project starts with its own in agent-rules/skills/.</p>}
         <div style={{ marginTop: 12 }}>
-          <button
+          <ActionButton
             className="btn btn-secondary btn-sm"
             onClick={() =>
               promptDlg({
@@ -1328,8 +1437,8 @@ function LiveRules() {
                     .replace(/[^a-z0-9]+/g, "-")
                     .replace(/^-+|-+$/g, "");
                   if (!name) return;
-                  skillSaved(name, `Description: what this skill is for.\n\n1. The first step.\n2. The next.`, 0)
-                    .then(() => (sk.reload(), setOpen(name), toast(`Added ${name}: describe its steps`)))
+                  saveSkill(name, `Description: what this skill is for.\n\n1. The first step.\n2. The next.`, 0)
+                    .then(() => (setOpen(name), toast(`Added ${name}: describe its steps`)))
                     .catch((e: unknown) => toast(`The skill wasn't added: ${errText(e)}`, { kind: "err" }));
                 },
               })
@@ -1337,7 +1446,7 @@ function LiveRules() {
           >
             <Ic n="plus" s={13} />
             New skill
-          </button>
+          </ActionButton>
         </div>
       </div>
     </>
@@ -1346,62 +1455,51 @@ function LiveRules() {
 
 const Rules = () => (isLive() ? <LiveRules /> : <SeedRules />);
 function SeedRules() {
-  const [base, setBase] = useState("- Write in plain English.\n- Link issues by key (WEB-12).\n- Never promise dates the board doesn't support.");
+  const [base, setBase] = useState({
+    content: "- Write in plain English.\n- Link issues by key (WEB-12).\n- Never promise dates the board doesn't support.",
+    version: 1,
+  });
+  const [items, setItems] = useState([
+    {
+      name: "write-an-adr",
+      description: "Write an architecture decision record",
+      content: "Description: Write an architecture decision record.\n\n1. Describe the decision and alternatives.\n2. Link the supporting evidence.",
+      version: 1,
+    },
+    ...[
+      ["triage-a-bug", "Triage a bug", "Reproduce the issue, identify its impact, and link evidence."],
+      ["break-down-a-feature", "Break down a feature", "Define acceptance criteria and split the work into ordered tasks."],
+      ["scope-a-failing-build", "Scope a failing build", "Read the failing check, identify affected files, and propose a focused fix."],
+    ].map(([name, description, steps]) => ({ name: name!, description: description!, content: `Description: ${description}.\n\n${steps}`, version: 1 })),
+  ]);
   return (
     <>
-      <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>Rules for every project</h2>
-        <p className="muted" style={{ fontSize: 13 }}>
-          Layered under each project's own <span className="mono">agent-rules/</span>, so a project's rules win.
-        </p>
-        <textarea
-          className="textarea mono"
-          rows={7}
-          value={base}
-          onChange={(e) => setBase(e.target.value)}
-          style={{ fontSize: 12.5 }}
-          aria-label="Workspace rules"
-        />
-        <div style={{ marginTop: 10 }}>
-          <button className="btn btn-primary" onClick={() => toast("Rules saved (v4)")}>
-            Save rules
-          </button>
-        </div>
-      </div>
-      <div className="sblock">
-        <h2>Skills</h2>
-        {[
-          ["write-an-adr", "Write an architecture decision record"],
-          ["triage-a-bug", "Turn a bug report into an issue with steps and severity"],
-          ["break-down-a-feature", "Split a feature into an epic and stories"],
-          ["scope-a-failing-build", "Find what a failing build touches"],
-        ].map(([n, d]) => (
-          <SRow
-            key={n}
-            t={
-              <span className="row" style={{ gap: 6 }}>
-                <Ic n="scroll-text" s={14} />
-                <span className="mono">{n}</span>
-              </span>
-            }
-            d={d}
-          >
-            <button className="btn btn-secondary btn-sm" onClick={() => toast("Skill editing opens here when the API is wired", { kind: "info" })}>
-              Edit
-            </button>
-          </SRow>
-        ))}
-      </div>
+      <p className="muted">Sample settings. Changes last until you leave this page.</p>
+      <RulesEditor
+        base={base}
+        items={items}
+        saveRule={async (text, version) => {
+          const saved = { content: text, version: version + 1 };
+          setBase(saved);
+          return saved;
+        }}
+        saveSkill={async (name, text, version) => {
+          const saved = { name, description: text.split("\n")[0]!.replace(/^Description:\s*/, ""), content: text, version: version + 1 };
+          setItems((current) => [...current.filter((item) => item.name !== name), saved]);
+          return saved;
+        }}
+      />
     </>
   );
 }
 
 function Automations() {
+  const { items: automations } = useAutomations();
   return (
     <>
       <div className="panel" style={{ overflow: "hidden" }}>
-        {D().automations.length ? (
-          D().automations.map((a) => {
+        {automations.length ? (
+          automations.map((a) => {
             const p = proj(a.project);
             return (
               <div key={a.id} className="mini" style={{ minHeight: 56, cursor: "default", gap: 12 }}>
@@ -1425,14 +1523,15 @@ function Automations() {
                   style={{ gap: 6, fontSize: 12.5, whiteSpace: "nowrap" }}
                   title="Its runs may make the changes the agent's contract allows without approval; off: they ask"
                 >
-                  <input
+                  <SelectionInput
+                    aria-label="Without approval"
                     type="checkbox"
                     checked={!!a.unattended}
                     disabled={isLive() && live.ws?.role !== "owner" && !a.unattended}
                     onChange={(e) => {
                       const on = e.target.checked;
-                      mutate(() => (a.unattended = on));
-                      automationToggled(a, "unattended");
+                      if (isLive()) automationToggled({ ...a, unattended: on }, "unattended");
+                      else mutate(() => (a.unattended = on));
                     }}
                   />
                   Without approval
@@ -1440,8 +1539,8 @@ function Automations() {
                 <Tog
                   on={a.enabled}
                   set={(v) => {
-                    mutate(() => (a.enabled = v));
-                    automationToggled(a);
+                    if (isLive()) automationToggled({ ...a, enabled: v });
+                    else mutate(() => (a.enabled = v));
                   }}
                   label={`Turn ${a.name} on`}
                 />
@@ -1459,7 +1558,7 @@ function Automations() {
           ["Flag stale documents", "Weekly, lists documents that may be out of date."],
           ["Triage new bugs", "When an issue is created, Nova checks for duplicates and fills in the fields."],
         ].map(([n, d]) => {
-          const on = D().automations.some((x) => x.name === n);
+          const on = automations.some((x) => x.name === n);
           return (
             <SRow key={n} t={n} d={d}>
               <Tog
@@ -1505,8 +1604,6 @@ function LiveGitHub() {
   const admin = ["owner", "admin"].includes(live.ws?.role ?? "");
   if (st.error) return <div className="alert danger">{st.error}</div>;
   if (!st.data) return <div className="faint">Loading…</div>;
-  const s = st.data;
-  const byProject = new Map((repos.data ?? []).filter((r) => r.project_key).map((r) => [r.project_key!, r]));
   const connect = (pid: string, key: string, id: string) => {
     const r = id ? ((repos.data ?? []).find((x) => `${x.installation_ref}:${x.github_repo_id}` === id) ?? null) : null;
     setBusy(key);
@@ -1520,6 +1617,47 @@ function LiveGitHub() {
       .catch((e: unknown) => toast(`The repository didn't change: ${errText(e)}`, { kind: "err", ms: 6000 }))
       .finally(() => setBusy(""));
   };
+  return (
+    <GitHubContent
+      status={st.data}
+      options={repos.data}
+      admin={admin}
+      busy={busy}
+      onConnect={connect}
+      onRemove={(id, login) => {
+        void installationRemoved(id)
+          .then(() => (st.reload(), repos.reload(), toast(`Removed ${login}`)))
+          .catch((error: unknown) => toast(`It wasn't removed: ${errText(error)}`, { kind: "err" }));
+      }}
+      onInstall={() => installGitHub(st.data!)}
+    />
+  );
+}
+
+type GitHubViewStatus = {
+  configured: boolean;
+  install_url: string | null;
+  installations: { id: string; account_login: string; account_type: string; suspended: boolean; created_at: string }[];
+};
+function GitHubContent({
+  status: s,
+  options,
+  admin,
+  busy,
+  onConnect,
+  onRemove,
+  onInstall,
+}: {
+  status: GitHubViewStatus;
+  options: Awaited<ReturnType<typeof githubRepos>> | undefined;
+  admin: boolean;
+  busy: string;
+  onConnect: (projectId: string, key: string, repo: string) => void;
+  onRemove: (id: string, login: string) => void;
+  onInstall: () => void;
+}) {
+  const { items: projects } = useProjects();
+  const byProject = new Map((options ?? []).filter((repo) => repo.project_key).map((repo) => [repo.project_key!, repo]));
   if (!s.configured)
     return (
       <div className="alert info">
@@ -1544,7 +1682,7 @@ function LiveGitHub() {
             d={`${i.account_type === "Organization" ? "Organisation" : "Personal account"} · added ${fmtDate(i.created_at.slice(0, 10), true)}`}
           >
             {admin && (
-              <button
+              <ActionButton
                 className="btn btn-secondary btn-sm"
                 onClick={() =>
                   confirmDlg({
@@ -1554,15 +1692,13 @@ function LiveGitHub() {
                     danger: true,
                     icon: "github",
                     run: () => {
-                      installationRemoved(i.id)
-                        .then(() => (st.reload(), repos.reload(), toast(`Removed ${i.account_login}`)))
-                        .catch((e: unknown) => toast(`It wasn't removed: ${errText(e)}`, { kind: "err" }));
+                      onRemove(i.id, i.account_login);
                     },
                   })
                 }
               >
                 Remove
-              </button>
+              </ActionButton>
             )}
           </SRow>
         ))}
@@ -1571,16 +1707,16 @@ function LiveGitHub() {
         )}
         {admin && s.install_url && (
           <div style={{ marginTop: 12 }}>
-            <button className="btn btn-secondary" onClick={() => installGitHub(s)}>
+            <ActionButton className="btn btn-secondary" onClick={onInstall}>
               <Ic n="plus" s={14} />
               Add a GitHub account
-            </button>
+            </ActionButton>
           </div>
         )}
       </div>
       <div className="sblock">
         <h2>Connected repositories</h2>
-        {visibleProjects().map((p) => {
+        {projects.map((p) => {
           const cur = byProject.get(p.key);
           return (
             <SRow
@@ -1597,12 +1733,12 @@ function LiveGitHub() {
                 className="select"
                 style={{ width: "auto", minWidth: 200 }}
                 value={cur ? `${cur.installation_ref}:${cur.github_repo_id}` : ""}
-                disabled={!admin || busy === p.key || !repos.data}
-                onChange={(e) => connect(p.id, p.key, e.target.value)}
+                disabled={!admin || busy === p.key || !options}
+                onChange={(e) => onConnect(p.id, p.key, e.target.value)}
                 aria-label={`Repository for ${p.name}`}
               >
                 <option value="">No repository</option>
-                {(repos.data ?? [])
+                {(options ?? [])
                   .filter((r) => !r.project_key || r.project_key === p.key)
                   .map((r) => (
                     <option key={`${r.installation_ref}:${r.github_repo_id}`} value={`${r.installation_ref}:${r.github_repo_id}`}>
@@ -1619,57 +1755,271 @@ function LiveGitHub() {
   );
 }
 
-function GitHub() {
-  if (isLive()) return <LiveGitHub />;
-  const ps = visibleProjects();
+// The seeded workspace's presets (a real one reads them from the API, with what it allows).
+const DEMO_PRESETS: Record<string, { label: string; hosts: string[] }> = {
+  npm: { label: "npm (and pnpm, Yarn)", hosts: ["registry.npmjs.org", "registry.yarnpkg.com"] },
+  pypi: { label: "PyPI (pip, uv)", hosts: ["pypi.org", "files.pythonhosted.org"] },
+  go: { label: "Go modules", hosts: ["proxy.golang.org", "sum.golang.org"] },
+};
+
+/** Owners and admins choose the hosts Kai's sandboxes may reach besides the model API: for every project,
+ *  and on top of that for one. Each is somewhere an agent could send data, so it stays a short list. */
+function CloudEnvironmentSettings({ projectId }: { projectId: string }) {
+  const loaded = useApi(() => cloudEnvironment(projectId), [projectId]);
+  const [draft, setDraft] = useState<CloudEnvironment | null>(null);
+  const [busy, setBusy] = useState(false);
+  const data = draft ?? loaded.data;
+  if (loaded.error) return <div className="alert danger">{loaded.error}</div>;
+  if (!data) return <div className="faint">Loading cloud environment…</div>;
+  const change = (patch: Partial<CloudEnvironment>) => setDraft({ ...data, ...patch });
+  const save = async () => {
+    setBusy(true);
+    try {
+      await cloudEnvironmentSaved(projectId, {
+        revision: data.revision,
+        enabled: data.enabled,
+        name: data.name,
+        image: data.image,
+        setup_script: data.setup_script,
+        verify_script: data.verify_script,
+        timeout_seconds: data.timeout_seconds,
+      });
+      setDraft(null);
+      loaded.reload();
+      toast("Cloud environment saved");
+    } catch (error) {
+      toast(errText(error), { kind: "err", ms: 6000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="sblock">
+      <h2>Cloud environment</h2>
+      <p className="faint">
+        Use an operator-approved coding image and the network policy below. Saving does not run scripts. New cloud sessions pin this revision before approval;
+        local sessions keep their own setup. Keep secrets out of these fields. Environment secrets are not supported here yet.
+      </p>
+      <SRow t="Use this environment" d={`Revision ${data.revision}`}>
+        <Tog on={data.enabled} set={(enabled) => change({ enabled })} label="Use cloud environment" />
+      </SRow>
+      <SRow t="Name">
+        <DesignInput value={data.name} maxLength={100} onChange={(e) => change({ name: e.target.value })} aria-label="Environment name" />
+      </SRow>
+      <SRow t="Coding image" d="Custom images must be approved by the server operator and pinned by digest. They run on Docker only.">
+        <select
+          style={{ width: 240, maxWidth: "100%" }}
+          title={data.image ?? "Platform coding image"}
+          className="select"
+          aria-label="Environment coding image"
+          value={data.image ?? ""}
+          onChange={(e) => change({ image: e.target.value || null })}
+        >
+          <option value="">Platform coding image</option>
+          {data.image && !(data.available_images ?? []).includes(data.image) && <option value={data.image}>No longer approved: {data.image}</option>}
+          {(data.available_images ?? []).map((image) => (
+            <option key={image} value={image}>
+              {image}
+            </option>
+          ))}
+        </select>
+      </SRow>
+      <div style={{ marginTop: 16 }}>
+        <label htmlFor={`environment-setup-${projectId}`}>Setup script</label>
+        <p className="faint">Runs in a fresh sandbox before Kai. Use frozen dependency installs; repository file changes are refused.</p>
+        <DesignTextarea
+          id={`environment-setup-${projectId}`}
+          style={{ width: "100%" }}
+          className="textarea mono"
+          rows={6}
+          value={data.setup_script}
+          onChange={(e) => change({ setup_script: e.target.value })}
+          maxLength={16000}
+          aria-label="Environment setup script"
+        />
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <label htmlFor={`environment-verify-${projectId}`}>Verification command</label>
+        <p className="faint">Must pass before changes can be accepted. Runs with the repository read-only; write test artifacts to $TMPDIR.</p>
+        <DesignTextarea
+          id={`environment-verify-${projectId}`}
+          style={{ width: "100%" }}
+          className="textarea mono"
+          rows={4}
+          value={data.verify_script}
+          onChange={(e) => change({ verify_script: e.target.value })}
+          maxLength={16000}
+          aria-label="Environment verification command"
+        />
+      </div>
+      <SRow t="Time limit per script" d="10–900 seconds">
+        <DesignInput
+          type="number"
+          min={10}
+          max={900}
+          value={data.timeout_seconds}
+          onChange={(e) => change({ timeout_seconds: Number(e.target.value) })}
+          aria-label="Environment script time limit"
+        />
+      </SRow>
+      <ActionButton className="btn btn-primary btn-sm" disabled={!draft || busy} onClick={save}>
+        Save environment
+      </ActionButton>
+    </div>
+  );
+}
+
+function SandboxNetworkSettings() {
+  const { items: projects } = useProjects();
+  const [scope, setScope] = useState("");
+  const loaded = useApi(() => sandboxNetwork(scope || undefined), [scope]);
+  const [presets, setPresets] = useState<string[] | null>(null);
+  const [hosts, setHosts] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const data = isLive() ? loaded.data : { presets: [], hosts: [], effective: [], available_presets: DEMO_PRESETS };
+  if (isLive() && loaded.error) return <div className="alert danger">{loaded.error}</div>;
+  if (!data) return <div className="faint">Loading…</div>;
+  const available = data.available_presets as Record<string, { label: string; hosts: string[] }>;
+  const chosen = presets ?? data.presets;
+  const typed = hosts ?? data.hosts.join("\n");
+  const changed = presets !== null || hosts !== null;
+  const pick = (scopeId: string) => {
+    setScope(scopeId);
+    setPresets(null);
+    setHosts(null);
+  };
+  const save = () => {
+    const body = { presets: chosen, hosts: typed.split(/[\s,]+/).filter(Boolean) };
+    if (!isLive()) {
+      toast("Saved");
+      return;
+    }
+    setBusy(true);
+    sandboxNetworkSaved(body, scope || undefined)
+      .then(() => {
+        setPresets(null);
+        setHosts(null);
+        loaded.reload();
+        toast("Network saved");
+      })
+      .catch((e: unknown) => toast(`It didn't save: ${errText(e)}`, { kind: "err", ms: 6000 }))
+      .finally(() => setBusy(false));
+  };
   return (
     <>
-      <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>Installations</h2>
-        <SRow
-          t={
-            <span className="row" style={{ gap: 8 }}>
-              <Ic n="github" s={15} />
-              dotrix
-            </span>
-          }
-          d="Organisation · 12 repositories · added by Tanjim Islam"
-        >
-          <button className="btn btn-secondary btn-sm" onClick={() => toast("Opens the app's settings on GitHub", { kind: "info" })}>
-            Configure
-          </button>
-        </SRow>
-        <div style={{ marginTop: 12 }}>
-          <button className="btn btn-secondary" onClick={() => toast("Installing the GitHub App opens GitHub", { kind: "info" })}>
-            <Ic n="plus" s={14} />
-            Add a GitHub account
-          </button>
-        </div>
+      <div className="alert info" style={{ marginBottom: 16 }}>
+        <Ic n="shield-check" s={15} />
+        <span>
+          Kai's sandboxes reach only the model API. Each host you allow is somewhere an agent could also send your code, so allow only what turns need, such as
+          a package registry. They apply to Docker Cloud sandboxes, which keep the model key out of the sandbox; other sandboxes refuse a turn while any are
+          allowed.
+        </span>
       </div>
-      <div className="sblock">
-        <h2>Connected repositories</h2>
-        {ps.map((p) => (
-          <SRow
-            key={p.id}
-            t={
-              <span className="row" style={{ gap: 8 }}>
-                <PIcon p={p} s={13} />
+      <div className="sblock" style={{ marginTop: 0 }}>
+        <SRow t="Applies to" d={scope ? "This project, on top of what every project may reach" : "Every project"}>
+          <select className="select" style={{ width: "auto", minWidth: 200 }} value={scope} onChange={(e) => pick(e.target.value)} aria-label="Applies to">
+            <option value="">Every project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
                 {p.name}
-              </span>
-            }
-            d={p.repo ? <span className="mono">{p.repo}</span> : "No repository"}
-          >
-            <button className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "overview" })}>
-              {p.repo ? "Change" : "Connect"}
-            </button>
+              </option>
+            ))}
+          </select>
+        </SRow>
+      </div>
+      {scope && isLive() && <CloudEnvironmentSettings key={scope} projectId={scope} />}
+      <div className="sblock">
+        <h2>Package registries</h2>
+        {Object.entries(available).map(([key, preset]) => (
+          <SRow key={key} t={preset.label} d={<span className="mono">{preset.hosts.join(", ")}</span>}>
+            <Tog on={chosen.includes(key)} set={(on) => setPresets(on ? [...chosen, key] : chosen.filter((k) => k !== key))} label={preset.label} />
           </SRow>
         ))}
       </div>
+      <div className="sblock">
+        <h2>Other hosts</h2>
+        <p className="faint" style={{ marginTop: 0 }}>
+          One per line: an exact name such as <span className="mono">api.example.com</span>, or <span className="mono">*.example.com</span> for that domain's
+          hosts. HTTPS only.
+        </p>
+        <DesignTextarea
+          className="textarea mono"
+          rows={5}
+          value={typed}
+          onChange={(e) => setHosts(e.target.value)}
+          placeholder="api.example.com"
+          aria-label="Other hosts"
+          style={{ maxWidth: 520 }}
+        />
+        <div className="row" style={{ gap: 8, marginTop: 12 }}>
+          <ActionButton className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={save}>
+            Save
+          </ActionButton>
+          {changed && (
+            <ActionButton className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (setPresets(null), setHosts(null))}>
+              Discard
+            </ActionButton>
+          )}
+        </div>
+      </div>
+      {isLive() && (
+        <div className="sblock">
+          <h2>{scope ? "This project's sandboxes may reach" : "Every project's sandboxes may reach"}</h2>
+          {data.effective.length ? (
+            <div className="mono" style={{ fontSize: 12.5, display: "flex", flexDirection: "column", gap: 2 }}>
+              {data.effective.map((h) => (
+                <span key={h}>{h}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="faint">Only the model API.</p>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function GitHub() {
+  if (isLive()) return <LiveGitHub />;
+  const options = visibleProjects().flatMap((project, index) =>
+    project.repo
+      ? [
+          {
+            installation_ref: "sample-github",
+            github_repo_id: index + 1,
+            full_name: project.repo.replace(/^https:\/\/github.com\//, ""),
+            private: false,
+            default_branch: "main",
+            html_url: project.repo.startsWith("https://") ? project.repo : `https://github.com/${project.repo}`,
+            project_key: project.key,
+          },
+        ]
+      : [],
+  );
+  const sampleAction = () => toast("Sign in to connect your GitHub account. Sample connections are read-only.", { kind: "info" });
+  return (
+    <>
+      <p className="muted">Sample GitHub connections. Your live workspace uses your own installations and repository permissions.</p>
+      <GitHubContent
+        status={{
+          configured: true,
+          install_url: "sample",
+          installations: [{ id: "sample-github", account_login: "dotrix", account_type: "Organization", suspended: false, created_at: "2026-01-01T00:00:00Z" }],
+        }}
+        options={options}
+        admin
+        busy=""
+        onConnect={sampleAction}
+        onRemove={sampleAction}
+        onInstall={sampleAction}
+      />
     </>
   );
 }
 
 function Audit() {
+  const { items: audit } = useAudit();
   return (
     <div className="panel" style={{ overflowX: "auto" }}>
       <table className="perm-t" style={{ minWidth: 560 }}>
@@ -1682,7 +2032,7 @@ function Audit() {
           </tr>
         </thead>
         <tbody>
-          {D().audit.map((a) => (
+          {audit.map((a) => (
             <tr key={a.id}>
               <td style={{ paddingLeft: 14, textAlign: "left" }} className="muted">
                 {ago(a.at)}
@@ -1759,7 +2109,7 @@ function Profile() {
         <label className="label" htmlFor="pf-name">
           Full name
         </label>
-        <input className={`input ${err ? "is-error" : ""}`} id="pf-name" value={name} onChange={(e) => setName(e.target.value)} />
+        <DesignInput aria-label="Full name" className={`input ${err ? "is-error" : ""}`} id="pf-name" value={name} onChange={(e) => setName(e.target.value)} />
         {err && (
           <span className="err">
             <Ic n="circle-alert" s={12} />
@@ -1771,21 +2121,21 @@ function Profile() {
         <label className="label" htmlFor="pf-title">
           What you do
         </label>
-        <input className="input" id="pf-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <DesignInput aria-label="What you do" className="input" id="pf-title" value={title} onChange={(e) => setTitle(e.target.value)} />
       </div>
       <div className="field">
         <label className="label" htmlFor="pf-email">
           Email
         </label>
-        <input className="input" id="pf-email" value={me()!.email} disabled />
+        <DesignInput aria-label="Email" className="input" id="pf-email" value={me()!.email} disabled />
         <span className="hint">Verified. Contact a workspace owner to change your sign-in email.</span>
       </div>
       <div className="sblock" style={{ marginTop: 4 }}>
         <h2>Sign-in methods</h2>
         <SRow t="Password" d={!isLive() || methods.data?.password ? "Set" : "Not set: you sign in with an email link or GitHub"}>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "password" })}>
+          <ActionButton type="button" className="btn btn-secondary btn-sm" onClick={() => go("settings", { sec: "password" })}>
             {!isLive() || methods.data?.password ? "Change" : "Set one"}
-          </button>
+          </ActionButton>
         </SRow>
         <SRow
           t={
@@ -1797,7 +2147,7 @@ function Profile() {
           d={gh ? `Linked${gh.login ? ` as ${gh.login}` : ""}` : "Not linked"}
         >
           {gh ? (
-            <button
+            <ActionButton
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() =>
@@ -1807,22 +2157,22 @@ function Profile() {
               }
             >
               Unlink
-            </button>
+            </ActionButton>
           ) : (
-            <button
+            <ActionButton
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() => (isLive() ? linkGitHub() : toast("Linking opens GitHub", { kind: "info" }))}
             >
               Link
-            </button>
+            </ActionButton>
           )}
         </SRow>
       </div>
       <div>
-        <button className="btn btn-primary" type="submit">
+        <ActionButton className="btn btn-primary" type="submit">
           Save profile
-        </button>
+        </ActionButton>
       </div>
     </form>
   );
@@ -1889,7 +2239,8 @@ function Password() {
             <label className="label" htmlFor="pw-cur">
               Current password
             </label>
-            <input
+            <DesignInput
+              aria-label="Current password"
               type="password"
               className={`input ${errs.cur ? "is-error" : ""}`}
               id="pw-cur"
@@ -1909,7 +2260,8 @@ function Password() {
           <label className="label" htmlFor="pw-new">
             New password
           </label>
-          <input
+          <DesignInput
+            aria-label="New password"
             type="password"
             className={`input ${errs.pw ? "is-error" : ""}`}
             id="pw-new"
@@ -1924,7 +2276,8 @@ function Password() {
           <label className="label" htmlFor="pw-conf">
             Confirm new password
           </label>
-          <input
+          <DesignInput
+            aria-label="Confirm new password"
             type="password"
             className={`input ${errs.conf ? "is-error" : ""}`}
             id="pw-conf"
@@ -1935,13 +2288,13 @@ function Password() {
           <Err k="conf" />
         </div>
         <div>
-          <button className="btn btn-primary" type="submit" disabled={busy}>
+          <ActionButton className="btn btn-primary" type="submit" disabled={busy}>
             {hasPassword ? "Update password" : "Set password"}
-          </button>
+          </ActionButton>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start", marginLeft: -8 }} onClick={forgot}>
+        <ActionButton type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start", marginLeft: -8 }} onClick={forgot}>
           Forgot it? Email me a link
-        </button>
+        </ActionButton>
       </form>
     </>
   );
@@ -1964,7 +2317,7 @@ function LiveNotifs({ sec }: { sec: string }) {
         toast(`Your notification settings didn't save: ${errText(e)}`, { kind: "err" });
       });
   };
-  const T = (k: "mention" | "assigned" | "watching" | "finding" | "decided" | "stale", label: string) => (
+  const T = (k: "mention" | "assigned" | "watching" | "finding" | "decided" | "stale" | "coding", label: string) => (
     <Tog on={v[k]} set={(on) => put({ [k]: on })} label={label} />
   );
   const always = (what: string) => <Tog on set={() => toast(`${what} always come through`, { kind: "info" })} label={what} />;
@@ -2025,6 +2378,9 @@ function LiveNotifs({ sec }: { sec: string }) {
           <SRow t="Decisions on my requests" d="When someone else approves or rejects a change you asked for.">
             {T("decided", "Decisions")}
           </SRow>
+          <SRow t="Kai's turns" d="When a coding turn you asked for opens or updates its pull request, finishes without changes, or fails.">
+            {T("coding", "Coding turns")}
+          </SRow>
           <SRow t="Wiki pages out of date" d="When a push changes code that the project's wiki pages cite (if you edit documents).">
             {T("stale", "Out-of-date pages")}
           </SRow>
@@ -2076,14 +2432,14 @@ function LiveSessions() {
           d={`${x.ip ? `${x.ip} · ` : ""}last used ${ago(new Date(x.last_used_at).getTime())} · signed in ${fmtDate(x.created_at.slice(0, 10), true)}`}
         >
           {!x.current && (
-            <button className="btn btn-secondary btn-sm" onClick={() => void out(x.id)}>
+            <ActionButton className="btn btn-secondary btn-sm" onClick={() => void out(x.id)}>
               Sign out
-            </button>
+            </ActionButton>
           )}
         </SRow>
       ))}
       <div style={{ marginTop: 16 }}>
-        <button
+        <ActionButton
           className="btn btn-danger-ghost"
           disabled={r.data.length < 2}
           onClick={() =>
@@ -2093,19 +2449,19 @@ function LiveSessions() {
           }
         >
           Sign out of all other sessions
-        </button>
+        </ActionButton>
       </div>
       <div className="sblock">
         <h2>Tokens</h2>
         <p className="muted" style={{ fontSize: 13 }}>
           Let something other than this browser act as you: the CLI gets one when you run{" "}
-          <button
+          <ActionButton
             className="btn btn-ghost btn-sm mono"
             style={{ padding: "0 4px", height: "auto" }}
             onClick={() => void copy("dotrix login", "Command copied")}
           >
             dotrix login
-          </button>
+          </ActionButton>
           , and a script or CI job uses one in <span className="mono">DOTRIX_TOKEN</span>. A token can do what you can, and expires after 90 days.
         </p>
         {made && (
@@ -2114,12 +2470,12 @@ function LiveSessions() {
             <div className="grow" style={{ minWidth: 0 }}>
               <b>{made.name}</b>: copy it now, it isn't shown again.
               <div className="row" style={{ gap: 6, marginTop: 6 }}>
-                <code className="mono grow trunc" style={{ fontSize: 12 }}>
+                <InlineCode className="mono grow trunc" style={{ fontSize: 12 }}>
                   {made.token}
-                </code>
-                <button className="btn btn-secondary btn-sm" onClick={() => void copy(made.token, "Token copied")}>
+                </InlineCode>
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => void copy(made.token, "Token copied")}>
                   Copy
-                </button>
+                </ActionButton>
               </div>
             </div>
           </div>
@@ -2136,17 +2492,17 @@ function LiveSessions() {
             }
             d={`${t.last_used_at ? `last used ${ago(new Date(t.last_used_at).getTime())}` : "never used"} · created ${fmtDate(t.created_at.slice(0, 10), true)}${t.expires_at ? ` · expires ${fmtDate(t.expires_at.slice(0, 10), true)}` : ""}`}
           >
-            <button className="btn btn-secondary btn-sm" onClick={() => void revoke(t.id)}>
+            <ActionButton className="btn btn-secondary btn-sm" onClick={() => void revoke(t.id)}>
               Revoke
-            </button>
+            </ActionButton>
           </SRow>
         ))}
         {cli.data && !cli.data.length && <p className="faint">No tokens. Nothing but your browsers is signed in as you.</p>}
         <div style={{ marginTop: 12 }}>
-          <button className="btn btn-secondary btn-sm" onClick={create}>
+          <ActionButton className="btn btn-secondary btn-sm" onClick={create}>
             <Ic n="plus" s={13} />
             New token
-          </button>
+          </ActionButton>
         </div>
       </div>
     </>
@@ -2163,7 +2519,7 @@ function LivePermissions() {
       {ws.kind === "personal" ? (
         <div className="alert info" style={{ marginBottom: 14 }}>
           <Ic n="info" s={15} />
-          <span>A personal workspace is just for you. Turn it into an organisation (Workspace) to invite people and decide what they can do.</span>
+          <span>A personal workspace is just for you. Create a separate organisation workspace to invite people and decide what they can do.</span>
         </div>
       ) : null}
       <div className="sblock" style={{ marginTop: 0 }}>
@@ -2173,7 +2529,7 @@ function LivePermissions() {
         </p>
         {GRANTABLE.map(([perm, t, d]) => (
           <SRow key={perm} t={t} d={d}>
-            <input
+            <SelectionInput
               type="checkbox"
               className="toggle"
               checked={grants.includes(perm)}
@@ -2191,6 +2547,186 @@ function LivePermissions() {
         </div>
       </div>
     </>
+  );
+}
+
+/** The desktop app's Browser pane: on or off, Kai's use of it, and what its pages keep. Saved by the app, for this computer. */
+function BrowserSettingsPage() {
+  const bridge = desktopBrowser();
+  const settings = useBrowserSettings();
+  if (!bridge) return <p className="muted">The Browser pane is part of the dotrix desktop app. Open Settings there to change it.</p>;
+  const change = (send: () => Promise<BrowserSettings>) => () =>
+    void send()
+      .then(setBrowserSettings)
+      .catch(() => toast("The setting couldn't be saved"));
+  const on = settings?.enabled ?? false;
+  return (
+    <>
+      <SRow t="Browser pane" d="Open your running app or any web page beside a coding session, in a profile apart from dotrix and your everyday browser.">
+        <Tog on={on} set={(v) => change(() => bridge.setEnabled(v))()} label="Browser pane" disabled={!settings} />
+      </SRow>
+      <SRow
+        t={`Let ${CODING_AGENT.name} use the browser`}
+        d={`On a turn coding on this computer, ${CODING_AGENT.name} can open your running app in a tab of its own to check its change. Its tab opens only pages on this computer.`}
+      >
+        <Tog
+          on={on && (settings?.kaiAllowed ?? false)}
+          set={(v) => change(() => bridge.setKaiAllowed(v))()}
+          label={`Let ${CODING_AGENT.name} use the browser`}
+          disabled={!on}
+        />
+      </SRow>
+      <SRow t="Keep cookies after quitting" d="Off, pages in the pane are signed out each time you quit dotrix.">
+        <Tog
+          on={on && (settings?.keepCookies ?? false)}
+          set={(v) => change(() => bridge.setKeepCookies(v))()}
+          label="Keep cookies after quitting"
+          disabled={!on}
+        />
+      </SRow>
+      <SRow t="Browsing data" d="Cookies, storage and cache saved by pages in the pane.">
+        <ActionButton
+          className="btn btn-sm"
+          onClick={() =>
+            void bridge.clear().then(
+              () => toast("Browsing data cleared"),
+              () => toast("The browsing data couldn't be cleared"),
+            )
+          }
+        >
+          Clear browsing data
+        </ActionButton>
+      </SRow>
+      {on && settings?.kaiAllowed && <AppCommands />}
+    </>
+  );
+}
+
+/** The command that starts each folder's app, for Kai to start in its worktree and open in the pane. */
+function AppCommands() {
+  const bridge = desktopDevServers();
+  const runners = useDesktopRunners();
+  const [saved, setSaved] = useState<Record<string, DevCommand> | null>(null);
+  useEffect(() => {
+    let live = true;
+    void bridge?.list().then((found) => live && setSaved(found));
+    return () => {
+      live = false;
+    };
+  }, [bridge]);
+  if (!bridge) return null;
+  return (
+    <div className="sblock">
+      <h2>Start your app for {CODING_AGENT.name}</h2>
+      <p className="faint" style={{ marginTop: 0 }}>
+        On a turn coding on this computer, {CODING_AGENT.name} can start your app in its own copy of the repository with the command you save here, and open it
+        in the browser to check its change. {CODING_AGENT.name} can't change the command, but the command runs the code {CODING_AGENT.name} just wrote, on this
+        computer and without a sandbox, so it can read and change your files like any program you run: save one only for a project you trust it to run. Its
+        environment carries none of your keys or tokens, and it stops when the turn ends.
+      </p>
+      {!runners.length ? (
+        <p className="muted">No folders code on this computer yet. Pick one when you start a coding session on this computer.</p>
+      ) : (
+        runners.map((runner) => (
+          <AppCommand
+            key={runner.folder}
+            folder={runner.folder}
+            label={runner.projectKey}
+            saved={saved?.[runner.folder] ?? null}
+            loading={saved === null}
+            onSave={async (next) => setSaved(await bridge.save(runner.folder, next))}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function AppCommand({
+  folder,
+  label,
+  saved,
+  loading,
+  onSave,
+}: {
+  folder: string;
+  label: string;
+  saved: DevCommand | null;
+  loading: boolean;
+  onSave: (next: DevCommand | null) => Promise<void>;
+}) {
+  const [command, setCommand] = useState(saved?.command ?? "");
+  const [port, setPort] = useState(saved?.port ? String(saved.port) : "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setCommand(saved?.command ?? "");
+    setPort(saved?.port ? String(saved.port) : "");
+  }, [saved?.command, saved?.port]);
+  const changed = command.trim() !== (saved?.command ?? "") || port.trim() !== (saved?.port ? String(saved.port) : "");
+  const portNumber = port.trim() ? Number(port.trim()) : null;
+  const badPort = portNumber !== null && !(Number.isInteger(portNumber) && portNumber >= 1024 && portNumber <= 65535);
+  const send = async (next: DevCommand | null, done: string) => {
+    setBusy(true);
+    try {
+      await onSave(next);
+      toast(done);
+    } catch (error) {
+      toast(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The command couldn't be saved");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="srow" style={{ alignItems: "flex-start" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="t">{label}</div>
+        <div className="d mono trunc" title={folder}>
+          {folder}
+        </div>
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <DesignInput
+            className="input mono"
+            style={{ flex: "1 1 260px", minWidth: 0 }}
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="pnpm install && pnpm dev"
+            aria-label={`Command that starts ${label}'s app`}
+            disabled={loading || busy}
+            spellCheck={false}
+          />
+          <DesignInput
+            className="input mono"
+            style={{ width: 110 }}
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="Any port"
+            inputMode="numeric"
+            aria-label={`Port ${label}'s app listens on`}
+            aria-invalid={badPort}
+            disabled={loading || busy}
+          />
+        </div>
+        <div className="d" style={{ marginTop: 6 }}>
+          {badPort
+            ? "The port is a number from 1024 to 65535."
+            : "Leave the port empty if the app reads the PORT variable; give it if the app always listens on one port."}
+        </div>
+      </div>
+      <div className="row" style={{ gap: 6, marginTop: 22 }}>
+        <ActionButton
+          className="btn btn-sm"
+          disabled={loading || busy || badPort || !command.trim() || !changed}
+          onClick={() => void send({ command: command.trim(), port: portNumber }, `${label}'s command is saved`)}
+        >
+          Save
+        </ActionButton>
+        {saved && (
+          <ActionButton className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void send(null, `${label}'s command is removed`)}>
+            Remove
+          </ActionButton>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -2266,14 +2802,14 @@ function Body({ sec }: { sec: string }) {
         <>
           <div className="row" style={{ marginBottom: 12 }}>
             {canInvite() && (
-              <button className="btn btn-primary" onClick={invite}>
+              <ActionButton className="btn btn-primary" onClick={invite}>
                 <Ic n="user-plus" s={14} />
                 Invite member
-              </button>
+              </ActionButton>
             )}
-            <button className="btn btn-secondary" onClick={() => go("members")}>
+            <ActionButton className="btn btn-secondary" onClick={() => go("members")}>
               Open member directory
-            </button>
+            </ActionButton>
           </div>
           <div className="panel" style={{ overflow: "hidden" }}>
             {d.members.map((m) => (
@@ -2297,9 +2833,9 @@ function Body({ sec }: { sec: string }) {
                     <Ic n="chevron-down" s={12} />
                   </button>
                 )}
-                <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "member", id: m.id })} aria-label="Options">
+                <ActionButton className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "member", id: m.id })} aria-label="Options">
                   <Ic n="ellipsis" s={14} />
-                </button>
+                </ActionButton>
               </div>
             ))}
           </div>
@@ -2333,9 +2869,9 @@ function Body({ sec }: { sec: string }) {
                     <b style={{ fontWeight: 500 }}>{p.name}</b>
                   </div>
                   <div className="row">
-                    <button className="btn btn-secondary btn-sm" onClick={() => restoreProject(p.id)}>
+                    <ActionButton className="btn btn-secondary btn-sm" onClick={() => restoreProject(p.id)}>
                       Restore
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               ))
@@ -2398,6 +2934,8 @@ function Body({ sec }: { sec: string }) {
       return <Automations />;
     case "github":
       return <GitHub />;
+    case "sandbox":
+      return <SandboxNetworkSettings />;
     case "audit":
       return <Audit />;
     case "notif-email":
@@ -2463,6 +3001,9 @@ function Body({ sec }: { sec: string }) {
           <SRow t="Decisions on my requests" d="When someone else approves or rejects a change you asked for.">
             <NTog k="decided" def />
           </SRow>
+          <SRow t="Kai's turns" d="When a coding turn you asked for opens or updates its pull request, finishes without changes, or fails.">
+            <NTog k="coding" def />
+          </SRow>
         </>
       );
     case "profile":
@@ -2518,13 +3059,14 @@ function Body({ sec }: { sec: string }) {
             </SRow>
           </div>
           <div className="gh">Personal defaults</div>
+          <CodeModeSettings />
           <SRow t="Open on launch" d="The page you see when dotrix opens.">
             <Sel
               k="home"
               v={Pr.home}
               opts={[
                 ["home", "Home"],
-                ["mytasks", "My Tasks"],
+                ["mytasks", tasksLabel()],
                 ["inbox", "Inbox"],
                 ["chat", "Chat"],
               ]}
@@ -2570,6 +3112,8 @@ function Body({ sec }: { sec: string }) {
       );
     case "password":
       return <Password />;
+    case "browser":
+      return <BrowserSettingsPage />;
     case "sessions":
       if (isLive()) return <LiveSessions />;
       return (
@@ -2587,23 +3131,23 @@ function Body({ sec }: { sec: string }) {
               d={`${s.loc} · ${s.at}`}
             >
               {!s.cur && (
-                <button
+                <ActionButton
                   className="btn btn-secondary btn-sm"
                   onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x !== s))), toast("Signed out"))}
                 >
                   Sign out
-                </button>
+                </ActionButton>
               )}
             </SRow>
           ))}
           <div style={{ marginTop: 16 }}>
-            <button
+            <ActionButton
               className="btn btn-danger-ghost"
               disabled={d.sessions.length < 2}
               onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x.cur))), toast("Signed out of all other sessions"))}
             >
               Sign out of all other sessions
-            </button>
+            </ActionButton>
           </div>
           <div className="sblock">
             <h2>Tokens</h2>
@@ -2624,9 +3168,9 @@ function Body({ sec }: { sec: string }) {
                 }
                 d={dd}
               >
-                <button className="btn btn-secondary btn-sm" onClick={() => toast("Revoked")}>
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => toast("Revoked")}>
                   Revoke
-                </button>
+                </ActionButton>
               </SRow>
             ))}
           </div>
@@ -2647,6 +3191,7 @@ const LEADS: Record<string, string> = {
   rules: "Rules every agent follows, and skills they can use, across every project.",
   automations: "Agents that run on a schedule or when something happens. Their changes still wait for approval.",
   github: "The GitHub App's installations, and the repository each project reads code from.",
+  sandbox: "The hosts Kai's sandboxes may reach besides the model API. Owners and admins; every change is audited.",
   audit: "Everything people and agents changed, who asked, and who approved.",
   "notif-email": "Choose what reaches you, and where.",
   profile: "How you appear to others in the workspace.",
@@ -2655,6 +3200,7 @@ const LEADS: Record<string, string> = {
   "my-agents": "How you like each agent to work, for the conversations you start. Only you see these.",
   password: "Use a long password you don't use anywhere else.",
   sessions: "Browsers and apps signed in to your account, and the tokens that act as you.",
+  browser: "The Browser pane beside a coding session in the desktop app. These settings are this computer's.",
 };
 
 // Old sec ids fold into a page: Agents holds Rules and Automations, Notifications holds the
@@ -2682,25 +3228,56 @@ const SEC_TABS: Record<string, [string, string][]> = {
   ],
 };
 
+/** Pages only an organisation has. */
+const TEAM_ONLY = new Set(["members", "permissions"]);
+
 const ITEM_NEEDS: Record<string, Perm> = {
   workspace: "workspace:manage",
   permissions: "workspace:manage",
+  sandbox: "workspace:manage",
 };
 
 export function Settings() {
+  const { items: members } = useMembers();
   const { params } = useRoute();
   const asked = params.sec || S.ui.settings || "profile";
-  const sec = asked === "devices" ? "sessions" : asked === "models" ? "my-models" : asked;
+  const renamed = asked === "devices" ? "sessions" : asked === "models" ? "my-models" : asked;
+  // A personal workspace is just yours: no members or roles to manage (an old link opens your profile).
+  const sec = personal() && TEAM_ONLY.has(renamed) ? "profile" : renamed;
   const admin = allowed("workspace:manage");
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
-  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true);
+  // The Browser pane is the desktop app's: its page is listed only there.
+  const shown = (k: string) =>
+    (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k)) && (k !== "browser" || Boolean(desktopBrowser()));
   const page = SEC_PAGE[sec] ?? sec;
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
-  const lead = sec === "members" ? `${D().members.length} ${LEADS.members}` : LEADS[page];
+  const lead = sec === "members" ? `${members.length} ${LEADS.members}` : LEADS[page];
+  const groups = SET_NAV.filter(([, items, adminOnly]) => (!adminOnly || admin) && items.some(([k]) => shown(k)));
+  const openSection = (section: string) => {
+    S.ui.settings = section;
+    S.ui.agentSel = null;
+    go("settings", { sec: section });
+  };
   return (
     <div className="set">
+      <label className="set-section-picker" htmlFor="settings-section">
+        <span className="label">Settings section</span>
+        <select id="settings-section" className="select" value={page} onChange={(event) => openSection(event.target.value)}>
+          {groups.map(([group, items]) => (
+            <optgroup key={group} label={group}>
+              {items
+                .filter(([key]) => shown(key))
+                .map(([key, name]) => (
+                  <option key={key} value={key}>
+                    {name}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
       <nav className="set-nav" aria-label="Settings">
-        {SET_NAV.filter(([, items, adminOnly]) => (!adminOnly || admin) && items.some(([k]) => shown(k))).map(([g, items]) => (
+        {groups.map(([g, items]) => (
           <div key={g} style={{ display: "contents" }}>
             <div className="gh">{g}</div>
             {items
@@ -2709,7 +3286,8 @@ export function Settings() {
                 <button
                   key={k}
                   className={`sitem ${sec === k || page === k ? "on" : ""}`}
-                  onClick={() => ((S.ui.settings = k), (S.ui.agentSel = null), go("settings", { sec: k }))}
+                  aria-current={sec === k || page === k ? "page" : undefined}
+                  onClick={() => openSection(k)}
                 >
                   <Ic n={i} s={15} />
                   <span>{n}</span>

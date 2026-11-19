@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Members and profiles. dotrix's roles table
 // adds what each role may do with the agents (approving changes, editing documents, coding).
 import { openPop } from "../core/actions";
@@ -7,9 +9,9 @@ import { Ic } from "../core/icons";
 import { copyEmail, invite, newTask } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, minsAgo } from "../core/utils";
-import { D, S, allTasks, canSee, isOver, me, mem, render, visibleProjects } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveMembers } from "../../lib/workspace-data";
+import { D, S, canSee, isOver, me, mem, render } from "../data/store";
+import { useActivity, useMembers, useProjects } from "../data/lists";
+import { useAllTasks } from "../data/tasks";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks } from "../shell/viewEngine";
 import { Av, Empty, PIcon } from "../ui/helpers";
@@ -30,9 +32,9 @@ function NotFound() {
   return (
     <div className="page">
       <Empty icon="file-question" title="Page not found" text="The page you're looking for doesn't exist or was moved.">
-        <button className="btn btn-secondary btn-sm" onClick={() => go("members")}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("members")}>
           Back to members
-        </button>
+        </ActionButton>
       </Empty>
     </div>
   );
@@ -101,8 +103,9 @@ export function Members() {
   const u = S.ui;
   const q = (u.memQ || "").toLowerCase();
   const role = u.memRole || "all";
-  const liveMembers = useLiveMembers(live.ws?.id, isLive());
-  const members = isLive() ? (liveMembers ?? []) : D().members;
+  const { items: members } = useMembers();
+  const { items: projects } = useProjects();
+  const { tasks } = useAllTasks();
   const ms = members.filter((m) => (role === "all" || m.role === role) && (!q || m.name.toLowerCase().includes(q) || m.email.includes(q)));
   const isAdmin = ["Owner", "Admin"].includes(me()!.role);
   const tab = u.membersTab;
@@ -117,10 +120,10 @@ export function Members() {
         </div>
         <div className="acts">
           {canInvite() && (
-            <button className="btn btn-primary" onClick={invite}>
+            <ActionButton className="btn btn-primary" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
@@ -141,7 +144,7 @@ export function Members() {
           <div className="row" style={{ marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
             <div className="inwrap">
               <Ic n="search" s={13} />
-              <input
+              <DesignInput
                 className="input search-sm"
                 id="mem-q"
                 placeholder="Search by name or email"
@@ -174,8 +177,8 @@ export function Members() {
                 </thead>
                 <tbody>
                   {ms.map((m) => {
-                    const ap = visibleProjects().filter((p) => p.members.includes(m.id) && p.status !== "complete").length;
-                    const ot = allTasks().filter((t) => t.assignee === m.id && t.status !== "done").length;
+                    const ap = projects.filter((p) => p.members.includes(m.id) && p.status !== "complete").length;
+                    const ot = tasks.filter((t) => t.assignee === m.id && t.status !== "done").length;
                     return (
                       <tr key={m.id} onContextMenu={ctx(m.id)}>
                         <td style={{ paddingLeft: 14 }}>
@@ -231,9 +234,9 @@ export function Members() {
                           )}
                         </td>
                         <td>
-                          <button className="ibtn ibtn-sm" onClick={ctx(m.id)} aria-label="Member options">
+                          <ActionButton className="ibtn ibtn-sm" onClick={ctx(m.id)} aria-label="Member options">
                             <Ic n="ellipsis" s={14} />
-                          </button>
+                          </ActionButton>
                         </td>
                       </tr>
                     );
@@ -253,14 +256,16 @@ export function Members() {
 export function MemberPage() {
   const { params } = useRoute();
   const m = mem(params.id);
+  // Hooks first, then the early return.
+  const { tasks: all } = useAllTasks();
+  const { items: projects } = useProjects();
+  const { items: feed } = useActivity();
   if (!m) return <NotFound />;
-  const ts = allTasks().filter((t) => t.assignee === m.id);
+  const ts = all.filter((t) => t.assignee === m.id);
   const open = ts.filter((t) => t.status !== "done");
   const done = ts.filter((t) => t.status === "done");
-  const ps = visibleProjects().filter((p) => p.members.includes(m.id) && p.status !== "complete" && canSee(p));
-  const acts = D()
-    .activity.filter((a) => a.by === m.id)
-    .slice(0, 8);
+  const ps = projects.filter((p) => p.members.includes(m.id) && p.status !== "complete" && canSee(p));
+  const acts = feed.filter((a) => a.by === m.id).slice(0, 8);
   const tab = S.ui.memTab || "assigned";
   const list = tab === "assigned" ? sortTasks(open, { f: "due", dir: 1 }) : done;
   return (
@@ -295,17 +300,17 @@ export function MemberPage() {
           </div>
         </div>
         <div className="row">
-          <button className="btn btn-secondary" onClick={() => copyEmail(m.id)}>
+          <ActionButton className="btn btn-secondary" onClick={() => copyEmail(m.id)}>
             <Ic n="copy" s={14} />
             Copy email
-          </button>
-          <button className="btn btn-primary" onClick={() => newTask({ assignee: m.id })}>
+          </ActionButton>
+          <ActionButton className="btn btn-primary" onClick={() => newTask({ assignee: m.id })}>
             <Ic n="plus" s={14} />
             Assign task
-          </button>
-          <button className="ibtn" onClick={ctx(m.id)} aria-label="More">
+          </ActionButton>
+          <ActionButton className="ibtn" onClick={ctx(m.id)} aria-label="More">
             <Ic n="ellipsis" s={16} />
-          </button>
+          </ActionButton>
         </div>
       </div>
       <div className="stats" style={{ marginBottom: 18 }}>

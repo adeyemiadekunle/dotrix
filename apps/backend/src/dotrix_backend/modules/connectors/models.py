@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dotrix_backend.db.base import Base, UUIDPrimaryKeyMixin, WorkspaceScopedMixin
@@ -61,3 +61,7 @@ class GitHubDelivery(Base):
     delivery_id: Mapped[str] = mapped_column(String(100), primary_key=True)
     event: Mapped[str] = mapped_column(String(100))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # The follow-up jobs ([name, kwargs] pairs) recorded with the delivery's changes and cleared once
+    # queued, so a failed queueing is finished by a redelivery or the hourly sweep. Cleared is SQL NULL
+    # (none_as_null), not JSON null, so the sweep's `IS NOT NULL` skips deliveries already done.
+    pending: Mapped[list | None] = mapped_column(JSON(none_as_null=True))

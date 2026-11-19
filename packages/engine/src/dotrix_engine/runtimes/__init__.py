@@ -1,4 +1,4 @@
-"""Experimental chat runtimes. The platform's durable runner remains authoritative."""
+"""The chat runtimes (DeepAgents and fx). The platform's durable runner remains authoritative."""
 
 from .contracts import (
     AgentRuntimeConfig,
@@ -10,6 +10,7 @@ from .contracts import (
     RuntimeJournalStore,
     RuntimeTool,
     RuntimeToolContext,
+    RuntimeToolError,
     TurnResult,
     UnsupportedRuntimeOperation,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "RuntimeJournalStore",
     "RuntimeTool",
     "RuntimeToolContext",
+    "RuntimeToolError",
     "TurnResult",
     "UnsupportedRuntimeOperation",
     "fx_configuration_digest",

@@ -128,6 +128,10 @@ def test_fx_turns_that_end_early_say_why() -> None:
 
 FAKE_FX = textwrap.dedent('''
     import json, os, sys
+    if sys.argv[1:] == ["config", "get", "project_config"]:  # the Kai runtime's fx knows the setting; upstream's doesn't
+        if os.environ.get("FAKE_FX_UPSTREAM"):
+            sys.stderr.write("fx config: unknown setting project_config\\n"); sys.exit(2)
+        print("false" if os.environ.get("FX_PROJECT_CONFIG") == "0" else "true"); sys.exit(0)
     log = open(os.environ["FAKE_FX_LOG"], "a")
     def send(message):
         sys.stdout.write(json.dumps(message) + "\\n"); sys.stdout.flush()
@@ -139,6 +143,7 @@ FAKE_FX = textwrap.dedent('''
         log.write(json.dumps({"method": msg.get("method"), "params": msg.get("params")}) + "\\n"); log.flush()
         method, mid = msg.get("method"), msg.get("id")
         if method == "initialize":
+            log.write(json.dumps({"method": "environment", "params": {"FX_PROJECT_CONFIG": os.environ.get("FX_PROJECT_CONFIG")}}) + "\\n"); log.flush()
             send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1}})
         elif method == "session/new":
             send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "fx-session-1"}})
@@ -149,6 +154,11 @@ FAKE_FX = textwrap.dedent('''
             send({"jsonrpc": "2.0", "id": mid, "result": None})
         elif method == "session/prompt":
             sid = msg["params"]["sessionId"]
+            if "recovery" in msg["params"]["prompt"][0]["text"]:
+                waiting = mid
+                update(sid, {"sessionUpdate": "session_info_update", "_meta": {"fx": {
+                    "modelResponseRecovery": {"state": "need_user", "message": "private provider response"}}}})
+                continue
             if "provider" in msg["params"]["prompt"][0]["text"]:  # call the model the way fx does: the settings' base_url
                 import urllib.error, urllib.request
                 url = json.load(open(os.path.join(os.environ["HOME"], ".fx", "settings.json")))["providers"]["dotrix"]["base_url"]
@@ -160,6 +170,21 @@ FAKE_FX = textwrap.dedent('''
                 except urllib.error.HTTPError as error:
                     reason = "refused" if error.code == 403 else "error"
                 send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": reason}})
+                continue
+            if "delegate" in msg["params"]["prompt"][0]["text"]:  # a worker (subagent) runs a command
+                def hook(session, kind, data):
+                    send({"jsonrpc": "2.0", "method": "libfx/hook", "params": {"version": 1, "sessionId": session,
+                          "rootSessionId": sid, "parentSessionId": None if session == sid else sid, "type": kind, "data": data}})
+                update(sid, {"sessionUpdate": "tool_call", "toolCallId": "send-1", "name": "subagent", "title": "tester",
+                             "kind": "other", "rawInput": {"action": "message", "agent": "tester", "message": "run the tests"}})
+                hook(sid, "delegation", {"callId": "send-1", "childSessionId": "child-1", "phase": "dispatched"})
+                call = {"callId": "c9", "name": "shell", "argumentsJson": json.dumps({"action": "run", "command": "pytest -q"})}
+                hook(sid, "tool.start", {"call": {**call, "callId": "main-only"}})  # the main session's: ACP streams those
+                hook("child-1", "tool.start", {"call": call, "rerun": False})
+                hook("child-1", "tool.end", {"call": call, "status": "success",
+                     "output": json.dumps({"state": "completed", "exit_code": 1, "output_delta": "1 failed\\n"})})
+                update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "send-1", "status": "completed"})
+                send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
                 continue
             if "wait" in msg["params"]["prompt"][0]["text"]:
                 waiting = mid
@@ -202,8 +227,20 @@ def _drive(env: dict[str, str], brief: str, *extra: str) -> list[dict]:
     return [json.loads(line) for line in done.stdout.splitlines() if line.strip()]
 
 
-def _calls(env: dict[str, str]) -> list[dict]:
+def _logged(env: dict[str, str]) -> list[dict]:
     return [json.loads(line) for line in Path(env["FAKE_FX_LOG"]).read_text().splitlines()]
+
+
+def _calls(env: dict[str, str]) -> list[dict]:
+    return [entry for entry in _logged(env) if entry["method"] != "environment"]
+
+
+def test_model_recovery_needing_input_cannot_finish_as_success(fake_fx) -> None:
+    events = _drive(fake_fx, "Trigger recovery")
+    assert any(event["type"] == "error" for event in events)
+    assert "private provider response" not in json.dumps(events)
+    assert not any(event.get("stopReason") == "end_turn" for event in events)
+    assert "session/cancel" in [call["method"] for call in _calls(fake_fx)]
 
 
 def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_fx) -> None:
@@ -217,6 +254,7 @@ def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_f
                          "final": "Done."}
     calls = _calls(fake_fx)
     assert [c["method"] for c in calls] == ["initialize", "session/new", "session/set_mode", "session/prompt"]
+    assert {"method": "environment", "params": {"FX_PROJECT_CONFIG": "0"}} in _logged(fake_fx)
     assert calls[2]["params"] == {"sessionId": "fx-session-1", "modeId": "full-access"}
     assert calls[3]["params"]["prompt"] == [{"type": "text", "text": "Fix the tests"}]
     home = Path(fake_fx["HOME"])
@@ -224,6 +262,8 @@ def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_f
     assert settings["providers"]["dotrix"]["auth"] == {"type": "bearer", "env": "OPENAI_API_KEY"}  # its name, not the key
     assert "the-key" not in (home / ".fx" / "settings.json").read_text()
     assert settings["models"] == {"dotrix": "gpt-6.1"} and settings["auto_upgrade"] is False
+    # The repository is data: fx takes none of its .fx.json, .fx/agents, skills, .mcp.json or AGENTS.md.
+    assert settings["project_config"] is False
     assert json.loads((home / ".fx" / "dotrix" / "s1.json").read_text()) == {"fxSession": "fx-session-1"}
 
     # The parsed lines, as Codes shows them.
@@ -240,6 +280,28 @@ def test_the_next_turn_continues_fx_s_session_without_replaying_it(fake_fx) -> N
     assert "old" not in [e.get("text") for e in events]  # the resumed history isn't this turn's
     methods = [c["method"] for c in _calls(fake_fx)]
     assert methods[4:] == ["initialize", "session/resume", "session/set_mode", "session/prompt"]
+
+
+def test_a_worker_s_commands_show_in_the_session_named_for_the_worker(fake_fx) -> None:
+    """Kai's workers (fx subagents) run in child sessions: their tool calls come from fx's hook events."""
+    events = _drive(fake_fx, "Please delegate the tests")
+    new = next(c for c in _calls(fake_fx) if c["method"] == "session/new")
+    assert new["params"]["_meta"] == {"fx": {"hooks": {"captureContent": True}}}
+    child = [e for e in events if str(e.get("id", "")).startswith("child-1:")]
+    assert child == [
+        {"type": "tool", "id": "child-1:c9", "name": "shell", "title": None, "kind": None,
+         "input": {"action": "run", "command": "pytest -q"}, "agent": "tester"},
+        {"type": "tool_result", "id": "child-1:c9", "status": "failed", "output": "1 failed\n"},
+    ]
+    assert not any(e.get("id") == "main-only" for e in events)  # the main session's tools come as ACP updates
+
+    tool, usage = Fx(FX_PROVIDERS["openai"]), Usage()
+    steps = [(s.kind, s.text) for e in events for s in tool.parse(json.dumps(e), usage).steps]
+    assert ("tool", "Asked tester to run the tests") in steps
+    assert ("tool", "Ran pytest -q (tester)") in steps
+    assert ("output-error", "1 failed") in steps
+    settings = json.loads((Path(fake_fx["HOME"]) / ".fx" / "settings.json").read_text())
+    assert settings["max_subagents"] == 2
 
 
 def test_sigint_cancels_the_turn_and_it_still_ends_with_done(fake_fx) -> None:
@@ -288,6 +350,14 @@ def test_the_driver_s_own_failures_never_name_fx(fake_fx) -> None:
     assert events[-1]["type"] == "error" and "fx" not in events[-1]["message"].lower()
 
 
+def test_an_fx_without_project_config_never_runs_a_turn(fake_fx) -> None:
+    """Upstream fx 0.0.17 reports the Kai runtime's version but would read the repository's configuration."""
+    events = _drive({**fake_fx, "FAKE_FX_UPSTREAM": "1"}, "Fix it")
+    assert [event["type"] for event in events] == ["error"]
+    assert events[0]["message"] == "The coding engine isn't the version Kai was checked with"
+    assert not Path(fake_fx["FAKE_FX_LOG"]).exists()  # `fx acp` never started
+
+
 def test_behind_an_egress_proxy_fx_calls_a_local_forwarder_and_a_refusal_is_the_sandboxs(fake_fx) -> None:
     """fx ignores HTTPS_PROXY, so the driver points it at a forwarder on 127.0.0.1 that tunnels through the proxy;
     a proxy that refuses the provider ends the turn at once, said as the sandbox's refusal, not the model's."""
@@ -315,3 +385,75 @@ def test_behind_an_egress_proxy_fx_calls_a_local_forwarder_and_a_refusal_is_the_
     assert url.startswith("http://127.0.0.1:") and url.endswith("/v1")  # the forwarder, keeping the provider's path
     assert asked == ["api.openai.com:443"]  # the forwarder tunnels to the configured provider only
     assert events[-1] == {"type": "error", "message": "The sandbox doesn't allow this model provider (its egress proxy refused it)"}
+
+
+FAKE_MCP = """
+import json, sys
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"protocolVersion": "2025-06-18", "capabilities": {}}}) + "\\n")
+        sys.stdout.flush()
+"""
+
+
+def test_fx_gets_the_browser_as_claude_code_does() -> None:
+    from dotrix_backend.modules.coding.tools import BROWSER_MCP
+
+    tool = Fx(FX_PROVIDERS["openai"])
+    assert tool.browser and "--mcp-config" not in tool.command("openai:gpt-6.1")
+    with_browser = tool.command("openai:gpt-6.1", browser=True)
+    assert json.loads(with_browser[with_browser.index("--mcp-config") + 1]) == BROWSER_MCP
+    usage = Usage()
+    calls = [("mcp_browser_browser_navigate", {"url": "http://localhost:8080/"}), ("mcp_browser_browser_take_screenshot", {})]
+    steps = [s.text for name, args in calls for s in tool.parse(json.dumps({"type": "tool", "id": name, "name": name, "input": args}), usage).steps]
+    assert steps == ["Opened http://localhost:8080/ in the browser", "Took a screenshot"]
+    warned = tool.parse(json.dumps({"type": "warning", "message": "The browser didn't start"}), usage).steps
+    assert [(s.kind, s.text) for s in warned] == [("error", "The browser didn't start")]
+
+
+def test_the_driver_passes_fx_the_servers_that_start_and_says_which_didnt(fake_fx, tmp_path: Path) -> None:
+    server = tmp_path / "browser-mcp"
+    server.write_text(f"#!{sys.executable}\n{FAKE_MCP}")
+    server.chmod(0o755)
+    config = {"mcpServers": {"browser": {"command": str(server), "args": ["--headless"]},
+                             "broken": {"command": "sh", "args": ["-c", "exit 1"]}}}
+    events = _drive(fake_fx, "Fix the tests", "--mcp-config", json.dumps(config))
+    assert events[0] == {"type": "warning", "message": "The broken tool didn't start"} and events[-1]["type"] == "done"
+    new = next(c for c in _calls(fake_fx) if c["method"] == "session/new")
+    assert new["params"]["mcpServers"] == [{"name": "browser", "command": str(server), "args": ["--headless"], "env": []}]
+
+    # A bare command is found on PATH (fx takes only an absolute path); one that isn't there fails the turn, plainly.
+    found = _drive({**fake_fx, "PATH": f"{tmp_path}:{fake_fx['PATH']}"}, "Fix the tests", "--mcp-config",
+                   json.dumps({"mcpServers": {"browser": {"command": "browser-mcp"}}}))
+    assert found[-1]["type"] == "done"
+    assert next(c for c in reversed(_calls(fake_fx)) if c["method"] == "session/new")["params"]["mcpServers"][0]["command"] == str(server)
+    missing = _drive(fake_fx, "Fix the tests", "--mcp-config", json.dumps({"mcpServers": {"browser": {"command": "no-such-browser"}}}))
+    assert missing == [{"type": "error", "message": "The coding engine's browser isn't installed in this sandbox"}]
+    assert _drive(fake_fx, "Fix the tests", "--mcp-config", "not json")[-1]["type"] == "error"
+
+
+def test_a_resumed_conversation_has_the_browser_too(fake_fx, tmp_path: Path) -> None:
+    server = tmp_path / "browser-mcp"
+    server.write_text(f"#!{sys.executable}\n{FAKE_MCP}")
+    server.chmod(0o755)
+    config = json.dumps({"mcpServers": {"browser": {"command": str(server)}}})
+    _drive(fake_fx, "Fix the tests", "--mcp-config", config)
+    _drive(fake_fx, "And the docs", "--resume", "--mcp-config", config)
+    resumed = next(c for c in reversed(_calls(fake_fx)) if c["method"] == "session/resume")
+    assert [s["name"] for s in resumed["params"]["mcpServers"]] == ["browser"]
+
+
+def test_the_check_codex_runs_first_says_which_servers_didnt_start(tmp_path: Path) -> None:
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    server = tmp_path / "browser-mcp"
+    server.write_text(f"#!{sys.executable}\n{FAKE_MCP}")
+    server.chmod(0o755)
+    config = {"mcpServers": {"browser": {"command": "sh", "args": ["-c", "exit 1"]}, "ok": {"command": str(server)},
+                             "missing": {"command": "/nonexistent/server"}}}
+    done = subprocess.run(["node", str(DRIVER.parent / "mcp-check.mjs"), "--mcp-config", json.dumps(config)],
+                          capture_output=True, text=True, timeout=30)
+    assert done.returncode == 0  # never fails the turn
+    assert [json.loads(line) for line in done.stdout.splitlines()] == [
+        {"type": "warning", "message": "The browser didn't start"}, {"type": "warning", "message": "The missing tool didn't start"}]

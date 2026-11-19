@@ -6,6 +6,7 @@ import base64
 import dataclasses
 import json
 import re
+import shlex
 import subprocess
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -18,8 +19,11 @@ from httpx import AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import select, update
 
+from apps.backend.tests.integration.test_runtime_tools import (
+    nova_pilot_world,  # noqa: F401 (fixture)
+)
 from dotrix_backend.core.crypto import Secrets
-from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus
+from dotrix_backend.modules.coding.models import CodingRun, CodingRunStatus, PrState
 from dotrix_backend.modules.coding.recovery import recover_uncertain_runs
 from dotrix_backend.modules.coding.runner import (
     _LEASE,
@@ -34,6 +38,10 @@ from dotrix_backend.modules.execution.service import expire_coding_leases
 from dotrix_engine.testing import tool_call
 
 
+def _git_bytes(root: Path, *args: str) -> bytes:
+    return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True).stdout
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout.strip()
 
@@ -42,11 +50,13 @@ class ScriptedClaude:
     """Stands in for `claude -p`: makes `edits` in the repo and prints stream-json events."""
 
     def __init__(self) -> None:
-        self.edits: dict[str, str] = {}
+        self.edits: dict[str, str | bytes] = {}
         self.result = "Added refunds to the payment provider and a test; pytest passes."
         self.briefs: list[str] = []
         self.argv: list[str] = []
         self.env: dict[str, str] = {}
+        self.checks: list[list[str]] = []
+        self.check_events: list[dict] = []
 
     def lines(self) -> list[str]:
         events: list[dict[str, Any]] = [{"type": "system", "subtype": "init", "model": "claude-test"}]
@@ -55,6 +65,7 @@ class ScriptedClaude:
                 {"type": "text", "text": f"Editing {path}"},
                 {"type": "tool_use", "name": "Edit", "input": {"file_path": f"/sandbox/repo/{path}"}},
             ], "usage": {"input_tokens": 1000, "output_tokens": 200}}})
+        events.extend(self.check_events)
         events.append({"type": "result", "subtype": "success", "result": self.result, "total_cost_usd": 0.12,
                        "usage": {"input_tokens": 1000 * len(self.edits), "output_tokens": 200 * len(self.edits)}})
         return [json.dumps(e) + "\n" for e in events]
@@ -94,6 +105,11 @@ class ScriptedSession(LocalSession):
         self.agent = agent
 
     async def exec(self, argv, *, stdin=None, on_line=None, timeout, cancel=None) -> ExecResult:
+        # Simulate the runtime below the enforced wrapper; its syscall boundary has a separate test.
+        if argv[:2] == ["python3", "-c"] and "Landlock" in argv[2]:
+            argv = argv[3:]
+        if argv[:2] == ["sh", "-c"] and len(argv) > 6 and argv[4] == "/opt/dotrix/mcp-check.mjs":
+            argv = argv[6:]  # MCP startup wrapper has a separate real-engine regression test
         if isinstance(self.agent, ScriptedOpenCode) and argv[:2] == ["sh", "-c"] and "node -e" in argv[2]:
             return ExecResult(code=0, stdout=self.agent.totals(), stderr="")  # its totals after the turn
         if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv):
@@ -103,7 +119,17 @@ class ScriptedSession(LocalSession):
         for path, text in self.agent.edits.items():
             target = self.root / "repo" / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
+            target.write_bytes(text) if isinstance(text, bytes) else target.write_text(text)  # bytes: not UTF-8 text
+        for index, command in enumerate(self.agent.checks):
+            checked = await super().exec(command, timeout=timeout, cancel=cancel)
+            ref = f"check-{index}"
+            self.agent.check_events.extend([
+                {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": ref,
+                    "name": "Bash", "input": {"command": shlex.join(command)}}]}},
+                {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": ref,
+                    "content": checked.stdout + checked.stderr, "is_error": checked.code != 0}]}},
+            ])
+            assert checked.code == 0, checked.stderr
         for line in self.agent.lines():
             assert on_line is not None
             await on_line(line)
@@ -163,6 +189,8 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
     client = app.dependency_overrides[get_github_app]()
+    app.state.runner.github = client
+    github.branch_heads = _heads(origin)
     settings.coding_sandbox = "local"
     settings.encryption_key = SecretStr(Fernet.generate_key().decode())
     app.state.secrets = app.state.runner.secrets = Secrets.from_settings(settings)
@@ -292,6 +320,12 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert {"coding.requested", "coding.approved", "coding.changes_ready", "coding.changes_accepted",
             "coding.pr_opened"} <= set(actions)
 
+    # Ada hears how her turn ended, with its session to open; Cat, who didn't ask, doesn't.
+    [ended] = (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=ada.headers)).json()
+    assert ended["title"] == f"Kai's turn on {story['key']} is on PR #1" and ended["actor_agent"] == "claude-code"
+    assert ended["coding_session_id"] == run["session_id"] and ended["issue_key"] == story["key"]
+    assert (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=cat.headers)).json() == []
+
 
 async def test_an_approver_who_cant_instruct_the_coding_agent_still_approves_its_run(
     db_client: AsyncClient, coding, claude: ScriptedClaude
@@ -341,6 +375,34 @@ async def test_changes_to_dotrix_or_workflows_are_never_pushed(
     await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "no_changes" and github.pulls == []
+
+
+async def test_a_turn_that_writes_the_model_key_is_never_pushed(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    """The Docker sandbox gives the agent the person's key in its environment: a turn that copies it
+    into a file, encoded or not, or into its summary (the PR body) fails before anything is committed."""
+    import base64
+
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    key = "test-anthropic-personal-key-" + str(ada.id)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Config"}, headers=ada.headers)).json()
+    for edits, result in (
+        ({"src/config.py": f"API_KEY = {key!r}\n"}, "Added the config."),
+        ({"src/config.py": f"API_KEY = {base64.b64encode(key.encode()).decode()!r}\n"}, "Added the config."),
+        ({"src/config.py": "API_KEY = None\n"}, f"Added the config; it reads {key} from the environment."),
+    ):
+        claude.edits, claude.result = edits, result
+        run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+        await _approve(db_client, base, run, ada.headers)
+        run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+        assert run["status"] == "failed" and "contain your model key" in run["error"], run
+        assert key not in run["error"] and run["branch"] is None
+    assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
+    ended = (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=ada.headers)).json()
+    assert len(ended) == 3 and ended[0]["title"] == f"Kai didn't finish {task['key']}"
+    assert "contain your model key" in ended[0]["excerpt"] and key not in ended[0]["excerpt"]
 
 
 async def test_rejecting_stopping_and_when_it_isnt_available(
@@ -410,6 +472,8 @@ async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
     await _approve(db_client, base, run, ada.headers)
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["status"] == "stopped" and run["error"] == "Stopped by a person" and github.pulls == []
+    # She stopped it herself: nothing to tell her.
+    assert (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=ada.headers)).json() == []
 
 
 async def test_with_a_fork_owner_branches_go_to_the_apps_fork(
@@ -549,18 +613,24 @@ async def test_assigning_to_a_coding_tool_starts_a_session_and_approvers_are_tol
 async def test_a_merged_pr_is_recorded_on_the_session_and_the_issue(
     db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, deliver
 ) -> None:
-    ada, _, ws, kun, _, _ = coding
+    ada, colleague, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Ship"}, headers=ada.headers)).json()
     claude.edits = {"src/ship.py": "SHIP = True\n"}
     agent_script.say("Fine.")
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
     run = await _approve(db_client, base, run, ada.headers)
+    shared = f"{base}/coding/issues/{task['key']}/outcomes"
+    [published] = (await db_client.get(shared, headers=colleague.headers)).json()
+    assert published["pr_state"] == "open" and published["session_id"] is None
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=colleague.headers)).status_code == 404
     payload = {"action": "closed", "pull_request": {"number": run["pr_number"], "merged": True},
                "repository": {"id": 9001, "full_name": "kunemi/api"}}
     assert (await deliver("pull_request", payload)).status_code == 202
     run = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
     assert run["pr_state"] == "merged"
+    [published] = (await db_client.get(shared, headers=colleague.headers)).json()
+    assert published["pr_state"] == "merged" and published["pr_url"] == run["pr_url"]
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
     assert issue["status"] == "review"  # a person closes it
     assert any(e.get("body") == f"PR #{run['pr_number']} was merged on GitHub" for e in issue["log"])
@@ -602,20 +672,32 @@ class ShootingSandbox(ScriptedSandbox):
         return ShootingSession(session.root, session.env, self.agent)
 
 
+@pytest.mark.parametrize("coding_engine", ["claude-code", "opencode"])
 async def test_the_agent_s_screenshots_are_kept_and_shown(
-    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script, storage
+    db_client: AsyncClient, coding, claude: ScriptedClaude, agent_script, storage, coding_engine
 ) -> None:
     ada, cat, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
+    data = {}
+    script = claude
+    if coding_engine == "opencode":
+        app.state.settings.coding_opencode_model = "openai:gpt-5.5"
+        await _save_key(db_client, ada.headers, "openai", "test-opencode-openai-personal-key")
+        script = ScriptedOpenCode()
+        data = {"agent": coding_engine, "model": "openai:gpt-5.5"}
     jobs = app.state.jobs
-    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, sandbox=ShootingSandbox(claude), storage=storage))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, sandbox=ShootingSandbox(script), storage=storage))
     base = f"{ws}/projects/{kun['id']}"
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"title": "Add a Subtract button"})).json()
-    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={}, headers=ada.headers)).json()
-    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
+    run = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json=data, headers=ada.headers)).json()
+    script.edits = {"src/payments.py": "class PaymentProvider:\n    def subtract(self): ...\n"}
     agent_script.say("Looks right.")
     run = await _approve(db_client, base, run, ada.headers)
     assert run["status"] == "pr_opened", run.get("error")
+    if coding_engine == "opencode":
+        config = json.loads(next(arg.partition("=")[2] for arg in script.argv if arg.startswith("OPENCODE_CONFIG_CONTENT=")))
+        assert config["mcp"]["browser"]["type"] == "local"
+        assert "headless browser" in script.briefs[-1]
     # Images only, whatever the name says, and each once; listed on the run, served to whoever's session it is.
     assert run["screenshots"] == [{"index": 0, "name": "page-subtract.png", "size": len(PNG), "content_type": "image/png"}]
     assert any(e["text"] == "Kept 1 screenshot from the browser" for e in run["events"])
@@ -761,6 +843,94 @@ async def test_a_session_keeps_its_sandbox_and_resumes_its_conversation(
     assert (await db_client.get(f"{ws}/coding/sessions", params={"archived": "include"}, headers=ada.headers)).json() == []
     assert (await db_client.get(f"{base}/coding/runs/{first['id']}", headers=ada.headers)).status_code == 404
     assert len(github.pulls) == 1
+
+
+async def test_a_warm_sandbox_that_cannot_be_checked_is_closed_and_replaced(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, storage
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    sandbox = TranscriptSandbox(claude)
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage,
+                                 secrets=app.state.secrets, pool=WarmPool(3600, 3))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
+    claude.found_transcript, claude.argvs = [], []
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine again.")
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    assert first["status"] == "pr_opened" and sandbox.opened == 1
+    session_id = first["session_id"]
+
+    # The kept sandbox can no longer be asked anything.
+    [warm_box] = [w.box for w in worker.pool._boxes.values()]
+    closed: list[int] = []
+    real_exec, real_close = warm_box.exec, warm_box.close
+
+    async def broken(argv, **kwargs):
+        if argv[:3] == ["git", "rev-parse", "HEAD^{tree}"]:
+            raise RuntimeError("the container is gone")
+        return await real_exec(argv, **kwargs)
+
+    async def counted() -> None:
+        closed.append(1)
+        await real_close()
+
+    warm_box.exec, warm_box.close = broken, counted  # type: ignore[method-assign]
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    assert amount > 0\n    return amount\n"}
+    turns = f"{base}/coding/sessions/{session_id}/turns"
+    second = (await db_client.post(turns, json={"message": "Only positive amounts"}, headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "pr_opened" and sandbox.opened == 2
+    assert closed == [1]
+
+
+async def test_a_fresh_sandbox_is_closed_when_restoring_the_transcript_fails(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, storage
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    sandbox = TranscriptSandbox(claude)
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage,
+                                 secrets=app.state.secrets, pool=WarmPool(3600, 0))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
+    claude.found_transcript, claude.argvs = [], []
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine again.")
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    assert first["status"] == "pr_opened"
+
+    closes: list[int] = []
+    real_open = sandbox.open
+
+    async def open_and_watch(*args, **kwargs):
+        box = await real_open(*args, **kwargs)
+        real_close = box.close
+
+        async def counted() -> None:
+            closes.append(1)
+            await real_close()
+
+        box.close = counted  # type: ignore[method-assign]
+        return box
+
+    async def failing(*args, **kwargs):
+        raise RuntimeError("storage fell over")
+
+    sandbox.open = open_and_watch  # type: ignore[method-assign]
+    worker._restore_transcript = failing  # type: ignore[method-assign]
+    turns = f"{base}/coding/sessions/{first['session_id']}/turns"
+    second = (await db_client.post(turns, json={"message": "Again"}, headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "failed"
+    assert closes == [1]
 
 
 async def test_opencode_codes_on_the_model_the_server_names(
@@ -1144,18 +1314,28 @@ async def test_a_worker_that_lost_its_lease_is_fenced_off(db_client: AsyncClient
 
 
 async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidence(
-    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script, origin, db_session
 ) -> None:
     ada, cat, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
     issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
     agent_script.say(tool_call("save_plan", title="Refunds", summary="Refund within a week.",
-                               acceptance_criteria=["refund() returns the amount"], tasks=[{"title": "Add refund()"}]),
+                               acceptance_criteria=["refund() returns the amount"], tasks=[{"title": "Add refund()"}], execution={
+                                   "repository": "kunemi/api", "base_sha": _git(origin, "rev-parse", "HEAD"),
+                                   "tasks": [{"key": "refund", "task_number": 1, "owned_paths": ["src/payments.py"],
+                                              "instructions": "Implement refunds", "checks": [{"command": "true", "expected": "passes"}],
+                                              "stop_conditions": ["API changed"]}],
+                               }),
                      "Saved the plan.")
     planned = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
                                     json={"message": "Plan refunds", "work_mode": "plan"})).json()
     thread = planned["thread_id"]
     plan = (await db_client.get(f"{base}/agent/threads/{thread}/plans", headers=ada.headers)).json()[0]
+
+    agent_script.say(tool_call("save_plan", title="Different plan", summary="New scope",
+                               acceptance_criteria=[], tasks=[{"title": "Do something else"}]), "Saved v2.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                        json={"message": "Another plan", "work_mode": "plan", "thread_id": thread})
 
     # Discussing can't start coding: the tool isn't there.
     model = agent_script.say("I'd add refund() to the payment provider.")
@@ -1166,11 +1346,12 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     model = agent_script.say(tool_call("start_coding", issue_key=issue["key"], note="Task 1 of the plan"),
                              "Asked Kai; it waits for an approval.")
     built = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
-                                  json={"message": "Build the plan", "work_mode": "build", "thread_id": thread})).json()
+                                  json={"message": "Build the plan", "work_mode": "build", "thread_id": thread, "plan_id": plan["id"]})).json()
     assert built["status"] == "completed", built
     [run] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
     assert run["status"] == "awaiting_approval" and run["thread_id"] == thread and run["plan_id"] == plan["id"]
     assert run["requested_by_id"] == ada.id and "Task 1 of the plan" in run["brief"]
+    assert "Refund within a week." in run["brief"] and "New scope" not in run["brief"]
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
     assert any(e["action"] == "coding.requested_in_conversation" for e in audit)
 
@@ -1188,6 +1369,13 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     turn = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", headers=ada.headers,
                                 json={"message": "Handle partial refunds"})
     assert turn.status_code == 201, turn.text
+    from dotrix_backend.modules.coding.models import CodingRun
+
+    follow_up = await db_session.get(CodingRun, uuid.UUID(turn.json()["id"]))
+    assert follow_up.plan_id == uuid.UUID(plan["id"])
+    assert "Refund within a week." in follow_up.brief
+    assert follow_up.execution_plan is None
+
     model = agent_script.say(tool_call("coding_evidence"), "Turn 2 waits for an approval.")
     await db_client.post(f"{base}/agent/runs", headers=ada.headers,
                          json={"message": "And now?", "work_mode": "review", "thread_id": thread})
@@ -1256,17 +1444,54 @@ async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
     assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval"
     await db_client.post(f"{base}/coding/runs/{theirs['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
 
-    # Build in Accept edits: Kai starts at once from the conversation too.
+    # A chat assignment creates one notification-backed handoff, even in Accept edits.
     third = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Third"})).json()
-    model = agent_script.say(tool_call("start_coding", issue_key=third["key"]), "Kai has started.", "Looks right.")
+    model = agent_script.say(tool_call("update_issue", key=third["key"], assignee="coding-agent"),
+                             tool_call("start_coding", issue_key=third["key"]), "Kai waits for your approval in Inbox.")
     await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
         "message": "Build it", "work_mode": "build", "approval_mode": "accept_edits",
     })
     # (here the coding run, and its Reviewer, run inside the tool call: search every call for its result)
     said = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
-    assert said and "Kai has started" in said[-1]
+    assert said and "already has this handoff" in said[-1]
     [built] = (await db_client.get(f"{base}/coding/runs?issue={third['key']}", headers=ada.headers)).json()
-    assert built["approval_mode"] == "accept_edits" and built["status"] in ("pr_opened", "no_changes", "running")
+    assert built["approval_mode"] == "manual" and built["status"] == "awaiting_approval"
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    assert sum(n.get("coding_run_id") == built["id"] for n in notes) == 1
+    agent_script.say("Looks right.")
+    await _approve(db_client, base, built, ada.headers)
+    after = (await db_client.get(f"{base}/coding/runs/{built['id']}", headers=ada.headers)).json()
+    assert after["status"] in ("pr_opened", "no_changes", "running")
+
+
+async def test_build_in_auto_starts_kai_at_once_without_an_approval_notification(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script
+) -> None:
+    """Only Auto lets Nova's first handoff start Kai at once; Manual and Accept edits wait in Inbox.
+    The requester is recorded as approver, and the PR stays the review point."""
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "auto", "member_permissions": ["agents:code"]}, headers=ada.headers)
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
+    claude.edits = {"src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n"}
+    model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "Looks right.", "Kai has started.")
+    await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                         json={"message": "Build it", "work_mode": "build", "approval_mode": "auto"})
+    said = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
+    assert said and "Kai has started" in said[0], said
+    [built] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
+    assert built["approval_mode"] == "auto" and built["status"] != "awaiting_approval", built
+    assert built["decided_by_id"] == ada.id and built["decision_reason"].startswith("Started at once")
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    assert not any(n.get("coding_run_id") == built["id"] for n in notes)
+
+    # Cat may instruct Kai but not approve agent changes, so Auto in their conversation still waits.
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other"})).json()
+    agent_script.say(tool_call("start_coding", issue_key=other["key"]), "Kai waits for approval.")
+    await db_client.post(f"{base}/agent/runs", headers=cat.headers,
+                         json={"message": "Build it", "work_mode": "build", "approval_mode": "auto"})
+    [theirs] = (await db_client.get(f"{base}/coding/runs?issue={other['key']}", headers=cat.headers)).json()
+    assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval", theirs
 
 
 async def test_changes_to_files_ci_runs_wait_for_a_person_in_every_mode(
@@ -1519,7 +1744,7 @@ class _RunnerApi:
         return res.json() if res.content else None
 
 
-def _tool(edits: dict[str, str], *, sleep: float = 0, result: str = "Added refunds; tests pass.") -> str:
+def _tool(edits: dict[str, str | bytes], *, sleep: float = 0, result: str = "Added refunds; tests pass.") -> str:
     """A command standing in for Claude Code: reads the brief, edits files, prints stream-json."""
     import shlex
     import sys
@@ -1528,7 +1753,7 @@ def _tool(edits: dict[str, str], *, sleep: float = 0, result: str = "Added refun
         "import json, sys, time, pathlib\n"
         "brief = sys.stdin.read()\n"
         f"for path, text in {edits!r}.items():\n"
-        "    p = pathlib.Path(path); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text)\n"
+        "    p = pathlib.Path(path); p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(text) if isinstance(text, bytes) else p.write_text(text)\n"
         "    print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'name': 'Edit', 'input': {'file_path': path}}]}}), flush=True)\n"
         f"time.sleep({sleep})\n"
         f"print(json.dumps({{'type': 'result', 'subtype': 'success', 'result': {result!r}, 'total_cost_usd': 0.02, 'usage': {{'input_tokens': 10, 'output_tokens': 5}}}}), flush=True)\n"
@@ -1549,8 +1774,99 @@ def _local_runner(db_client: AsyncClient, coding, checkout: Path, tmp_path: Path
     from dotrix_cli.runner import LocalRunner
 
     ada, _, ws, kun, _, _ = coding
+    kw.setdefault("isolation", "none")  # never a Docker sandbox the machine running the tests happens to have
     return LocalRunner(_RunnerApi(db_client, ada.headers), checkout, ws.split("/")[-1], kun["id"], command=command,
                        worktrees=tmp_path / "worktrees", name="ada-laptop", echo=lambda _: None, **kw)
+
+
+async def test_a_runner_with_docker_sandboxes_registers_as_isolated(
+    db_client: AsyncClient, coding, checkout: Path, tmp_path: Path
+) -> None:
+    from dotrix_cli.runner import Sbx
+
+    ada, _, ws, kun, _, _ = coding
+    runner = _local_runner(db_client, coding, checkout, tmp_path, "true", isolation="sbx", sbx=Sbx("/usr/local/bin/sbx"))
+    registered = await runner.register()
+    assert registered["isolation"] == "sbx"
+    listed = (await db_client.get(f"{ws}/coding/runners", headers=ada.headers)).json()
+    assert [r["isolation"] for r in listed] == ["sbx"]
+
+
+@pytest.mark.parametrize("coding_tool", ["codex", "fx"])
+@pytest.mark.parametrize("valid_setup", [True, False])
+async def test_native_local_runners_keep_approval_and_clean_private_profiles(
+    db_client, coding, github, checkout, tmp_path, monkeypatch, coding_tool, valid_setup,
+):
+    """The real local launchers and API loop, with protocol-speaking CLIs instead of model calls."""
+    import os
+
+    ada, _, ws, kun, _, _ = coding
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    home = tmp_path / "person"
+    (home / ".fx").mkdir(parents=True)
+    original = json.dumps({"permission_mode": "yolo", "permission": {"*": "allow"}})
+    (home / ".fx/settings.json").write_text(original)
+    pointer = tmp_path / "private-profile-path"
+    script = binaries / coding_tool
+    script.write_text(f'''#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+tool={coding_tool!r}
+valid={valid_setup!r}
+if '--version' in sys.argv:
+ print('codex-cli 0.169.0' if tool=='codex' else '0.0.16');sys.exit(0)
+def reply(i, result): print(json.dumps({{"jsonrpc":"2.0","id":i,"result":result}}),flush=True)
+def edit():
+ p=Path('src/refunds.py');p.parent.mkdir(parents=True,exist_ok=True);p.write_text('def refund(a): return a\\n')
+if tool=='codex':
+ if 'list' in sys.argv:
+  print('[]' if valid else 'invalid configuration');sys.exit(0)
+ sys.stdin.read();edit()
+ for e in [{{"type":"item.completed","item":{{"id":"edit","type":"file_change","changes":[{{"path":"src/refunds.py"}}]}}}},
+           {{"type":"item.completed","item":{{"id":"reply","type":"agent_message","text":"Local edit complete."}}}},
+           {{"type":"turn.completed","usage":{{"input_tokens":100,"output_tokens":20}}}}]: print(json.dumps(e),flush=True)
+else:
+ Path({str(pointer)!r}).write_text(os.environ['HOME'])
+ if 'permissions' in sys.argv:
+  settings=json.loads((Path(os.environ['HOME'])/'.fx/settings.json').read_text())
+  print(json.dumps({{"mode":"ask","rules":[{{"permission":k,"pattern":"*","action":v}} for k,v in settings['permission'].items()] if valid else []}}));sys.exit(0)
+ for line in sys.stdin:
+  m=json.loads(line);method=m.get('method');i=m.get('id')
+  if method=='initialize': reply(i,{{"protocolVersion":1}})
+  elif method=='session/new': reply(i,{{"sessionId":"local-test"}})
+  elif method=='session/set_mode': reply(i,{{}})
+  elif method=='session/prompt':
+   edit()
+   print(json.dumps({{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"Local edit complete."}}}}}}}}),flush=True)
+   reply(i,{{"stopReason":"end_turn","usage":{{"inputTokens":100,"outputTokens":20}}}})
+''')
+    script.chmod(0o700)
+    monkeypatch.setenv("PATH", str(binaries) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("FX_HOME", str(home / ".fx"))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.delenv("DOTRIX_BROWSER_MCP_URL", raising=False)
+    monkeypatch.delenv("DOTRIX_BROWSER_MCP_TOKEN", raising=False)
+    runner = _local_runner(db_client, coding, checkout, tmp_path, None, tool=coding_tool)
+    assert (await runner.register())["tools"] == [coding_tool]
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"title": "Local refund"}, headers=ada.headers)).json()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"}, headers=ada.headers)).json()
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert await runner.once()
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == ("changes_ready" if valid_setup and coding_tool != "fx" else "failed"), ready
+    assert ready["agent"] == coding_tool and github.pulls == []
+    assert not (checkout / "src/refunds.py").exists()
+    assert runner._fx_profile is None and runner._browser_config is None
+    if coding_tool == "fx":
+        assert not pointer.exists()  # Unsafe native runtime never starts.
+        # This legacy fixture has neither the supported runtime nor a matching
+        # API-key profile. Hosts with namespaces reach profile validation first.
+        assert any(reason in ready["error"] for reason in (
+            "requires Linux Bubblewrap", "Could not start isolated", "Couldn't prepare the local model profile"))
+        assert (home / ".fx/settings.json").read_text() == original
 
 
 async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushes_it(
@@ -1758,3 +2074,682 @@ async def test_a_turns_files_diff_and_command_output_are_kept_for_the_panels(
     after = (await db_client.get(f"{base}/coding/runs/{run['id']}/file", params={"path": "tests/test_refund.py"},
                                  headers=ada.headers)).json()
     assert after["status"] == "added" and after["before"] is None and after["after"].startswith("def test_refund")
+
+
+@pytest.mark.parametrize("entry", ["direct", "handoff", "assignment", "local"])
+async def test_empty_default_branch_blocks_new_sessions_from_every_entry(
+    db_client: AsyncClient, coding, github, agent_script, entry, checkout: Path, tmp_path: Path
+) -> None:
+    ada, _, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    github.branch_heads = lambda repo, branch: None
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "First implementation"})).json()
+    if entry == "handoff":
+        model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "Initialise the repository first.")
+        response = await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                                       json={"message": "Implement the first task", "work_mode": "build"})
+        assert response.status_code == 202 and response.json()["status"] == "completed", response.text
+        assert "initial commit" in next(m.content for m in model.received[1] if m.type == "tool")
+    elif entry == "assignment":
+        response = await db_client.patch(f"{base}/issues/{issue['key']}", headers=ada.headers,
+                                        json={"assignee_agent": "coding-agent"})
+        assert response.status_code == 200, response.text  # the task is still saved
+    else:
+        if entry == "local":
+            await _local_runner(db_client, coding, checkout, tmp_path, "true").register()
+        response = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers,
+                                       json={"location": "local" if entry == "local" else "cloud"})
+        assert response.status_code == 409 and "initial commit" in response.json()["detail"], response.text
+    assert (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json() == []
+    assert sandbox.opened == 0 and github.pulls == []
+
+
+async def test_admission_uses_a_changed_default_branch_and_rechecks_after_preview(
+    db_client: AsyncClient, coding, github, origin: Path
+) -> None:
+    ada, _, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    assert (await db_client.get(f"{base}/repository/readiness", headers=ada.headers)).json()["ready"]
+    github.branch_heads = lambda repo, branch: None
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Use current default"})).json()
+    refused = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})
+    assert refused.status_code == 409 and sandbox.opened == 0
+    _git(origin, "branch", "trunk")
+    github.branch_heads = _heads(origin)
+    github.installations[111]["repos"][0]["default_branch"] = "trunk"
+    started = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})
+    assert started.status_code == 201, started.text
+    assert started.json()["base_branch"] == "trunk" and started.json()["status"] == "awaiting_approval"
+
+
+async def test_a_base_deleted_after_admission_fails_before_the_model_runs(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
+) -> None:
+    ada, _, ws, kun, _, sandbox = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Missing base"})).json()
+    started = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})).json()
+    _git(origin, "branch", "-m", "gone")
+    failed = await _approve(db_client, base, started, ada.headers)
+    assert failed["status"] == "failed" and "initial commit" in failed["error"], failed
+    assert sandbox.opened == 0 and claude.briefs == [] and github.pulls == []
+
+
+@pytest.fixture
+async def first_pr_coding(db_client, github, nova_pilot_world, outbox, storage, checkouts, agent_script, account):  # noqa: F811
+    """Real committed sessions: fx authorisation and journal callbacks run concurrently."""
+    from types import SimpleNamespace
+
+    from apps.backend.tests.integration.test_fx_changes import fx_chat
+    from dotrix_backend.core.security import create_access_token
+    from dotrix_backend.modules.workspaces.models import Membership, Workspace, WorkspaceKind
+
+    old_app = db_client._transport.app
+    settings = old_app.state.settings
+    github_client = old_app.dependency_overrides[get_github_app]()
+    settings.coding_sandbox = "local"
+    settings.encryption_key = SecretStr(Fernet.generate_key().decode())
+    settings.github_app_id, settings.github_app_slug = "4242", "dotrix-test"
+    settings.github_app_private_key = SecretStr(github_client.private_key)
+    existing, sessions, _ = nova_pilot_world
+    async with sessions() as session:
+        colleague = await session.scalar(select(Membership.user_id).where(
+            Membership.workspace_id == existing.workspace_id, Membership.user_id != existing.requested_by_id))
+        if account == "personal":
+            workspace = await session.get(Workspace, existing.workspace_id)
+            workspace.kind = WorkspaceKind.PERSONAL
+            member = await session.scalar(select(Membership).where(
+                Membership.workspace_id == existing.workspace_id, Membership.user_id == colleague))
+            await session.delete(member)
+            await session.commit()
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        client = fx.client
+        app = client._transport.app
+        app.dependency_overrides.update(old_app.dependency_overrides)
+        # Request sessions must use the real sessionmaker, not the rollback fixture's connection.
+        from dotrix_backend.api.deps import get_session
+        app.dependency_overrides.pop(get_session, None)
+        app.state.secrets = app.state.runner.secrets = Secrets.from_settings(settings)
+        app.state.runner.github = github_client
+        # Replace the world's synthetic key with this app's personal credential through the normal API.
+        assert (await client.delete("/v1/me/model-keys/openai", headers=fx.headers)).status_code == 200
+        await _save_key(client, fx.headers, "anthropic", "test-personal-first-pr-key-123456")
+        sandbox = ScriptedSandbox(ScriptedClaude())
+        app.state.jobs.ctx = dataclasses.replace(app.state.jobs.ctx, coding=CodingWorker(
+            sessions, settings, sandbox, github_client, reviewer=app.state.runner,
+            secrets=app.state.secrets, pool=WarmPool(3600, 0),
+        ))
+        ws = f"/v1/workspaces/{existing.workspace_id}"
+        if account == "organisation":
+            installed = await client.post(f"{ws}/github/installations", headers=fx.headers,
+                                          json={"installation_id": 111, "code": "code-1"})
+            assert installed.status_code == 200, installed.text
+        token = create_access_token(colleague, secret=settings.jwt_secret.get_secret_value(),
+                                    issuer=settings.jwt_issuer, ttl=timedelta(minutes=10))
+        ada = SimpleNamespace(id=str(existing.requested_by_id), headers=fx.headers)
+        cat = SimpleNamespace(id=str(colleague), headers={"Authorization": f"Bearer {token}"})
+        yield client, (ada, cat, ws, None, None, sandbox)
+
+
+@pytest.mark.parametrize("account", ["personal", "organisation"])
+@pytest.mark.parametrize("runtime", ["deepagents", "fx"])
+async def test_new_repository_reaches_a_reviewed_pr_in_its_original_conversation(
+    db_client: AsyncClient, db_session, first_pr_coding, github, agent_script,
+    tmp_path: Path, monkeypatch, account, runtime,
+) -> None:
+    from contextlib import nullcontext
+
+    from apps.backend.tests.integration.test_fx_changes import _has_fx, scripted_model
+    from dotrix_backend.modules.agents import fx_pilot
+    from dotrix_backend.modules.agents.coding_outcomes import sync_coding_outcomes
+    from dotrix_backend.modules.agents.models import AgentRun, AgentRuntimeBinding
+
+    if runtime == "fx" and not _has_fx():
+        pytest.skip("Install the fx host to check the fx first-PR journey")
+    db_client, coding = first_pr_coding
+    ada, cat, ws, _, _, sandbox = coding
+    claude = sandbox.agent
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    if account == "personal":
+        personal = next(w for w in (await db_client.get("/v1/workspaces", headers=ada.headers)).json() if w["kind"] == "personal")
+        ws = f"/v1/workspaces/{personal['id']}"
+        installation = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                            json={"installation_id": 333, "code": "code-2"})).json()
+        # Personal repository creation happens on GitHub, outside Dotrix. Grant the App access afterwards.
+        github.installations[333]["repos"].append({"id": 9600, "full_name": "ada-gh/first", "private": True,
+            "default_branch": "main", "html_url": "https://github.com/ada-gh/first"})
+        repo = (await db_client.get(f"{ws}/github/repos", headers=ada.headers)).json()[0]
+        assert repo["installation_ref"] == installation["id"]
+    else:
+        installation = (await db_client.get(f"{ws}/github", headers=ada.headers)).json()["installations"][0]
+        response = await db_client.post(f"{ws}/github/repos", headers=ada.headers,
+                                       json={"installation_ref": installation["id"], "name": "first", "private": True})
+        assert response.status_code == 201, response.text
+        repo = response.json()
+    project = (await db_client.post(f"{ws}/projects", headers=ada.headers,
+        json={"key": "FIRST", "name": "First application", "source": "new_repo", "description": "Return a greeting."})).json()
+    base = f"{ws}/projects/{project['id']}"
+    connected = await db_client.put(f"{base}/repository", headers=ada.headers,
+                                   json={"installation_ref": repo["installation_ref"], "github_repo_id": repo["github_repo_id"]})
+    assert connected.status_code == 200, connected.text
+    remote = tmp_path / "new-origin"
+    remote.mkdir()
+    _git(remote, "init", "-q", "-b", "main")
+    (remote / "README.md").write_text("# First application\n")
+    _git(remote, "add", "README.md")
+    _git(remote, "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "Initial README")
+    _git(remote, "config", "receive.denyCurrentBranch", "refuse")
+    initial_sha = _git(remote, "rev-parse", "main")
+    github.branch_heads = _heads(remote)
+
+    async def repo_url(ref):
+        assert ref.full_name == repo["full_name"] and ref.default_branch == "main"
+        return str(remote)
+
+    app.state.jobs.ctx.coding.repo_url = repo_url
+    ready = (await db_client.get(f"{base}/repository/readiness", headers=ada.headers)).json()
+    assert ready["ready"] and ready["commit_sha"] == initial_sha
+    assert (await db_client.put(f"{base}/knowledge/files/requirements/first.md", headers=ada.headers,
+        json={"content": "# Requirement\nThe greeting is Hello. Do not add authentication yet."})).status_code == 200
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+        json={"type": "task", "title": "Return a greeting", "description": "Implement requirements/first.md. Acceptance: greeting() returns Hello."})).json()
+    plan_args = {"title": "First greeting", "summary": "Deliver the smallest greeting implementation.",
+                 "acceptance_criteria": ["greeting() returns Hello"], "tasks": [{"title": "Return a greeting"}]}
+
+    async def ask(tool, args, mode, message, thread=None):
+        if runtime == "deepagents":
+            agent_script.say(tool_call(tool, **args), "Saved; waits for your next instruction.")
+        with scripted_model(tool, args) if runtime == "fx" else nullcontext() as endpoint:
+            if endpoint:
+                monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "anthropic", endpoint)
+            response = await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                json={"message": message, "work_mode": mode, "chat_runtime": runtime, "thread_id": thread})
+        assert response.status_code == 202 and response.json()["status"] == "completed", response.text
+        return response.json()
+
+    planned = await ask("save_plan", plan_args, "plan", "Plan the first implementation")
+    thread = planned["thread_id"]
+    plans = (await db_client.get(f"{base}/agent/threads/{thread}/plans", headers=ada.headers)).json()
+    assert len(plans) == 1 and sandbox.opened == 0
+    built = await ask("start_coding", {"issue_key": issue["key"], "note": "Implement the approved first milestone."},
+                      "build", "Implement this task; retain Manual approvals", thread)
+    [run] = (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval"
+    stored_run = await db_session.get(CodingRun, uuid.UUID(run["id"]))
+    assert stored_run and stored_run.origin_run_id == uuid.UUID(built["id"])
+    assert run["thread_id"] == thread and run["plan_id"] == plans[0]["id"]
+    assert "The greeting is Hello" in run["brief"] and "Acceptance: greeting() returns Hello" in run["brief"]
+    assert sandbox.opened == 0 and github.pulls == []
+    claude.edits = {"app.py": "def greeting():\n    return 'Hello'\n", "tests/test_app.py": "import unittest\nfrom app import greeting\n\nclass GreetingTest(unittest.TestCase):\n    def test_greeting(self):\n        self.assertEqual(greeting(), 'Hello')\n"}
+    claude.checks = [["python", "-B", "-m", "unittest", "discover", "-s", "tests", "-v"]]
+    claude.result = "Added greeting and its test. One check passed; broader checks are unverified."
+    # Juno and Nova are separate scheduled runs; model responses are deterministic evidence, not paid calls.
+    agent_script.say(tool_call("submit_specialist_result", summary="Greeting matches the criterion; check execution is unverified.",
+                               evidence=["app.py:1", "tests/test_app.py:1"]), "Review complete; checks are unverified.",
+                     "Kai opened the first PR. Juno reviewed it; checks are unverified. You decide whether to merge.")
+    first = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", headers=ada.headers, json={"decision": "approve"})
+    assert first.status_code == 200, first.text
+    waiting = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert waiting["status"] == "changes_ready" and github.pulls == []
+    assert any("unittest discover" in event["text"] for event in waiting["events"] if event["kind"] == "tool")
+    assert any("Ran 1 test" in event["text"] and "OK" in event["text"] for event in waiting["events"] if event["kind"] == "output")
+    outcome_requests = []
+    with scripted_model("coding_evidence", {}, requests=outcome_requests) if runtime == "fx" else nullcontext() as endpoint:
+        if endpoint:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "anthropic", endpoint)
+        done = await _approve(db_client, base, waiting, ada.headers)
+        await sync_coding_outcomes(app.state.runner)  # repeat callback must not duplicate the outcome
+    assert done["status"] == "pr_opened" and done["pr_url"] and done["review_run_id"], done
+    assert _git(remote, "rev-parse", "main") == initial_sha  # opening a PR never merges it
+    assert _git(remote, "show", f"{done['branch']}:app.py").startswith("def greeting()")
+    assert _git(remote, "ls-tree", "-r", "--name-only", done["branch"]).splitlines() == ["README.md", "app.py", "tests/test_app.py"]
+    assert len(github.pulls) == 1 and github.pulls[0]["base"] == "main"
+    outcomes = list(await db_session.scalars(select(AgentRun).where(AgentRun.project_id == uuid.UUID(project["id"]),
+                                                                   AgentRun.source == "coding_outcome")))
+    assert len(outcomes) == 1 and outcomes[0].thread_id == uuid.UUID(thread)
+    assert outcomes[0].status.value == "completed" and outcomes[0].chat_runtime.value == runtime, outcomes[0].error
+    if runtime == "fx":
+        binding = await db_session.scalar(select(AgentRuntimeBinding).where(AgentRuntimeBinding.run_id == outcomes[0].id))
+        assert binding and binding.runtime == "fx"
+        offered = {tool["function"]["name"] for request in outcome_requests for tool in request.get("tools", [])}
+        assert "coding_evidence" in offered
+        assert not offered & {"delegate_tasks", "write_file", "edit_file", "create_issue", "update_issue", "start_coding"}
+        assert "check execution is unverified" in json.dumps(outcome_requests)
+    review = await db_session.get(AgentRun, uuid.UUID(done["review_run_id"]))
+    assert review and review.agent == "reviewer" and review.status.value == "completed"
+    assert review.parent_run_id == outcomes[0].id and review.thread_id != outcomes[0].thread_id
+    assert "unverified" in review.reply.lower()
+    assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["status"] == "review"
+    assert (await db_client.get(f"{base}/agent/runs/{outcomes[0].id}", headers=ada.headers)).status_code == 200
+    assert (await db_client.get(f"{base}/agent/runs/{outcomes[0].id}", headers=cat.headers)).status_code == 404
+
+
+async def test_a_waiting_run_keeps_its_validated_base_when_a_later_session_refreshes_the_default(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    first = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "First base"})).json()
+    waiting = (await db_client.post(f"{base}/coding/issues/{first['key']}/runs", headers=ada.headers, json={})).json()
+    _git(origin, "branch", "trunk")
+    github.installations[111]["repos"][0]["default_branch"] = "trunk"
+    second = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                  json={"type": "task", "title": "Later default"})).json()
+    later = await db_client.post(f"{base}/coding/issues/{second['key']}/runs", headers=ada.headers, json={})
+    assert later.status_code == 201 and later.json()["base_branch"] == "trunk", later.text
+    claude.edits = {"src/greeting.py": "def greeting():\n    return 'Hello'\n"}
+    agent_script.say("Checked the small change; test execution remains unverified.")
+    done = await _approve(db_client, base, waiting, ada.headers)
+    assert done["status"] == "pr_opened" and done["base_branch"] == "main", done
+    assert github.pulls[0]["base"] == "main"
+
+
+async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
+    db_client: AsyncClient, coding, agent_script, monkeypatch,
+) -> None:
+    from dotrix_backend.modules.coding.service import CodingService
+
+    async def hold_dispatch(*args):
+        pass  # Test admission and approval, without running the external coding sandbox.
+
+    monkeypatch.setattr(CodingService, "_send", hold_dispatch)
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "accept_edits"}, headers=ada.headers)
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Notification handoff"})).json()
+    note = "Edit README.md only; do not modify calc.py."
+    agent_script.say(tool_call("update_issue", key=issue["key"], assignee="coding-agent"),
+                     tool_call("start_coding", call_id="handoff-note", issue_key=issue["key"], note=note),
+                     tool_call("start_coding", call_id="handoff-note-retry", issue_key=issue["key"], note=note), "Approve Kai in Inbox.")
+    response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Implement this issue", "work_mode": "build", "approval_mode": "accept_edits",
+    })
+    assert response.status_code == 202, response.text
+    source = response.json()
+    [run] = (await db_client.get(f"{base}/coding/runs?issue={issue['key']}", headers=ada.headers)).json()
+    assert run["status"] == "awaiting_approval" and run["approval_mode"] == "manual"
+    assert run["thread_id"] == source["thread_id"]
+    assert run["note"] == note and run["brief"].count(note) == 1
+    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
+    assert sum(n.get("coding_run_id") == run["id"] for n in notes) == 1
+    approved = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", headers=ada.headers,
+                                    json={"decision": "approve"})
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "queued"
+
+    stored = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert stored["note"] == note and stored["brief"].count(note) == 1
+    model = agent_script.say(tool_call("start_coding", call_id="handoff-rejected", issue_key=issue["key"], note="Also change calc.py."),
+                             "The new instructions were not delivered.")
+    refused = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={
+        "message": "Change the handoff", "thread_id": source["thread_id"], "work_mode": "build",
+    })
+    assert refused.status_code == 202, refused.text
+    results = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
+    assert results and "not delivered" in results[-1]
+    unchanged = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert unchanged["note"] == note and unchanged["brief"] == stored["brief"]
+
+
+async def test_a_session_streams_its_turns_as_they_change(db_client: AsyncClient, coding) -> None:
+    """Codes follows a session over server-sent events: its turns first, again each time one moves,
+    and the end once nothing waits or works. As private as the session."""
+    ada, cat, _, _, _, _ = coding
+    base, run = await _asked(db_client, coding)
+    stream = f"{base}/coding/sessions/{run['session_id']}/stream"
+
+    async def work() -> None:
+        await asyncio.sleep(0.8)
+        await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING)
+        await asyncio.sleep(1.2)
+        await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, summary="Nothing to change")
+
+    working = asyncio.create_task(work())
+    response = await db_client.get(stream, headers=ada.headers)
+    await working
+    assert response.status_code == 200 and response.headers["content-type"].startswith("text/event-stream")
+    events = [(block.split("\n")[0].removeprefix("event: "), json.loads(block.split("\n")[1].removeprefix("data: ")))
+              for block in response.text.split("\n\n") if block.startswith("event: ")]
+    assert [name for name, _ in events] == ["turns", "turns", "turns", "end"]
+    assert [data[0]["status"] for name, data in events if name == "turns"] == ["awaiting_approval", "running", "no_changes"]
+    assert events[2][1][0]["summary"] == "Nothing to change" and events[2][1][0]["id"] == run["id"]
+
+    # Finished: the turns once, then the end.
+    again = await db_client.get(stream, headers=ada.headers)
+    assert [b.split("\n")[0] for b in again.text.split("\n\n") if b] == ["event: turns", "event: end"]
+    # Someone else's session, and one that doesn't exist.
+    assert (await db_client.get(stream, headers=cat.headers)).status_code == 404
+    assert (await db_client.get(f"{base}/coding/sessions/{uuid.uuid4()}/stream", headers=ada.headers)).status_code == 404
+
+
+async def test_codes_plan_saves_private_result_without_publication(db_client, coding, github, claude, db_session):
+    from dotrix_backend.modules.coding.models import CodingRun
+
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Plan refunds"})).json()
+    plan = {"title": "Refunds", "summary": "Add refunds", "acceptance_criteria": ["Refunds work"],
+            "tasks": [{"title": "Add refund", "detail": "src/payments.py", "depends_on": []}],
+            "open_questions": [], "execution": None}
+    claude.result = json.dumps(plan)
+    requested = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers,
+                                    json={"work_mode": "plan"})
+    assert requested.status_code == 201, requested.text
+    run = await _approve(db_client, base, requested.json(), ada.headers)
+    assert run["status"] == "no_changes", run
+    assert run["work_mode"] == "plan" and run["plan_result"] == plan
+    assert not github.pulls and not run["files_changed"]
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=cat.headers)).status_code == 404
+    stored = await db_session.get(CodingRun, uuid.UUID(run["id"]))
+    assert stored.skill_snapshot and all("sha256" in item for item in stored.skill_snapshot.values())
+    skill = stored.skill_snapshot["write-an-executable-plan"]
+    assert skill["content"] not in run["brief"]
+    assert f"/{skill['sha256']}.md" in claude.briefs[-1]
+    assert "Read skills on demand" in claude.briefs[-1]
+
+    bad = await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", headers=ada.headers,
+                              json={"message": "Build", "source_plan_id": str(uuid.uuid4())})
+    assert bad.status_code == 422
+
+
+async def test_parallel_tasks_integrate_into_one_approved_patch(db_client, coding, github, origin, db_session, monkeypatch):
+    from dotrix_backend.modules.coding.models import CodingRun
+
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Two independent additions"})).json()
+    requested = (await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", headers=ada.headers, json={})).json()
+    app = db_client._transport.app
+    worker = app.state.jobs.ctx.coding
+    worker.settings.coding_parallel = True
+    # The transactional HTTP fixture shares one DB connection; exercise one-slot admission here.
+    from dotrix_backend.modules.coding.slots import RunSlots
+    worker.slots = RunSlots(1)
+    tasks = [{"key": key, "task_number": i, "owned_paths": [f"src/{key}.py"], "instructions": "Add the module",
+              "checks": [{"command": "true", "expected": "passes"}], "stop_conditions": ["Unexpected API"]}
+             for i, key in enumerate(["one", "two"], 1)]
+    run = await db_session.get(CodingRun, uuid.UUID(requested["id"]))
+    run.execution_plan = {"execution": {"repository": "kunemi/api", "base_sha": _git(origin, "rev-parse", "HEAD"),
+                                       "tasks": tasks}, "tasks": [{"depends_on": []}, {"depends_on": []}]}
+    await db_session.commit()
+
+    async def code(run_id, box, tool, model, session_id, brief, extra, cost, **kw):
+        key = kw["task_key"]
+        result = await box.exec(["sh", "-c", f"echo '# {key}' > src/{key}.py"], timeout=10)
+        assert result.code == 0
+        return f"Added {key}", None
+
+    monkeypatch.setattr(worker, "_code", code)
+    async def not_stopped(*args):
+        return False
+    monkeypatch.setattr(worker, "stop_requested", not_stopped)
+    monkeypatch.setattr(worker, "reconciliation_required", not_stopped)
+    # No reviewer model is needed for this orchestration test.
+    worker.reviewer = None
+    response = await db_client.post(f"{base}/coding/runs/{requested['id']}/decision", headers=ada.headers,
+                                   json={"decision": "approve"})
+    assert response.status_code == 200, response.text
+    ready = (await db_client.get(f"{base}/coding/runs/{requested['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready", ready
+    assert {item["path"] for item in ready["files_changed"]} == {"src/one.py", "src/two.py"}
+    assert {item["status"] for item in ready["tasks"]} == {"completed"}
+    assert not github.pulls
+    finished = await _approve(db_client, base, ready, ada.headers)
+    assert finished["status"] == "pr_opened", finished
+    assert len(github.pulls) == 1
+
+
+@pytest.fixture
+async def race_world(engine, monkeypatch):
+    """Committed rows (one issue) so two services on two real connections can really race."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from uuid_utils.compat import uuid7
+
+    from apps.backend.tests.conftest import make_settings
+    from dotrix_backend.modules.auth.models import User
+    from dotrix_backend.modules.coding.models import CodingAgent
+    from dotrix_backend.modules.coding.service import CodingService
+    from dotrix_backend.modules.issues.models import Issue, IssueStatus, IssueType, Priority
+    from dotrix_backend.modules.projects.models import Project, ProjectSource
+    from dotrix_backend.modules.workspaces.models import Membership, Role, Workspace, WorkspaceKind
+
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    user_id, workspace_id, project_id = uuid7(), uuid7(), uuid7()
+
+    async def available(self, project, user_id):  # not under test: keys, tools and sandboxes
+        return SimpleNamespace(available=True, reason=None, agent=CodingAgent.CLAUDE_CODE)
+
+    monkeypatch.setattr(CodingService, "availability", available)
+    async with sessions() as session:
+        session.add(User(id=user_id, email=f"{user_id}@example.com", display_name="Ada"))
+        await session.flush()
+        session.add(Workspace(id=workspace_id, name="Race", slug=f"race-{workspace_id}",
+                              kind=WorkspaceKind.ORGANIZATION, created_by_id=user_id))
+        await session.flush()
+        session.add_all([
+            Membership(workspace_id=workspace_id, user_id=user_id, role=Role.OWNER),
+            Project(id=project_id, workspace_id=workspace_id, key="RACE", name="Race",
+                    source=ProjectSource.DOCS_ONLY, created_by_id=user_id),
+        ])
+        await session.flush()
+        issue = Issue(workspace_id=workspace_id, project_id=project_id, number=1, key="RACE-1",
+                      type=IssueType.TASK, title="Race", status=IssueStatus.TODO, priority=Priority.MEDIUM,
+                      rank=1.0, created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
+        session.add(issue)
+        await session.commit()
+    settings = make_settings()
+
+    def service(session):
+        return CodingService(session, settings, SimpleNamespace())
+
+    try:
+        yield sessions, service, workspace_id, project_id, user_id, issue
+    finally:
+        async with sessions() as session:
+            await session.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+
+
+def _race_run(workspace_id, project_id, issue, user_id, status, *, session_id=None, turn=1):
+    from dotrix_backend.modules.coding.models import CodingAgent, CodingLocation
+
+    run_id = uuid.uuid4()
+    return CodingRun(
+        id=run_id, session_id=session_id or run_id, turn=turn, workspace_id=workspace_id, project_id=project_id,
+        issue_id=issue.id, issue_key=issue.key, agent=CodingAgent.CLAUDE_CODE, status=status, brief="Do it",
+        repo_full_name="kunemi/api", base_branch="main", location=CodingLocation.CLOUD,
+        requested_by_id=user_id, created_at=datetime.now(UTC),
+    )
+
+
+async def test_two_starts_on_one_issue_are_serialised(race_world) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation
+    from dotrix_backend.modules.coding.service import CodingBusy
+    from dotrix_backend.modules.projects.models import Project
+
+    sessions, service, workspace_id, project_id, user_id, issue = race_world
+    async with sessions() as a, sessions() as b:
+        project_a, project_b = await a.get(Project, project_id), await b.get(Project, project_id)
+        await service(a)._codable(project_a, user_id, "RACE-1", location=CodingLocation.CLOUD)
+        a.add(_race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.AWAITING_APPROVAL))
+        await a.flush()  # A's turn exists, but isn't committed yet
+        other = asyncio.create_task(service(b)._codable(project_b, user_id, "RACE-1", location=CodingLocation.CLOUD))
+        await asyncio.sleep(0.3)
+        assert not other.done(), "B went ahead while A was still starting its turn"
+        await a.commit()
+        with pytest.raises(CodingBusy):
+            await asyncio.wait_for(other, 10)
+
+
+async def test_two_follow_ups_on_one_session_are_serialised(race_world) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation
+    from dotrix_backend.modules.coding.service import CodingBusy
+    from dotrix_backend.modules.projects.deps import ProjectAccess
+    from dotrix_backend.modules.projects.models import Project
+    from dotrix_backend.modules.workspaces.models import Membership
+
+    sessions, service, workspace_id, project_id, user_id, issue = race_world
+    first = _race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.PR_OPENED)
+    first.branch, first.pr_number, first.pr_state = "kai/race-1", 1, PrState.OPEN  # a PR: nothing to fetch from GitHub
+    async with sessions() as session:
+        session.add(first)
+        await session.commit()
+
+    async def access(session):
+        member = await session.scalar(select(Membership).where(
+            Membership.workspace_id == workspace_id, Membership.user_id == user_id))
+        return ProjectAccess(await session.get(Project, project_id), member)
+
+    async with sessions() as a, sessions() as b:
+        access_a, access_b = await access(a), await access(b)
+        await service(a)._next_turn(access_a, first.session_id, location=CodingLocation.CLOUD)
+        a.add(_race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.AWAITING_APPROVAL,
+                        session_id=first.session_id, turn=2))
+        await a.flush()
+        other = asyncio.create_task(service(b)._next_turn(access_b, first.session_id, location=CodingLocation.CLOUD))
+        await asyncio.sleep(0.3)
+        assert not other.done(), "B went ahead while A was still adding turn 2"
+        await a.commit()
+        with pytest.raises(CodingBusy):
+            await asyncio.wait_for(other, 10)
+
+
+# -- Plan 031: a turn's patch is kept and pushed byte for byte, whatever its files' encoding -------------
+
+LATIN1 = b"caf\xe9\n"  # "café" in Latin-1: not UTF-8 text
+
+
+async def _stored_patch(db_client: AsyncClient, run_id: str) -> tuple[bytes | None, str | None]:
+    factory = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    async with factory() as session:
+        row = (await session.execute(select(CodingRun.pending_patch_bytes, CodingRun.pending_patch).where(
+            CodingRun.id == uuid.UUID(run_id)))).one()
+        return (bytes(row[0]) if row[0] is not None else None), row[1]
+
+
+async def test_a_cloud_turn_changing_a_latin1_file_is_pushed_exactly(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.patch(ws, json={"approval_mode_cap": "auto"}, headers=ada.headers)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    agent_script.say("Fine.")
+    claude.edits = {"src/legacy.properties": LATIN1}
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"approval_mode": "auto"},
+                                headers=ada.headers)).json()
+    done = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert done["status"] == "pr_opened", done
+    assert _git_bytes(origin, "show", f"{done['branch']}:src/legacy.properties") == LATIN1
+    shown = (await db_client.get(f"{base}/coding/runs/{run['id']}/diff", headers=ada.headers)).json()
+    assert "caf\ufffd" in shown["diff"]  # what people see is decoded for display only
+
+
+async def test_manual_latin1_changes_wait_as_bytes_and_are_pushed_exactly(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, *_ = coding
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/legacy.properties": LATIN1}
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()["status"] == "changes_ready"
+    kept, text = await _stored_patch(db_client, run["id"])
+    assert kept is not None and b"caf\xe9" in kept and text is None
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, run, ada.headers)
+    assert done["status"] == "pr_opened", done
+    assert _git_bytes(origin, "show", f"{done['branch']}:src/legacy.properties") == LATIN1
+
+
+async def test_a_patch_that_waited_as_text_before_the_migration_is_still_pushed(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, *_ = coding
+    base, run = await _asked(db_client, coding)
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    kept, _ = await _stored_patch(db_client, run["id"])
+    assert kept is not None
+    await _set_run(db_client, run["id"], pending_patch=kept.decode(), pending_patch_bytes=None)  # as an older row
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, run, ada.headers)
+    assert done["status"] == "pr_opened", done
+    assert _git(origin, "show", f"{done['branch']}:src/refunds.py") == "def refund(amount):\n    return amount"
+
+
+async def test_a_local_result_with_patch_b64_is_stored_byte_for_byte(
+    db_client: AsyncClient, coding, github, origin: Path, checkout: Path, tmp_path: Path, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({"src/legacy.properties": LATIN1}))
+    await runner.register()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                headers=ada.headers)).json()
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert await runner.once() is True
+    ready = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+    assert ready["status"] == "changes_ready", ready
+    assert [(f["path"], f["added"]) for f in ready["files_changed"]] == [("src/legacy.properties", 1)]
+    kept, _ = await _stored_patch(db_client, run["id"])
+    assert kept is not None and b"+caf\xe9\n" in kept
+    agent_script.say("Fine.")
+    done = await _approve(db_client, base, ready, ada.headers)
+    assert done["status"] == "pr_opened", done
+    assert _git_bytes(origin, "show", f"{done['branch']}:src/legacy.properties") == LATIN1
+
+
+async def test_a_local_result_with_invalid_patch_b64_is_refused(
+    db_client: AsyncClient, coding, checkout: Path, tmp_path: Path
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({"src/a.txt": "a\n"}))
+    registered = await runner.register()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                headers=ada.headers)).json()
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    claimed = (await db_client.post(f"{ws}/coding/runners/{registered['id']}/claim", headers=ada.headers)).json()
+    assert claimed["run"], claimed
+    token = claimed["run"]["lease_token"]
+    bad = await db_client.post(
+        f"{ws}/coding/runners/{registered['id']}/runs/{run['id']}/result", headers=ada.headers,
+        json={"lease_token": token, "outcome": "changes", "base_sha": _git(checkout, "rev-parse", "HEAD"),
+              "patch_b64": "not base64 !!"})
+    assert bad.status_code == 422, bad.text
+
+
+async def test_reverting_a_latin1_turn_restores_the_original_bytes(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Legacy"}, headers=ada.headers)).json()
+    agent_script.say("Fine.", "Fine.", "Fine.")
+    claude.edits = {"src/legacy.properties": LATIN1}
+    first = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    first = await _approve(db_client, base, first, ada.headers)
+    claude.edits = {"src/legacy.properties": b"na\xefve\n"}
+    second = (await db_client.post(f"{base}/coding/sessions/{first['session_id']}/turns", json={"message": "Rename"},
+                                   headers=ada.headers)).json()
+    second = await _approve(db_client, base, second, ada.headers)
+    assert second["status"] == "pr_opened", second
+    branch = first["branch"]
+    assert _git_bytes(origin, "show", f"{branch}:src/legacy.properties") == b"na\xefve\n"
+    revert = (await db_client.post(f"{base}/coding/runs/{second['id']}/revert", json={}, headers=ada.headers)).json()
+    revert = await _approve(db_client, base, revert, ada.headers)
+    assert revert["status"] == "pr_opened", revert
+    assert _git_bytes(origin, "show", f"{branch}:src/legacy.properties") == LATIN1

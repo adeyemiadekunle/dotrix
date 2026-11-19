@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Search results. dotrix adds the projects' documents.
 import type { CSSProperties, ReactNode } from "react";
 
@@ -6,20 +8,26 @@ import { Ic } from "../core/icons";
 import { go } from "../core/nav";
 import { ago } from "../core/utils";
 import { D, S, allTasks, canSee, mem, pColor, proj, render, task, visibleProjects } from "../data/store";
+import { useMembers, useProjects } from "../data/lists";
+import { useAllTasks } from "../data/tasks";
 import { isLive, live } from "../data/live";
-import { useLiveAllTasks, useLiveMembers, useLiveWorkspaceSearch } from "../../lib/workspace-data";
+import { useLiveWorkspaceSearch } from "../../lib/workspace-data";
 import type { Schemas } from "../../lib/api";
-import type { Member, Task } from "../data/types";
+import type { Member, Project, Task } from "../data/types";
 import { Av, Empty, FT, Hl, PIcon, PStatus, StIcon } from "../ui/helpers";
 
-export function searchAll(raw: string, people?: Member[], tasks?: Task[], docHits?: Schemas["WorkspaceSearchHit"][]) {
+/** Everything matching `raw`. The Search screen passes the lists its hooks read; the palette, a plain
+ * function, leaves them out and the store's are read (in a real workspace, the same query cache). */
+export function searchAll(raw: string, from: { people?: Member[]; tasks?: Task[]; projects?: Project[]; docHits?: Schemas["WorkspaceSearchHit"][] } = {}) {
+  const { people, tasks, projects, docHits } = from;
   const q = (raw || "").trim().toLowerCase();
   if (!q) return { tasks: [], projects: [], people: [], files: [], documents: [], comments: [] };
   const has = (s?: string | null) => (s || "").toLowerCase().includes(q);
-  const live = tasks !== undefined || docHits !== undefined;
+  // A real workspace searches files and comments on the server (its documents come as hits).
+  const live = isLive();
   return {
     tasks: (tasks ?? allTasks()).filter((t) => has(t.title) || has(t.key) || has(t.desc.replace(/<[^>]+>/g, ""))).slice(0, 30),
-    projects: visibleProjects().filter((p) => has(p.name) || has(p.desc)),
+    projects: (projects ?? visibleProjects()).filter((p) => has(p.name) || has(p.desc)),
     people: (people ?? D().members).filter((m) => has(m.name) || has(m.email) || has(m.title)),
     files: live ? [] : D().files.filter((f) => has(f.name) && canSee(proj(f.project))),
     documents: docHits
@@ -35,10 +43,11 @@ const setSearch = (q: string) => ((S.ui.searchQ = q), render());
 
 export function Search() {
   const q = S.ui.searchQ;
-  const liveMembers = useLiveMembers(live.ws?.id, isLive());
-  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
+  const { items: people } = useMembers();
+  const { items: projects } = useProjects();
+  const { tasks } = useAllTasks();
   const docHits = useLiveWorkspaceSearch(live.ws?.id, q, "document", isLive());
-  const r = searchAll(q, isLive() ? liveMembers : undefined, isLive() ? liveTasks : undefined, isLive() ? docHits : undefined);
+  const r = searchAll(q, { people, tasks, projects, docHits: isLive() ? docHits : undefined });
   const cat = S.ui.searchCat;
   const cats: [keyof typeof r | "all", string][] = [
     ["all", "All"],
@@ -65,7 +74,7 @@ export function Search() {
     <div className="page" style={{ maxWidth: 860 }}>
       <div className="inwrap" style={{ marginBottom: 14 }}>
         <Ic n="search" s={16} />
-        <input
+        <DesignInput
           className="input input-lg"
           id="search-page-q"
           placeholder="Search tasks, projects, people, files, documents, and comments"
@@ -205,9 +214,9 @@ export function Search() {
       ) : (
         <div className="panel">
           <Empty icon="search-x" title="No results found" text={`Nothing matches “${q}”. Check the spelling or try a broader term.`}>
-            <button className="btn btn-secondary btn-sm" onClick={() => setSearch("")}>
+            <ActionButton className="btn btn-secondary btn-sm" onClick={() => setSearch("")}>
               Clear search
-            </button>
+            </ActionButton>
           </Empty>
         </div>
       )}

@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // A project's uploaded files, under Knowledge: search, type, sort, grid or list, drop to upload.
 // Documents are also converted to Markdown into the project's knowledge, for the agents.
 import type { CSSProperties, ReactNode } from "react";
@@ -6,9 +8,8 @@ import { openPop, openTask } from "../core/actions";
 import { Ic } from "../core/icons";
 import { previewFile } from "../core/more";
 import { ago } from "../core/utils";
-import { D, S, mem, render, task } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveProjectFiles } from "../../lib/workspace-data";
+import { S, mem, render, task } from "../data/store";
+import { useProjectFiles } from "../data/lists";
 import { handleFiles, uploads } from "../overlays/Drawer";
 import { Av, Empty, FT, FilePrev, fileType } from "../ui/helpers";
 
@@ -23,11 +24,7 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
   const q = u.fileQ.toLowerCase();
   const ft = u.fileType;
   const sort = u.fileSort;
-  const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: pid } : undefined;
-  const liveDocs = useLiveProjectFiles(scope);
-  const fs = (isLive() ? (liveDocs ?? []) : D().files).filter(
-    (f) => f.project === pid && (!q || f.name.toLowerCase().includes(q)) && (ft === "all" || f.type === ft),
-  );
+  const fs = useProjectFiles(pid).items.filter((f) => (!q || f.name.toLowerCase().includes(q)) && (ft === "all" || f.type === ft));
   fs.sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name) : sort === "type" ? a.type.localeCompare(b.type) : b.at - a.at));
   const ups = uploads.filter((x) => x.project === pid);
   const view = u.fileView;
@@ -38,7 +35,7 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
         {lead}
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input
+          <DesignInput
             className="input search-sm"
             placeholder="Search files"
             value={u.fileQ}
@@ -155,13 +152,13 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
                     {f.size} · {mem(f.by)?.name.split(" ")[0]} · {ago(f.at)}
                   </span>
                 </div>
-                <button
+                <ActionButton
                   className="ibtn ibtn-xs more"
                   onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id }))}
                   aria-label="File options"
                 >
                   <Ic n="ellipsis" s={13} />
-                </button>
+                </ActionButton>
               </div>
             ))}
           </div>
@@ -211,9 +208,13 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
                       {ago(f.at)}
                     </td>
                     <td>
-                      <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id })} aria-label="File options">
+                      <ActionButton
+                        className="ibtn ibtn-sm"
+                        onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "file", id: f.id })}
+                        aria-label="File options"
+                      >
                         <Ic n="ellipsis" s={14} />
-                      </button>
+                      </ActionButton>
                     </td>
                   </tr>
                 ))}

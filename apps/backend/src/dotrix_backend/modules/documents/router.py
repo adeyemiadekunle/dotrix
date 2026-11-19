@@ -23,15 +23,15 @@ router = APIRouter(
 
 
 def get_document_service(
-    session: SessionDep, storage: Annotated[BlobStorage, Depends(get_storage)], jobs: JobsDep
+    session: SessionDep, storage: Annotated[BlobStorage, Depends(get_storage)], jobs: JobsDep, settings: SettingsDep
 ) -> DocumentService:
-    return DocumentService(session, storage, jobs)
+    return DocumentService(session, storage, jobs, settings)
 
 
 Documents = Annotated[DocumentService, Depends(get_document_service)]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422, 503))
+@router.post("", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 413, 422, 503))
 async def upload_document(
     access: ProjectManager,
     documents: Documents,
@@ -42,7 +42,8 @@ async def upload_document(
     it to markdown at `docs/normalized/<name>.md` in the project's knowledge, where agents
     read it: the document is `converting` until then (poll it), then `ready` or `failed`.
     Uploading the same filename again adds a new version of that markdown. Adding a
-    project's external docs is setup work: owners and admins."""
+    project's external docs is setup work: owners and admins. 413 `storage_full` when the upload
+    would pass the workspace's storage limit."""
     limit = settings.max_upload_mb * 1_000_000
     data = await file.read(limit + 1)  # read one byte past the limit to detect oversize
     return await documents.upload(access, file.filename or "document", data, max_bytes=limit)
@@ -67,10 +68,11 @@ async def rename_document(
     return await documents.rename(access, document_id, data.filename)
 
 
-@router.post("/{document_id}/duplicate", status_code=status.HTTP_201_CREATED, responses=errors(403, 503))
+@router.post("/{document_id}/duplicate", status_code=status.HTTP_201_CREATED, responses=errors(403, 413, 503))
 async def duplicate_document(document_id: uuid.UUID, access: ProjectManager, documents: Documents) -> DocumentRead:
     """Copy a document under a free name ("spec copy.pdf"); the copy is converted like an
-    upload (`converting`, then `ready` or `failed`). Owners and admins."""
+    upload (`converting`, then `ready` or `failed`). Owners and admins. 413 `storage_full` when
+    the copy wouldn't fit in the workspace's storage limit."""
     return await documents.duplicate(access, document_id)
 
 

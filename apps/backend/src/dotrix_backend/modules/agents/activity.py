@@ -154,6 +154,8 @@ def activity_label(tool: str, args: dict[str, Any] | None) -> str | None:
             return "Asking specialists"
         case "task":
             return f"Asking {_who(args)}"
+        case "run_script":
+            return "Working through the project in one step"
         case "web_search":
             return "Searching the web"
         case "fetch_page":

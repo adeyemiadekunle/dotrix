@@ -13,6 +13,7 @@ import contextvars
 import difflib
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -42,6 +43,7 @@ from dotrix_backend.modules.automations.events import record_event
 from dotrix_backend.modules.automations.models import Automation, AutomationEvent
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.code.service import CodeService
+from dotrix_backend.modules.connectors.github_app import GitHubApp
 from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.execution.service import (
     DispatchOperation,
@@ -69,6 +71,7 @@ from dotrix_engine.agent import PM_ROLE, briefing_system_prompt, build_team, rol
 from dotrix_engine.code import build_code_tools
 from dotrix_engine.contracts import AgentPolicy, AgentSpec
 from dotrix_engine.delegation import SpecialistResult
+from dotrix_engine.work_modes import planning_spec
 
 from .activity import WEIGHING_SPECIALISTS, WRITING, activity_label, result_label
 from .board_tools import BoardContext, board_instructions, build_board_tools
@@ -90,6 +93,8 @@ from .models import (
     RunStatus,
 )
 from .queue import RunQueue
+from .runtime_tools import document_reads
+from .scripts import SCRIPT_GUIDE, OnCall, script_tool
 from .specialist_sessions import seal_history, specialist_history, specialist_result_visible
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of, thinking_of
@@ -101,6 +106,17 @@ from .workspace_runs import WORKSPACE_GUIDE, build_workspace_pack, build_workspa
 CHECKPOINT_TOOL = "checkpoint"  # the engine's checkpoint tool (dotrix_engine.pipelines)
 
 logger = logging.getLogger(__name__)
+
+
+def _read_only_specialist(spec: AgentSpec) -> AgentSpec:
+    """Retain authorized project reads while removing all project-changing tools."""
+    restricted = read_only(spec)
+    restricted.tools.extend(
+        tool for tool in ("code.read", "graph.read")
+        if tool in spec.tools and spec.can(tool) and tool not in restricted.tools
+    )
+    return restricted
+
 
 # The attempt this task is running (its lease token); a newer attempt fences it off.
 _LEASE: contextvars.ContextVar[int | None] = contextvars.ContextVar("agent_lease", default=None)
@@ -219,6 +235,7 @@ class AgentRunner:
         inline: bool = False,
         queue: RunQueue | None = None,
         stop_reasons: RunQueue | None = None,
+        outbox: RunQueue | None = None,
         streams: Streams | None = None,
         summarize_after_tokens: int | None = None,
         embedder: Any = None,
@@ -227,10 +244,12 @@ class AgentRunner:
         unattended_limits: tuple[int, int] = (20, 200),
         secrets: Secrets | None = None,
         settings: Settings | None = None,
+        github: GitHubApp | None = None,
     ) -> None:
         self.session_factory = session_factory
         # The server's settings, for asking Kai to code from a conversation (None: Build can't).
         self.settings = settings
+        self.github = github
         # Where a coding run asked for from a conversation goes when it starts at once (set once the
         # app's jobs exist; None: it waits for an approval).
         self.jobs: Any = None
@@ -252,6 +271,9 @@ class AgentRunner:
         self.queue = queue
         # The worker: why a job was aborted (Stop). Also means a cut-off run gets retried.
         self.stop_reasons = stop_reasons
+        # The worker: the queue the runs it starts itself (a delivered follow-up) are dispatched
+        # through, as the API's are. None: they start in this process.
+        self.outbox = outbox
         # The PM's reply as it's written, for clients that stream it.
         self.streams: Streams = streams or RunStreams()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -361,6 +383,12 @@ class AgentRunner:
                 specs, accepted = accepting(specs, instructor)
         return specs, left, accepted, mode
 
+    @property
+    def _scripts(self) -> bool:
+        """Whether a conversation's lead gets `run_script` (agents/scripts.py): the `agent_scripts` setting.
+        Settings without it (none, or a partial stand-in) mean off, never a failed run."""
+        return bool(getattr(self.settings, "agent_scripts_enabled", False))
+
     async def _code(
         self, workspace_id: uuid.UUID, project_id: uuid.UUID, context: str
     ) -> tuple[list | None, str]:
@@ -395,15 +423,22 @@ class AgentRunner:
 
     # -- dispatching -----------------------------------------------------------------
 
+    @property
+    def _outbox(self) -> RunQueue | None:
+        """The queue runs are dispatched through: the API's in worker mode, and the worker's own
+        (`outbox`) in the worker. None: runs start in this process."""
+        return self.queue or self.outbox
+
     def prepare_dispatch(
         self, session: AsyncSession, run: AgentRun, payload: dict[str, Any],
     ) -> RunDispatch | None:
         """Record worker dispatch in the caller's transaction; local/inline stay immediate."""
-        if self.queue is None:
+        outbox = self._outbox
+        if outbox is None:
             if run.dispatch_generation:
                 raise Conflict("Continue this run with worker execution enabled")
             return None
-        return record_dispatch(session, run, payload, queue_name=self.queue.queue_name)
+        return record_dispatch(session, run, payload, queue_name=outbox.queue_name)
 
     async def start(
         self, run_id: uuid.UUID, message: str, *, dispatch: RunDispatch | None = None,
@@ -442,10 +477,11 @@ class AgentRunner:
     async def _dispatch(
         self, run_id: uuid.UUID, payload: dict[str, Any], dispatch: RunDispatch | None = None,
     ) -> None:
-        if self.queue is not None:
+        outbox = self._outbox
+        if outbox is not None:
             if dispatch is None or dispatch.agent_run_id != run_id:
                 raise ValueError("Worker runs require dispatch intent committed with their state")
-            await RunDispatcher(self.session_factory, self.queue).kick(dispatch.workspace_id, dispatch.id)
+            await RunDispatcher(self.session_factory, outbox).kick(dispatch.workspace_id, dispatch.id)
             return
         if self.inline:
             await self.execute(run_id, payload)
@@ -524,6 +560,11 @@ class AgentRunner:
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
                 admitted = True
+                if retry_operation and run.status is RunStatus.RUNNING:
+                    # The queue is retrying a step its worker was cut off in (a deploy, a shutdown):
+                    # the same as a lapsed lease. It runs in Manual, and unanswered tool calls
+                    # aren't run again unasked.
+                    payload = {**payload, "recovered": True}
                 # A previous attempt was cut off, or the person continues one that stopped at a limit.
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 project = await ProjectRepository(session).get(run.workspace_id, run.project_id)
@@ -545,6 +586,14 @@ class AgentRunner:
                     await self._fail(run_id, gone, usage, discard_specialist_result=history_validation_pending)
                     return
                 specs = [a.spec for a in resolved.values()]
+                if run.scripts_enabled is None:
+                    run.scripts_enabled = False
+                    if (self._scripts and run.kind is RunKind.CHAT and run.parent_run_id is None
+                            and run.agent in (None, PM_ROLE) and run.automation_id is None):
+                        run.scripts_enabled = bool(await session.scalar(select(User.code_mode_enabled).where(
+                            User.id == run.requested_by_id,
+                        )))
+                scripts_enabled = run.scripts_enabled
                 if run.automation_id is None and run.requested_by_id is not None:
                     # The person's own touches (agent_definitions/preferences.py): instructions, a model.
                     prefs = await preferences_for(session, run.workspace_id, run.requested_by_id)
@@ -568,7 +617,11 @@ class AgentRunner:
                 executing = True
                 holder = self._hold_lease(run_id, token)
                 fx_preview = run.chat_runtime is ChatRuntime.FX
-                rules = {} if fx_preview else await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id)
+                from .skill_snapshots import for_role, pin
+
+                skill_snapshot = await pin(session, run, self.secrets)
+                rules = {} if fx_preview else await self._rules(session, project.id, list(resolved), workspace_id=project.workspace_id,
+                                                               skill_snapshot=skill_snapshot)
                 context = "" if fx_preview else await build_context_pack(session, project, run, self.embedder)
                 kind, thread_id = run.kind, run.thread_id
                 workspace_id, project_id, instructed_by = run.workspace_id, run.project_id, run.requested_by_id
@@ -594,7 +647,12 @@ class AgentRunner:
                     session, run, specs, resolved, recovered=bool(payload.get("recovered")),
                 )
                 if read_only_run:
-                    specs = [read_only(spec) for spec in specs]
+                    # Cross-project read-only runs omit repository and graph tools because no
+                    # single project is bound. A specialist child is bound to this project:
+                    # retain only the read capabilities its original contract already grants.
+                    specs = [_read_only_specialist(spec) if child else read_only(spec) for spec in specs]
+                if work_mode == "plan":
+                    specs = [planning_spec(spec) for spec in specs]
                 policy = AgentPolicy(specs)
                 versions = {handle: agent.version for handle, agent in resolved.items()}
                 unattended = Unattended(
@@ -648,9 +706,10 @@ class AgentRunner:
                     code_tools=fx_code_tools, code_context=fx_code_context,
                     web_tools=run_web.tools if run_web is not None else None,
                     effective=(policy.spec(PM_ROLE), policy, unattended),
+                    scripts=scripts_enabled, script_calls=_script_activity(lambda: recording),
                     mode_context=ModeContext(
                         self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
-                        approval=approval, jobs=self.jobs,
+                        approval=approval, jobs=self.jobs, github=self.github,
                     ),
                 )
                 reported = turn.usage or {}
@@ -682,20 +741,19 @@ class AgentRunner:
                 (None, context) if kind is RunKind.BRIEFING else await self._code(workspace_id, project_id, context)
             )
 
-            backend = CompositeBackend(
-                default=StateBackend(),
-                routes={
-                    "/dotrix/": PlatformKnowledgeBackend(
-                        self.session_factory,
-                        workspace_id=workspace_id,
-                        project_id=project_id,
-                        instructed_by_id=instructed_by,
-                        approved_by_id=approved_by_id,
-                        policy=policy,
-                        unattended=unattended,
-                    )
-                },
+            knowledge_backend = PlatformKnowledgeBackend(
+                self.session_factory,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                instructed_by_id=instructed_by,
+                approved_by_id=approved_by_id,
+                policy=policy,
+                unattended=unattended,
+                write_prefix="docs/wiki/" if mode == "docs.repository" else None,
+                write_paths=run.repository_write_paths if mode == "docs.repository" else None,
+                run_id=run_id,
             )
+            backend = CompositeBackend(default=StateBackend(), routes={"/dotrix/": knowledge_backend})
             board_context = BoardContext(
                 session_factory=self.session_factory,
                 workspace_id=workspace_id,
@@ -705,11 +763,15 @@ class AgentRunner:
                 policy=policy,
                 unattended=unattended,
                 coding=codes(work_mode),  # only Build engages Kai
+                mode_context=ModeContext(
+                    self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
+                    approval=approval, jobs=self.jobs, github=self.github,
+                ) if work_mode == "build" and not child and not read_only_run else None,
             )
             read_tools, pm_write_tools, _ = build_board_tools(board_context)
             mode_tools = lead_tools(work_mode, ModeContext(
                 self.session_factory, self.settings, workspace_id, project_id, thread_id, run_id, instructed_by,
-                approval=approval, jobs=self.jobs,
+                approval=approval, jobs=self.jobs, github=self.github,
             ))
             if read_only_run or child:
                 mode_tools = []
@@ -747,6 +809,31 @@ class AgentRunner:
                 usage.web = run_web.usage
             from .chat_inputs import ChatSteering
 
+            knowledge = [
+                *build_knowledge_tools(
+                    self.session_factory,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    embedder=self.embedder,
+                    skill_snapshot=for_role(skill_snapshot, run.agent or PM_ROLE),
+                    resource_snapshot={name: item.get("resources", {}) for name, item in (run.skill_snapshot or {}).items()
+                                       if name in for_role(skill_snapshot, run.agent or PM_ROLE)},
+                ),
+                *build_graph_tools(board_context),
+            ]
+            # Code mode for the lead of a conversation (agents/scripts.py): several reads in one sandboxed step,
+            # over the same read tools the team has, as the lead's contract allows. Its calls are reported to the
+            # run's activity once it is recording.
+            script_guide = ""
+            script_recording: list = []  # the run's recording, once it starts (below)
+            lead_spec = policy.spec(lead or PM_ROLE)
+            if (not child and kind is RunKind.CHAT and lead_spec is not None and scripts_enabled
+                    and (script := script_tool(
+                        [*document_reads(knowledge_backend), *read_tools, *knowledge, *(code_tools or [])],
+                        can=lead_spec.can, on_call=_script_activity(lambda: script_recording[0] if script_recording else None),
+                    )) is not None):
+                mode_tools = [*mode_tools, script]
+                script_guide = SCRIPT_GUIDE
             agent = build_team(
                 name,
                 description,
@@ -762,17 +849,9 @@ class AgentRunner:
                 subagent_task_tools=pm_write_tools,
                 agents=specs,
                 models=lambda name: self.model_factory(project, name, keys=keys).model,
-                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE + GRAPH_TOOLS_GUIDE,
+                board_instructions=board_instructions(project_key) + KNOWLEDGE_TOOLS_GUIDE + GRAPH_TOOLS_GUIDE + script_guide,
                 context=context,
-                knowledge_tools=[
-                    *build_knowledge_tools(
-                        self.session_factory,
-                        workspace_id=workspace_id,
-                        project_id=project_id,
-                        embedder=self.embedder,
-                    ),
-                    *build_graph_tools(board_context),
-                ],
+                knowledge_tools=knowledge,
                 code_tools=code_tools,
                 specialist_model=choice.specialist_model,
                 summarize_after_tokens=self.summarize_after_tokens,
@@ -834,6 +913,7 @@ class AgentRunner:
                                      usage, discard_specialist_result=True)
                     return
             stream = recording = await self._record(run_id, workspace_id, token, payload)
+            script_recording.append(recording)
             if payload["kind"] == "delegation_ready":
                 await stream.activity(WEIGHING_SPECIALISTS)
             result = None
@@ -946,6 +1026,11 @@ class AgentRunner:
                     return
                 if not await accept_operation(session, run, operation, retry=retry_operation):
                     return
+                if retry_operation and run.status is RunStatus.RUNNING:
+                    # The queue is retrying a step its worker was cut off in (a deploy, a shutdown):
+                    # the same as a lapsed lease. It runs in Manual, and unanswered tool calls
+                    # aren't run again unasked.
+                    payload = {**payload, "recovered": True}
                 retry = run.status is RunStatus.RUNNING or payload["kind"] == "continue" or bool(payload.get("recovered"))
                 member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
                     if run.requested_by_id else None
@@ -1005,7 +1090,7 @@ class AgentRunner:
                 checkpointer=self.checkpointer, web_search=choice.web_search, rules=rules,
                 task_tools=(read_tools if projects else [], []), subagent_task_tools=[], agents=specs,
                 models=lambda name: self.model_factory(stand_in, name, keys=keys).model,  # type: ignore[arg-type]
-                board_instructions=WORKSPACE_GUIDE, context=context,
+                board_instructions=(WORKSPACE_GUIDE if projects else "General chat: answer without project context. Project work requires selecting a project."), context=context,
                 knowledge_tools=search_tools if projects else [], lead=lead, platform_delegation=True,
             )
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT,
@@ -1308,15 +1393,15 @@ class AgentRunner:
 
     async def _rules(
         self, session: Any, project_id: uuid.UUID, handles: list[str] | None = None,
-        workspace_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | None = None, skill_snapshot: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Each agent's rules, keyed by handle ("base", "product", a custom agent's): the
-        workspace's rules, then the project's agent-rules/*.md and the lessons owners accepted
+        workspace's rules, then the project's agent-rules/*.md and any lessons owners accepted
         (the more specific last); the base also lists the skills and points at the folder
         templates. Default templates and skills are written into projects made before them."""
         from .guidance import project_rules
 
-        return await project_rules(session, project_id, handles, workspace_id)
+        return await project_rules(session, project_id, handles, workspace_id, skill_snapshot)
 
 
 async def _changes_approved(session: Any, run: AgentRun) -> None:
@@ -1528,6 +1613,16 @@ def _activities(update: dict, calls: dict[str, tuple[str, Any]] | None = None) -
                 if label := activity_label(call.get("name", ""), call.get("args")):
                     labels.append(label)
     return labels
+
+
+def _script_activity(recording: Callable[[], Any]) -> OnCall:
+    """What a script's tool calls show in the run's activity: the same labels as ordinary tool calls.
+    `recording` is looked up at each call (DeepAgents builds its tools before it starts recording)."""
+    async def on_call(name: str, args: dict[str, Any]) -> None:
+        current = recording()
+        if current is not None and (label := activity_label(name, args)):
+            await current.activity(label)
+    return on_call
 
 
 def _unanswered_calls(values: dict) -> list[dict]:

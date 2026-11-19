@@ -1,6 +1,8 @@
 # dotrix on one VPS with Dokploy (a "Docker Compose" service from this repo; deploy/README.md).
 # Fill the variables in Dokploy's Environment tab (deploy/dokploy.env.example lists them); give the
-# `web` service your domain on port 80. Nothing here is published on the host: Traefik routes in.
+# `web` service the app's domain (app.dotrix.cc), `site` the public site's (dotrix.cc) and `admin`
+# the admin console's (admin.dotrix.cc), each on port 80. Nothing here is published on the host:
+# Traefik routes in.
 #
 # Sized for 6 vCPUs and 12 GB: two coding runs at once, 3 GB and 2 CPUs each.
 
@@ -15,12 +17,22 @@ x-dotrix: &dotrix
     DOTRIX_REDIS_URL: redis://redis:6379/0
     DOTRIX_JOBS: worker
     DOTRIX_SPECIALIST_CONTINUITY: ${DOTRIX_SPECIALIST_CONTINUITY:-false}
+    # Organisation workspaces; personal workspaces launch first (true brings organisations back).
+    DOTRIX_ORGANISATIONS: ${DOTRIX_ORGANISATIONS:-false}
     DOTRIX_RATE_LIMITS: redis
     # Traefik and nginx, on Docker's private networks.
     DOTRIX_TRUSTED_PROXIES: '["127.0.0.1", "172.16.0.0/12", "10.0.0.0/8"]'
     DOTRIX_JWT_SECRET: ${DOTRIX_JWT_SECRET:?}
+    DOTRIX_ADMIN_BOOTSTRAP_TOKEN: ${DOTRIX_ADMIN_BOOTSTRAP_TOKEN:-}
+    DOTRIX_ADMIN_URL: ${DOTRIX_ADMIN_URL:-}
+    DOTRIX_ALERT_EMAILS: ${DOTRIX_ALERT_EMAILS:-}
+    DOTRIX_ALERT_INTERVAL_MINUTES: ${DOTRIX_ALERT_INTERVAL_MINUTES:-5}
+    # Uploads per workspace in MB (0: unlimited); empty keeps the deployed default, 1024.
+    DOTRIX_WORKSPACE_STORAGE_MB: ${DOTRIX_WORKSPACE_STORAGE_MB:-}
+    # Nova's run_script; empty keeps it off when deployed.
+    DOTRIX_AGENT_SCRIPTS: ${DOTRIX_AGENT_SCRIPTS:-}
     DOTRIX_ENCRYPTION_KEY: ${DOTRIX_ENCRYPTION_KEY:?}
-    DOTRIX_S3_ENDPOINT_URL: http://minio:9000
+    DOTRIX_S3_ENDPOINT_URL: http://storage:9000
     DOTRIX_S3_ACCESS_KEY: ${MINIO_ROOT_USER:?}
     DOTRIX_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
     DOTRIX_SENDLY_API_KEY: ${DOTRIX_SENDLY_API_KEY:?}
@@ -28,36 +40,58 @@ x-dotrix: &dotrix
     DOTRIX_GITHUB_APP_ID: ${DOTRIX_GITHUB_APP_ID:-}
     DOTRIX_GITHUB_APP_SLUG: ${DOTRIX_GITHUB_APP_SLUG:-}
     DOTRIX_GITHUB_APP_PRIVATE_KEY: ${DOTRIX_GITHUB_APP_PRIVATE_KEY:-}
+    DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH: ${DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH:-}
     DOTRIX_GITHUB_WEBHOOK_SECRET: ${DOTRIX_GITHUB_WEBHOOK_SECRET:-}
     DOTRIX_GITHUB_CLIENT_ID: ${DOTRIX_GITHUB_CLIENT_ID:-}
     DOTRIX_GITHUB_CLIENT_SECRET: ${DOTRIX_GITHUB_CLIENT_SECRET:-}
-    DOTRIX_TAVILY_API_KEY: ${DOTRIX_TAVILY_API_KEY:-}
-    # Coding runs (the worker): sandboxes on this host's Docker, through the socket proxy below.
+    DOTRIX_SEARXNG_URL: http://searxng:8080
+    DOTRIX_SEARCH_PROVIDER: searxng
+    # Coding runs (the worker): sandboxes on Docker Cloud (docker-cloud: the image from a registry), or
+    # on this host's Docker through the socket proxy below (docker: the image built here).
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
-    DOTRIX_CODING_IMAGE: dotrix-coding:${DOTRIX_VERSION:-latest}
+    DOTRIX_CODING_ENVIRONMENT_IMAGES: ${DOTRIX_CODING_ENVIRONMENT_IMAGES:-[]}
+    DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:${DOTRIX_VERSION:-latest}}
+    DOTRIX_DOCKER_CLOUD_ID: ${DOTRIX_DOCKER_CLOUD_ID:-}
+    DOTRIX_DOCKER_CLOUD_PAT: ${DOTRIX_DOCKER_CLOUD_PAT:-}
     DOTRIX_CODING_FORK_OWNER: ${DOTRIX_CODING_FORK_OWNER:?the GitHub organisation coding branches go to (deploy/README.md)}
     DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
     DOTRIX_CODING_MEMORY: ${DOTRIX_CODING_MEMORY:-3g}
     DOTRIX_CODING_CPUS: ${DOTRIX_CODING_CPUS:-2}
     DOTRIX_CODING_WARM_MAX: ${DOTRIX_CODING_WARM_MAX:-1}
     DOTRIX_CODING_IDLE_MINUTES: ${DOTRIX_CODING_IDLE_MINUTES:-15}
-    DOTRIX_CODING_DOCKER_RUNTIME: ${DOTRIX_CODING_DOCKER_RUNTIME:-}
+    DOTRIX_CODING_DOCKER_RUNTIME: ${DOTRIX_CODING_DOCKER_RUNTIME:-runsc}
 
 services:
   # The images, built on this host (so its Docker has the coding image the worker starts).
   backend-image:
     image: dotrix-backend:${DOTRIX_VERSION:-latest}
-    build: { context: .., dockerfile: deploy/backend.Dockerfile }
+    build: { context: .., dockerfile: deploy/backend.Dockerfile, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
   coding-image:
     image: dotrix-coding:${DOTRIX_VERSION:-latest}
-    build: { context: ../infra/coding }
+    build: { context: ../infra/coding, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
 
   web:
     build: { context: .., dockerfile: deploy/web.Dockerfile }
+    restart: unless-stopped
+    depends_on: [api]
+
+  # The public site (dotrix.cc): static, prerendered, linking to the web app at DOTRIX_APP_URL.
+  site:
+    build:
+      context: ..
+      dockerfile: deploy/site.Dockerfile
+      args:
+        VITE_APP_URL: ${DOTRIX_APP_URL}
+    restart: unless-stopped
+
+  # The admin console for whoever operates dotrix: its own origin and sign-in; only /v1/admin reaches
+  # the API (deploy/admin.nginx.conf).
+  admin:
+    build: { context: .., dockerfile: deploy/admin.Dockerfile }
     restart: unless-stopped
     depends_on: [api]
 
@@ -74,8 +108,9 @@ services:
     <<: *dotrix
     depends_on:
       migrate: { condition: service_completed_successfully }
+      searxng: { condition: service_healthy }
       redis: { condition: service_started }
-      minio: { condition: service_started }
+      storage: { condition: service_started }
 
   worker:
     <<: *dotrix
@@ -86,6 +121,7 @@ services:
     command: ["python", "-m", "dotrix_backend.worker"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+      searxng: { condition: service_healthy }
       coding-image: { condition: service_completed_successfully }
       docker-proxy: { condition: service_started }
       redis: { condition: service_started }
@@ -103,6 +139,9 @@ services:
       VOLUMES: 1
       IMAGES: 1
       POST: 1
+      # Listen on IPv4 only: hosts without IPv6 refuse its default [::] socket, and only Docker's IPv4
+      # network reaches it.
+      DISABLE_IPV6: 1
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
 
   postgres:
@@ -118,20 +157,44 @@ services:
       interval: 5s
       retries: 20
 
+  searxng:
+    # Pinned multi-platform image; update after checking the JSON API and health endpoint.
+    image: docker.io/searxng/searxng@sha256:eb8b09ffa83aebbe8b8d3ded23cfd224b2d3b01db4f3af9eb03876ef6def6dda
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Generate SEARXNG_SECRET with openssl rand -hex 32}
+    configs:
+      - source: searxng-settings
+        target: /etc/searxng/settings.yml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   redis:
     image: redis:7
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes: [redisdata:/data]
 
-  minio:
-    image: minio/minio:latest
+  # S3-compatible object storage for document originals: RustFS (MinIO's images left Docker Hub).
+  # The variables keep MinIO's names.
+  storage:
+    image: rustfs/rustfs:1.0.3
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
-    volumes: [miniodata:/data]
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:?}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+    volumes: [storagedata:/data]
+
+# Chat's fx host installs the Kai runtime from GitHub Packages while the backend image builds (deploy/README.md).
+secrets:
+  kai_packages_token:
+    environment: KAI_PACKAGES_TOKEN
 
 networks:
   docker-control:
@@ -140,4 +203,17 @@ networks:
 volumes:
   pgdata:
   redisdata:
-  miniodata:
+  storagedata:
+
+# Inline so both native-service and repo-root app Compose commands resolve it identically.
+configs:
+  searxng-settings:
+    content: |
+      use_default_settings: true
+      server:
+        limiter: false
+        public_instance: false
+      search:
+        formats:
+          - html
+          - json

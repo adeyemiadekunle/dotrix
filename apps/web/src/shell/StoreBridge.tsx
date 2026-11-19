@@ -1,15 +1,14 @@
-// Mirrors the workspace queries into the synchronous store slots the task kit still reads
-// (task(), proj()/who()/mem() lookups, PopLayer, presence, badges). The queries are the source
-// of truth — these arrays are replaced, never merged — while writes keep flowing through
-// live.ts's senders and come back here through cache invalidation. The demo (/w/dotrix) is
-// never live, so nothing is mirrored and its seeded store is untouched. Deleting a slot's
-// readers lets its mirror go.
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+// Keeps the workspace's queries loaded for the store. In a real workspace the store's lists
+// (`D().tasks`, `.members`, `.projects`, `.notifs`, …) read those queries' cache directly
+// (lib/store-slots.ts, data/live.ts); nothing is copied here. This mounts the queries so they
+// fetch and stay fresh, redraws the store-reading screens when one changes, keeps the sidebar's
+// project order, and says when the directory (members, agents, projects) is ready. The demo
+// (/w/dotrix) is never live, so nothing here runs for it.
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useCodingSessions } from "../../lib/coding";
 import { useCrossConversations } from "../../lib/conversations";
-import { toCodingSession, toThread } from "../../lib/view-models";
 import {
   useLiveAgents,
   useLiveAudit,
@@ -41,12 +40,8 @@ export function StoreBridge() {
   const autos = useLiveWorkspaceAutomations(wsId, Boolean(wsId));
   const audit = useLiveAudit(wsId, Boolean(wsId));
   // A directory request that fails for good shouldn't pin the shell on its loader —
-  // loadWorkspace used to throw here; surface the same error screen. (enabled: false —
-  // these only watch the real queries' state, they fetch nothing themselves.)
-  const membersFailed = useQuery({ queryKey: ["members", wsId], enabled: false }).isError;
-  const projectsFailed = useQuery({ queryKey: ["projects", wsId], enabled: false }).isError;
-  const agentsFailed = useQuery({ queryKey: ["agents", wsId], enabled: false }).isError;
-  const dirFailed = membersFailed || projectsFailed || agentsFailed;
+  // loadWorkspace used to throw here; surface the same error screen.
+  const dirFailed = useDirectoryFailed(wsId);
   useEffect(() => {
     if (wsId && dirFailed && live.mode === "live") {
       live.mode = "error";
@@ -57,10 +52,7 @@ export function StoreBridge() {
   useEffect(() => {
     if (!wsId) return;
     const d = D();
-    if (members) d.members = members;
-    if (agents) d.agents = agents;
     if (projects) {
-      d.projects = projects;
       // Sidebar order: starred first on first fill, then kept (drags stay), new projects last.
       const kept = d.projOrder.filter((id) => projects.some((p) => p.id === id));
       const fresh = projects.filter((p) => !kept.includes(p.id));
@@ -68,20 +60,28 @@ export function StoreBridge() {
         ? [...kept, ...fresh.filter((p) => p.fav).map((p) => p.id), ...fresh.filter((p) => !p.fav).map((p) => p.id)]
         : [...projects.filter((p) => p.fav), ...projects.filter((p) => !p.fav)].map((p) => p.id);
     }
-    if (tasks) d.tasks = tasks;
-    if (notifs) d.notifs = notifs;
-    if (acts) d.activity = acts;
-    if (convos.data) d.threads = convos.data.map(toThread);
-    if (sessions.data) d.coding = sessions.data.map(toCodingSession);
-    if (files) d.files = files;
-    if (knowledge) d.knowledge = knowledge;
-    if (autos) d.automations = autos;
-    if (audit) d.audit = audit;
-    // Once the directory has resolved the shell may mount (screens read me()/proj() synchronously).
+    // Once the directory has resolved the shell may mount (screens read me()/proj() synchronously). loadWorkspace
+    // clears the flag when it loads the same workspace again, whose queries may answer with nothing new: it's a dep.
     if (members && agents && projects) live.dirReady = true;
     if (members || agents || projects || tasks || notifs || acts || convos.data || sessions.data || files || knowledge || autos || audit) render();
-    // mirrorRev is in the deps so a failed send re-runs this and overwrites the optimistic edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsId, live.mirrorRev, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
+  }, [wsId, live.dirReady, members, agents, projects, tasks, notifs, acts, convos.data, sessions.data, files, knowledge, autos, audit]);
   return null;
+}
+
+/** Whether the workspace's members, projects or agents failed to load: read from the query cache,
+ * so nothing here fetches (an observer without a fetch function logs an error whenever it's
+ * refetched, and in the sample workspace there is no workspace to fetch for). */
+function useDirectoryFailed(wsId: string | undefined): boolean {
+  const client = useQueryClient();
+  const subscribe = useCallback((onChange: () => void) => client.getQueryCache().subscribe(onChange), [client]);
+  return useSyncExternalStore(
+    subscribe,
+    () => Boolean(wsId) && directoryFailed(["members", "projects", "agents"].map((kind) => client.getQueryState([kind, wsId]))),
+  );
+}
+
+/** A directory query counts as failed only if it never loaded: a failed background refetch keeps its data on screen. */
+export function directoryFailed(states: ({ status: string; data: unknown } | undefined)[]): boolean {
+  return states.some((state) => state?.status === "error" && state.data === undefined);
 }

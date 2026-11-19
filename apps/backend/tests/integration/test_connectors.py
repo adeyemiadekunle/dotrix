@@ -122,15 +122,30 @@ async def test_a_delivery_is_applied_once(db_client: AsyncClient, github_world, 
     assert repo["last_push_sha"] == "b" * 40
 
 
-async def test_a_delivery_whose_syncs_fail_to_queue_can_be_retried(
-    db_client: AsyncClient, github_world, deliver, github
-) -> None:
+class Down:
+    async def enqueue(self, name: str, **kwargs: object) -> None:
+        raise ConnectionError("redis is down")
+
+
+class Recording:
+    def __init__(self) -> None:
+        self.queued: list[tuple[str, dict]] = []
+
+    async def enqueue(self, name: str, **kwargs: object) -> None:
+        self.queued.append((name, dict(kwargs)))
+
+
+def _jobs(db_client: AsyncClient, jobs: object | None):
     from dotrix_backend.core.jobs import get_jobs
 
-    class Down:
-        async def enqueue(self, name: str, **kwargs: object) -> None:
-            raise ConnectionError("redis is down")
+    overrides = db_client._transport.app.dependency_overrides  # type: ignore[attr-defined]
+    if jobs is None:
+        overrides.pop(get_jobs, None)
+    else:
+        overrides[get_jobs] = lambda: jobs
 
+
+async def _connected_push(db_client: AsyncClient, github_world) -> tuple[dict, str]:
     ada, _, ws, kun, _ = await github_world()
     installation = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},
                                           headers=ada.headers)).json()
@@ -138,13 +153,64 @@ async def test_a_delivery_whose_syncs_fail_to_queue_can_be_retried(
                         json={"installation_ref": installation["id"], "github_repo_id": 9001}, headers=ada.headers)
     push = {"ref": "refs/heads/main", "after": "a" * 40,
             "repository": {"id": 9001, "full_name": "kunemi/api", "default_branch": "main"}}
-    app = db_client._transport.app  # type: ignore[attr-defined]
-    app.dependency_overrides[get_jobs] = Down
+    return push, kun["id"]
+
+
+async def test_a_delivery_whose_syncs_fail_to_queue_is_still_followed_up_on_redelivery(
+    db_client: AsyncClient, github_world, deliver, github
+) -> None:
+    push, project_id = await _connected_push(db_client, github_world)
+    _jobs(db_client, Down())
     try:
-        assert (await deliver("push", push, delivery="d-1")).status_code == 500
+        assert (await deliver("push", push, delivery="d-1")).status_code == 503
     finally:
-        app.dependency_overrides.pop(get_jobs)
-    assert (await deliver("push", push, delivery="d-1")).json()["result"] != "duplicate"
+        _jobs(db_client, None)
+    recording = Recording()
+    _jobs(db_client, recording)
+    try:
+        resumed = await deliver("push", push, delivery="d-1")
+        assert resumed.status_code == 202 and resumed.json()["result"] == "resumed"
+        assert recording.queued == [("sync_repository", {"project_id": project_id})]
+        # Queued now, so a third delivery is a plain duplicate and queues nothing more.
+        assert (await deliver("push", push, delivery="d-1")).json()["result"] == "duplicate"
+        assert len(recording.queued) == 1
+    finally:
+        _jobs(db_client, None)
+
+
+async def test_the_sweep_queues_follow_ups_github_never_redelivers(
+    db_client: AsyncClient, github_world, deliver, github, db_session, outbox
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select, text
+
+    from dotrix_backend.jobs import JobContext, cleanup_expired
+    from dotrix_backend.modules.connectors.models import GitHubDelivery
+
+    push, project_id = await _connected_push(db_client, github_world)
+    _jobs(db_client, Down())
+    try:
+        assert (await deliver("push", push, delivery="d-1")).status_code == 503
+    finally:
+        _jobs(db_client, None)
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    recording = Recording()
+    ctx = JobContext(app.state.runner.session_factory, app.state.settings, outbox, jobs=recording)
+    await cleanup_expired(ctx)  # too soon: the delivery may still be retried by GitHub
+    assert recording.queued == []
+    later = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
+    await cleanup_expired(ctx, now=later)
+    await cleanup_expired(ctx, now=later)
+    assert recording.queued == [("sync_repository", {"project_id": project_id})]
+    row = await db_session.scalar(select(GitHubDelivery).where(GitHubDelivery.delivery_id == "d-1"))
+    await db_session.refresh(row)
+    assert row.pending is None
+    # Cleared as SQL NULL, not JSON null: otherwise every later sweep would select it again.
+    stored = await db_session.scalar(text("select pending is null from github_deliveries where delivery_id = 'd-1'"))
+    assert stored is True
+    still = await db_session.scalar(select(GitHubDelivery.delivery_id).where(GitHubDelivery.pending.is_not(None)))
+    assert still is None
 
 
 async def test_a_malformed_delivery_id_is_refused(db_client: AsyncClient, github_world, deliver, github) -> None:
@@ -206,3 +272,79 @@ async def test_create_a_repo_in_an_organisation(db_client: AsyncClient, github_w
     assert (await db_client.post(f"{ws}/github/repos", json={**body, "name": "bad name!"}, headers=ada.headers)).status_code == 422
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
     assert "github.repo_created" in {e["action"] for e in (audit["items"] if isinstance(audit, dict) else audit)}
+
+
+async def test_an_idea_can_connect_code_without_losing_its_project_work(
+    db_client: AsyncClient, github_world, github, agent_script
+) -> None:
+    ada, _, ws, _, _ = await github_world()
+    made = await db_client.post(f"{ws}/projects", headers=ada.headers,
+                               json={"key": "IDEA", "name": "Booking idea", "source": "docs_only", "description": "Explore booking needs"})
+    assert made.status_code == 201
+    project = made.json()
+    base = f"{ws}/projects/{project['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"type": "task", "title": "Interview first users"})).json()
+    saved = await db_client.put(f"{base}/knowledge/files/requirements/users.md", headers=ada.headers,
+                                json={"content": "# Users\nIndependent consultants."})
+    assert saved.status_code == 200
+    agent_script.say("Let's clarify the first booking workflow.")
+    run_response = await db_client.post(f"{base}/agent/runs", headers=ada.headers, json={"message": "Help me explore booking needs."})
+    assert run_response.status_code == 202
+    run = run_response.json()
+    installation = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                        json={"installation_id": 111, "code": "code-1"})).json()
+    connected = await db_client.put(f"{base}/repository", headers=ada.headers,
+                                    json={"installation_ref": installation["id"], "github_repo_id": 9001})
+    assert connected.status_code == 200, connected.text
+    updated = (await db_client.get(base, headers=ada.headers)).json()
+    assert updated["id"] == project["id"] and updated["source"] == "docs_only"
+    assert updated["description"] == "Explore booking needs" and updated["repo_url"] == "https://github.com/kunemi/api"
+    assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["id"] == issue["id"]
+    assert (await db_client.get(f"{base}/knowledge/files/requirements/users.md", headers=ada.headers)).json()["content"] == "# Users\nIndependent consultants."
+    assert (await db_client.get(f"{base}/agent/runs/{run['id']}", headers=ada.headers)).json()["thread_id"] == run["thread_id"]
+
+
+async def test_creation_rechecks_the_confirmed_installation_before_writing(
+    db_client: AsyncClient, github_world, github
+) -> None:
+    ada, _, ws, _, _ = await github_world()
+    org = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                json={"installation_id": 111, "code": "code-1"})).json()
+    body = {"installation_ref": org["id"], "name": "must-not-create", "private": True}
+    installation = github.installations[111]
+    installation["suspended_at"] = "2026-11-02T00:00:00Z"
+    suspended = await db_client.post(f"{ws}/github/repos", headers=ada.headers, json=body)
+    assert suspended.status_code == 403 and "suspended" in suspended.json()["detail"]
+    installation.pop("suspended_at")
+    installation["account"]["login"] = "transferred-owner"
+    changed = await db_client.post(f"{ws}/github/repos", headers=ada.headers, json=body)
+    assert changed.status_code == 403 and "owner changed" in changed.json()["detail"]
+    del github.installations[111]
+    removed = await db_client.post(f"{ws}/github/repos", headers=ada.headers, json=body)
+    assert removed.status_code in {403, 404}
+    assert len(installation["repos"]) == 2
+
+
+async def test_readiness_checks_the_current_default_branch_without_initialising_the_repository(
+    db_client: AsyncClient, github_world, github
+) -> None:
+    ada, cat, ws, kun, _ = await github_world()
+    base = f"{ws}/projects/{kun['id']}/repository"
+    assert (await db_client.get(f"{base}/readiness", headers=ada.headers)).json()["ready"] is False
+    org = (await db_client.post(f"{ws}/github/installations", headers=ada.headers,
+                                json={"installation_id": 111, "code": "code-1"})).json()
+    assert (await db_client.put(base, headers=ada.headers,
+                               json={"installation_ref": org["id"], "github_repo_id": 9001})).status_code == 200
+    empty = (await db_client.get(f"{base}/readiness", headers=cat.headers)).json()
+    assert empty["ready"] is False and "initial commit" in empty["reason"] and empty["commit_sha"] is None
+    github.installations[111]["repos"][0]["default_branch"] = "trunk"
+    github.branch_heads = lambda repo, branch: "a" * 40 if (repo, branch) == ("kunemi/api", "trunk") else None
+    ready = (await db_client.get(f"{base}/readiness", headers=ada.headers)).json()
+    assert ready == {"ready": True, "full_name": "kunemi/api", "default_branch": "trunk", "commit_sha": "a" * 40, "reason": None}
+    assert github.token_requests[-1] == {"repository_ids": [9001], "permissions": {"metadata": "read", "contents": "read"}}
+    # Checking is read-only; it neither changes the saved branch nor creates a commit.
+    assert (await db_client.get(base, headers=ada.headers)).json()["default_branch"] == "main"
+    github.installations[111]["suspended_at"] = "2026-11-02T00:00:00Z"
+    blocked = (await db_client.get(f"{base}/readiness", headers=ada.headers)).json()
+    assert blocked["ready"] is False and "suspended" in blocked["reason"]

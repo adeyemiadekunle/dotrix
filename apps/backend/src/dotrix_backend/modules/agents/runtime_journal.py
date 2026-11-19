@@ -12,7 +12,7 @@ import hmac
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.crypto import Secrets
@@ -83,6 +83,22 @@ class RuntimeJournal:
             raise Forbidden("The runtime journal is not bound to this run and configuration")
         return run, binding
 
+    async def _state(self, session: AsyncSession, binding: AgentRuntimeBinding) -> tuple[int, int, AgentRuntimeCheckpoint | None]:
+        """The journal's head, the bytes of the records still stored, and the checkpoint.
+
+        A checkpoint prunes the records it replaces, so the head is the later of the last
+        stored record and the checkpoint's cursor, never the stored records alone.
+        """
+        last, total = (await session.execute(select(
+            func.coalesce(func.max(AgentRuntimeJournal.sequence), 0),
+            func.coalesce(func.sum(AgentRuntimeJournal.byte_count), 0),
+        ).where(AgentRuntimeJournal.workspace_id == self.workspace_id,
+                AgentRuntimeJournal.binding_id == binding.id))).one()
+        checkpoint = await session.scalar(select(AgentRuntimeCheckpoint).where(
+            AgentRuntimeCheckpoint.workspace_id == self.workspace_id, AgentRuntimeCheckpoint.binding_id == binding.id,
+        ))
+        return max(last, checkpoint.through if checkpoint else 0), total, checkpoint
+
     @staticmethod
     def _lease(run: AgentRun) -> None:
         if run.lease_expires_at is None or run.lease_expires_at <= datetime.now(UTC):
@@ -91,9 +107,7 @@ class RuntimeJournal:
     async def load(self) -> RuntimeJournalSnapshot:
         async with self.sessions() as session:
             run, binding = await self._binding(session)
-            checkpoint = await session.scalar(select(AgentRuntimeCheckpoint).where(
-                AgentRuntimeCheckpoint.workspace_id == self.workspace_id, AgentRuntimeCheckpoint.binding_id == binding.id,
-            ))
+            _, _, checkpoint = await self._state(session, binding)
             start = checkpoint.through if checkpoint else 0
             rows = list(await session.scalars(select(AgentRuntimeJournal).where(
                 AgentRuntimeJournal.workspace_id == self.workspace_id, AgentRuntimeJournal.binding_id == binding.id,
@@ -128,16 +142,10 @@ class RuntimeJournal:
                     raise Conflict("The runtime journal idempotency key was reused for another record")
                 self._lease(run)
                 return str(existing.sequence)
-            head, total = (await session.execute(select(
-                func.coalesce(func.max(AgentRuntimeJournal.sequence), 0),
-                func.coalesce(func.sum(AgentRuntimeJournal.byte_count), 0),
-            ).where(AgentRuntimeJournal.workspace_id == self.workspace_id,
-                    AgentRuntimeJournal.binding_id == binding.id))).one()
+            head, total, checkpoint = await self._state(session, binding)
             if cursor != head or head >= 2**63 - 1:
                 raise JournalFenced("The runtime journal has advanced")
-            checkpoint_bytes = await session.scalar(select(AgentRuntimeCheckpoint.byte_count).where(
-                AgentRuntimeCheckpoint.workspace_id == self.workspace_id, AgentRuntimeCheckpoint.binding_id == binding.id,
-            )) or 0
+            checkpoint_bytes = checkpoint.byte_count if checkpoint else 0
             if total + checkpoint_bytes + len(data) > MAX_JOURNAL_BYTES:
                 raise Unprocessable("The runtime journal has reached its size limit")
             record = AgentRuntimeJournal(workspace_id=self.workspace_id, binding_id=binding.id, sequence=head + 1,
@@ -155,21 +163,22 @@ class RuntimeJournal:
             raise Unprocessable("Invalid runtime checkpoint size")
         async with self.sessions() as session:
             run, binding = await self._binding(session)
-            checkpoint = await session.scalar(select(AgentRuntimeCheckpoint).where(
-                AgentRuntimeCheckpoint.workspace_id == self.workspace_id, AgentRuntimeCheckpoint.binding_id == binding.id,
-            ))
+            head, _, checkpoint = await self._state(session, binding)
             if checkpoint and cursor <= checkpoint.through:
                 if (cursor == checkpoint.through and len(data) == checkpoint.byte_count
                         and hmac.compare_digest(_decrypt(self.secrets, checkpoint.encrypted, checkpoint.byte_count), data)):
                     self._lease(run)
                     return
                 raise JournalFenced("The runtime checkpoint has advanced")
-            head, total = (await session.execute(select(
-                func.coalesce(func.max(AgentRuntimeJournal.sequence), 0),
-                func.coalesce(func.sum(AgentRuntimeJournal.byte_count), 0),
-            ).where(AgentRuntimeJournal.workspace_id == self.workspace_id,
-                    AgentRuntimeJournal.binding_id == binding.id))).one()
-            if cursor > head or total + len(data) > MAX_JOURNAL_BYTES:
+            if cursor > head:
+                raise Unprocessable("Invalid runtime checkpoint cursor or size")
+            # What stays once this checkpoint replaces the records up to its cursor: the records after
+            # it, and the checkpoint itself. A journal near its limit is when a checkpoint is needed most.
+            kept = await session.scalar(select(func.coalesce(func.sum(AgentRuntimeJournal.byte_count), 0)).where(
+                AgentRuntimeJournal.workspace_id == self.workspace_id, AgentRuntimeJournal.binding_id == binding.id,
+                AgentRuntimeJournal.sequence > cursor,
+            ))
+            if kept + len(data) > MAX_JOURNAL_BYTES:
                 raise Unprocessable("Invalid runtime checkpoint cursor or size")
             encrypted = _encrypt(self.secrets, data)
             if checkpoint is None:
@@ -180,5 +189,8 @@ class RuntimeJournal:
             else:
                 checkpoint.through, checkpoint.encrypted = cursor, encrypted
                 checkpoint.byte_count, checkpoint.created_at = len(data), datetime.now(UTC)
+            await session.execute(delete(AgentRuntimeJournal).where(
+                AgentRuntimeJournal.workspace_id == self.workspace_id, AgentRuntimeJournal.binding_id == binding.id,
+                AgentRuntimeJournal.sequence <= cursor))
             self._lease(run)
             await session.commit()

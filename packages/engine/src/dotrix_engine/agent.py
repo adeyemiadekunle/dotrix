@@ -39,15 +39,18 @@ from .pipelines import MODES, PIPELINES, checkpoint_tool
 from .pipelines import instructions as pipeline_instructions
 from .web import WEB_GUIDE
 from .work_modes import guide as work_mode_guide
+from .work_modes import planning_spec
 
 # Tools that change task state, gated exactly like write_file/edit_file.
 TASK_WRITE_TOOLS = ("create_task", "update_task", "comment_task")
 _APPROVAL = {"allowed_decisions": ["approve", "edit", "reject"]}
 
 
-def _web_search_tool(model: str) -> dict:
+def native_web_search(model: str) -> dict | None:
     """Provider-native web search. Each provider's built-in tool has a
-    different shape, and the wrong one fails at the first model call."""
+    different shape, and the wrong one fails at the first model call. None for a provider without
+    one (xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA): its agents search with our own web
+    tools (`dotrix_engine.web`, given as `web_tools`) where they're configured, else not at all."""
     provider = model.split(":", 1)[0] if ":" in model else ""
     if provider == "anthropic":
         return {"type": "web_search_20250305", "name": "web_search", "max_uses": 8}
@@ -55,10 +58,7 @@ def _web_search_tool(model: str) -> dict:
         return {"type": "web_search"}
     if provider in ("google_genai", "google_vertexai"):
         return {"google_search": {}}
-    raise ValueError(
-        f"No built-in web search known for provider {provider!r}. "
-        f"Pass our own search (`dotrix_engine.web`, Tavily) as `web_tools` instead."
-    )
+    return None
 
 
 def _task_tools(config: ProjectConfig) -> tuple[list, list]:
@@ -455,6 +455,8 @@ def build_team(
         raise ValueError("Only the fixed built-in team is supported")
     if not any(spec.handle == PM_HANDLE for spec in specs):
         specs = [builtin_specs()[0], *specs]
+    if work_mode == "plan":
+        specs = [planning_spec(spec) for spec in specs]
     by_handle = {spec.handle: spec for spec in specs}
     if lead not in (None, *by_handle):
         raise ValueError(f"Unknown lead agent {lead!r}; use one of {', '.join(by_handle)}")
@@ -488,7 +490,7 @@ def build_team(
     )
 
     team = _callable(pm, specs)
-    names = ", ".join(spec.agent_name for spec in team) or "none yet"
+    names = ", ".join(f"{spec.name} ({spec.agent_name}; delegation handle: {spec.handle})" for spec in team) or "none yet"
     pm_instructions = f"""{introduce(pm, project_name)}
 
 {description}
@@ -643,5 +645,5 @@ def build_agent(config: ProjectConfig, checkpointer: object | None = None):
         backend,
         checkpointer=checkpointer,
         task_tools=_task_tools(config),
-        web_search=_web_search_tool(config.model),
+        web_search=native_web_search(config.model),
     )

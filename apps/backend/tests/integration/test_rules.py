@@ -107,8 +107,8 @@ async def test_workspace_skills_are_shared_and_a_project_s_own_wins(
     assert "- release-note: Write the release note." in system
     assert "- write-an-adr: Record an architecture decision" in system and "The workspace's way" not in system
     results = [m.content for m in model.received[-1] if getattr(m, "name", None) == "read_skill"]
-    assert results[0].startswith("Skill release-note (the workspace's)") and "List what changed" in results[0]
-    assert results[1].startswith("Skill write-an-adr (this project's)")
+    assert "List what changed" in results[0]
+    assert "Record an architecture decision" in results[1]
 
     gone = await db_client.put(f"{ws}/skills/release-note", json={"content": "", "base_version": 1}, headers=ada.headers)
     assert gone.status_code == 200
@@ -175,3 +175,21 @@ async def test_kai_s_brief_carries_the_definition_of_done_its_skills_and_the_tea
                                   [(1, "Fixed the typo.\n(changed: README.md, migrations/versions/0042_add_index.py)")])
     assert '<data source="skill plan-a-schema-change">' in after and "migrations/versions/0042_add_index.py" in after
     assert "Open a pull request that links" not in brief  # the engine's default coding.md isn't repeated
+
+
+async def test_project_skill_resources_are_pinned_and_readable(db_client, signup, create_team, add_member, agent_script):
+    from dotrix_engine.testing import tool_call
+
+    ada, _, _, base = await _world(db_client, signup, create_team, add_member)
+    procedure = "Description: Team checklist\nResources: references/check.md\nRequires: terminal\nRead the checklist."
+    for path, content in [("agent-rules/skills/team-check.md", procedure),
+                          ("agent-rules/skills/team-check/references/check.md", "# Pinned project checklist")]:
+        response = await db_client.put(f"{base}/knowledge/files/{path}", headers=ada.headers, json={"content": content})
+        assert response.status_code in (200, 201), response.text
+    model = agent_script.say(tool_call("read_skill", skill="team-check", resource="references/check.md"), "Checked.")
+    run = (await db_client.post(f"{base}/agent/runs", headers=ada.headers,
+                               json={"message": "Read the team checklist", "work_mode": "plan"})).json()
+    assert run["status"] == "completed", run
+    results = [message.content for message in model.received[-1] if getattr(message, "name", None) == "read_skill"]
+    assert results == ["# Pinned project checklist"]
+    assert "team-check/references/check" not in model.received[0][0].content

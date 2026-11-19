@@ -1,4 +1,4 @@
-"""Findings are deduplicated as they're saved (docs/agents-v2.md §4.6).
+"""Findings are deduplicated as they're saved (docs/architecture.md).
 
 A finding gets a fingerprint from its title and what it concerns. One that matches an open
 finding from an earlier run is dismissed as a repeat; one that matches an open issue on the

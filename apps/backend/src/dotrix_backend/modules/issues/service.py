@@ -23,6 +23,7 @@ from sqlalchemy.orm import aliased
 from uuid_utils.compat import uuid7
 
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from dotrix_backend.core.settings import Settings
 from dotrix_backend.core.storage import BlobStorage
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.automations.events import record_event
@@ -35,6 +36,7 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.storage import ensure_room
 from dotrix_engine.contracts import AgentPolicy
 
 from .models import (
@@ -211,8 +213,14 @@ class IssueService:
         await self.session.commit()
         return await self.get(project, issue.key)
 
-    async def _insert(self, project: Project, actor: IssueActor, data: IssueCreate) -> Issue:
-        """Add an issue to the transaction (with its log, audit, and events); the caller commits."""
+    async def _insert(
+        self, project: Project, actor: IssueActor, data: IssueCreate, *, emit_automation_events: bool = True,
+    ) -> Issue:
+        """Stage an issue with history, audit and notifications; the caller commits.
+
+        Snapshot imports disable automation events so copying a backlog cannot start agent work.
+        This host-only option does not change the issue's human actor or normal creation history.
+        """
         parent = await self._by_key(project, data.parent) if data.parent else None
         if actor.agent is not None:
             if data.type is not IssueType.SUB_TASK or parent is None or parent.assignee_agent is not actor.agent:
@@ -276,7 +284,7 @@ class IssueService:
             self._notify_assignee(project, issue, actor)
         self._event(issue, actor, IssueEventKind.CREATED)
         self._audit(project, actor, "issue.create", issue)
-        if actor.agent_name is None:  # people's changes set automations off; an agent's never do
+        if emit_automation_events and actor.agent_name is None:
             await record_event(
                 self.session, workspace_id=project.workspace_id, project_id=project.id,
                 event=AutomationEvent.ISSUE_CREATED, summary=f"{issue.key} created: {issue.title}",
@@ -811,6 +819,7 @@ class IssueService:
         data: bytes,
         *,
         max_bytes: int,
+        settings: Settings,
     ) -> IssueRead:
         """Store a file and list it under the issue (any type; nothing converts it)."""
         issue = await self._by_key(project, key)
@@ -820,6 +829,7 @@ class IssueService:
             raise AttachmentTooLarge(f"Attachments are limited to {max_bytes // 1_000_000} MB")
         if not data:
             raise InvalidIssue("The file is empty")
+        await ensure_room(self.session, project.workspace_id, settings, len(data))
         filename = safe_filename(filename)
         attachment_id = uuid7()
         storage_key = f"{project.workspace_id}/{project.id}/attachments/{attachment_id}/{filename}"

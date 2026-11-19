@@ -1,5 +1,6 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // The right side panel beside one of Kai's sessions in Codes, resizable by its left edge.
-// It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review, picked by the buttons in the
+// It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review (and, in the desktop app, a Browser), picked by the buttons in the
 // session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
 // A turn picker and a close button in its header; on narrow screens the panel floats over the page.
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -19,21 +20,27 @@ import { go, useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
 import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
-import { tabKeys } from "../ui/tabs";
+import { TabList, Tab } from "@dotrix/ui/astryx";
 import { toast } from "../ui/toast";
+import { desktopBrowser } from "../core/desktop";
+import { BrowserPane } from "./BrowserPane";
 import { ChangesView, FilesView, TerminalView, type DiffNote } from "./TurnViews";
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const narrowPanel = () => window.matchMedia("(max-width: 1200px)").matches;
 
-/** The panel's frame: the drag edge, a one-line header (what it shows, the turn, close), and the body. */
-function PanelFrame({
+/** The panel's frame: the drag edge, a one-line header (what it shows, the turn, close), and the body.
+ *  Stacked (Codes' panes, several at once in one column), it has no edge of its own: the column has it. */
+export function PanelFrame({
   label,
   widthKey,
   title,
   tools,
   onClose,
   closeLabel = "Close the panel",
+  stacked = false,
+  expanded = false,
+  onExpand,
   children,
 }: {
   label: string;
@@ -42,38 +49,146 @@ function PanelFrame({
   tools?: ReactNode;
   onClose: () => void;
   closeLabel?: string;
+  stacked?: boolean;
+  expanded?: boolean;
+  onExpand?: () => void;
   children: ReactNode;
 }) {
   const [width, setWidth] = useStoredSize(widthKey, 460, 300, 960);
   const closeButton = useRef<HTMLButtonElement>(null);
   // Floating over the page on narrow screens: focus moves in, and Escape closes it.
   useEffect(() => {
-    if (!narrowPanel()) return;
+    if (stacked || !narrowPanel()) return;
     const previous = document.activeElement;
     closeButton.current?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, [stacked]);
+  useEffect(() => {
+    if (stacked) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && narrowPanel()) onClose();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [onClose, stacked]);
+  const head = (
+    <div className="side-panel-head">
+      {title}
+      <span className="sp" />
+      {tools}
+      {onExpand && (
+        <ActionButton
+          className="ibtn ibtn-sm"
+          onClick={onExpand}
+          aria-label={expanded ? `Show the other panes` : `Expand ${label}`}
+          data-tip={expanded ? "Restore" : "Expand"}
+        >
+          <Ic n={expanded ? "arrows-in" : "arrows-out"} s={14} />
+        </ActionButton>
+      )}
+      <ActionButton ref={closeButton} className="ibtn ibtn-sm" onClick={onClose} aria-label={closeLabel} data-tip="Close">
+        <Ic n="x" s={14} />
+      </ActionButton>
+    </div>
+  );
+  if (stacked)
+    return (
+      <section className="pane" aria-label={label}>
+        {head}
+        {children}
+      </section>
+    );
+  return (
+    <aside className="side-panel" style={{ width }} aria-label={label}>
+      <Splitter dir="col" className="side-panel-split" label="Resize the panel" size={width} min={300} max={960} onResize={setWidth} reversed />
+      {head}
+      {children}
+    </aside>
+  );
+}
+
+/** Codes' panes: the views a session has open (Changes, Files, Terminal, Review), stacked in one resizable
+ *  column, as Claude Code stacks its panes; one can be expanded to the whole column. */
+export function CodingPanes({
+  scope,
+  cs,
+  views,
+  onOpen,
+  onClose,
+  onCloseAll,
+  onAskFix,
+  fixLabel,
+}: {
+  scope: Scope | undefined;
+  cs: CodingSession;
+  views: CodingView[];
+  onOpen: (view: CodingView, extra?: Record<string, string>) => void;
+  onClose: (view: CodingView) => void;
+  onCloseAll: () => void;
+  onAskFix?: (message: string) => void;
+  fixLabel: string;
+}) {
+  const [width, setWidth] = useStoredSize("dotrix.coding.panes.width", 560, 320, 1100);
+  const [expanded, setExpanded] = useState<CodingView | null>(null);
+  const shown = expanded && views.includes(expanded) ? [expanded] : views;
+  // Over the page on narrow screens: Escape closes the panes.
+  const closeAll = useRef(onCloseAll);
+  closeAll.current = onCloseAll;
+  const column = useRef<HTMLElement>(null);
+  // Over the page on narrow screens: focus moves into the panes, and back to where it was when they close.
+  useEffect(() => {
+    if (!narrowPanel()) return;
+    const previous = document.activeElement;
+    column.current?.querySelector<HTMLButtonElement>('button[aria-label^="Close"]')?.focus();
     return () => {
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && narrowPanel()) onClose();
+      if (event.key === "Escape" && narrowPanel()) closeAll.current();
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, [onClose]);
+  }, []);
   return (
-    <aside className="side-panel" style={{ width }} aria-label={label}>
-      <Splitter dir="col" className="side-panel-split" label="Resize the panel" onDrag={(delta) => setWidth((w) => w - delta)} />
-      <div className="side-panel-head">
-        {title}
-        <span className="sp" />
-        {tools}
-        <button ref={closeButton} className="ibtn ibtn-sm" onClick={onClose} aria-label={closeLabel} data-tip="Close">
-          <Ic n="x" s={14} />
-        </button>
-      </div>
-      {children}
+    <aside ref={column} className="side-panel panes" style={{ width }} aria-label="Session panes">
+      <Splitter dir="col" className="side-panel-split" label="Resize the panes" size={width} min={320} max={1100} onResize={setWidth} reversed />
+      {shown.map((view) =>
+        view === "browser" ? (
+          <BrowserPane
+            key={view}
+            sessionId={cs.session_id}
+            stacked
+            expanded={expanded === view}
+            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
+            onClose={() => {
+              if (expanded === view) setExpanded(null);
+              onClose(view);
+            }}
+          />
+        ) : (
+          <CodingPanel
+            key={view}
+            scope={scope}
+            cs={cs}
+            view={view}
+            onView={(next, extra) => onOpen(next, extra)}
+            onClose={() => {
+              if (expanded === view) setExpanded(null);
+              onClose(view);
+            }}
+            onAskFix={onAskFix}
+            onCloseAll={onCloseAll}
+            fixLabel={fixLabel}
+            stacked
+            expanded={expanded === view}
+            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
+          />
+        ),
+      )}
     </aside>
   );
 }
@@ -89,41 +204,30 @@ function useTurn(scope: Scope | undefined, cs: CodingSession | null | undefined,
   return { turnsQuery, turns, turn, setPicked, diff, files };
 }
 
-function TurnPicker({ turns, turn, onPick }: { turns: CodingRun[]; turn: CodingRun | undefined; onPick: (id: string) => void }) {
-  if (!turn) return null;
-  if (turns.length === 1) return <span className="side-panel-turn">Turn {turn.turn}</span>;
-  return (
-    <select className="input input-sm side-panel-select" value={turn.id} aria-label="Turn" onChange={(event) => onPick(event.target.value)}>
-      {turns.map((candidate) => (
-        <option key={candidate.id} value={candidate.id}>
-          Turn {candidate.turn}
-        </option>
-      ))}
-    </select>
-  );
-}
-
 function NoTurn({ query }: { query: ReturnType<typeof useCodingSession> }) {
   return (
     <p className="muted">
       {query.isLoading ? "Loading the coding turn…" : query.isError ? "The coding turns couldn't be loaded." : "No coding turns yet."}
       {query.isError && (
-        <button className="btn btn-sm btn-ghost" onClick={() => void query.refetch()}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => void query.refetch()}>
           Try again
-        </button>
+        </ActionButton>
       )}
     </p>
   );
 }
 
 /** What Coding's panel shows; the session header's buttons pick it (screens/Chat.tsx Session). */
-export type CodingView = "changes" | "files" | "terminal" | "review";
-export const CODING_VIEWS: { id: CodingView; label: string; icon: string }[] = [
+export type CodingView = "changes" | "files" | "terminal" | "review" | "browser";
+const VIEWS: { id: CodingView; label: string; icon: string }[] = [
   { id: "changes", label: "Changes", icon: "git-compare" },
   { id: "files", label: "Files", icon: "folder-tree" },
   { id: "terminal", label: "Terminal", icon: "square-terminal" },
   { id: "review", label: "Review", icon: "shield-check" },
+  { id: "browser", label: "Browser", icon: "globe" },
 ];
+/** The panes there are here: Browser only in the desktop app (components/BrowserPane.tsx), whose bridge is set before the page loads. */
+export const CODING_VIEWS = VIEWS.filter((view) => view.id !== "browser" || desktopBrowser());
 
 /** Juno's findings with a `path:line` reference, by path: shown on those lines in Changes. */
 function findingNotes(review: Run | undefined, turn: CodingRun | undefined): Map<string, DiffNote[]> {
@@ -146,7 +250,7 @@ function findingNotes(review: Run | undefined, turn: CodingRun | undefined): Map
 }
 
 /** Coding: one view of a session's turn at a time (Changes, Files, Terminal, Review), picked from the session header. */
-export function CodingPanel({
+function CodingPanel({
   scope,
   cs,
   view,
@@ -154,14 +258,22 @@ export function CodingPanel({
   onClose,
   onAskFix,
   fixLabel,
+  stacked = false,
+  expanded = false,
+  onExpand,
+  onCloseAll,
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
-  view: CodingView;
-  onView: (view: CodingView) => void;
+  view: Exclude<CodingView, "browser">;
+  onView: (view: CodingView, extra?: Record<string, string>) => void;
   onClose: () => void;
   onAskFix?: (message: string) => void;
   fixLabel: string;
+  stacked?: boolean;
+  expanded?: boolean;
+  onExpand?: () => void;
+  onCloseAll?: () => void;
 }) {
   const query = useRoute().search;
   const queryTurn = query.get("turn");
@@ -172,6 +284,11 @@ export function CodingPanel({
   }, [queryTurn, setPicked]);
   const [selectedReview, setSelectedReview] = useState<string | null>(null);
   const [reference, setReference] = useState<{ turn: string; path: string; line?: number; version: number } | null>(null);
+  // Every pane shows the turn the address names (a turn's changes chip in the transcript sets it), else the latest.
+  useEffect(() => {
+    setSelectedReview(null);
+    setReference(null);
+  }, [queryTurn]);
   const latestChanged = [...turns].reverse().find((turn) => turn.files_changed.length && ["pr_opened", "changes_ready"].includes(turn.status));
   const reviewQueries = useReviewRunQueries(
     scope,
@@ -198,7 +315,11 @@ export function CodingPanel({
     const turn = text(review.review_context?.coding_run_id),
       session = text(review.review_context?.session_id);
     if (!turn || !session || !path || path.startsWith("/") || path.includes("..")) return;
-    if (cs.session_id === session) {
+    if (cs.session_id === session && stacked) {
+      // Stacked panes each keep their own state: the reference goes to Files through the address
+      // (`ref` changes each time, so the same line opens again after going back to the files).
+      onView("files", { turn, file: path, ...(line ? { line: String(line) } : {}), ref: String(Date.now()) });
+    } else if (cs.session_id === session) {
       setPicked(turn);
       setReference((previous) => ({ turn, path, line, version: (previous?.version ?? 0) + 1 }));
       onView("files");
@@ -215,23 +336,22 @@ export function CodingPanel({
       widthKey="dotrix.coding.panel.width"
       onClose={onClose}
       closeLabel={`Close ${current.label}`}
+      stacked={stacked}
+      expanded={expanded}
+      onExpand={onExpand}
       title={
         <span className="side-panel-title">
           <Ic n={current.icon} s={14} />
-          <b>{current.label}</b>
+          {view === "changes" && turn?.base_branch ? (
+            // Where the turn's changes go, as Claude Code's diff header says it: base → branch.
+            <b className="mono side-panel-branch" title={`${turn.base_branch} → ${turn.branch ?? cs.branch ?? "a new branch"}`}>
+              {turn.base_branch} <span className="faint">→</span> {turn.branch ?? cs.branch ?? "new branch"}
+            </b>
+          ) : (
+            <b>{current.label}</b>
+          )}
           {view === "terminal" && <span className="faint">Recorded output · read-only</span>}
         </span>
-      }
-      tools={
-        <TurnPicker
-          turns={turns}
-          turn={turn}
-          onPick={(picked) => {
-            setPicked(picked);
-            setReference(null);
-            setSelectedReview(null);
-          }}
-        />
       }
     >
       <div className="side-panel-body">
@@ -250,7 +370,7 @@ export function CodingPanel({
               onAskFix
                 ? (message) => {
                     onAskFix(message);
-                    if (narrowPanel()) onClose();
+                    if (narrowPanel()) (onCloseAll ?? onClose)();
                   }
                 : undefined
             }
@@ -277,10 +397,9 @@ export function CodingPanel({
               <FilesView
                 scope={scope}
                 run={turn}
-                files={files}
                 initialFile={initialFile}
                 initialLine={initialLine}
-                referenceVersion={reference?.version}
+                referenceVersion={reference?.version ?? (Number(query.get("ref")) || undefined)}
                 enabled={view === "files"}
               />
             </div>
@@ -395,30 +514,33 @@ function ReviewPanel({
           ))}
         </select>
       )}
-      <div className="seg work-panel-nav" role="tablist" aria-label="Review details" onKeyDown={tabKeys}>
+      <TabList
+        role="tablist"
+        className="work-panel-nav"
+        aria-label="Review details"
+        value={detailTab}
+        onChange={(value) => setTab(value as typeof detailTab)}
+        size="sm"
+      >
         {(["summary", "findings", "evidence"] as const).map((value) => (
-          <button
+          <Tab
             key={value}
             id={`${id}-${value}-tab`}
-            role="tab"
-            aria-selected={detailTab === value}
+            value={value}
+            onFocus={() => setTab(value)}
+            label={value[0].toUpperCase() + value.slice(1)}
+            endContent={value === "findings" && findings.length ? String(findings.length) : undefined}
             aria-controls={`${id}-panel`}
-            tabIndex={detailTab === value ? 0 : -1}
-            className={detailTab === value ? "on" : ""}
-            onClick={() => setTab(value)}
-          >
-            {value[0].toUpperCase() + value.slice(1)}
-            {value === "findings" && findings.length ? ` ${findings.length}` : ""}
-          </button>
+          />
         ))}
-      </div>
+      </TabList>
       <div className="review-panel-body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${detailTab}-tab`}>
         {failed && (
           <p className="muted">
             Some reviews couldn't be loaded.{" "}
-            <button className="btn btn-sm btn-ghost" onClick={onRetry}>
+            <ActionButton className="btn btn-sm btn-ghost" onClick={onRetry}>
               Try again
-            </button>
+            </ActionButton>
           </p>
         )}
         {!run ? (
@@ -467,9 +589,9 @@ function ReviewPanel({
                           {finding.refs.map((ref, i) => (
                             <li className="mono" key={i}>
                               {context?.coding_run_id ? (
-                                <button className="btn btn-sm btn-ghost" onClick={() => onReference(text(ref), run)}>
+                                <ActionButton className="btn btn-sm btn-ghost" onClick={() => onReference(text(ref), run)}>
                                   {text(ref)}
-                                </button>
+                                </ActionButton>
                               ) : (
                                 text(ref)
                               )}
@@ -479,18 +601,22 @@ function ReviewPanel({
                       )}
                       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                         {canCreate && scope && item.state === "open" && (
-                          <button className="btn btn-sm" disabled={saving} onClick={() => void createFromFinding(outputId, item.index, title, detail, fix)}>
+                          <ActionButton
+                            className="btn btn-sm"
+                            disabled={saving}
+                            onClick={() => void createFromFinding(outputId, item.index, title, detail, fix)}
+                          >
                             Create issue
-                          </button>
+                          </ActionButton>
                         )}
                         {canCreate && scope && isLive() && context?.coding_run_id && item.state === "open" && (
-                          <button className="btn btn-sm" disabled={saving} onClick={() => void openOnGitHub(outputId, item.index)}>
+                          <ActionButton className="btn btn-sm" disabled={saving} onClick={() => void openOnGitHub(outputId, item.index)}>
                             <Ic n="github" s={13} />
                             Open on GitHub
-                          </button>
+                          </ActionButton>
                         )}
                         {onAskFix && allowed("agents:code") && (
-                          <button
+                          <ActionButton
                             className="btn btn-sm"
                             onClick={() =>
                               onAskFix(
@@ -499,7 +625,7 @@ function ReviewPanel({
                             }
                           >
                             {fixLabel}
-                          </button>
+                          </ActionButton>
                         )}
                       </div>
                     </section>

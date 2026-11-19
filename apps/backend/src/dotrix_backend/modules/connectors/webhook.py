@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -22,6 +23,8 @@ from dotrix_backend.modules.automations.events import record_event
 from dotrix_backend.modules.automations.models import AutomationEvent
 
 from .models import ConnectedRepo, GitHubDelivery, GitHubInstallation
+
+logger = logging.getLogger(__name__)
 
 
 def verify_signature(settings: Settings, body: bytes, signature: str | None) -> None:
@@ -47,9 +50,57 @@ async def first_delivery(session: AsyncSession, delivery_id: str, event: str) ->
     return result.first() is not None
 
 
-async def forget_delivery(session: AsyncSession, delivery_id: str) -> None:
-    await session.execute(delete(GitHubDelivery).where(GitHubDelivery.delivery_id == delivery_id))
+async def record_follow_ups(session: AsyncSession, delivery_id: str, follow_ups: list[tuple[str, dict[str, Any]]]) -> None:
+    """Keep the jobs a delivery calls for with its record (committed by the caller)."""
+    if follow_ups:
+        await session.execute(
+            update(GitHubDelivery).where(GitHubDelivery.delivery_id == delivery_id)
+            .values(pending=[[name, kwargs] for name, kwargs in follow_ups])
+        )
+
+
+async def enqueue_pending(session: AsyncSession, jobs: Any, delivery_id: str) -> bool:
+    """Queue the jobs a delivery still has pending and clear them; False if it had none. The row is
+    locked while it runs, so two redeliveries (or a redelivery and the sweep) don't both queue."""
+    row = await session.scalar(
+        select(GitHubDelivery).where(GitHubDelivery.delivery_id == delivery_id).with_for_update()
+    )
+    if row is None or not row.pending:
+        await session.rollback()
+        return False
+    await _queue(session, jobs, row)
+    return True
+
+
+async def _queue(session: AsyncSession, jobs: Any, row: GitHubDelivery) -> None:
+    try:
+        for name, kwargs in row.pending or []:
+            await jobs.enqueue(name, **kwargs)
+    except Exception as exc:
+        await session.rollback()  # still pending: a redelivery or the sweep tries again
+        raise GitHubUnavailable("The job queue isn't available; GitHub will redeliver") from exc
+    row.pending = None
     await session.commit()
+
+
+async def enqueue_stale_pending(session: AsyncSession, jobs: Any, cutoff: datetime) -> int:
+    """The sweep: deliveries whose jobs are still pending a minute on (GitHub didn't redeliver)."""
+    rows = list(await session.scalars(
+        select(GitHubDelivery).where(GitHubDelivery.pending.is_not(None), GitHubDelivery.received_at < cutoff)
+        .with_for_update(skip_locked=True)
+    ))
+    done = 0
+    for row in rows:
+        try:
+            for name, kwargs in row.pending or []:
+                await jobs.enqueue(name, **kwargs)
+        except Exception:
+            logger.warning("github delivery %s: follow-ups still can't be queued", row.delivery_id, exc_info=True)
+            continue
+        row.pending = None
+        done += 1
+    await session.commit()
+    return done
 
 
 async def delete_stale_deliveries(session: AsyncSession, cutoff: datetime) -> int:

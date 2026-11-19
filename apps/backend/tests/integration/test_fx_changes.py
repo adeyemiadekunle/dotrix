@@ -272,6 +272,14 @@ async def test_a_cut_off_fx_turn_recovers_from_its_journal_without_changing_the_
             monkeypatch.setattr(FxRuntime, "create", remember)
             attempt = asyncio.create_task(fx.runner.execute(run_id, payload))
             await asyncio.wait_for(written.wait(), 30)
+            from dotrix_backend.modules.agents.models import AgentRuntimeBinding
+
+            async with sessions() as session:
+                binding = await session.scalar(select(AgentRuntimeBinding).where(
+                    AgentRuntimeBinding.workspace_id == existing.workspace_id, AgentRuntimeBinding.run_id == run_id,
+                ))
+                snapshot = json.loads(nova_pilot_world[2].decrypt(binding.encrypted_context))
+                assert "Lyra → product" in snapshot["specialist_directory"]
             hosts[0].process.kill()  # the worker dies: no cancellation reaches libfx's journal
             attempt.cancel()
             with pytest.raises(asyncio.CancelledError):
@@ -440,3 +448,92 @@ async def test_a_run_bound_by_an_earlier_fx_version_runs_on_this_one(nova_pilot_
         upgraded = await session.get(AgentRuntimeBinding, binding.id)
         assert upgraded.runtime_version == fx_pilot._VERSION and upgraded.session_id == "fx-pilot-earlier"
         assert upgraded.encrypted_context is not None
+        assert "specialist_directory" not in json.loads(secrets.decrypt(upgraded.encrypted_context))
+
+
+@pytest.mark.parametrize("args, said", [
+    # The platform refuses it: the model reads why, and the run goes on.
+    ({"tasks": [{"key": "draft", "agent": "product", "brief": "Write the requirements",
+                 "expected_result": "requirements/product.md", "changes_project": True}]},
+     "read-only specialist tasks"),
+    # Arguments that don't fit the schema: the model reads what's wrong.
+    ({"tasks": [{"key": "Not A Key", "agent": "product", "brief": "x", "expected_result": "y"}]},
+     "Invalid arguments: tasks.0.key"),
+])
+async def test_an_fx_tool_refusal_reaches_the_model_with_its_reason(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts, args, said,  # noqa: F811
+):
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        requests: list = []
+        with scripted_model("delegate_tasks", args, requests=requests) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "Have Lyra draft the requirements", "chat_runtime": "fx", "work_mode": "plan",
+            })
+        assert asked.status_code == 202 and asked.json()["status"] == "completed", asked.text
+        [result] = [m for m in requests[-1]["messages"] if m["role"] == "tool"]
+        assert said in json.dumps(result["content"]) and "Tool failed." not in json.dumps(result["content"]), result
+        async with fx.sessions() as session:
+            children = list(await session.scalars(select(AgentRun).where(AgentRun.parent_run_id == uuid.UUID(asked.json()["id"]))))
+        assert children == []  # nothing was delegated
+
+
+async def test_fx_nova_reads_several_things_at_once_in_one_scripted_step(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts,  # noqa: F811
+):
+    """run_script on the real libfx host (agents/scripts.py): reads run together, through the turn's own tools."""
+    code = ("import asyncio\n"
+            "doc, found, issues = await asyncio.gather(read_file(file_path='/dotrix/research/runtime.md'),"
+            " grep(pattern='evidence'), list_issues())\n"
+            "[doc['file_data']['content'].splitlines()[2], len(issues)]")
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        requests = []
+        with scripted_model("run_script", {"code": code}, requests=requests) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "What does the evidence say?", "chat_runtime": "fx", "work_mode": "discuss",
+            })
+        assert asked.status_code == 202, asked.text
+        done = asked.json()
+        assert done["status"] == "completed", done
+        exposed = {tool["function"]["name"] for tool in requests[0]["tools"]}
+        assert "run_script" in exposed and "## Scripts" in requests[0]["messages"][0]["content"]
+        assert "Private project evidence." in done["reply"] and "(3 tool calls)" in done["reply"]
+        events = (await fx.client.get(f"{fx.base}/runs/{done['id']}/events", headers=fx.headers)).json()["events"]
+        labels = [e["data"].get("label") for e in events if e["kind"] == "activity"]
+        assert "Reading research/runtime.md" in labels and "Checking the board" in labels
+
+
+@pytest.mark.parametrize("at_start", [False, True])
+@pytest.mark.parametrize("control", ["server", "personal"])
+async def test_fx_run_keeps_its_scripts_choice_when_the_setting_changes_before_it_resumes(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts, at_start, control,  # noqa: F811
+):
+    """Whether a turn has run_script is pinned when it first binds (its snapshot), like its context: a run waiting
+    for a person resumes with the tools it was bound with, whatever the setting says by then."""
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        settings = fx.runner.settings
+        fx.runner.settings = settings.model_copy(update={"agent_scripts": at_start if control == "server" else True})
+        if control == "personal":
+            assert (await fx.client.put("/v1/me/code-mode", headers=fx.headers, json={"enabled": at_start})).status_code == 200
+        requests = []
+        with scripted_model("write_file", PLAN, requests=requests) as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            asked = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "Write the plan document", "chat_runtime": "fx", "work_mode": "build",
+            })
+            run = asked.json()
+            assert run["status"] == "awaiting_approval", run
+            [approval] = run["approvals"]
+            if control == "server":
+                fx.runner.settings = settings.model_copy(update={"agent_scripts": not at_start})
+            else:
+                assert (await fx.client.put("/v1/me/code-mode", headers=fx.headers, json={"enabled": not at_start})).status_code == 200
+            decided = await fx.client.post(f"{fx.base}/runs/{run['id']}/decisions", headers=fx.headers, json={
+                "decisions": [{"approval_id": approval["id"], "decision": "approve"}],
+            })
+            assert decided.status_code == 200, decided.text
+            done = (await fx.client.get(f"{fx.base}/runs/{run['id']}", headers=fx.headers)).json()
+        assert done["status"] == "completed", done
+        offered = [{tool["function"]["name"] for tool in request["tools"]} for request in requests]
+        assert all(("run_script" in names) is at_start for names in offered), offered

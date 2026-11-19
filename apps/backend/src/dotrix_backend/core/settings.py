@@ -1,18 +1,26 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-# Repo-root .env, so settings load the same from any working directory
-# (uvicorn at the root, alembic in apps/backend). Real env vars take precedence.
+# Never load a .env from whichever app happens to be the working directory.
+# An explicit backend file is exclusive; the root file is a legacy fallback for
+# existing installations that have not moved their server settings yet.
 REPO_ROOT_ENV = Path(__file__).resolve().parents[5] / ".env"
+BACKEND_ENV = Path(__file__).resolve().parents[3] / ".env"
+
+
+def settings_env_file(backend: Path = BACKEND_ENV, legacy: Path = REPO_ROOT_ENV) -> Path:
+    return backend if backend.is_file() else legacy
+
 
 _CONFIG = SettingsConfigDict(
-    env_prefix="DOTRIX_", env_file=(REPO_ROOT_ENV, ".env"), extra="ignore"
+    env_prefix="DOTRIX_", env_file=settings_env_file(), extra="ignore"
 )
 # Settings where an empty value means something of its own, not "unset" (see Settings._empty_is_unset).
 EMPTY_MEANS_SOMETHING = frozenset({"embedding_model"})
@@ -41,6 +49,16 @@ class Settings(DatabaseSettings):
             return {k: v for k, v in data.items() if v != "" or k in EMPTY_MEANS_SOMETHING}
         return data
 
+    @field_validator("alert_emails", mode="before")
+    @classmethod
+    def _alert_emails(cls, value: Any) -> Any:
+        """Comma-separated (`a@x.com, b@x.com`) or a JSON list."""
+        if isinstance(value, str):
+            text = value.strip()
+            items = json.loads(text) if text.startswith("[") else text.split(",")
+            return [str(item).strip() for item in items if str(item).strip()]
+        return value
+
     # "staging" and "production" are deployed: secure cookies, and the checks in _safe_for_production.
     env: Literal["development", "test", "staging", "production"] = "development"
     log_level: str = "INFO"
@@ -50,10 +68,31 @@ class Settings(DatabaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     # Swagger UI (/docs), ReDoc (/redoc), and /openapi.json. Turn off to hide the API surface.
     docs_enabled: bool = True
+    # Organisation workspaces (teams: invites, roles, members). Personal workspaces launch first, so
+    # a deployed server (staging, production) hides organisations unless this is set to true;
+    # development and tests keep them. Off: none can be created or opened, invites are refused, and
+    # the web app shows only personal workspaces. Their data is kept, so turning it on brings them back.
+    organisations: bool | None = None
+    # `run_script` for Nova (agents/scripts.py): several read tool calls in one sandboxed script, so a long read
+    # takes fewer model steps. Experimental: on in development and tests, off on a deployed server unless this is
+    # set to true, until real runs show what it saves.
+    agent_scripts: bool | None = None
 
     # Auth. The secret is required and never has a default.
     jwt_secret: SecretStr = Field(min_length=32)
     jwt_issuer: str = "dotrix"
+    # The secret that opens the admin console's first sign-up (apps/admin). Required to create
+    # that account on staging and production; unset there, admin sign-up stays closed.
+    admin_bootstrap_token: SecretStr | None = Field(default=None, min_length=24)
+    # The admin console's own address, used for links in admin emails (invites). Unset: invites
+    # can't be emailed, and the API returns the link's path for the owner to pass on.
+    admin_url: str | None = None
+    # Who is emailed when the deployment needs attention (comma-separated or a JSON list). Empty: the
+    # admin console's active owners.
+    alert_emails: Annotated[list[str], NoDecode] = []
+    # How often the worker checks for conditions worth an email (a condition is emailed once it
+    # holds on two checks in a row).
+    alert_interval_minutes: int = Field(default=5, ge=1, le=60)
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
     email_verification_ttl_hours: int = 48
@@ -120,12 +159,27 @@ class Settings(DatabaseSettings):
     #   OpenShell CLI; see infra/coding/README.md), with a policy and the model key injected
     # - "docker": a container per run from the coding image, on a network whose only way out is
     #   a proxy to the model API (Docker and the image built; see infra/coding/README.md)
+    # - "docker-cloud": a Docker Cloud sandbox (microVM) per run, from the coding image in a
+    #   registry, its network limited to the model API (modules/coding/docker_cloud.py)
     # - "local": a temporary folder on this machine, no isolation (development only)
     # - "off": "Start coding" is refused
-    coding_sandbox: Literal["off", "openshell", "docker", "local"] = "off"
+    coding_sandbox: Literal["off", "openshell", "docker", "docker-cloud", "local"] = "off"
     openshell_bin: str = "openshell"
     docker_bin: str = "docker"
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
+    coding_environment_images: list[Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}$")]] = Field(default_factory=list)
+    # Docker Cloud sandboxes: the Docker ID and a personal access token with Cloud Sandboxes access
+    # (sandbox:use); the coding image must then be a registry reference Docker can pull.
+    docker_cloud_url: str = "https://connect.docker.com/sandboxes"
+    docker_cloud_id: str | None = None
+    docker_cloud_pat: SecretStr | None = None
+    # The model key as a Docker secret (the sandbox holds a placeholder; Docker writes the key into the model
+    # API's requests). Off: the key is in each process's environment, and extra allowed hosts are refused.
+    docker_cloud_key_injection: bool = True
+    # Between turns a session's Docker Cloud sandbox sleeps (stopped, its files kept) for up to this many days,
+    # then is deleted (0: never sleeps); at most this many sleep per workspace (the oldest goes first).
+    coding_sleep_days: int = Field(default=7, ge=0, le=30)
+    coding_sleep_max: int = Field(default=5, ge=0, le=50)
     # Which tool codes: "auto" follows the person's keys (OpenAI: Codex, Anthropic: Claude Code,
     # other supported providers: OpenCode); naming one needs their key for its provider.
     coding_agent: Literal["auto", "claude-code", "codex", "opencode", "fx"] = "auto"  # Default, overridable per person/run.
@@ -136,7 +190,7 @@ class Settings(DatabaseSettings):
     coding_opencode_model: str | None = None
     # fx as Kai's engine (infra/coding/fx-acp.mjs drives `fx acp` in the sandbox): chosen when a person picks it
     # or `coding_agent` is "fx". Its model: "provider:model" on an OpenAI-compatible endpoint (OpenAI,
-    # Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter).
+    # Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA).
     coding_fx_model: str | None = None
     coding_fx_driver: str = "/opt/dotrix/fx-acp.mjs"  # where the coding image puts the driver
     coding_timeout_minutes: int = Field(default=30, ge=1, le=240)
@@ -154,9 +208,10 @@ class Settings(DatabaseSettings):
     coding_warm_max: int = Field(default=3, ge=0, le=50)
     # Coding runs working at once in one worker; the rest wait for a free sandbox ("Waiting for a
     # free sandbox"). 0: no limit. Size it to the machine: each run may use the memory and CPUs below.
+    coding_parallel: bool = False
     coding_max_runs: int = Field(default=2, ge=0, le=100)
-    # Each Docker sandbox's limits, and its container runtime ("runsc" for gVisor, once installed
-    # and registered on the host; unset: Docker's default).
+    # Each Docker sandbox's limits. Deployed Docker coding requires gVisor ("runsc", installed
+    # and registered on the host); development may use Docker's default runtime.
     coding_memory: str = Field(default="4g", pattern=r"^[1-9][0-9]*[mg]$")
     coding_cpus: float = Field(default=2.0, gt=0, le=64)
     coding_docker_runtime: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,64}$")
@@ -165,7 +220,7 @@ class Settings(DatabaseSettings):
     # branches go to the repo itself (development only).
     coding_fork_owner: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{1,39}$")
 
-    # Object storage for document originals: any S3-compatible store (MinIO locally).
+    # Object storage for document originals: any S3-compatible store (RustFS locally).
     # Leave the endpoint and keys unset to run without uploads (they answer 503).
     s3_endpoint_url: str | None = None
     s3_access_key: SecretStr | None = None
@@ -173,6 +228,10 @@ class Settings(DatabaseSettings):
     s3_bucket: str = "dotrix-documents"
     s3_region: str = "us-east-1"
     max_upload_mb: int = Field(default=25, ge=1, le=200)
+    # What one workspace may store in uploads (document originals and task attachments), in MB;
+    # 0 is unlimited. Unset: 1024 on a deployed server, unlimited in development and tests.
+    # A workspace's own `storage_limit_mb` (set in the admin console) overrides it.
+    workspace_storage_mb: int | None = Field(default=None, ge=0)
 
     # Legacy configuration accepted during upgrades. Platform runs never use these keys:
     # every person connects their own encrypted credentials in Account → Your models.
@@ -190,6 +249,7 @@ class Settings(DatabaseSettings):
     mistral_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("MISTRAL_API_KEY", "DOTRIX_MISTRAL_API_KEY"))
     groq_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("GROQ_API_KEY", "DOTRIX_GROQ_API_KEY"))
     openrouter_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("OPENROUTER_API_KEY", "DOTRIX_OPENROUTER_API_KEY"))
+    nvidia_api_key: SecretStr | None = Field(default=None, validation_alias=AliasChoices("NVIDIA_API_KEY", "DOTRIX_NVIDIA_API_KEY"))
     # People connect their own provider keys (Account → Your models), stored encrypted with
     # these Fernet keys: comma-separated, the first encrypts, every one decrypts (to rotate, put
     # a new key first and re-save). None: people can't connect keys.
@@ -212,6 +272,15 @@ class Settings(DatabaseSettings):
         "mistral:mistral-small-latest",
         "groq:openai/gpt-oss-120b",
         "openrouter:openai/gpt-5.5",
+        # NVIDIA's hosted models, free to try (rate limited). Each passed a live check (2026-11-10): a streamed
+        # tool call with each delta's index and a tool_calls finish (libfx needs both), then an answer from the
+        # tool's result, in under ~6 s. Most others NVIDIA lists answer 404 or are too slow.
+        "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+        "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b",
+        "nvidia:nvidia/nemotron-3.5-bolt-e4b",
+        "nvidia:mistralai/mistral-large-4-1t-a52b",
+        "nvidia:google/gemma-4-31b-it",
+        "nvidia:poolside/laguna-xs-2.1",
     ]
     # Juno's reviews of Kai's PRs, and its look at their failed CI, posted on the PR as comments (never
     # approvals); needs the GitHub App's Pull requests (write). Off: they stay in dotrix only.
@@ -245,19 +314,12 @@ class Settings(DatabaseSettings):
     # unrelated query are still "nearest"). Depends on the model: measured on
     # gemini-embedding-001, the right passage scored 0.68-0.72 and unrelated queries at most 0.56.
     embedding_min_similarity: float = Field(default=0.6, ge=0, le=1)
-    # Research on the web (docs/agents-v2.md §6). Search: "tavily" (needs the key), "native"
-    # (the model's built-in search), or "auto" (Tavily when the key is set). Agents read pages
-    # themselves either way. "fake": a canned search and site, for end-to-end tests only.
-    tavily_api_key: SecretStr | None = Field(
-        default=None, validation_alias=AliasChoices("DOTRIX_TAVILY_API_KEY", "TAVILY_API_KEY")
-    )
-    search_provider: Literal["auto", "tavily", "native", "fake"] = "auto"
-    # Pages our reader can't read (JavaScript-only, blocking readers) are read by Tavily instead.
-    tavily_extract: bool = True
-    # Per run: web searches and pages read. Per workspace per day: Tavily credits (0: no limit).
+    # Shared search for every model: self-hosted SearXNG, or provider-native search.
+    # Auto selects SearXNG when its service URL is configured. Fake is for E2E only.
+    search_provider: Literal["auto", "searxng", "native", "fake"] = "auto"
+    searxng_url: str | None = None
     research_max_searches: int = Field(default=10, ge=0, le=100)
     research_max_fetches: int = Field(default=20, ge=0, le=200)
-    tavily_daily_credits: int = Field(default=500, ge=0)
     # Where background work executes (agent runs, emails, password-reset requests):
     # - "local": tasks in the API process (simplest; an API restart cuts runs off)
     # - "worker": queued in Redis and executed by `python -m dotrix_backend.worker`; work
@@ -278,6 +340,20 @@ class Settings(DatabaseSettings):
     def is_deployed(self) -> bool:
         return self.env in ("staging", "production")
 
+    @property
+    def organisations_enabled(self) -> bool:
+        return self.organisations if self.organisations is not None else not self.is_deployed
+
+    @property
+    def agent_scripts_enabled(self) -> bool:
+        return self.agent_scripts if self.agent_scripts is not None else not self.is_deployed
+
+    @property
+    def workspace_storage_limit_mb(self) -> int:
+        if self.workspace_storage_mb is not None:
+            return self.workspace_storage_mb
+        return 1024 if self.is_deployed else 0
+
     @model_validator(mode="after")
     def _safe_for_production(self) -> Settings:
         if self.email_backend is None:
@@ -288,15 +364,26 @@ class Settings(DatabaseSettings):
             raise ValueError("email_backend=console logs tokens; not allowed in staging or production")
         if self.is_deployed and self.rate_limits != "redis":
             raise ValueError("rate_limits must be redis in staging and production (limits shared by every process)")
-        if self.search_provider == "tavily" and not self.tavily_api_key:
-            raise ValueError("search_provider=tavily needs DOTRIX_TAVILY_API_KEY")
+        if self.search_provider == "searxng" and not self.searxng_url:
+            raise ValueError("search_provider=searxng needs DOTRIX_SEARXNG_URL")
         if self.search_provider == "fake" and not self.e2e_models:
             raise ValueError("search_provider=fake is for end-to-end tests (needs DOTRIX_E2E_MODELS=true)")
+        if self.coding_sandbox == "docker-cloud":
+            if not self.docker_cloud_id or self.docker_cloud_pat is None:
+                raise ValueError("coding_sandbox=docker-cloud needs DOTRIX_DOCKER_CLOUD_ID and DOTRIX_DOCKER_CLOUD_PAT")
+            if "/" not in self.coding_image.split("@")[0]:
+                raise ValueError("coding_sandbox=docker-cloud pulls the coding image from a registry: set "
+                                 "DOTRIX_CODING_IMAGE to its reference (e.g. docker.io/acme/dotrix-coding:0.1.0)")
         if self.is_deployed and self.coding_sandbox == "local":
             raise ValueError("coding_sandbox=local runs coding agents unisolated; not allowed in staging or production")
         if self.is_deployed and self.coding_sandbox != "off" and not self.coding_fork_owner:
             raise ValueError("coding runs need DOTRIX_CODING_FORK_OWNER in staging and production (branches pushed "
                              "to the repo itself get its secrets in CI)")
+        if self.is_deployed and self.coding_sandbox == "docker" and self.coding_docker_runtime != "runsc":
+            raise ValueError("Docker coding needs DOTRIX_CODING_DOCKER_RUNTIME=runsc in staging and production; "
+                             "install and register gVisor on the Docker host, or keep coding off")
+        if self.is_deployed and self.coding_sandbox != "off" and self.coding_max_runs == 0:
+            raise ValueError("DOTRIX_CODING_MAX_RUNS must be positive in staging and production")
         if self.is_deployed and self.e2e_models:
             raise ValueError("e2e_models is for end-to-end tests; not allowed in staging or production")
         return self

@@ -100,23 +100,31 @@ async def test_a_waiting_run_can_be_stopped_and_frees_nothing_it_never_had() -> 
         pass
 
 
-async def test_the_docker_sandbox_uses_the_machine_s_limits_and_runtime(tmp_path: Path) -> None:
+async def test_the_docker_sandbox_uses_the_machine_s_limits_and_runtime(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "a.txt").write_text("x")
     calls: list[list[str]] = []
 
     async def cli(self, *args: str, **_: object) -> str:
         calls.append(list(args))
-        return ""
+        return "runsc\n" if args[0] == "inspect" else ""
 
     sandbox = DockerSandbox(_settings(coding_memory="3g", coding_cpus=1.5, coding_docker_runtime="runsc"))
-    DockerSandbox.cli = cli  # type: ignore[method-assign]
-    try:
-        await sandbox.open(uuid.uuid4(), tmp_path, ClaudeCode(), "sk-test")
-    finally:
-        del DockerSandbox.cli
+    monkeypatch.setattr(DockerSandbox, "cli", cli)
+    await sandbox.open(uuid.uuid4(), tmp_path, ClaudeCode(), "sk-test")
     [agent] = [c for c in calls if c[0] == "run" and "--init" in c]
     assert agent[agent.index("--memory") + 1] == "3g" and agent[agent.index("--cpus") + 1] == "1.5"
     assert agent[agent.index("--runtime") + 1] == "runsc"
+    assert agent[agent.index("--memory-swap") + 1] == "3g"
+    [proxy] = [c for c in calls if c[0] == "create"]
+    assert proxy[proxy.index("--runtime") + 1] == "runsc"
+    assert proxy[proxy.index("--memory-swap") + 1] == "256m"
+    assert proxy[proxy.index("--cpus") + 1] == "0.25"
+    connected = next(i for i, c in enumerate(calls) if c[:2] == ["network", "connect"])
+    started = next(i for i, c in enumerate(calls) if c[0] == "start")
+    assert connected < started
+    inspections = [c for c in calls if c[0] == "inspect"]
+    assert len(inspections) == 2
+    assert calls.index(inspections[-1]) < next(i for i, c in enumerate(calls) if c[0] == "exec")
     assert "sk-test" not in " ".join(agent)  # the key goes by name, never on argv
     plain = DockerSandbox(_settings())
     assert (plain.memory, plain.cpus, plain.runtime) == ("4g", 2.0, None)  # unchanged defaults

@@ -1,0 +1,221 @@
+{
+  "profile": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "latencyMs": 100,
+    "downloadBytesPerSecond": 200000,
+    "uploadBytesPerSecond": 93750,
+    "cpuSlowdown": 4,
+    "repetitions": 3
+  },
+  "summary": {
+    "/login": {
+      "before": {
+        "readyMs": 10814.199999999255,
+        "lcpMs": 9900,
+        "jsEncodedBytes": 752698,
+        "jsResources": 15
+      },
+      "after": {
+        "readyMs": 10024.400000000373,
+        "lcpMs": 9616,
+        "jsEncodedBytes": 426168,
+        "jsResources": 20
+      }
+    },
+    "/w/dotrix": {
+      "before": {
+        "readyMs": 19204,
+        "lcpMs": 17476,
+        "jsEncodedBytes": 747982,
+        "jsResources": 11
+      },
+      "after": {
+        "readyMs": 19737.900000000373,
+        "lcpMs": 18704,
+        "jsEncodedBytes": 606973,
+        "jsResources": 24
+      }
+    },
+    "/w/dotrix/chat?new=1": {
+      "before": {
+        "readyMs": 13328,
+        "lcpMs": 12392,
+        "jsEncodedBytes": 747982,
+        "jsResources": 11
+      },
+      "after": {
+        "readyMs": 12102.099999999627,
+        "lcpMs": 11760,
+        "jsEncodedBytes": 722367,
+        "jsResources": 31
+      }
+    }
+  },
+  "runs": [
+    {
+      "path": "/login",
+      "repetition": 0,
+      "label": "before",
+      "readyMs": 12389.400000000373,
+      "lcpMs": 11812,
+      "jsEncodedBytes": 752698,
+      "jsResources": 15
+    },
+    {
+      "path": "/login",
+      "repetition": 0,
+      "label": "after",
+      "readyMs": 9449.800000000745,
+      "lcpMs": 8796,
+      "jsEncodedBytes": 426168,
+      "jsResources": 20
+    },
+    {
+      "path": "/login",
+      "repetition": 1,
+      "label": "before",
+      "readyMs": 10399.300000000745,
+      "lcpMs": 9608,
+      "jsEncodedBytes": 752698,
+      "jsResources": 15
+    },
+    {
+      "path": "/login",
+      "repetition": 1,
+      "label": "after",
+      "readyMs": 10024.400000000373,
+      "lcpMs": 9616,
+      "jsEncodedBytes": 426168,
+      "jsResources": 20
+    },
+    {
+      "path": "/login",
+      "repetition": 2,
+      "label": "before",
+      "readyMs": 10814.199999999255,
+      "lcpMs": 9900,
+      "jsEncodedBytes": 752698,
+      "jsResources": 15
+    },
+    {
+      "path": "/login",
+      "repetition": 2,
+      "label": "after",
+      "readyMs": 11727.900000000373,
+      "lcpMs": 10932,
+      "jsEncodedBytes": 426168,
+      "jsResources": 20
+    },
+    {
+      "path": "/w/dotrix",
+      "repetition": 0,
+      "label": "before",
+      "readyMs": 20666.39999999851,
+      "lcpMs": 18708,
+      "jsEncodedBytes": 747982,
+      "jsResources": 11
+    },
+    {
+      "path": "/w/dotrix",
+      "repetition": 0,
+      "label": "after",
+      "readyMs": 19737.900000000373,
+      "lcpMs": 18704,
+      "jsEncodedBytes": 606973,
+      "jsResources": 24
+    },
+    {
+      "path": "/w/dotrix",
+      "repetition": 1,
+      "label": "before",
+      "readyMs": 19204,
+      "lcpMs": 17476,
+      "jsEncodedBytes": 747982,
+      "jsResources": 11
+    },
+    {
+      "path": "/w/dotrix",
+      "repetition": 1,
+      "label": "after",
+      "readyMs": 16662.200000001118,
+      "lcpMs": 15712,
+      "jsEncodedBytes": 606973,
+      "jsResources": 24
+    },
+    {
+      "path": "/w/dotrix",
+      "repetition": 2,
+      "label": "before",
+      "readyMs": 18816.599999999627,
+      "lcpMs": 17340,
+      "jsEncodedBytes": 747982,
+      "jsResources": 11
+    },
+    {
+      "path": "/w/dotrix",
+      "repetition": 2,
+      "label": "after",
+      "readyMs": 22605.700000001118,
+      "lcpMs": 20968,
+      "jsEncodedBytes": 606973,
+      "jsResources": 24
+    },
+    {
+      "path": "/w/dotrix/chat?new=1",
+      "repetition": 0,
+      "label": "before",
+      "readyMs": 15092.800000000745,
+      "lcpMs": 13984,
+      "jsEncodedBytes": 747982,
+      "jsResources": 11
+    },
+    {
+      "path": "/w/dotrix/chat?new=1",
+      "repetition": 0,
+      "label": "after",
+      "readyMs": 10730,
+      "lcpMs": 10740,
+      "jsEncodedBytes": 722367,
+      "jsResources": 31
+    },
+    {
+      "path": "/w/dotrix/chat?new=1",
+      "repetition": 1,
+      "label": "before",
+      "readyMs": 13039.099999999627,
+      "lcpMs": 12220,
+      "jsEncodedBytes": 747982,
+      "jsResources": 11
+    },
+    {
+      "path": "/w/dotrix/chat?new=1",
+      "repetition": 1,
+      "label": "after",
+      "readyMs": 15487.900000000373,
+      "lcpMs": 15068,
+      "jsEncodedBytes": 722367,
+      "jsResources": 31
+    },
+    {
+      "path": "/w/dotrix/chat?new=1",
+      "repetition": 2,
+      "label": "before",
+      "readyMs": 13328,
+      "lcpMs": 12392,
+      "jsEncodedBytes": 747982,
+      "jsResources": 11
+    },
+    {
+      "path": "/w/dotrix/chat?new=1",
+      "repetition": 2,
+      "label": "after",
+      "readyMs": 12102.099999999627,
+      "lcpMs": 11760,
+      "jsEncodedBytes": 722367,
+      "jsResources": 31
+    }
+  ]
+}

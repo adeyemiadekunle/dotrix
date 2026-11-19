@@ -79,6 +79,9 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     __tablename__ = "agent_runs"
     __table_args__ = (UniqueConstraint("parent_run_id", "delegation_key", "task_key"), UniqueConstraint("outcome_key"))
 
+    # Pinned at first execution so personal preference changes apply only to new turns.
+    scripts_enabled: Mapped[bool | None] = mapped_column()
+
     parent_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id"), index=True)
     delegation_key: Mapped[str | None] = mapped_column(String(200))
     task_key: Mapped[str | None] = mapped_column(String(40))
@@ -95,6 +98,12 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     source: Mapped[str] = mapped_column(String(24), default="user", server_default="user")
     outcome_key: Mapped[str | None] = mapped_column(String(160))
     review_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    skill_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    selected_plan_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    repository_write_paths: Mapped[list[str] | None] = mapped_column(JSONB)
+    # The version of each document this run last read or wrote ("/path": version), kept across an
+    # approval wait or a restart so an overwrite is checked against what the agent actually saw.
+    read_versions: Mapped[dict[str, int] | None] = mapped_column(JSONB)
 
     # The project it's about; null for a conversation across projects (or about none), which
     # lists its projects in `project_ids` and is read-only (workspace_runs.py).
@@ -202,7 +211,7 @@ class AgentApproval(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
 
 
 class AgentRuntimeBinding(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
-    """An experimental runtime session pinned to one private run and its configuration."""
+    """A chat runtime session pinned to one private run and its configuration."""
 
     __tablename__ = "agent_runtime_bindings"
     __table_args__ = (UniqueConstraint("run_id"), UniqueConstraint("runtime", "session_id"))
@@ -294,6 +303,8 @@ class ConversationPlan(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     """A version of a conversation's plan, saved in Plan mode (`save_plan`): what Build works from.
     Seen by whoever sees the conversation."""
 
+    execution: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
     __tablename__ = "conversation_plans"
     __table_args__ = (UniqueConstraint("thread_id", "version"),)
 
@@ -311,7 +322,7 @@ class ConversationPlan(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
 
 
 class AgentRunOutput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
-    """A run's structured result (docs/agents-v2.md §4.6): the items the leading agent recorded
+    """A run's structured result (docs/architecture.md): the items the leading agent recorded
     with `submit_result`, in its contract's output schema, each with what people did with it."""
 
     __tablename__ = "agent_run_outputs"
@@ -373,3 +384,18 @@ class ChatInput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     error: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ChatPublication(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """Private retry/provenance record. Shared destinations never expose the source run."""
+
+    __tablename__ = "chat_publications"
+    __table_args__ = (UniqueConstraint("project_id", "user_id", "request_id"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
+    request_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    destination: Mapped[str] = mapped_column(String(16))
+    target: Mapped[str] = mapped_column(String(500))

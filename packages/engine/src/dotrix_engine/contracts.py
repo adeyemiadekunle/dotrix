@@ -1,4 +1,4 @@
-"""Agent contracts: an agent as data (docs/agents-v2.md §4).
+"""Agent contracts: an agent as data (docs/architecture.md).
 
 A contract (`AgentSpec`) says who an agent is and what it may do: its instructions, tools
 (ids from `catalog`), folder access, the issue types it may open, who it may call, and how

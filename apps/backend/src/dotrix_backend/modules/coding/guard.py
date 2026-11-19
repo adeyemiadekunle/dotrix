@@ -5,10 +5,12 @@ changes: `.dotrix/` lives on the platform and never goes into a code repo, CI co
 (all of `.github/`, other CI systems' files) could leak the repo's secrets when the PR's checks
 run, and `.git` is git's own. Files CI runs without being CI configuration (build scripts, test
 setup) can't be refused without making most runs useless, so a person accepts a turn that changes
-them before it's pushed, in every approval mode (`needs_a_person`), and the PR names them.
+them before it's pushed, in every approval mode (`needs_a_person`), and the PR names them. A turn
+whose patch or summary carries the run's own model key is refused (`leaks`).
 """
 from __future__ import annotations
 
+import base64
 from fnmatch import fnmatch
 from pathlib import PurePosixPath
 
@@ -59,6 +61,28 @@ def needs_a_person(approval_mode: str, paths: list[str]) -> tuple[bool, list[str
     runs waits too (its PR's checks would run that code with the repo's secrets)."""
     sensitive = ci_sensitive(paths)
     return approval_mode == "manual" or bool(sensitive), sensitive
+
+
+MIN_SECRET = 16  # shorter values are too likely to turn up by chance to refuse a turn over
+
+
+def leaks(secret: str | None, *texts: bytes | str | None) -> bool:
+    """Whether the run's model key is in what would leave the sandbox (its patch, its summary, which
+    becomes the PR body). In the Docker sandbox the key is in the agent's environment, so a turn could
+    write it into a file; this refuses the turn before anything is committed or pushed. It finds the
+    key as written or base64-encoded, not every encoding: keeping the key out of the sandbox (Docker
+    Cloud's key injection, OpenShell's placeholder) is what stops a determined agent."""
+    if not secret or len(secret) < MIN_SECRET:
+        return False
+    raw = secret.encode()
+    forms = {raw, base64.b64encode(raw), base64.urlsafe_b64encode(raw), base64.b64encode(raw).rstrip(b"=")}
+    for text in texts:
+        if not text:
+            continue
+        data = text.encode(errors="replace") if isinstance(text, str) else text
+        if any(form in data for form in forms):
+            return True
+    return False
 
 
 def check(paths: list[str]) -> list[str]:

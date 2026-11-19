@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from dotrix_backend.core.settings import Settings
-from dotrix_backend.modules.coding.sandbox import DockerSandbox, egress_allow
+from dotrix_backend.modules.coding.sandbox import DockerSandbox, SandboxError, egress_allow
 from dotrix_backend.modules.coding.tools import ClaudeCode, Codex
 
 IMAGE = "dotrix-coding:latest"
@@ -36,7 +36,7 @@ async def test_the_docker_daemon_does_not_inherit_the_agents_egress_proxy(tmp_pa
 
     async def cli(*args, **kwargs):
         calls.append((args, kwargs))
-        return ""
+        return "runsc\n" if args[0] == "inspect" else ""
 
     monkeypatch.setattr(sandbox, "cli", cli)
     repo = tmp_path / "repo"
@@ -53,6 +53,41 @@ async def test_the_docker_daemon_does_not_inherit_the_agents_egress_proxy(tmp_pa
         assert "selected-test-key" not in " ".join(args)
     finally:
         await box.close()
+
+
+@pytest.mark.parametrize("container", ["agent", "egress"])
+@pytest.mark.parametrize("failure", ["runc", "", "inspect-error", "run-error"])
+async def test_unverified_isolation_never_receives_repository_files_or_falls_back(
+    tmp_path: Path, monkeypatch, container: str, failure: str,
+) -> None:
+    sandbox = DockerSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="x" * 40,
+                                    coding_docker_runtime="runsc"))
+    run_id = uuid.uuid4()
+    name = f"dotrix-run-{run_id.hex[-16:]}"
+    target = name if container == "agent" else f"{name}-egress"
+    calls = []
+
+    async def cli(*args, **kwargs):
+        calls.append(args)
+        if args[0] in ("run", "start") and target in args and failure == "run-error":
+            raise SandboxError("The requested isolation runtime could not start")
+        if args[0] == "inspect":
+            if args[-1] == target:
+                if failure == "inspect-error":
+                    raise SandboxError("Could not inspect sandbox")
+                return failure
+            return "runsc\n"
+        return ""
+
+    monkeypatch.setattr(sandbox, "cli", cli)
+    with pytest.raises(SandboxError):
+        await sandbox.open(run_id, tmp_path, Codex(), "selected-test-key")
+    assert not any(args[0] == "exec" for args in calls)
+    assert ("rm", "-f", "-v", name, f"{name}-egress") in calls
+    assert ("network", "rm", name) in calls
+    attempts = [args for args in calls if args[0] in ("create", "run")]
+    assert all(args[args.index("--runtime") + 1] == "runsc" for args in attempts)
+    assert len(attempts) == (1 if container == "egress" else 2)
 
 
 @pytest.mark.skipif(not _docker_ready(), reason=f"needs Docker and {IMAGE} (docker build -t {IMAGE} infra/coding)")

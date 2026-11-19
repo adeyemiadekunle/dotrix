@@ -2,7 +2,9 @@
 The whole loop runs against the real API in the backend's tests (test_coding.py, local turns)."""
 from __future__ import annotations
 
+import base64
 import json
+import os
 from pathlib import Path
 
 from dotrix_cli.runner import LocalRunner, Outcome, Tool, parse_line
@@ -84,10 +86,95 @@ def test_opencode_events_and_errors() -> None:
 
 
 def test_claude_code_edits_files_and_runs_no_commands() -> None:
-    """Nothing isolates a local turn, so the tool only edits files in its worktree."""
+    """Nothing isolates a local turn, so the tool only reads, searches and edits files in its worktree:
+    no Bash (acceptEdits alone would still auto-approve rm, mv and cp), and none of the repository's own
+    hooks, permission rules, MCP servers, CLAUDE.md or skills."""
     claude = Tool.named("claude-code").argv
     assert claude[-2:] == ["--permission-mode", "acceptEdits"] and "--allowedTools" not in claude
+    tools = claude[claude.index("--tools") + 1].split(",")
+    assert sorted(tools) == ["Edit", "Glob", "Grep", "Read", "Write"]
+    assert claude[claude.index("--setting-sources") + 1] == "user"
+    assert "--strict-mcp-config" in claude and "--mcp-config" not in claude and "--safe-mode" in claude
     assert Tool.named("opencode").argv[:2] == ["opencode", "run"]
+
+
+def test_claude_code_with_the_desktop_apps_browser_gets_only_its_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The desktop app hands its runner the Browser pane's MCP server (this computer only, behind a token). Claude
+    Code then gets the file tools and that server's, still no commands and none of the repository's configuration."""
+    from dotrix_cli.runner import browser_tools, describe, write_browser_config
+
+    assert browser_tools({}) is None
+    assert browser_tools({"DOTRIX_BROWSER_MCP_URL": "http://127.0.0.1:4411/mcp"}) is None  # no token
+    assert browser_tools({"DOTRIX_BROWSER_MCP_URL": "https://evil.example/mcp", "DOTRIX_BROWSER_MCP_TOKEN": "t"}) is None
+    pane = browser_tools({"DOTRIX_BROWSER_MCP_URL": "http://127.0.0.1:4411/mcp", "DOTRIX_BROWSER_MCP_TOKEN": "secret"})
+    assert pane == ("http://127.0.0.1:4411/mcp", "secret")
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    config = write_browser_config(*pane)
+    assert config.parent == tmp_path and json.loads(config.read_text()) == {
+        "mcpServers": {"browser": {"type": "http", "url": "http://127.0.0.1:4411/mcp", "headers": {"Authorization": "Bearer secret"}}},
+    }
+    if os.name != "nt":
+        assert config.stat().st_mode & 0o077 == 0  # the token is this person's only
+
+    claude = Tool.named("claude-code", browser=config).argv
+    assert sorted(claude[claude.index("--tools") + 1].split(",")) == ["Edit", "Glob", "Grep", "Read", "Write"]
+    assert claude[claude.index("--mcp-config") + 1] == str(config) and "secret" not in " ".join(claude)
+    assert claude[claude.index("--allowedTools") + 1] == "mcp__browser"
+    assert "--strict-mcp-config" in claude and claude[claude.index("--setting-sources") + 1] == "user"
+    # Safe mode would switch the pane's server off: the repository's skills and commands are left out another way.
+    assert "--safe-mode" not in claude and "--disable-slash-commands" in claude
+    assert "--dangerously-skip-permissions" not in claude
+    # In a sandbox the pane isn't offered: the microVM can't reach this computer's server.
+    assert "--mcp-config" not in Tool.named("claude-code", isolated=True).argv
+
+    assert describe("mcp__browser__browser_navigate", {"url": "http://localhost:3000/x"}) == "Opened http://localhost:3000/x in the browser"
+    assert describe("mcp__browser__browser_click", {"ref": 4}) == "Clicked in the browser"
+    assert describe("mcp__browser__app_start", {}) == "Started the app on this computer"
+
+
+def test_opencode_on_a_turn_nothing_isolates_runs_no_commands() -> None:
+    """Checked against OpenCode 2.3.0 with a scripted model: a shell call is refused even when the person's own
+    config allows it on an agent, and `fetch` inside `execute` is refused with `webfetch`."""
+    from dotrix_cli.runner import opencode_settings
+
+    argv = Tool.named("opencode").argv
+    assert argv[:2] == ["opencode", "run"] and "--standalone" in argv and "--auto" in argv
+    assert argv[argv.index("--agent") + 1] == "build"
+    assert Tool.named("opencode", isolated=True).argv == ["opencode", "run", "--format", "json"]
+
+    mine = json.dumps({"model": "nvidia/x", "permission": {"bash": "allow", "edit": "allow"},
+                       "agent": {"build": {"permission": {"bash": {"*": "allow"}}, "model": "nvidia/y"}},
+                       "mcp": {"mine": {"type": "remote", "url": "https://example.test/mcp"}}})
+    env = opencode_settings({"OPENCODE_CONFIG_CONTENT": mine})
+    assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1" and env["OPENCODE_DISABLE_AUTOUPDATE"] == "1"
+    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    denied = ("bash", "webfetch", "websearch", "question", "subagent", "task", "skill")
+    assert all(config["permission"][tool] == "deny" for tool in denied) and config["permission"]["edit"] == "allow"
+    assert all(config["agent"]["build"]["permission"][tool] == "deny" for tool in denied)
+    assert config["agent"]["build"]["model"] == "nvidia/y" and config["model"] == "nvidia/x"  # the person's own kept
+    assert "browser" not in config["mcp"] and config["mcp"]["mine"]["url"] == "https://example.test/mcp"
+
+    with_pane = json.loads(opencode_settings({}, ("http://127.0.0.1:4411/mcp", "secret"))["OPENCODE_CONFIG_CONTENT"])
+    assert with_pane["mcp"]["browser"] == {"type": "remote", "url": "http://127.0.0.1:4411/mcp", "headers": {"Authorization": "Bearer secret"}}
+    assert json.loads(opencode_settings({"OPENCODE_CONFIG_CONTENT": "not json"})["OPENCODE_CONFIG_CONTENT"])["permission"]["bash"] == "deny"
+
+    from dotrix_cli.runner import describe
+    assert describe("execute", {"code": 'return await tools.browser["browser_snapshot"]({})'}) == "Used the browser"
+    assert describe("execute", {"code": "return 1 + 1"}) == "Ran a script"
+
+
+def test_claude_code_in_a_sandbox_still_ignores_the_repositorys_configuration() -> None:
+    claude = Tool.named("claude-code", isolated=True).argv
+    assert "--dangerously-skip-permissions" in claude and "--tools" not in claude  # it may run commands in the VM
+    assert claude[claude.index("--setting-sources") + 1] == "user" and "--strict-mcp-config" in claude
+
+
+def test_an_older_tool_refusing_an_option_says_to_update_it() -> None:
+    from dotrix_cli.runner import _unknown_option
+
+    assert _unknown_option("error: unknown option '--safe-mode'")
+    assert not _unknown_option("Invalid API key · Please run /login")
 
 
 
@@ -165,7 +252,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
                          command=f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
                          worktrees=tmp_path / "trees", echo=lambda _: None, notify=notified.append)
-    await runner.work({"run_id": "run-000001", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
+    await runner.work({"run_id": "run-000001", "session_id": "session-1", "project_id": "p", "lease_token": 1, "lease_seconds": 120,
                        "issue_key": "KUN-1", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
                        "tool": "claude-code", "brief": "x"})
     beats = [(at, body) for at, kind, body in calls if kind == "heartbeat"]
@@ -176,7 +263,7 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     # Where the turn's worktree is: to the platform (the desktop app opens it) and to whatever runs this.
     tree = beats[0][1]["worktree"]
     assert Path(tree).is_relative_to(tmp_path / "trees") and notified == [
-        {"event": "turn", "run_id": "run-000001", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
+        {"event": "turn", "run_id": "run-000001", "session_id": "session-1", "issue_key": "KUN-1", "turn": 1, "worktree": tree}]
 
 
 async def test_a_tool_that_fails_before_changing_anything_is_shown_as_failed(tmp_path: Path) -> None:
@@ -297,3 +384,270 @@ async def test_stopping_the_runner_stops_the_tool_it_started(tmp_path: Path) -> 
     else:
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
+
+
+async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) -> None:
+    """A finished turn's worktree goes once untouched for a few days; recent ones and the one coding stay."""
+    import os
+    import subprocess
+    import time
+
+    checkout = tmp_path / "checkout"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(checkout)], check=True)
+    (checkout / "a.txt").write_text("a\n")
+    subprocess.run(["git", "-C", str(checkout), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(checkout), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
+    trees = tmp_path / "trees"
+    (trees / "p").mkdir(parents=True)
+    old, recent, busy, stray = (trees / "p" / name for name in ("kun-1-old", "kun-2-new", "kun-3-busy", "kun-4-stray"))
+    for tree in (old, recent, busy):
+        subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(tree), "HEAD"], check=True)
+    stray.mkdir()  # git lost track of it
+    edited = trees / "p" / "kun-5-edited"
+    subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(edited), "HEAD"], check=True)
+    week_ago = time.time() - 7 * 86400
+
+    def age(tree: Path) -> None:
+        for path in [*tree.rglob("*"), tree]:
+            os.utime(path, (week_ago, week_ago), follow_symlinks=False)
+
+    for tree in (old, busy, stray, edited):
+        age(tree)
+    # Someone edited a file already in an old worktree: its folder's time doesn't change, the file's does.
+    (edited / "a.txt").write_text("edited by hand\n")
+    (trees / "other-project").mkdir()
+    os.utime(trees / "other-project", (week_ago, week_ago))
+
+    runner = LocalRunner(api=None, repo=checkout, workspace_id="w", project_id="p", worktrees=trees, echo=lambda _: None)
+    runner._coding_in = busy
+    removed = await runner.clean_worktrees()
+    assert sorted(removed) == sorted([old, stray])
+    assert recent.is_dir() and busy.is_dir() and (trees / "other-project").is_dir()
+    assert (edited / "a.txt").read_text() == "edited by hand\n"
+    listed = subprocess.run(["git", "-C", str(checkout), "worktree", "list"], capture_output=True, text=True).stdout
+    assert str(old) not in listed and str(recent) in listed
+
+
+def _checkout(tmp_path: Path, files: dict[str, bytes]) -> Path:
+    import subprocess
+
+    origin = tmp_path / "origin"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    for name, data in files.items():
+        (origin / name).write_bytes(data)
+    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
+    checkout = tmp_path / "checkout"
+    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+    return checkout
+
+
+def _tool(script: str) -> str:
+    import shlex
+    import sys
+
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+
+
+_RUN = {"run_id": "run-000003", "project_id": "p", "lease_token": 1, "lease_seconds": 120, "issue_key": "KUN-3",
+        "turn": 1, "title": "x", "base_branch": "main", "branch": None, "tool": "claude-code", "brief": "x"}
+
+
+def _steps(count: int) -> str:
+    return (f"import json\nfor i in range({count}):\n print(json.dumps({{'type': 'assistant', 'message': "
+            "{'content': [{'type': 'text', 'text': f'step {i}'}]}}), flush=True)\n")
+
+
+def _texts(calls: list[tuple[str, dict]]) -> list[str]:
+    return [e["text"] for _, body in calls for e in body.get("events", [])]
+
+
+async def _turn(tmp_path: Path, script: str, api, files=None) -> list[str]:
+    said: list[str] = []
+    runner = LocalRunner(api=api, repo=_checkout(tmp_path, files or {"a.txt": b"a\n"}), workspace_id="w",
+                         project_id="p", runner_id="r1", command=_tool(script), worktrees=tmp_path / "trees",
+                         echo=said.append)
+    await runner.work(dict(_RUN))
+    return said
+
+
+async def test_failed_native_turn_does_not_publish_its_partial_edits(tmp_path, monkeypatch):
+    import sys
+
+    results = []
+
+    class Api:
+        async def post(self, path, body=None):
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    script = ('import json,sys; open("a.txt", "w").write("partial"); '
+              'print(json.dumps({"type":"error","message":"Local policy was not loaded"})); sys.exit(1)')
+    monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("codex", [sys.executable, "-c", script]))
+    monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
+    runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"original"}), workspace_id="w",
+                         project_id="p", runner_id="r1", tool="codex", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None)
+    await runner.work({**_RUN, "tool": "codex"})
+    [result] = results
+    assert result["outcome"] == "failed" and result["error"] == "Local policy was not loaded"
+    assert not result.get("patch") and not result.get("patch_b64")
+    assert (runner.repo / "a.txt").read_text() == "original"
+
+
+async def test_a_burst_of_steps_all_reach_the_platform_before_the_result(tmp_path: Path) -> None:
+    calls: list[tuple[str, dict]] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            calls.append((path.rsplit("/", 1)[-1], body or {}))
+            return {"stop": False}
+
+    await _turn(tmp_path, _steps(180), Api())
+    texts = [t for t in _texts(calls) if t.startswith("step ")]
+    assert texts == [f"step {i}" for i in range(180)]
+    assert calls[-1][0] == "result"
+
+
+async def test_steps_survive_failed_heartbeats(tmp_path: Path) -> None:
+    calls: list[tuple[str, dict]] = []
+    failures = [3]
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/heartbeat") and failures[0] > 0:
+                failures[0] -= 1
+                raise ConnectionError("down")
+            calls.append((path.rsplit("/", 1)[-1], body or {}))
+            return {"stop": False}
+
+    await _turn(tmp_path, _steps(180), Api())
+    texts = [t for t in _texts(calls) if t.startswith("step ")]
+    assert texts == [f"step {i}" for i in range(180)]
+
+
+async def test_when_the_platform_stays_away_the_result_says_steps_are_missing(tmp_path: Path) -> None:
+    calls: list[tuple[str, dict]] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/heartbeat"):
+                raise ConnectionError("down")
+            calls.append((path.rsplit("/", 1)[-1], body or {}))
+            return {}
+
+    await _turn(tmp_path, _steps(180), Api())
+    [(kind, body)] = calls
+    assert kind == "result" and len(body["events"]) <= 50
+    assert body["events"][-1]["text"].endswith("earlier steps couldn't be sent")
+    assert body["events"][-2]["text"] == "step 179"
+
+
+async def test_a_change_that_is_not_utf8_text_is_sent_as_exact_bytes(tmp_path: Path) -> None:
+    results: list[dict] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    script = "open('a.txt', 'wb').write('caf\\xe9\\n'.encode('latin-1'))"
+    await _turn(tmp_path, script, Api(), {"a.txt": b"a\n"})
+    [result] = results
+    assert result["outcome"] == "changes" and "patch" not in result
+    assert b"+caf\xe9\n" in base64.b64decode(result["patch_b64"], validate=True)
+
+
+async def test_a_utf8_change_is_still_sent_as_a_patch(tmp_path: Path) -> None:
+    results: list[dict] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    await _turn(tmp_path, "open('a.txt', 'wb').write('caf\\xe9\\n'.encode('utf-8'))", Api())
+    [result] = results
+    assert result["outcome"] == "changes" and "+café" in result["patch"]
+    assert base64.b64decode(result["patch_b64"]).decode() == result["patch"]
+
+
+def _flaky_runner(tmp_path: Path, errors: list, **kwargs):
+    claims: list[int] = []
+
+    class Api:
+        async def post(self, path: str, body=None):
+            claims.append(1)
+            if errors:
+                raise errors.pop(0)
+            return {"run": None}
+
+    return LocalRunner(api=Api(), repo=tmp_path, workspace_id="w", project_id="p", runner_id="r1", **kwargs), claims
+
+
+async def _serve_until(runner, stop, monkeypatch, done) -> None:
+    import asyncio
+
+    from dotrix_cli import runner as runner_module
+
+    monkeypatch.setattr(runner_module, "BACKOFF_START", 0.01)
+    monkeypatch.setattr(runner_module, "BACKOFF_MAX", 0.02)
+    task = asyncio.create_task(runner.serve(poll_seconds=0.01, stop=stop))
+    for _ in range(500):
+        if done() or task.done():
+            break
+        await asyncio.sleep(0.01)
+    stop.set()
+    await asyncio.wait_for(task, 2)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("status", [0, 503, 429])
+async def test_serve_waits_out_a_transient_failure(tmp_path: Path, monkeypatch, status: int) -> None:
+    import asyncio
+
+    from dotrix_cli.platform import PlatformError
+
+    errors = [PlatformError(status, "unreachable", "Can't reach"), PlatformError(status, "unreachable", "Can't reach")]
+    said: list[str] = []
+    events: list[dict] = []
+    runner, claims = _flaky_runner(tmp_path, errors, echo=said.append, notify=events.append)
+    await _serve_until(runner, asyncio.Event(), monkeypatch, lambda: len(claims) >= 4)
+    assert len(claims) >= 4 and not errors
+    assert said.count("Can't reach dotrix; trying again…") == 1 and said.count("Connected again") == 1
+    assert [e["event"] for e in events if e["event"] in ("offline", "online")] == ["offline", "offline", "online"]
+    assert all(e["retry_in"] > 0 for e in events if e["event"] == "offline")
+
+
+async def test_serve_still_stops_on_an_auth_error(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+
+    import pytest
+
+    from dotrix_cli.platform import PlatformError
+
+    runner, _ = _flaky_runner(tmp_path, [PlatformError(401, "unauthorized", "Signed out")])
+    with pytest.raises(PlatformError) as caught:
+        await asyncio.wait_for(runner.serve(poll_seconds=0.01), 2)
+    assert caught.value.status == 401
+
+
+async def test_stop_ends_the_wait_between_retries(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+
+    from dotrix_cli import runner as runner_module
+    from dotrix_cli.platform import PlatformError
+
+    monkeypatch.setattr(runner_module, "BACKOFF_START", 30.0)
+    monkeypatch.setattr(runner_module, "BACKOFF_MAX", 60.0)
+    runner, claims = _flaky_runner(tmp_path, [PlatformError(0, "unreachable", "x")] * 5)
+    stop = asyncio.Event()
+    task = asyncio.create_task(runner.serve(poll_seconds=0.01, stop=stop))
+    while not claims:
+        await asyncio.sleep(0.01)
+    stop.set()
+    await asyncio.wait_for(task, 1)

@@ -17,6 +17,7 @@ import asyncio
 import base64
 import contextvars
 import hashlib
+import json
 import logging
 import re
 import shlex
@@ -48,6 +49,7 @@ from dotrix_backend.modules.code.checkouts import (
     auth_env,
     remove_tree,
     run_git,
+    run_git_bytes,
 )
 from dotrix_backend.modules.connectors.github_app import GitHubApp, PullRequest
 from dotrix_backend.modules.connectors.models import ConnectedRepo, GitHubInstallation
@@ -64,6 +66,7 @@ from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
+from dotrix_backend.modules.workspaces.models import Workspace
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.skills import DEFINITION_OF_DONE, review_skills
 
@@ -77,7 +80,10 @@ from .models import (
     CodingSession,
     CodingSessionState,
     PrState,
+    waiting_patch,
 )
+from .network import allowed_hosts, network_digest
+from .planning import parse_plan, planning_brief, readonly_command
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .slots import RunSlots, Stopped
 from .tools import BROWSER_RULE, CodingTool, Usage, run_key, tool_for
@@ -184,6 +190,83 @@ class CodingWorker:
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
     slots: RunSlots = field(default_factory=lambda: RunSlots(2))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.pool.retire = self._retire
+
+    @property
+    def _sleeps(self) -> bool:
+        """Whether a session's sandbox sleeps between turns (Docker Cloud), rather than being closed."""
+        return (getattr(self.sandbox, "sleeps", False) and self.settings.coding_sleep_days > 0
+                and self.settings.coding_sleep_max > 0)
+
+    async def _retire(self, session_id: uuid.UUID, box: SandboxSession, credential: str) -> None:
+        """A warm sandbox the pool let go: asleep (recorded on its session, so any worker wakes it for the
+        next turn), the workspace's oldest sleepers deleted beyond its limit; or closed when it can't sleep
+        or its session is closed or gone."""
+        handle = self.sandbox.handle(box) if self._sleeps else None  # type: ignore[union-attr]
+        if handle is None:
+            await close_quietly(box)
+            return
+        handle["credential"] = credential
+        evicted: list[dict[str, Any]] = []
+        async with self.session_factory() as session:
+            row = await session.get(CodingSession, session_id, with_for_update=True)
+            if row is None or row.state is CodingSessionState.CLOSED:
+                await close_quietly(box)
+                return
+            others = list(await session.scalars(
+                select(CodingSession).where(
+                    CodingSession.workspace_id == row.workspace_id, CodingSession.id != session_id,
+                    CodingSession.sandbox_handle.is_not(None),
+                ).order_by(CodingSession.sandbox_slept_at).with_for_update()
+            ))
+            for older in others[: max(0, len(others) - (self.settings.coding_sleep_max - 1))]:
+                evicted.append(dict(older.sandbox_handle or {}))
+                older.sandbox_handle, older.sandbox_slept_at = None, None
+            # Recorded before it stops, so the sweep never mistakes it for a leftover.
+            row.sandbox_handle, row.sandbox_slept_at = handle, datetime.now(UTC)
+            await session.commit()
+        for gone in evicted:
+            await self.sandbox.discard(gone)  # type: ignore[union-attr]
+        await self.sandbox.sleep(box)  # type: ignore[union-attr]
+
+    async def _wake(
+        self, session_id: uuid.UUID, handle: dict[str, Any], slept_at: datetime | None, credential: str,
+        tool: CodingTool, key: str,
+    ) -> SandboxSession | None:
+        """The session's sleeping sandbox, woken for this turn; None (and it's deleted) when it was opened
+        with another key or network, slept too long, or won't start."""
+        await self._session(session_id, sandbox_handle=None, sandbox_slept_at=None)  # taken: in use now
+        fresh = slept_at is not None and datetime.now(UTC) - slept_at < timedelta(days=self.settings.coding_sleep_days)
+        if not (self._sleeps and fresh and handle.get("credential") == credential):
+            if self.sandbox is not None and hasattr(self.sandbox, "discard"):
+                await self.sandbox.discard(handle)
+            return None
+        return await self.sandbox.wake(handle, tool, key)  # type: ignore[union-attr]
+
+    async def sweep_sandboxes(self) -> None:
+        """Delete sleeping sandboxes past their days or of closed sessions, then what nothing refers to
+        (a deleted session's, a crash's). Only for sandboxes that sleep."""
+        if not getattr(self.sandbox, "sleeps", False):
+            return
+        cutoff = datetime.now(UTC) - timedelta(days=self.settings.coding_sleep_days)
+        done: list[dict[str, Any]] = []
+        async with self.session_factory() as session:
+            rows = list(await session.scalars(
+                select(CodingSession).where(CodingSession.sandbox_handle.is_not(None)).with_for_update(skip_locked=True)
+            ))
+            for row in rows:
+                if (row.state is CodingSessionState.CLOSED or not self._sleeps
+                        or row.sandbox_slept_at is None or row.sandbox_slept_at < cutoff):
+                    done.append(dict(row.sandbox_handle or {}))
+                    row.sandbox_handle, row.sandbox_slept_at = None, None
+            await session.commit()
+            kept = {str((h or {}).get("sandbox")) for h in await session.scalars(
+                select(CodingSession.sandbox_handle).where(CodingSession.sandbox_handle.is_not(None)))}
+        for handle in done:
+            await self.sandbox.discard(handle)  # type: ignore[union-attr]
+        await self.sandbox.sweep(kept)  # type: ignore[union-attr]
 
     async def execute(
         self, run_id: uuid.UUID, *, operation: DispatchOperation | None = None,
@@ -335,19 +418,27 @@ class CodingWorker:
             if installation.suspended_at is not None:
                 raise RunFailed(f"The GitHub App is suspended on {installation.account_login}")
             ref = RepoRef(run.workspace_id, run.project_id, installation.installation_id, repo.full_name,
-                          repo.default_branch)
+                          run.base_branch)
             github_repo_id, agent, brief, model = repo.github_repo_id, run.agent, run.brief, run.model
             workspace_id, session_id = run.workspace_id, run.session_id
             sess = await _session_row(session, run)
             claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
+            sleeping, slept_at = (dict(sess.sandbox_handle) if sess.sandbox_handle else None), sess.sandbox_slept_at
+            # The hosts its sandbox may reach besides the model API (owners and admins set them).
+            allow = allowed_hosts(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id))
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
+            environment_image_id = run.environment_image_id
+            environment = dict(run.environment_snapshot) if run.environment_snapshot else None
+            execution_plan = run.execution_plan
+            plan_mode = run.work_mode == "plan"
             session_branch, session_pr = run.branch, (run.pr_number, run.pr_url) if run.pr_number else None
             # Accepted changes (Manual) are pushed as they were checked; a revert undoes a pushed turn.
             # Neither runs the agent again.
-            accepted = await session.scalar(select(CodingRun.pending_patch).where(CodingRun.id == run.id)) \
-                if run.accepted_at is not None else None
+            waiting = (await session.execute(select(CodingRun.pending_patch_bytes, CodingRun.pending_patch).where(
+                CodingRun.id == run.id))).first() if run.accepted_at is not None else None
+            accepted = waiting_patch(waiting[0], waiting[1]) if waiting is not None else None
             reverting = await session.get(CodingRun, run.revert_of) if run.revert_of else None
             revert = (reverting.turn, reverting.commit_sha) if reverting is not None and reverting.commit_sha else None
             if run.revert_of and revert is None:
@@ -390,11 +481,17 @@ class CodingWorker:
                           f"refs/heads/{session_branch or ref.default_branch}", env=source.env, timeout=FETCH_TIMEOUT)
         except CheckoutError as exc:
             if session_branch is None:
-                raise
+                raise RunFailed(f"Couldn't fetch the base branch {ref.default_branch}. Check GitHub App access and "
+                                "make sure the repository has an initial commit on that branch before starting Kai.") from exc
             raise RunFailed(f"The session's branch {session_branch} is gone (merged or deleted?): "
                             "start a new session from the issue") from exc
         await run_git(host, "checkout", "-q", "--detach", "FETCH_HEAD")
         base_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
+
+        if not publish_only and not plan_mode and execution_plan:
+            expected = execution_plan.get("execution") or {}
+            if expected.get("base_sha") != base_sha or expected.get("repository") != ref.full_name:
+                raise RunFailed("The repository changed since the selected plan; refresh the plan before building")
 
         await self._update(run_id, base_sha=base_sha, step=f"Checked out {session_branch}" if session_branch
                            else "Checked out the repository")
@@ -404,17 +501,75 @@ class CodingWorker:
             return
         assert tool is not None and key is not None and self.sandbox is not None
 
+        if environment and not plan_mode and self.sandbox.kind == "local":
+            raise RunFailed("Cloud environment scripts require a supported isolated sandbox")
+        if environment and not plan_mode and execution_plan and self.settings.coding_parallel:
+            raise RunFailed("Cloud environment profiles are not yet supported for parallel coding")
+        run_sandbox = self.sandbox
+        if environment:
+            from dotrix_backend.core.errors import Conflict
+
+            from .environments import profile, require_approved_image
+
+            configured = profile(environment)
+            try:
+                require_approved_image(configured.image, self.settings.coding_environment_images)
+            except Conflict as exc:
+                raise RunFailed("The environment image is no longer approved; ask the operator to review it") from exc
+            if configured.image and self.sandbox.kind != "docker":
+                raise RunFailed("Approved custom images currently require the Docker sandbox")
+            if hasattr(self.sandbox, "pin_image"):
+                try:
+                    run_sandbox = await self.sandbox.pin_image(environment_image_id or configured.image or self.settings.coding_image)
+                except SandboxError as exc:
+                    raise RunFailed("The approved coding image is unavailable on this worker; ask the operator to install it") from exc
+                environment_image_id = run_sandbox.image
+                await self._update(run_id, environment_image_id=environment_image_id)
+            elif configured.image:
+                raise RunFailed("This sandbox cannot pin the approved coding image")
+        if not plan_mode and execution_plan and self.settings.coding_parallel:
+            from .parallel import execute as execute_tasks
+
+            dependencies = {i: task.get("depends_on", []) for i, task in enumerate(execution_plan["tasks"], 1)}
+            summary, patch = await execute_tasks(self, run_id, work, host, tool, key, model, brief, allow,
+                                                 execution_plan["execution"], dependencies)
+            if not patch.strip():
+                await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
+                return
+            _refuse_leaked_key(key, patch, summary)
+            paths, files = await _stage(work, host, patch)
+            if await self._hold_for_acceptance(run_id, patch, files, summary):
+                return
+            await self._publish(run_id, host, ref, push, token, summary, files, paths, patch,
+                                session_branch, session_pr, publication)
+            return
+
         # 2. The agent's sandbox: the session's warm one when its files still match the branch (nobody
         #    pushed in between), else a fresh one with the tracked files and a history of its own, and
         #    the session's transcript restored so a tool that can resume (Claude Code) continues its
         #    conversation.
         resumable = tool.resumes
-        credential = hashlib.sha256(key.encode()).hexdigest()  # which key the sandbox holds, for the pool
+        # Which key and network the sandbox has: a warm or sleeping one opened with others isn't reused.
+        credential = hashlib.sha256(f"{key}\n{network_digest(allow)}".encode()).hexdigest()
+        if environment:
+            credential = hashlib.sha256((credential + json.dumps(environment, sort_keys=True) + (environment_image_id or "")).encode()).hexdigest()
         box = await self.pool.take(session_id, credential)
+        woken = False
+        if box is None and sleeping is not None:
+            box = await self._wake(session_id, sleeping, slept_at, credential, tool, key)
+            woken = box is not None
         warm = False
         if box is not None:
-            here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
-            warm = here.code == 0 and here.stdout.strip() == (await run_git(host, "rev-parse", "HEAD^{tree}")).strip()
+            try:
+                here = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=60)
+                warm = here.code == 0 and here.stdout.strip() == (await run_git(host, "rev-parse", "HEAD^{tree}")).strip()
+            except asyncio.CancelledError:
+                await close_quietly(box)
+                raise
+            except Exception:
+                # The box has left the pool: a failed check means "not warm", and it must not be left running.
+                logger.warning("coding run %s: couldn't check the session's sandbox for reuse", run_id, exc_info=True)
+                warm = False
             if not warm:
                 await close_quietly(box)
                 box = None
@@ -423,19 +578,61 @@ class CodingWorker:
             copy = work / "upload" / "repo"
             await _export(host, copy)
             await _baseline(copy)
-            box = await self.sandbox.open(run_id, copy, tool, key)
+            box = await run_sandbox.open(run_id, copy, tool, key, **({"allow": allow} if allow else {}))
             if resumable and transcript_key:
-                resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)
+                try:
+                    resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)
+                except BaseException:
+                    await close_quietly(box)
+                    raise
         keep = False
         reported: float | None = None
         try:
+            if environment and not plan_mode and not warm:
+                before_setup = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=30)
+                if before_setup.code != 0:
+                    raise RunFailed("Could not read the environment setup baseline")
+                await self._environment_phase(run_id, box, environment, "setup_script")
+                clean = await box.exec(["git", "status", "--porcelain", "--untracked-files=normal"], timeout=30)
+                after_setup = await box.exec(["git", "rev-parse", "HEAD^{tree}"], timeout=30)
+                if (clean.code != 0 or clean.stdout.strip() or after_setup.code != 0
+                        or before_setup.stdout.strip() != after_setup.stdout.strip()):
+                    raise RunFailed("Environment setup changed repository files; use a frozen dependency install and keep generated files ignored")
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
-            where = "kept from the last turn" if warm else self.sandbox.kind
+            where = ("woken from the last turn" if woken else "kept from the last turn") if warm else self.sandbox.kind
             await self._update(run_id, step=f"Sandbox ready ({where}); {CODING_AGENT_NAME} is "
                                + ("continuing the session" if resumed else "working"))
+            if plan_mode:
+                brief = planning_brief(brief, ref.full_name, base_sha)
+                resumed = False
+                claude_session = uuid.uuid4()
             extra = tool.session_args(claude_session, resumed)
+            started = datetime.now(UTC)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
-                                                 cost_before if resumed else None)
+                                                 cost_before if resumed else None, plan_mode=plan_mode)
+            if plan_mode:
+                try:
+                    result_plan = parse_plan(summary)
+                except ValueError as exc:
+                    raise RunFailed("Kai did not return a valid plan; revise the request and try again") from exc
+                if result_plan.get("execution") and (
+                    result_plan["execution"]["base_sha"] != base_sha
+                    or result_plan["execution"]["repository"] != ref.full_name
+                ):
+                    raise RunFailed("Kai's plan names a different repository or revision; request a corrected plan")
+                async with self.session_factory() as session:
+                    planned_run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id).with_for_update())
+                    if planned_run is None or not self._holds(planned_run) or planned_run.status is not CodingRunStatus.RUNNING:
+                        raise _ReconciliationRequired()
+                    if planned_run.stop_requested:
+                        raise _Stopped("Stopped by a person")
+                    planned_run.plan_result = result_plan
+                    await session.commit()
+                await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=result_plan["summary"])
+                return
+            if environment:
+                await self._environment_phase(run_id, box, environment, "verify_script")
+            await self._blocked(run_id, box, started)
             await self._screenshots(run_id, box)
             changes = await box.exec(
                 ["sh", "-c", "git add -A && git -c core.quotepath=off diff --cached --binary --no-color "
@@ -444,15 +641,17 @@ class CodingWorker:
             )
             if changes.code != 0:
                 raise RunFailed("Couldn't read the agent's changes (did it remove the repository's git folder?)")
-            if changes.truncated or len(changes.stdout.encode()) > guard.MAX_PATCH_BYTES:
+            patch = changes.raw or changes.stdout.encode()  # the bytes git wrote (fakes may give only text)
+            if changes.truncated or len(patch) > guard.MAX_PATCH_BYTES:
                 raise RunFailed(f"The changes are larger than {guard.MAX_PATCH_BYTES // 1_000_000} MB")
-            if not changes.stdout.strip():
+            if not patch.strip():
                 await self._end(run_id, CodingRunStatus.NO_CHANGES, summary=summary)
                 keep = True
                 return
 
             # 3. Apply to our checkout and check, before anything leaves this machine.
-            paths, files = await _stage(work, host, changes.stdout)
+            _refuse_leaked_key(key, patch, summary)
+            paths, files = await _stage(work, host, patch)
 
             async def sandbox_moves_on(heading: str) -> None:
                 # The sandbox's own history moves on with the branch: the next turn's changes are its own.
@@ -462,18 +661,18 @@ class CodingWorker:
                 keep = committed.code == 0
 
             # Manual: the checked changes wait for a person to accept them; nothing is pushed yet.
-            if await self._hold_for_acceptance(run_id, changes.stdout, files, summary):
+            if await self._hold_for_acceptance(run_id, patch, files, summary):
                 await sandbox_moves_on("Changes waiting to be accepted")
                 return
 
             # 4. Commit, push a new branch, open the PR.
-            await self._publish(run_id, host, ref, push, token, summary, files, paths, changes.stdout,
+            await self._publish(run_id, host, ref, push, token, summary, files, paths, patch,
                                 session_branch, session_pr, publication, after_push=sandbox_moves_on)
         finally:
             # The conversation moved on even when the turn didn't push: save it for the next turn.
-            if tool.resumes:
+            if tool.resumes and not plan_mode:
                 await self._save_transcript(box, tool, claude_session, session_id, workspace_id)
-            if reported is not None:
+            if reported is not None and not plan_mode:
                 await self._session(session_id, cost_reported=reported)
             # A scanner may have classified the run while the sandbox was
             # working. Never place that sandbox back in the warm session pool.
@@ -492,8 +691,24 @@ class CodingWorker:
                 await close_quietly(box)
                 await self._session(session_id, state=CodingSessionState.IDLE)
 
+    async def _blocked(self, run_id: uuid.UUID, box: SandboxSession, since: datetime) -> None:
+        """Say which hosts the sandbox refused during the turn (Docker Cloud keeps a log), so a turn that
+        needed a package registry says where to allow it rather than failing for no visible reason."""
+        blocked = getattr(box, "blocked_hosts", None)
+        if blocked is None:
+            return
+        try:
+            hosts = await blocked(since)
+        except Exception:
+            logger.warning("coding run %s: couldn't read the sandbox's blocked hosts", run_id, exc_info=True)
+            return
+        if hosts:
+            shown = ", ".join(hosts[:8]) + (f" and {len(hosts) - 8} more" if len(hosts) > 8 else "")
+            await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in "
+                                            "Settings → Network")
+
     async def _hold_for_acceptance(
-        self, run_id: uuid.UUID, diff: str, files: list[dict[str, Any]], summary: str | None,
+        self, run_id: uuid.UUID, diff: bytes, files: list[dict[str, Any]], summary: str | None,
     ) -> bool:
         """In Manual, or when they change files CI runs (`guard.needs_a_person`), a turn's checked changes
         wait for a person (`changes_ready`) instead of being pushed: kept as the patch, its files listed,
@@ -533,7 +748,7 @@ class CodingWorker:
                 await run_git(host, "revert", "--no-commit", sha)
             except CheckoutError as exc:
                 raise RunFailed(f"Turn {turn} doesn't revert cleanly: later turns changed the same lines") from exc
-            diff = await run_git(host, "diff", "--cached", "--binary", "--no-color", "--no-renames")
+            diff = await run_git_bytes(host, "diff", "--cached", "--binary", "--no-color", "--no-renames")
             paths, files = await _checked(host)
             summary = f"Reverted turn {turn} ({sha[:7]})."
         else:
@@ -549,7 +764,7 @@ class CodingWorker:
 
     async def _publish(
         self, run_id: uuid.UUID, host: Path, ref: RepoRef, push: _PushTarget, token: str,
-        summary: str | None, files: list[dict[str, Any]], paths: list[str], diff: str,
+        summary: str | None, files: list[dict[str, Any]], paths: list[str], diff: bytes,
         session_branch: str | None, session_pr: tuple[int, str | None] | None, publication: _Publication, *,
         after_push: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
@@ -601,7 +816,8 @@ class CodingWorker:
             assert run is not None
             if not self._holds(run):
                 raise _ReconciliationRequired()  # a newer attempt finds the PR on GitHub
-            run.branch, run.commit_sha, run.files_changed, run.diff = branch, commit_sha, files, diff
+            run.branch, run.commit_sha, run.files_changed = branch, commit_sha, files
+            run.diff = diff.decode("utf-8", errors="replace")  # display only; the bytes were applied
             run.pr_number, run.pr_url = pr.number, pr.html_url
             run.pr_state = run.pr_state or PrState.OPEN
             if run.status is CodingRunStatus.RECOVERY_REQUIRED:
@@ -611,7 +827,7 @@ class CodingWorker:
                 raise _ReconciliationRequired()
             await self._finish(session, run, CodingRunStatus.PR_OPENED, summary=summary)
             await issue_to_review(session, run, title, opened=session_pr is None)
-        await self._review(run_id, title, files, diff)
+        await self._review(run_id, title, files, diff.decode("utf-8", errors="replace"))
 
     async def _fork(self, ref: RepoRef, owner: str) -> _PushTarget:
         """The app's fork of the repo in `owner` (made the first time), with a token to push there."""
@@ -624,13 +840,57 @@ class CodingWorker:
         fork_url = await self.repo_url(fork_ref)
         return _PushTarget(fork_ref, fork_url, auth_env(fork_url, fork_token), f"{owner}:", fork_token)
 
+    async def _environment_phase(self, run_id, box, environment: dict, phase: str) -> None:
+        from .environments import profile
+
+        configured = profile(environment)
+        script = getattr(configured, phase)
+        if not script.strip():
+            return
+        heading = "Environment setup" if phase == "setup_script" else "Environment verification"
+        await self._update(run_id, step=f"{heading} started (revision {configured.revision})")
+        cancel = asyncio.Event()
+
+        async def watch():
+            while not cancel.is_set():
+                await asyncio.sleep(STOP_POLL_SECONDS)
+                if await self.reconciliation_required(run_id) or await self.stop_requested(run_id):
+                    cancel.set()
+                    return
+
+        watcher = asyncio.create_task(watch())
+        try:
+            command = ["sh", "-eu", "-c", script]
+            if phase == "verify_script":
+                command = readonly_command(command)
+            result = await box.exec(command, timeout=configured.timeout_seconds, cancel=cancel)
+        finally:
+            watcher.cancel()
+        if result.cancelled:
+            raise _Stopped(f"{heading} stopped")
+        if result.timed_out or result.code != 0:
+            # Arbitrary command output can contain credentials; report status, never raw stdout/stderr.
+            raise RunFailed(f"{heading} failed" + (" at its time limit" if result.timed_out else f" (exit {result.code})"))
+        await self._update(run_id, step=f"{heading} passed")
+
     async def _code(
         self, run_id: uuid.UUID, box: SandboxSession, tool: CodingTool, model: str | None, tool_session: uuid.UUID,
-        brief: str, extra: list[str], cost_before: float | None,
+        brief: str, extra: list[str], cost_before: float | None, *, plan_mode: bool = False, task_key: str | None = None,
     ) -> tuple[str | None, float | None]:
         """Run the tool with the brief on the run's model (the tool's default when None), streaming its
         events into the run: its final message, and the cost it reported. A resumed session reports
         its running total, so the turn's own cost is what it adds to `cost_before`."""
+        from .capabilities import describe, instructions
+        from .skills import materialize
+
+        async with self.session_factory() as session:
+            skill_run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id))
+            if skill_run is None or not self._holds(skill_run) or skill_run.status is not CodingRunStatus.RUNNING:
+                raise _ReconciliationRequired()
+            skill_snapshot = skill_run.skill_snapshot or {}
+            tool_capabilities = describe(skill_run, self.settings)
+        brief += instructions(tool_capabilities, skill_snapshot)
+        brief += await materialize(box, skill_snapshot)
         usage, summary, failed = Usage(), None, None
         reported: list[float] = []
         pending: list[dict[str, Any]] = []
@@ -642,7 +902,17 @@ class CodingWorker:
             nonlocal last_flush
             last_flush = time.monotonic()
             steps, pending[:] = list(pending), []
-            await self._update(run_id, events=steps, usage=usage)
+            if task_key:
+                from .parallel import report_usage
+
+                for step in steps:
+                    step["text"] = f"[{task_key}] {step['text']}"
+                    if step.get("ref"):
+                        step["ref"] = f"{task_key}:{step['ref']}"
+                await self._update(run_id, events=steps)
+                await report_usage(self, run_id, task_key, usage)
+            else:
+                await self._update(run_id, events=steps, usage=usage)
 
         async def on_line(line: str) -> None:
             nonlocal summary, failed
@@ -674,11 +944,12 @@ class CodingWorker:
                     cancel.set()
 
         # The browser comes with the coding image: the Docker and OpenShell sandboxes, not the local one.
-        browser = self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
+        browser = not plan_mode and self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
         watcher = asyncio.create_task(watch_stop())
         try:
             result = await box.exec(
-                tool.command(model, browser=browser) + extra,
+                readonly_command(tool.command(model, browser=False) + extra) if plan_mode
+                else tool.command(model, browser=browser) + extra,
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )
@@ -821,21 +1092,27 @@ class CodingWorker:
                 logger.warning("closing idle coding sandboxes failed", exc_info=True)
 
     async def reap(self) -> None:
-        """Close warm sandboxes left unused past the idle time, and those whose session was closed by
-        hand or deleted. A closed session keeps its transcript (a new turn resumes); deleting a
+        """Close warm sandboxes left unused past the idle time (they sleep, where they can), and those whose
+        session was closed by hand or deleted, or whose sandbox was deleted by hand (the session isn't
+        warm any more). A closed session keeps its transcript (a new turn resumes); deleting a
         session deletes it (the service does)."""
         for session_id in self.pool.idle():
-            await self.pool.close(session_id)
+            await self.pool.close(session_id, keep=True)
             await self._session(session_id, state=CodingSessionState.IDLE)
         pooled = self.pool.sessions()
         if not pooled:
             return
         async with self.session_factory() as session:
-            live = dict((await session.execute(
-                select(CodingSession.id, CodingSession.state).where(CodingSession.id.in_(pooled))
-            )).all())
+            live = {sid: (state, at) for sid, state, at in (await session.execute(
+                select(CodingSession.id, CodingSession.state, CodingSession.last_active_at)
+                .where(CodingSession.id.in_(pooled))
+            )).all()}
+        settled = datetime.now(UTC) - timedelta(seconds=60)  # a turn that just ended marks it warm after pooling it
         for session_id in pooled:
-            if live.get(session_id) in (None, CodingSessionState.CLOSED):  # deleted, or closed by hand
+            state, at = live.get(session_id, (None, None))
+            if state in (None, CodingSessionState.CLOSED):  # deleted, or closed by hand
+                await self.pool.close(session_id)
+            elif state is CodingSessionState.IDLE and at is not None and at < settled:  # its sandbox deleted by hand
                 await self.pool.close(session_id)
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
@@ -884,7 +1161,7 @@ class CodingWorker:
 
     async def _update(
         self, run_id: uuid.UUID, *, events: list[dict[str, Any]] | None = None, usage: Usage | None = None,
-        step: str | None = None, base_sha: str | None = None,
+        step: str | None = None, base_sha: str | None = None, environment_image_id: str | None = None,
     ) -> None:
         async with self.session_factory() as session:
             run = await session.scalar(select(CodingRun).where(
@@ -901,6 +1178,10 @@ class CodingWorker:
                     run.model, input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
                     cached_input_tokens=usage.cached_input_tokens, cache_write_tokens=usage.cache_write_tokens,
                     overrides=self.settings.model_prices) if usage.total else None
+            if environment_image_id is not None:
+                if run.environment_image_id is not None and run.environment_image_id != environment_image_id:
+                    raise RunFailed("The coding environment image identity changed; start a new session")
+                run.environment_image_id = environment_image_id
             if base_sha:
                 run.base_sha = base_sha
             await session.commit()
@@ -1018,12 +1299,14 @@ def add_events(run: CodingRun, session: AsyncSession, *, events: list[dict[str, 
 
 
 async def ready_for_acceptance(
-    session: AsyncSession, run: CodingRun, diff: str, files: list[dict[str, Any]], summary: str | None,
+    session: AsyncSession, run: CodingRun, diff: bytes, files: list[dict[str, Any]], summary: str | None,
     *, ci_sensitive: list[str] | None = None,
 ) -> None:
     """A turn's checked changes wait for a person (`changes_ready`): in Manual, or because they change
     files CI runs (`ci_sensitive`, in any mode); its approvers are told. Not committed."""
-    run.status, run.pending_patch, run.diff, run.files_changed = CodingRunStatus.CHANGES_READY, diff, diff, files
+    run.status, run.files_changed = CodingRunStatus.CHANGES_READY, files
+    run.pending_patch, run.pending_patch_bytes = None, diff
+    run.diff = diff.decode("utf-8", errors="replace")  # display only
     run.summary = summary or run.summary
     run.lease_expires_at = None
     project = await session.get(Project, run.project_id)
@@ -1055,7 +1338,7 @@ def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *
     """End a run (the caller holds it and checked it may): its outcome, audited. Not committed."""
     run.status, run.finished_at = status, datetime.now(UTC)
     run.error = error[:1000] if error else None
-    run.pending_patch = None  # accepted changes are on the branch now, or never will be
+    run.pending_patch = run.pending_patch_bytes = None  # accepted changes are on the branch now, or never will be
     if summary:
         run.summary = summary
     AuditLog(session).record(
@@ -1065,12 +1348,46 @@ def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *
         details={"run_id": str(run.id), "pr_url": run.pr_url, "error": run.error,
                  "tokens": run.input_tokens + run.output_tokens},
     )
+    turn_ended(session, run)
 
 
-async def _stage(work: Path, host: Path, diff: str) -> tuple[list[str], list[dict[str, Any]]]:
+def turn_ended(session: AsyncSession, run: CodingRun, *, by: uuid.UUID | None = None) -> None:
+    """Tell whoever asked for a turn how it ended, as Claude Code does when a background task finishes:
+    its PR, nothing changed, or why it didn't finish. Not for a turn they stopped or discarded themselves
+    (`by`), nor one still waiting on a person (that has its own notification). Not committed."""
+    if run.requested_by_id is None or (by is not None and by == run.requested_by_id):
+        return
+    key = run.issue_key
+    if run.status is CodingRunStatus.PR_OPENED:
+        title = f"{CODING_AGENT_NAME}'s turn on {key} is on PR #{run.pr_number}" if run.pr_number \
+            else f"{CODING_AGENT_NAME} finished {key}"
+        why = None
+    elif run.status is CodingRunStatus.NO_CHANGES:
+        title = (f"{CODING_AGENT_NAME}'s plan for {key} is ready" if run.work_mode == "plan"
+                 else f"{CODING_AGENT_NAME} finished {key} without changing anything")
+        why = None
+    elif run.status is CodingRunStatus.FAILED:
+        title, why = f"{CODING_AGENT_NAME} didn't finish {key}", run.error
+    else:
+        return
+    Notifier(session).coding_done(
+        workspace_id=run.workspace_id, project_id=run.project_id, requester_id=run.requested_by_id,
+        coding_run_id=run.id, issue_id=run.issue_id, title=title, at=run.finished_at or datetime.now(UTC),
+        agent=run.agent.value, why=why,
+    )
+
+
+def _refuse_leaked_key(key: str | None, patch: bytes, summary: str | None) -> None:
+    """Nothing that carries the person's model key is committed, pushed or kept for acceptance."""
+    if guard.leaks(key, patch, summary):
+        raise RunFailed(f"Not pushed: {CODING_AGENT_NAME}'s changes or summary contain your model key, so "
+                        "nothing was committed. Consider replacing the key with your provider")
+
+
+async def _stage(work: Path, host: Path, diff: bytes) -> tuple[list[str], list[dict[str, Any]]]:
     """Apply the agent's changes to our checkout's index and check them: the paths and their counts."""
     patch = work / "changes.patch"
-    patch.write_bytes(diff.encode())  # bytes: text mode would add \r before each \n on Windows
+    patch.write_bytes(diff)  # bytes: text mode would add \r before each \n on Windows
     try:
         await run_git(host, "apply", "--index", "--binary", "--whitespace=nowarn", str(patch))
     except CheckoutError as exc:

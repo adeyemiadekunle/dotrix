@@ -5,6 +5,8 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
+from pydantic import TypeAdapter
 
 from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.jobs import Jobs, get_jobs
@@ -20,8 +22,11 @@ from dotrix_backend.modules.projects.deps import (
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
+from .environments import EnvironmentRead, EnvironmentUpdate, profile, require_approved_image
 from .files import TurnFiles
 from .local import LocalRunners
+from .network import SandboxNetwork
+from .outcomes import shared_outcomes
 from .schemas import (
     CodingAvailability,
     CodingClaimed,
@@ -42,8 +47,12 @@ from .schemas import (
     RunnerHeartbeat,
     RunnerHeartbeatRead,
     RunnerResult,
+    SandboxNetworkRead,
+    SandboxNetworkUpdate,
+    SharedCodingOutcomeRead,
 )
 from .service import CodingService
+from .stream import follow_session
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/coding",
@@ -58,9 +67,10 @@ CodingApprover = Annotated[ProjectAccess, Depends(require_project_permission(Per
 
 
 def get_coding_service(
-    request: Request, session: SessionDep, settings: SettingsDep, jobs: Annotated[Jobs, Depends(get_jobs)]
+    request: Request, session: SessionDep, settings: SettingsDep, jobs: Annotated[Jobs, Depends(get_jobs)],
+    github: Annotated[GitHubApp, Depends(get_github_app)],
 ) -> CodingService:
-    return CodingService(session, settings, jobs, secrets=request.app.state.secrets)
+    return CodingService(session, settings, jobs, secrets=request.app.state.secrets, github=github)
 
 
 Coding = Annotated[CodingService, Depends(get_coding_service)]
@@ -165,6 +175,14 @@ async def close_coding_session(session_id: uuid.UUID, access: ProjectViewer, cod
     await coding.close_session(access, session_id)
 
 
+@router.delete("/sessions/{session_id}/sandbox", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 409))
+async def delete_coding_sandbox(session_id: uuid.UUID, access: ProjectViewer, coding: Coding) -> None:
+    """Delete a coding session's cloud sandbox now, warm or asleep: its installed dependencies and anything
+    not committed go; the session, its branch, PR, and transcript stay, and its next turn starts a fresh
+    sandbox and resumes. Whoever started it, or owners and admins; not while a turn waits or works."""
+    await coding.delete_sandbox(access, session_id)
+
+
 @router.patch("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 422))
 async def update_coding_session(session_id: uuid.UUID, data: CodingSessionUpdate, access: ProjectViewer, coding: Coding) -> None:
     """Rename, pin, or archive a coding session. Whoever started it, or owners and admins."""
@@ -226,6 +244,44 @@ async def get_coding_session(session_id: uuid.UUID, access: ProjectViewer, codin
     """A coding session's turns, first to latest: each a run with what the agent did. Sessions are
     private like conversations: whoever started it, and approvers while a turn waits on them."""
     return await coding.session_turns(access, session_id)
+
+
+_TURNS = TypeAdapter(list[CodingRunRead])
+
+
+@router.get(
+    "/sessions/{session_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}, "description": "Server-sent events"}},
+)
+async def stream_coding_session(
+    session_id: uuid.UUID, request: Request, access: ProjectViewer, coding: Coding, settings: SettingsDep,
+    jobs: Annotated[Jobs, Depends(get_jobs)], github: Annotated[GitHubApp, Depends(get_github_app)],
+) -> StreamingResponse:
+    """A coding session as it changes, as server-sent events: `turns` (the session's turns, as
+    `GET .../sessions/{session_id}` returns them) first and each time one moved, within about half
+    a second, then `end` once no turn waits or works. The connection closes after ten minutes:
+    open it again. As private as the session; comment lines keep the connection open."""
+    await coding.session_turns(access, session_id)
+    secrets = request.app.state.secrets
+
+    async def events():
+        follow = follow_session(
+            request.app.state.runner.session_factory,
+            lambda session: CodingService(session, settings, jobs, secrets=secrets, github=github),
+            access, session_id,
+        )
+        async for event, turns in follow:
+            if event == "ping":
+                yield ": ping\n\n"
+            elif turns is None:
+                yield f"event: {event}\ndata: {{}}\n\n"
+            else:
+                yield f"event: {event}\ndata: {_TURNS.dump_json(turns).decode()}\n\n"
+
+    return StreamingResponse(
+        events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 
 @router.post("/sessions/{session_id}/turns", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
@@ -312,3 +368,88 @@ async def report_coding_result(
     Changes are checked (no `.dotrix/`, no CI configuration); in Manual they wait for a person to
     accept them, otherwise they're pushed by the platform. 409 `lease_lost` when no longer held."""
     await runners.result(member, runner_id, coding_run_id, data)
+
+
+# -- Network: the hosts Kai's sandboxes may reach besides the model API (network.py) --------
+
+WorkspaceSettingsEditor = Annotated[Membership, Depends(require_permission(Permission.MANAGE_WORKSPACE))]
+ProjectNetworkEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_WORKSPACE))]
+
+
+@workspace_router.get("/network")
+async def get_workspace_sandbox_network(
+    member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], session: SessionDep,
+) -> SandboxNetworkRead:
+    """The hosts every project's coding sandboxes may reach besides the model API, and the presets to
+    choose from. Anyone in the workspace can read it (a blocked turn says where to ask)."""
+    return await SandboxNetwork(session).workspace(member)
+
+
+@workspace_router.put("/network", responses=errors(403, 409, 422))
+async def set_workspace_sandbox_network(
+    data: SandboxNetworkUpdate, member: WorkspaceSettingsEditor, session: SessionDep,
+) -> SandboxNetworkRead:
+    """Set the hosts every project's coding sandboxes may reach (presets and custom hosts: exact, or
+    *.domain). Each one is somewhere an agent could send data. Owners and admins; audited."""
+    return await SandboxNetwork(session).set_workspace(member, data)
+
+
+@router.get("/network")
+async def get_project_sandbox_network(access: ProjectViewer, session: SessionDep) -> SandboxNetworkRead:
+    """The hosts this project's coding sandboxes may reach on top of the workspace's, and all of them together."""
+    return await SandboxNetwork(session).project(access.member, access.project)
+
+
+@router.put("/network", responses=errors(403, 409, 422))
+async def set_project_sandbox_network(
+    data: SandboxNetworkUpdate, access: ProjectNetworkEditor, session: SessionDep,
+) -> SandboxNetworkRead:
+    """Set the hosts this project's coding sandboxes may also reach, on top of the workspace's. Owners and
+    admins; audited."""
+    return await SandboxNetwork(session).set_project(access.member, access.project, data)
+
+
+@router.get("/issues/{key}/outcomes")
+async def shared_issue_coding_outcomes(
+    key: str, access: ProjectViewer, session: SessionDep,
+) -> list[SharedCodingOutcomeRead]:
+    """Latest published PR evidence for a shared task, without access to private sessions."""
+    return await shared_outcomes(session, access, key)
+
+
+# Profiles are executable administrator configuration, not repository instructions.
+
+
+@router.get("/environment")
+async def get_cloud_environment(access: ProjectViewer, settings: SettingsDep) -> EnvironmentRead:
+    """Read the project's current cloud setup/verification profile and operator-approved image choices.
+    Saving or reading a profile does not execute scripts; native local runs ignore the profile."""
+    return profile(access.project.coding_environment).model_copy(update={"available_images": settings.coding_environment_images})
+
+
+@router.put("/environment", responses=errors(403, 409, 422))
+async def set_cloud_environment(data: EnvironmentUpdate, access: ProjectNetworkEditor, session: SessionDep, settings: SettingsDep) -> EnvironmentRead:
+    """Save an administrator's cloud environment profile using its current revision.
+    Stale revisions or unapproved images return 409. New cloud sessions pin the saved profile;
+    existing sessions retain their admitted snapshot. This action never starts coding or runs scripts."""
+    from sqlalchemy import select
+
+    from dotrix_backend.core.errors import Conflict
+    from dotrix_backend.modules.audit.models import AuthorType
+    from dotrix_backend.modules.audit.service import AuditLog
+    from dotrix_backend.modules.projects.models import Project
+
+    project = await session.scalar(select(Project).where(
+        Project.id == access.project.id, Project.workspace_id == access.member.workspace_id).with_for_update().execution_options(populate_existing=True))
+    assert project is not None
+    require_approved_image(data.image, settings.coding_environment_images)
+    before = profile(project.coding_environment)
+    if before.revision != data.revision:
+        raise Conflict("The environment changed; reload it before saving")
+    updated = profile({**data.model_dump(), "revision": before.revision + 1})
+    project.coding_environment = updated.model_dump()
+    AuditLog(session).record(workspace_id=project.workspace_id, project_id=project.id,
+        action="coding_environment.updated", target=str(project.id), actor_type=AuthorType.USER,
+        actor_user_id=access.member.user_id, details={"revision": updated.revision, "enabled": updated.enabled})
+    await session.commit()
+    return updated.model_copy(update={"available_images": settings.coding_environment_images})

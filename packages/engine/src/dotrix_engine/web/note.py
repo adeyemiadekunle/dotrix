@@ -1,4 +1,4 @@
-"""A research note from a report (docs/agents-v2.md §6.4): the fixed sections, rendered from
+"""A research note from a report (docs/architecture.md): the fixed sections, rendered from
 the run's result and its sources, so the sources list is always exact.
 
 Findings are the claims backed by what was read (`supported` or `weak`); claims no quote was

@@ -2,19 +2,16 @@
 // classified without running anything, and each required domain's coverage or named gap.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@dotrix/ui/lib/toast";
 
 import { api, errorMessage, unwrap } from "./api";
 import type { Scope } from "./issues";
-
-export type Coverage = Schemas["RepoCoverageRead"];
 export type DomainCoverage = Schemas["DomainCoverage"];
-export type RepoPath = Schemas["RepoPathRead"];
 export type PathStatus = Schemas["PathStatus"];
 export type RepoPage = Schemas["RepoPageRead"];
 
 const path = (s: Scope) => ({ workspace_id: s.workspaceId, project_id: s.projectId });
-const key = (s: Scope | undefined) => ["repo-knowledge", s?.projectId] as const;
+const key = (s: Scope | undefined) => ["repo-knowledge", s?.workspaceId, s?.projectId] as const;
 
 export function useRepoCoverage(scope: Scope | undefined) {
   return useQuery({
@@ -71,15 +68,33 @@ export function useRepoDependencies(scope: Scope | undefined, enabled: boolean) 
 export function useExplainRepository(scope: Scope | undefined, opened: (threadId: string) => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ domains = [], refresh = false }: { domains?: string[]; refresh?: boolean }) =>
+    mutationFn: ({ domains = [], refresh = false, pages = [] }: { domains?: string[]; refresh?: boolean; pages?: string[] }) =>
       unwrap(
         api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/explain", {
           params: { path: path(scope!) },
-          body: { domains, refresh },
+          body: { domains, refresh, pages },
         }),
       ),
     onSuccess: (run) => opened(run.thread_id),
     onError: (e) => toast.error(errorMessage(e)),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: key(scope) }),
+  });
+}
+
+export function useRepoBaseline(scope: Scope | undefined) {
+  return useQuery({
+    queryKey: [...key(scope), "baseline"],
+    enabled: Boolean(scope),
+    retry: false,
+    queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/baseline", { params: { path: path(scope!) } })),
+  });
+}
+
+export function useReviewRepoBaseline(scope: Scope | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Schemas["BaselineReviewCreate"]) =>
+      unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/baseline/reviews", { params: { path: path(scope!) }, body })),
+    onSettled: () => qc.invalidateQueries({ queryKey: key(scope) }),
   });
 }

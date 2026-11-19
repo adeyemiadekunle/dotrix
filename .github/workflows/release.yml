@@ -1,0 +1,46 @@
+name: Release
+# Each versioned component releases only when its own version changes. Existing desktop
+# updaters retain vX.Y.Z. Platform/CLI tags must not become GitHub's latest release.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      desktop_tag: ${{ steps.publish.outputs.desktop_tag }}
+      cli_tag: ${{ steps.publish.outputs.cli_tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - run: python3 scripts/release.py check
+      - name: Publish only unreleased component versions
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release.py publish --github-output "$GITHUB_OUTPUT"
+
+  desktop-assets:
+    needs: release
+    if: needs.release.outputs.desktop_tag != ''
+    uses: ./.github/workflows/desktop.yml
+    with:
+      artifact: desktop
+      release_tag: ${{ needs.release.outputs.desktop_tag }}
+
+  cli-assets:
+    needs: release
+    if: needs.release.outputs.cli_tag != ''
+    uses: ./.github/workflows/desktop.yml
+    with:
+      artifact: cli
+      release_tag: ${{ needs.release.outputs.cli_tag }}

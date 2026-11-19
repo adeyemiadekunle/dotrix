@@ -185,8 +185,9 @@ function agentsNotWired(): boolean {
   return true;
 }
 /* ---------- coding sessions ---------- */
+/** The sample workspace's coding approval. A real workspace decides a turn through the API (useDecideCoding). */
 export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
-  if (cs.status !== "awaiting_approval") return;
+  if (isLive() || cs.status !== "awaiting_approval") return;
   mutate(() => {
     cs.status = approve ? "running" : "rejected";
     if (approve)

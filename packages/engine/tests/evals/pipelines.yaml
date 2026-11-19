@@ -1,4 +1,4 @@
-# Pipelines (docs/agents-v2.md §5): each built-in follows its default stages, a run can pick a
+# Pipelines (docs/architecture.md): each built-in follows its default stages, a run can pick a
 # mode for the agent that leads it, and the agent talking to the person may stop at a
 # checkpoint on a large job.
 - name: the PM follows its request pipeline and may checkpoint

@@ -2,6 +2,7 @@
 its own provider's settings, never the rest of this machine's credentials."""
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 # Host credentials are not part of the tool's environment. Keep the execution settings it needs
@@ -22,8 +23,8 @@ TOOL_ENV = {
     "claude-code": ANTHROPIC_ENV | {
         "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
     },
-    # Codex can be supplied through --tool codex --command even though it isn't auto-detected.
     "codex": OPENAI_ENV | {"CODEX_API_KEY", "CODEX_HOME"},
+    "fx": {"FX_HOME", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"},
     "opencode": ANTHROPIC_ENV | OPENAI_ENV | {
         "GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_GEMINI_BASE_URL",
         "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "OPENCODE_DISABLE_AUTOUPDATE",
@@ -34,4 +35,18 @@ TOOL_ENV = {
 def tool_environment(tool: str, environ: Mapping[str, str]) -> dict[str, str]:
     """An allowlist, rather than host inheritance or broad credential-name prefixes."""
     allowed = EXECUTION_ENV | TOOL_ENV[tool]
+    if tool == "fx":
+        from .fx_local import profile_source, read_settings
+
+        try:
+            settings = read_settings(profile_source(dict(environ)))
+            provider = settings.get("provider", "gateway")
+            auth = settings.get("providers", {}).get(provider, {}).get("auth", {})
+            key = auth.get("env")
+            if isinstance(key, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) and key.upper().endswith(("KEY", "TOKEN")):
+                allowed = allowed | {key.upper()}
+            if provider == "grok":
+                allowed = allowed | {"XAI_API_KEY"}
+        except (OSError, ValueError, AttributeError):
+            pass  # preparing the profile reports malformed settings; never broaden the environment
     return {key: value for key, value in environ.items() if key.upper() in allowed}

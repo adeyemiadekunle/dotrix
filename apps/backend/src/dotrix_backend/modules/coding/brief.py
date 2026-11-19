@@ -25,10 +25,12 @@ from dotrix_engine.skills import (
     SKILLS_FOLDER,
     default_skills,
     describe_skill,
-    skill_agents,
     skill_matches,
     skill_name,
+    skills_for,
 )
+
+from .fences import defuse, fence
 
 MAX_DOCUMENTS = 4
 DOCUMENT_CHARS = 6_000
@@ -55,16 +57,16 @@ RULES = """\
 async def build_brief(
     session: AsyncSession, project: Project, issue: IssueRead, note: str | None,
     earlier: list[tuple[int, str]] | None = None,
-    *, user_id: uuid.UUID | None = None,
+    *, user_id: uuid.UUID | None = None, inline_skills: bool = True,
 ) -> str:
     """The brief for a run. A follow-up (`earlier`: the session's previous turns and what each
     did) works on the session's branch, and `note` is what to do in this turn."""
     parts = [
-        f"# Coding task: {issue.key} {issue.title}",
+        f"# Coding task: {issue.key} {defuse(' '.join(issue.title.split()))}",
         f"Project: {project.name} ({project.key}). Issue type: {issue.type.value}, priority: {issue.priority.value}.",
         "",
         "## The issue",
-        f'<data source="issue {issue.key}">\n{issue.description.strip() or "(no description)"}\n</data>',
+        fence(f"issue {issue.key}", issue.description.strip() or "(no description)"),
     ]
     if issue.parent_key:
         parts.append(f"\nIt's part of {issue.parent_key}.")
@@ -75,16 +77,16 @@ async def build_brief(
                   "You're continuing on the branch these turns produced; their changes are already in the code."]
         for turn, summary in earlier:
             clipped = summary if len(summary) <= SUMMARY_CHARS else summary[:SUMMARY_CHARS] + "…"
-            parts.append(f'<data source="turn {turn}">\n{clipped.strip()}\n</data>')
+            parts.append(fence(f"turn {turn}", clipped.strip()))
     if note and note.strip():
         heading = "## What to do in this turn" if earlier else "## From the person who asked"
-        parts += ["", heading, f'<data source="request">\n{note.strip()}\n</data>']
+        parts += ["", heading, fence("request", note.strip())]
     documents = await _documents(session, project, issue.key)
     if documents:
         parts += ["", "## Related documents (from the project's knowledge)"]
         for path, content in documents:
             clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
-            parts.append(f'<data source="{path}">\n{clipped.strip()}\n</data>')
+            parts.append(fence(path, clipped.strip()))
     wiki = await RepoKnowledgeService(session, None).relevant(project, f"{issue.title}\n{issue.description}")
     if wiki:
         parts += ["", "## How this repository works (from its wiki)",
@@ -93,7 +95,7 @@ async def build_brief(
         for path, content, stale in wiki:
             clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
             note = f" (stale: {', '.join(stale[:5])})" if stale else ""
-            parts.append(f'<data source="{path}{note}">\n{clipped.strip()}\n</data>')
+            parts.append(fence(f"{path}{note}", clipped.strip()))
     kai = (await AgentDefinitionRepository(session).coding_configuration(project.workspace_id, project.id)).spec
     if user_id:
         kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
@@ -102,14 +104,14 @@ async def build_brief(
     # (their "(changed: …)" line; not their prose, which repeats the definition of done's words).
     touched = [line for _, summary in earlier or [] for line in summary.splitlines() if line.startswith("(changed: ")]
     work = "\n".join((issue.title, issue.description, note or "", *touched))
-    parts += await _standards(session, project, work)
+    parts += await _standards(session, project, work, inline_skills=inline_skills)
     return "\n".join(parts)
 
 
 STANDARDS_CHARS = 16_000  # the skills and the team's coding rules, together
 
 
-async def _standards(session: AsyncSession, project: Project, work: str) -> list[str]:
+async def _standards(session: AsyncSession, project: Project, work: str, *, inline_skills: bool = True) -> list[str]:
     """What the team asks of code here: the project's agent-rules/coding.md when a person changed it
     (the engine's default describes the platform's job, said above already; the workspace's and project's
     guidance for Kai is its contract's, in `role_instructions`), and the skills meant for Kai that `work`
@@ -121,15 +123,16 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
     ever = {f.path for f in files}
     skills = await WorkspaceSkills(session).texts(project.workspace_id)
     skills |= {skill_name(path): text for path, text in default_skills().items() if path not in ever}
-    skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")}
-    kais = {name: text for name, text in sorted(skills.items())
-            if "coding" in (skill_agents(text) or ()) and name != "definition-of-done"}
+    skills |= {skill_name(p): c for p, c in live.items() if p.startswith(SKILLS_FOLDER) and p.endswith(".md")
+               and "/" not in p.removeprefix(SKILLS_FOLDER)}
+    kais = {name: text for name, text in sorted(skills_for(skills, "coding").items())
+            if name != "definition-of-done"}
     mine = {name: text for name, text in kais.items() if skill_matches(text, work)}
     others = {name: text for name, text in kais.items() if name not in mine}
     rules = []
     default = default_rules(project.name).get("agent-rules/coding.md", "").strip()
     if (own := live.get("agent-rules/coding.md", "").strip()) and own != default:
-        rules.append(f'<data source="agent-rules/coding.md">\n{own}\n</data>')
+        rules.append(fence("agent-rules/coding.md", own))
     out: list[str] = []
     budget = STANDARDS_CHARS
     if rules:
@@ -138,15 +141,17 @@ async def _standards(session: AsyncSession, project: Project, work: str) -> list
         for rule in rules:
             out.append(rule[:budget])
             budget -= min(len(rule), budget)
-    if mine and budget > 0:
+    if mine and budget > 0 and inline_skills:
         out += ["", "## Skills for this work",
                 "Picked for what this issue touches; follow their steps where they apply:"]
         for name, text in mine.items():
             if len(text) > budget:
                 out.append(f"- {name}: (left out: the brief is full)")
                 continue
-            out.append(f'<data source="skill {name}">\n{text.strip()}\n</data>')
+            out.append(fence(f"skill {name}", text.strip()))
             budget -= len(text)
+    if not inline_skills:
+        return out
     if others:
         # A line each, so the work can name one it turned out to need (a "refund bug" in payment code).
         out += ["", "## Other skills (not included)",

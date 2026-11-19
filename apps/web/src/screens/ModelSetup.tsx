@@ -1,3 +1,5 @@
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
@@ -7,9 +9,9 @@ import { myKeySaved, myModels } from "../data/account";
 import { isLive, live } from "../data/live";
 import { D } from "../data/store";
 
-/** A real workspace needs at least one authorized provider before the app can be used. */
+/** Model setup gates agent sessions while keeping project management and Settings available. */
 export function ModelGate({ children }: { children: ReactNode }) {
-  const { route, params } = useRoute();
+  const { route } = useRoute();
   const workspace = isLive() ? live.ws?.id : undefined;
   const qc = useQueryClient();
   const access = useQuery({
@@ -23,9 +25,21 @@ export function ModelGate({ children }: { children: ReactNode }) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // Key settings remain reachable so members can fix policy/configuration without being trapped.
-  const keySettings = route === "settings" && (params.sec === "my-models" || params.sec === "models");
-  if (!workspace || access.data?.ready || keySettings) return children;
+  if (!workspace || access.data?.ready || route === "settings") return children;
+  if (route !== "chat" && route !== "codes")
+    return (
+      <>
+        {access.data?.ready === false && (
+          <div className="alert info" role="status" style={{ margin: 16 }}>
+            <span>Connect your personal model to use Chat and Codes. Your projects remain available.</span>
+            <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+              Connect a model
+            </ActionButton>
+          </div>
+        )}
+        {children}
+      </>
+    );
   const d = access.data;
   const allowed = d?.can_store_keys;
   const connect = async (e: React.FormEvent) => {
@@ -45,7 +59,7 @@ export function ModelGate({ children }: { children: ReactNode }) {
     }
   };
   return (
-    <main className="fullstate" style={{ minHeight: "100svh" }}>
+    <section aria-label="Model setup" className="fullstate" style={{ minHeight: "100%" }}>
       <div className="box" style={{ width: "min(100% - 32px, 480px)", textAlign: "left" }}>
         <h1>{d ? "Connect a model to continue" : "Checking your models…"}</h1>
         <p className="muted">
@@ -56,9 +70,9 @@ export function ModelGate({ children }: { children: ReactNode }) {
         {access.error && (
           <div role="alert" className="alert danger">
             {access.error.message}
-            <button className="btn btn-secondary" onClick={() => void access.refetch()}>
+            <ActionButton className="btn btn-secondary" onClick={() => void access.refetch()}>
               Try again
-            </button>
+            </ActionButton>
           </div>
         )}
         {d && !d.can_store_keys && <p role="alert">Ask the platform administrator to enable encrypted key storage.</p>}
@@ -76,7 +90,7 @@ export function ModelGate({ children }: { children: ReactNode }) {
             </label>
             <label>
               API key
-              <input
+              <DesignInput
                 className="input"
                 type="password"
                 autoComplete="off"
@@ -94,16 +108,16 @@ export function ModelGate({ children }: { children: ReactNode }) {
                 {error}
               </div>
             )}
-            <button className="btn btn-primary" type="submit" disabled={busy || !providers.data || key.trim().length < 20}>
+            <ActionButton className="btn btn-primary" type="submit" disabled={busy || !providers.data || key.trim().length < 20}>
               {busy ? "Connecting…" : "Connect and continue"}
-            </button>
+            </ActionButton>
           </form>
         )}
         <div className="row" style={{ marginTop: 20 }}>
           {d && (
-            <button className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+            <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
               Model settings
-            </button>
+            </ActionButton>
           )}
           <a className="btn btn-secondary" href="/">
             Switch workspace
@@ -115,11 +129,11 @@ export function ModelGate({ children }: { children: ReactNode }) {
                 {w.name}
               </a>
             ))}
-          <button className="btn btn-ghost" onClick={() => void authPost("logout").then(() => location.assign("/login"))}>
+          <ActionButton className="btn btn-ghost" onClick={() => void authPost("logout").then(() => location.assign("/login"))}>
             Sign out
-          </button>
+          </ActionButton>
         </div>
       </div>
-    </main>
+    </section>
   );
 }

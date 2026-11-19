@@ -1,5 +1,6 @@
 # dotrix itself in Docker for development, on top of infra/docker-compose.yml (the same Postgres,
-# Redis and MinIO, the same data): `pnpm docker:up`, then http://localhost:3080.
+# Redis and object storage, the same data): `pnpm docker:up`, then http://localhost:3080 (the web app),
+# http://localhost:3300 (the admin console) and http://localhost:3200 (the public site).
 # Set DOTRIX_DOCKER_WEB_PORT=3000 to keep the native web address; the API stays on :8000
 # (DOTRIX_DOCKER_API_PORT overrides it). These ports are bound to localhost only.
 #
@@ -8,6 +9,10 @@
 #   worker   agent runs and jobs (DOTRIX_JOBS=worker), the same code
 #   web      the built web app behind nginx, which forwards /v1, /api and /health to the API, as
 #            in production (deploy/web.Dockerfile); rebuild it after web changes: `pnpm docker:web`
+#   admin    the admin console behind nginx, which forwards only /v1/admin (deploy/admin.Dockerfile;
+#            DOTRIX_DOCKER_ADMIN_PORT, 3300); rebuild it with `pnpm docker:admin`
+#   site     the public site, prerendered, linking to the web app above (deploy/site.Dockerfile;
+#            DOTRIX_DOCKER_SITE_PORT, 3200); rebuild it with `pnpm docker:site`
 #
 # Settings come from the repo-root .env; only addresses that differ inside Docker are set here.
 # The package scripts pass --project-directory . from the repo root, so relative paths (including
@@ -16,18 +21,20 @@
 # need http://localhost:3080 among the GitHub App's callback and setup URLs.
 
 x-backend: &backend
-  build: { context: ., dockerfile: deploy/backend.Dockerfile }
+  build: { context: ., dockerfile: deploy/backend.Dockerfile, secrets: [kai_packages_token] }
   image: dotrix-backend:dev
   restart: unless-stopped
-  env_file: .env
+  env_file: ${DOTRIX_BACKEND_ENV_FILE:-.env}
   environment: &backend-env # The password apart (asyncpg and libpq both read PGPASSWORD), never written into the URL.
     DOTRIX_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dotrix}@postgres:5432/${POSTGRES_DB:-dotrix}
     PGPASSWORD: ${POSTGRES_PASSWORD:?}
     DOTRIX_REDIS_URL: redis://redis:6379/0
-    DOTRIX_S3_ENDPOINT_URL: http://minio:9000
+    DOTRIX_S3_ENDPOINT_URL: http://storage:9000
     DOTRIX_APP_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
     DOTRIX_WEB_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
     DOTRIX_CORS_ORIGINS: '["http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}"]'
+    DOTRIX_SEARXNG_URL: http://searxng:8080
+    DOTRIX_SEARCH_PROVIDER: searxng
     DOTRIX_JOBS: worker
     DOTRIX_CODE_DIR: /data/code
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
@@ -51,7 +58,8 @@ x-backend: &backend
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_started }
-    minio: { condition: service_started }
+    storage: { condition: service_started }
+    searxng: { condition: service_healthy }
 
 services:
   migrate:
@@ -72,6 +80,7 @@ services:
       start_period: 60s
     depends_on:
       migrate: { condition: service_completed_successfully }
+      searxng: { condition: service_healthy }
 
   worker:
     <<: *backend
@@ -82,12 +91,13 @@ services:
     command: ["python", "-m", "dotrix_backend.worker"]
     depends_on:
       migrate: { condition: service_completed_successfully }
+      searxng: { condition: service_healthy }
       coding-image: { condition: service_completed_successfully }
       docker-proxy: { condition: service_started }
 
   coding-image:
     image: dotrix-coding:latest
-    build: { context: ./infra/coding }
+    build: { context: ./infra/coding, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
 
@@ -103,6 +113,9 @@ services:
       VOLUMES: 1
       IMAGES: 1
       POST: 1
+      # Listen on IPv4 only: hosts without IPv6 refuse its default [::] socket, and only Docker's IPv4
+      # network reaches it.
+      DISABLE_IPV6: 1
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
 
   web:
@@ -119,11 +132,11 @@ services:
     depends_on:
       api: { condition: service_healthy }
 
-  ops:
-    build: { context: ., dockerfile: deploy/ops.Dockerfile }
-    image: dotrix-ops:dev
+  admin:
+    build: { context: ., dockerfile: deploy/admin.Dockerfile }
+    image: dotrix-admin:dev
     restart: unless-stopped
-    ports: ["127.0.0.1:${DOTRIX_DOCKER_OPS_PORT:-3200}:80"]
+    ports: ["127.0.0.1:${DOTRIX_DOCKER_ADMIN_PORT:-3300}:80"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 10s
@@ -132,6 +145,27 @@ services:
       start_period: 15s
     depends_on:
       api: { condition: service_healthy }
+
+  site:
+    build:
+      context: .
+      dockerfile: deploy/site.Dockerfile
+      args:
+        VITE_APP_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
+    image: dotrix-site:dev
+    restart: unless-stopped
+    ports: ["127.0.0.1:${DOTRIX_DOCKER_SITE_PORT:-3200}:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+# Chat's fx host installs the Kai runtime from GitHub Packages: export KAI_PACKAGES_TOKEN (read:packages) first.
+secrets:
+  kai_packages_token:
+    environment: KAI_PACKAGES_TOKEN
 
 volumes:
   codecache:

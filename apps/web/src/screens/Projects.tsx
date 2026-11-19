@@ -1,15 +1,19 @@
+import { TabList, Tab } from "@dotrix/ui/astryx";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Projects. The workspace Overview folded into Home.
 
 import { openPop } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { allowed } from "../core/can";
+import { personal } from "../core/features";
 import { Ic } from "../core/icons";
 import { newProject } from "../core/more";
 import { go } from "../core/nav";
 import { ago, fmtDate, minsAgo } from "../core/utils";
-import { S, canSee, mem, progressOf, render, tasksOf, visibleProjects } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveProjects } from "../../lib/workspace-data";
+import { S, canSee, mem, progressOf, render } from "../data/store";
+import { useProjects } from "../data/lists";
+import { useAllTasks, useProjectTasks } from "../data/tasks";
 import type { Project } from "../data/types";
 import { Av, AvStack, Empty, PIcon, PStatus, ProgBar } from "../ui/helpers";
 
@@ -23,7 +27,7 @@ const more = (p: Project) => (e: React.MouseEvent<HTMLElement>) => {
 };
 
 function ProjectCard({ p }: { p: Project }) {
-  const ts = tasksOf(p.id);
+  const { tasks: ts } = useProjectTasks(p.id);
   const pr = progressOf(p.id);
   const open = ts.filter((t) => t.status !== "done").length;
   const locked = !canSee(p);
@@ -78,16 +82,16 @@ function ProjectCard({ p }: { p: Project }) {
           {ago(minsAgo(p.last))}
         </span>
         <span className="sp" />
-        <AvStack ids={p.members} max={3} />
+        {!personal() && <AvStack ids={p.members} max={3} />}
       </div>
-      <button
+      <ActionButton
         className="ibtn ibtn-sm more"
         onClick={more(p)}
         aria-label="Project options"
         style={{ background: "var(--surface)", boxShadow: "0 0 0 1px var(--border)" }}
       >
         <Ic n="ellipsis" s={14} />
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -97,8 +101,10 @@ export function Projects() {
   const q = u.projQ.toLowerCase();
   const st = u.projStatus;
   const sort = u.projSort;
-  const liveProjects = useLiveProjects(live.ws?.id, isLive());
-  const base = (isLive() ? (liveProjects ?? []) : visibleProjects()).filter((p) => canSee(p) && !p.archived);
+  const { items: projects } = useProjects();
+  const { tasks } = useAllTasks();
+  const count = (pid: string) => tasks.filter((t) => t.project === pid).length;
+  const base = projects.filter((p) => canSee(p));
   const ps = base.filter((p) => (st === "all" || p.status === st) && (!q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)));
   const sorter = (
     { recent: (p: Project) => p.last, name: (p: Project) => p.name, due: (p: Project) => p.due, progress: (p: Project) => -progressOf(p.id) } as Record<
@@ -115,10 +121,10 @@ export function Projects() {
       <div className="panel">
         <Empty icon="folder-kanban" title="No projects yet" text="Create your first project to start organizing your work.">
           {allowed("projects:manage") && (
-            <button className="btn btn-primary btn-sm" onClick={newProject}>
+            <ActionButton className="btn btn-primary btn-sm" onClick={newProject}>
               <Ic n="plus" s={14} />
               Create project
-            </button>
+            </ActionButton>
           )}
         </Empty>
       </div>
@@ -127,9 +133,9 @@ export function Projects() {
     body = (
       <div className="panel">
         <Empty icon="search-x" title="No results found" text="No projects match your search or filters. Try a different term.">
-          <button className="btn btn-secondary btn-sm" onClick={() => ((u.projQ = ""), (u.projStatus = "all"), render())}>
+          <ActionButton className="btn btn-secondary btn-sm" onClick={() => ((u.projQ = ""), (u.projStatus = "all"), render())}>
             Clear filters
-          </button>
+          </ActionButton>
         </Empty>
       </div>
     );
@@ -170,10 +176,10 @@ export function Projects() {
               <span className="num muted hide-m" style={{ width: 70, fontSize: 12 }}>
                 {fmtDate(p.due)}
               </span>
-              <AvStack ids={p.members} max={3} />
-              <button className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
+              {!personal() && <AvStack ids={p.members} max={3} />}
+              <ActionButton className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
                 <Ic n="ellipsis" s={14} />
-              </button>
+              </ActionButton>
             </div>
           );
         })}
@@ -187,7 +193,7 @@ export function Projects() {
             <tr>
               <th style={{ paddingLeft: 14 }}>Project</th>
               <th style={{ textAlign: "left" }}>Status</th>
-              <th style={{ textAlign: "left" }}>Lead</th>
+              {!personal() && <th style={{ textAlign: "left" }}>Lead</th>}
               <th style={{ textAlign: "left", width: "16%" }}>Progress</th>
               <th>Tasks</th>
               <th style={{ textAlign: "left" }}>Start</th>
@@ -210,12 +216,14 @@ export function Projects() {
                   <td style={{ textAlign: "left" }}>
                     <PStatus s={p.status} />
                   </td>
-                  <td style={{ textAlign: "left" }}>
-                    <span className="row">
-                      <Av id={p.lead} cls="sm" />
-                      {mem(p.lead)?.name}
-                    </span>
-                  </td>
+                  {!personal() && (
+                    <td style={{ textAlign: "left" }}>
+                      <span className="row">
+                        <Av id={p.lead} cls="sm" />
+                        {mem(p.lead)?.name}
+                      </span>
+                    </td>
+                  )}
                   <td>
                     <span className="row">
                       <ProgBar v={pr} />
@@ -224,7 +232,7 @@ export function Projects() {
                       </span>
                     </span>
                   </td>
-                  <td className="num">{tasksOf(p.id).length}</td>
+                  <td className="num">{count(p.id)}</td>
                   <td style={{ textAlign: "left" }} className="num muted">
                     {fmtDate(p.start)}
                   </td>
@@ -235,9 +243,9 @@ export function Projects() {
                     {ago(minsAgo(p.last))}
                   </td>
                   <td>
-                    <button className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
+                    <ActionButton className="ibtn ibtn-sm" onClick={more(p)} aria-label="Options">
                       <Ic n="ellipsis" s={14} />
-                    </button>
+                    </ActionButton>
                   </td>
                 </tr>
               );
@@ -252,23 +260,22 @@ export function Projects() {
         <div>
           <h1>Projects</h1>
           <p>
-            {visibleProjects().filter((p) => p.status !== "complete").length} active · {visibleProjects().filter((p) => p.status === "complete").length}{" "}
-            completed
+            {projects.filter((p) => p.status !== "complete").length} active · {projects.filter((p) => p.status === "complete").length} completed
           </p>
         </div>
         <div className="acts">
           {allowed("projects:manage") && (
-            <button className="btn btn-primary" onClick={newProject}>
+            <ActionButton className="btn btn-primary" onClick={newProject}>
               <Ic n="plus" s={14} />
               New project
-            </button>
+            </ActionButton>
           )}
         </div>
       </div>
       <div className="row" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div className="inwrap">
           <Ic n="search" s={13} />
-          <input
+          <DesignInput
             className="input search-sm"
             placeholder="Search projects"
             value={u.projQ}
@@ -309,20 +316,25 @@ export function Projects() {
           ))}
         </select>
         <span className="sp" />
-        <div className="seg" role="tablist" aria-label="Layout">
+        <TabList
+          aria-label="Layout"
+          value={view}
+          onChange={(value) => {
+            u.projView = value as typeof view;
+            render();
+          }}
+          size="sm"
+        >
           {(
             [
               ["grid", "Grid", "layout-grid"],
               ["list", "List", "list"],
               ["table", "Table", "table-2"],
             ] as const
-          ).map(([k, n, i]) => (
-            <button key={k} className={view === k ? "on" : ""} onClick={() => ((u.projView = k), render())} aria-label={n}>
-              <Ic n={i} s={13} />
-              <span className="hide-m">{n}</span>
-            </button>
+          ).map(([key, label, icon]) => (
+            <Tab key={key} value={key} label={label} icon={<Ic n={icon} s={13} />} />
           ))}
-        </div>
+        </TabList>
       </div>
       {body}
     </div>

@@ -67,6 +67,7 @@ class RepoPathPage(BaseModel):
 class RepoExplainRequest(BaseModel):
     domains: list[str] = Field(default_factory=list, max_length=12,
                                description="Domains to start with (the coverage's `domain`s); none: the agent picks")
+    pages: list[str] = Field(default_factory=list, max_length=100, description="Stale wiki pages to refresh; empty selects all stale pages")
     refresh: bool = Field(default=False, description="Update the stale pages first (`GET .../pages`)")
 
     @field_validator("domains")
@@ -122,3 +123,40 @@ class RepoDependenciesRead(BaseModel):
     commit_sha: str | None
     dependencies: list[DependencyRead]
     unread: list[UnreadFile]
+
+
+class BaselineReviewCreate(BaseModel):
+    request_id: uuid.UUID
+    digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    decision: Literal["confirmed", "corrections"]
+    notes: str = Field(default="", max_length=8000, description="Revised shared human context; blank retains the last explicitly saved context")
+    acknowledge_limits: bool = False
+
+
+class BaselineReviewRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    digest: str
+    decision: Literal["confirmed", "corrections"]
+    notes: str
+    evidence: dict
+    reviewed_by_id: uuid.UUID | None
+    created_at: datetime
+
+
+class BaselineHumanContextRead(BaseModel):
+    revision: uuid.UUID
+    notes: str
+    updated_by_id: uuid.UUID | None
+    updated_at: datetime
+
+
+class RepoBaselineRead(BaseModel):
+    digest: str
+    can_confirm: bool
+    current: bool = Field(description="A person confirmed this exact evidence revision, with its stated limits")
+    blockers: list[str]
+    evidence: dict
+    review: BaselineReviewRead | None
+    human_context: BaselineHumanContextRead | None = Field(default=None, description="Current shared context, independent of blank attestation notes")

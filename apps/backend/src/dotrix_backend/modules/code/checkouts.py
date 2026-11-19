@@ -142,6 +142,12 @@ def auth_env(url: str, token: str | None) -> dict[str, str]:
 
 
 async def run_git(cwd: Path, *args: str, env: dict[str, str] | None = None, timeout: float = 60) -> str:
+    """git's output as text, undecodable bytes replaced (names, counts, messages: never a patch to write back)."""
+    return (await run_git_bytes(cwd, *args, env=env, timeout=timeout)).decode(errors="replace")
+
+
+async def run_git_bytes(cwd: Path, *args: str, env: dict[str, str] | None = None, timeout: float = 60) -> bytes:
+    """git's output exactly as written, for what is written back (a patch)."""
     # Files exactly as committed: no line-ending conversion, whatever this machine's git says
     # (Git for Windows sets core.autocrlf=true, which made every line of an agent's edit a change).
     argv = ["git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null", "-c", "core.autocrlf=false", *args]
@@ -171,7 +177,7 @@ async def run_git(cwd: Path, *args: str, env: dict[str, str] | None = None, time
         lines = err.decode(errors="replace").strip().splitlines()
         # git's own last line ("fatal: couldn't find remote ref main"); it never holds the token.
         raise CheckoutError(lines[-1][:300] if lines else f"git {args[0]} failed")
-    return out.decode(errors="replace")
+    return out
 
 
 def _size(root: Path) -> int:

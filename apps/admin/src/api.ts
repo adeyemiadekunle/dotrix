@@ -1,0 +1,260 @@
+// The admin console's API client. The console has its own accounts (POST /v1/admin/*), never the web
+// app's session: both tokens live in httpOnly, SameSite=Strict cookies, the refresh cookie scoped to
+// /v1/admin/refresh, and browser tabs take turns rotating it (a Web Lock).
+
+type Problem = { detail?: string };
+type ApiError = Error & { status?: number };
+
+let refreshing: Promise<string | null> | null = null;
+
+export async function refreshSession(): Promise<boolean> {
+  refreshing ??= (async () => {
+    const refresh = () => rawCall<void>("/admin/refresh", { method: "POST" }).then(() => "ok");
+    return navigator.locks ? navigator.locks.request("dotrix-admin-refresh", refresh) : refresh();
+  })()
+    .catch(() => null)
+    .finally(() => (refreshing = null));
+  return (await refreshing) !== null;
+}
+
+export async function rawCall<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+  const res = await fetch(`/v1${path}`, {
+    method: options.method ?? "GET",
+    headers: {
+      "X-Requested-With": "dotrix-admin",
+      ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+  });
+  const data = res.status === 204 ? undefined : await res.json().catch(() => undefined);
+  if (!res.ok) {
+    const err: ApiError = new Error((data as Problem | undefined)?.detail ?? `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return data as T;
+}
+
+export async function call<T>(path: string): Promise<T> {
+  try {
+    return await rawCall<T>(path);
+  } catch (e) {
+    if ((e as ApiError).status !== 401) throw e;
+    if (!(await refreshSession())) throw e;
+    return rawCall<T>(path);
+  }
+}
+
+/** A change (PUT), with the same one retry after a refresh as `call`. */
+export async function put<T>(path: string, body: unknown): Promise<T> {
+  try {
+    return await rawCall<T>(path, { method: "PUT", body });
+  } catch (e) {
+    if ((e as ApiError).status !== 401) throw e;
+    if (!(await refreshSession())) throw e;
+    return rawCall<T>(path, { method: "PUT", body });
+  }
+}
+
+/** A change (POST, PATCH, DELETE), with the same one retry after a refresh as `call`. */
+export async function send<T = void>(path: string, method: "POST" | "PATCH" | "DELETE" | "PUT", body?: unknown): Promise<T> {
+  try {
+    return await rawCall<T>(path, { method, body });
+  } catch (e) {
+    if ((e as ApiError).status !== 401) throw e;
+    if (!(await refreshSession())) throw e;
+    return rawCall<T>(path, { method, body });
+  }
+}
+
+export type AdminRole = "owner" | "viewer";
+
+export type Me = { id: string; email: string; name: string; role: AdminRole; two_factor: boolean; must_enrol: boolean };
+
+/** The password step passed and a code is needed: sent back, with the code, to /admin/login/verify. */
+export type LoginChallenge = { second_factor: "totp"; challenge: string };
+
+export type AdminAccount = {
+  id: string;
+  email: string;
+  name: string;
+  role: AdminRole;
+  created_at: string;
+  disabled_at: string | null;
+  last_sign_in_at: string | null;
+  two_factor: boolean;
+};
+
+export type AdminInvite = {
+  id: string;
+  email: string;
+  role: AdminRole;
+  created_at: string;
+  expires_at: string;
+  invited_by: string | null;
+  emailed: boolean;
+  link_path: string | null;
+  note: string | null;
+};
+
+type StuckRun = { kind: "chat" | "coding"; id: string; status: string; workspace: string; label: string | null; lease_expired_at: string | null };
+
+export type DependencyCheck = {
+  id: string;
+  state: "ok" | "degraded" | "down" | "off";
+  detail: string;
+  latency_ms: number | null;
+};
+
+type AdminAlert = { key: string; summary: string; opened_at: string; resolved_at: string | null; notified: boolean };
+
+export type AdminAlerts = { open: AdminAlert[]; resolved: AdminAlert[] };
+
+export type Health = {
+  generated_at: string;
+  version: string;
+  environment: string;
+  jobs: string;
+  sandbox: string;
+  database_ms: number;
+  queue_pending: number;
+  queue_oldest_seconds: number | null;
+  queue_discarded_24h: number;
+  worker_last_took_at: string | null;
+  runs_running: number;
+  runs_queued: number;
+  stuck: StuckRun[];
+  recovery_required: number;
+  interrupted: number;
+  sandboxes_warm: number;
+  sandboxes_asleep: number;
+  runners_online: number;
+  runners: number;
+  failed_24h: number;
+  finished_24h: number;
+  dependencies: DependencyCheck[];
+  workers_alive: number | null;
+  notification_emails_waiting: number;
+  notification_email_oldest_seconds: number | null;
+  automation_events_waiting: number;
+  coding_slots: number | null;
+  coding_running_cloud: number;
+};
+
+export type Counts = {
+  days: number;
+  workspaces: number;
+  workspaces_new: number;
+  workspaces_active: number;
+  people: number;
+  people_new: number;
+  people_active: number;
+  projects: number;
+  documents: number;
+  document_bytes: number;
+};
+
+export type Day = {
+  day: string;
+  chat_runs: number;
+  chat_failed: number;
+  coding_runs: number;
+  coding_failed: number;
+  input_tokens: number;
+  output_tokens: number;
+  coding_cost_usd: number;
+  chat_cost_usd: number;
+  unpriced_chat_runs: number;
+  signups: number;
+};
+
+export type FailureGroup = { key: string; kind: "chat" | "coding" | null; detail: string | null; count: number; last_at: string | null };
+export type Failures = { days: number; chat_kinds: FailureGroup[]; chat_models: FailureGroup[]; messages: FailureGroup[] };
+
+export type CodingRow = {
+  engine: string;
+  location: string;
+  turns: number;
+  finished: number;
+  failed: number;
+  prs: number;
+  p50_seconds: number | null;
+  p95_seconds: number | null;
+  tokens: number;
+  cost_usd: number;
+};
+
+export type WorkspaceRow = {
+  id: string;
+  name: string;
+  slug: string;
+  kind: string;
+  members: number;
+  projects: number;
+  created_at: string;
+  chat_runs: number;
+  coding_runs: number;
+  failed: number;
+  tokens: number;
+  cost_usd: number;
+  last_run_at: string | null;
+  paused: boolean;
+  used_bytes: number;
+  storage_limit_mb: number | null;
+  effective_limit_bytes: number | null;
+};
+
+export type Run = {
+  kind: "chat" | "coding";
+  id: string;
+  status: string;
+  label: string;
+  workspace: string | null;
+  agent: string | null;
+  model: string | null;
+  location: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  error: string | null;
+  error_kind: string | null;
+  automation: boolean;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export type AuditEvent = {
+  id: string;
+  action: string;
+  workspace: string | null;
+  actor_type: string;
+  actor_user_id: string | null;
+  agent: string | null;
+  created_at: string;
+};
+
+export type TrailEvent = {
+  id: string;
+  action: string;
+  actor_email: string | null;
+  target_email: string | null;
+  workspace: string | null;
+  ip: string | null;
+  created_at: string;
+};
+
+export type Page<T> = { items: T[]; total: number };
+
+export type ModelRow = {
+  model: string;
+  provider: string;
+  chat_runs: number;
+  coding_runs: number;
+  failed: number;
+  limit_stops: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+  cost_is_estimate: boolean;
+};

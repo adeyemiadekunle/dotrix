@@ -64,14 +64,3 @@ export function useSearchParams(): URLSearchParams {
   const search = useRouterState({ select: (state) => state.location.searchStr });
   return useMemo(() => new URLSearchParams(search), [search]);
 }
-
-/** The path's parameters: `workspace`, `project`, `handle`. */
-export function useParams<T extends Record<string, string | undefined>>(): T {
-  // The deepest route's params include its parents' (a project page has workspace and project).
-  const params = useRouterState({
-    select: (state): Record<string, string> => state.matches.at(-1)?.params ?? NO_PARAMS,
-  });
-  return params as T;
-}
-
-const NO_PARAMS: Record<string, string> = {};

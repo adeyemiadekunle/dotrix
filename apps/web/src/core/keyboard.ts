@@ -6,7 +6,7 @@ import { closeDrawer, closePop, toggleSide, updateTask } from "./actions";
 import { cancelComposer, closeModal, editTask, newProject, newTask, shortcuts } from "./more";
 import { go, type Route } from "./nav";
 import { S, render } from "../data/store";
-import { closePalette, openPalette, palMove, palRun, toggleDark } from "../overlays/Palette";
+import { closePalette, openPalette, toggleDark } from "../overlays/Palette";
 
 let gPending = 0;
 let installed = false;
@@ -15,6 +15,7 @@ export function installKeyboard() {
   if (installed) return;
   installed = true;
   document.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented) return;
     const mod = e.metaKey || e.ctrlKey;
     const t = e.target as HTMLElement;
     const typing = t.matches?.('input, textarea, select, [contenteditable="true"]');
@@ -30,33 +31,10 @@ export function installKeyboard() {
       toggleDark();
       return;
     }
-    // Keep Tab inside whichever surface is modal right now.
-    if (e.key === "Tab" && !pl) {
-      const box = S.ui.modals.length
-        ? [...document.querySelectorAll<HTMLElement>(".modal")].pop()
-        : S.ui.drawer && S.ui.drawerFull
-          ? document.querySelector<HTMLElement>(".drawer")
-          : null;
-      if (box) {
-        const f = [
-          ...box.querySelectorAll<HTMLElement>(
-            'a[href],button:not([disabled]),input:not([type=hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]),[contenteditable="true"]',
-          ),
-        ].filter((x) => x.offsetParent !== null);
-        if (f.length) {
-          const i = f.indexOf(document.activeElement as HTMLElement);
-          if (e.shiftKey && i <= 0) {
-            e.preventDefault();
-            f[f.length - 1]!.focus();
-            return;
-          }
-          if (!e.shiftKey && (i === f.length - 1 || i === -1)) {
-            e.preventDefault();
-            f[0]!.focus();
-            return;
-          }
-        }
-      }
+    // Astryx owns focus, menu navigation, and dismissal inside its surfaces.
+    if (t.closest("dialog, [popover]")) {
+      // Product popovers mounted in a dialog still use the existing picker keys.
+      if (!S.ui.pop) return;
     }
     // Arrow keys move through open menus and pickers.
     if (S.ui.pop && !pl && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
@@ -72,30 +50,12 @@ export function installKeyboard() {
         return;
       }
     }
-    if (pl) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        palMove(e.key === "ArrowDown" ? 1 : -1);
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        palRun();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        closePalette();
-      } else if (e.key === "Tab") {
-        e.preventDefault();
-        pl.mode = pl.mode === "cmd" ? "search" : "cmd";
-        pl.hl = 0;
-        render();
-      } else if (e.key === "Backspace" && !pl.q && pl.mode !== "cmd") {
-        e.preventDefault();
-        pl.mode = "cmd";
-        render();
-      }
-      return;
-    }
     if (e.key === "Escape") {
-      if (S.ui.pop) return closePop();
+      if (S.ui.pop) {
+        e.preventDefault();
+        closePop();
+        return;
+      }
       if (S.ui.mention) return ((S.ui.mention = null), render());
       if (S.ui.editCell) return ((S.ui.editCell = null), render());
       if (S.ui.composer) return cancelComposer();

@@ -1,7 +1,9 @@
 from fastapi import APIRouter
 
+from dotrix_backend.api import features
 from dotrix_backend.modules.activity.router import router as activity
 from dotrix_backend.modules.activity.router import workspace_router as workspace_activity
+from dotrix_backend.modules.admin.router import router as admin
 from dotrix_backend.modules.agent_definitions.router import mine_router as my_agents
 from dotrix_backend.modules.agent_definitions.router import (
     project_router as project_agent_definitions,
@@ -31,13 +33,11 @@ from dotrix_backend.modules.invites.router import workspace_router as workspace_
 from dotrix_backend.modules.issues.router import router as issues
 from dotrix_backend.modules.issues.router import workspace_router as workspace_issues
 from dotrix_backend.modules.knowledge.router import router as knowledge
-from dotrix_backend.modules.lessons.router import router as lessons
 from dotrix_backend.modules.model_keys.router import me_router as my_models
 from dotrix_backend.modules.model_keys.router import router as model_keys
 from dotrix_backend.modules.notifications.router import router as notifications
 from dotrix_backend.modules.notifications.router import settings_router as notification_settings
 from dotrix_backend.modules.observe.router import router as observe
-from dotrix_backend.modules.ops.router import router as ops
 from dotrix_backend.modules.projects.router import router as projects
 from dotrix_backend.modules.repo_knowledge.router import router as repository_knowledge
 from dotrix_backend.modules.rules.router import router as rules
@@ -46,9 +46,10 @@ from dotrix_backend.modules.search.router import workspace_router as workspace_s
 from dotrix_backend.modules.workspaces.router import router as workspaces
 
 router = APIRouter(prefix="/v1")
+router.include_router(features.router)
 for module_router in (
     auth,
-    ops,
+    admin,
     device_router,
     me_router,
     tokens_router,
@@ -68,7 +69,6 @@ for module_router in (
     workspace_threads,
     workspace_agent_usage,
     automations,
-    lessons,
     graph,
     rules,
     audit,

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { NOT_WIRED, signUp, signUpWithProject } from "./helpers";
+import { NOT_WIRED, moveProjectToOrganisation, signUp, signUpWithProject } from "./helpers";
 
 test.fixme(true, NOT_WIRED);
 
@@ -18,7 +18,7 @@ test("an organisation: invite link, revoke, and the audit log records both", asy
     .first()
     .click();
   await page.getByRole("menuitem", { name: /Create organisation/ }).click();
-  await page.getByRole("dialog").getByLabel("Name").fill("E2E Ltd");
+  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("E2E Ltd");
   await page.getByRole("button", { name: "Create organisation" }).click();
   await expect(page).toHaveURL(/\/w\/e2e-ltd-/);
 
@@ -46,7 +46,7 @@ test("knowledge: edit a file, see its history, and restore the first version", a
   await expect(page).toHaveURL(/file=vision\.md/);
 
   await page.getByRole("button", { name: "Edit" }).click();
-  const editor = page.getByLabel("Edit vision.md");
+  const editor = page.getByLabel("Edit vision.md", { exact: true });
   await editor.fill("# Vision\n\nMove goods across Nigeria in a day.\n");
   await page.getByPlaceholder("What changed? (optional, shown in history)").fill("First draft");
   await page.getByRole("button", { name: "Save" }).click();
@@ -62,7 +62,7 @@ test("knowledge: edit a file, see its history, and restore the first version", a
 test("the project graph: a document names an issue, and each shows the other as related", async ({ page }) => {
   const { key } = await signUpWithProject(page, "Kugraph", "KUG");
   await page.getByRole("button", { name: "New issue" }).click();
-  await page.getByLabel("Title").fill("Ship sign-in");
+  await page.getByLabel("Title", { exact: true }).fill("Ship sign-in");
   await page.getByRole("button", { name: "Create issue" }).click();
   await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
   await page.keyboard.press("Escape");
@@ -70,7 +70,7 @@ test("the project graph: a document names an issue, and each shows the other as 
   await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Knowledge", exact: true }).click();
   await page.getByRole("button", { name: "vision.md" }).click();
   await page.getByRole("button", { name: "Edit" }).click();
-  await page.getByLabel("Edit vision.md").fill(`# Vision\n\nIt starts with ${key}-1.\n`);
+  await page.getByLabel("Edit vision.md", { exact: true }).fill(`# Vision\n\nIt starts with ${key}-1.\n`);
   await page.getByRole("button", { name: "Save" }).click();
   const related = page.getByRole("region", { name: "Related" });
   await expect(related.getByText("Mentions")).toBeVisible();
@@ -88,15 +88,12 @@ test("the project graph: a document names an issue, and each shows the other as 
   await expect(page.getByRole("img", { name: "The project graph around vision.md" })).toBeVisible();
 });
 
-test("turn the personal workspace into an organisation, then restrict a project", async ({ page }) => {
+test("move a personal project into an organisation, then restrict it", async ({ page }) => {
   await signUpWithProject(page, "Kuturn", "KUT");
+  const organisation = await moveProjectToOrganisation(page, "KUT", "Kunemi Ltd");
   const projectSettings = page.url().replace(/\/board.*$/, "/settings");
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Invites" }).click();
-  await page.getByLabel("Organisation name").fill("Kunemi Ltd");
-  await page.getByRole("button", { name: "Turn into an organisation" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Turn into an organisation" }).click();
-  // It can invite now, and keeps its project; a new personal workspace is in the switcher.
+  await page.goto(`/w/${organisation.slug}/members`);
+  // The organisation can invite; the original personal workspace stays in the switcher.
   await expect(page.getByRole("button", { name: "Create link" })).toBeVisible();
   await page
     .getByRole("button", { name: /Kunemi Ltd/ })
@@ -121,7 +118,7 @@ test("move a project from the personal workspace into an organisation", async ({
     .first()
     .click();
   await page.getByRole("menuitem", { name: /Create organisation/ }).click();
-  await page.getByLabel("Name").fill("Kunemi Ltd");
+  await page.getByLabel("Name", { exact: true }).fill("Kunemi Ltd");
   await page.getByRole("button", { name: "Create organisation" }).click();
   await expect(page).toHaveURL(/\/w\/kunemi-ltd-/);
 

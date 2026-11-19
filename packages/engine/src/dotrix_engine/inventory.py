@@ -1,6 +1,6 @@
 """A repository's inventory: every tracked path at one commit, classified without a model.
 
-The first step of the Repository Knowledge skill (docs/dotrix-repository-knowledge-skill.md):
+The first step of the Repository Knowledge skill (docs/architecture.md):
 before anything is explained, every tracked path is listed with what it is (kinds), which of the
 required knowledge domains it is evidence for, and a status, so nothing in the declared scope is
 skipped silently. Generated code, vendored dependencies, binaries, large files, submodules, and

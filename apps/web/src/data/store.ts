@@ -14,7 +14,7 @@ import type { Data, Filter, Project, Task } from "./types";
 const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix
 export const DEFAULT_PREFS = {
   theme: "system" as "system" | "light" | "dark",
-  accent: "graphite",
+  accent: "astryx",
   side: "comfortable",
   density: "comfortable",
   weekStart: 1,
@@ -25,8 +25,6 @@ export const DEFAULT_PREFS = {
   openTasks: "drawer" as "drawer" | "full",
   name: "Tanjim Islam",
   title: "Head of Product",
-  /** the agents panel on the right, on wide screens */
-  agentsPanel: true,
 };
 export type Prefs = typeof DEFAULT_PREFS;
 
@@ -220,6 +218,8 @@ export const toolName = (tool: string) => who(`agent:${tool}`)?.name ?? tool;
 
 /* ---------- activity ---------- */
 export function logAct(verb: string, t?: Task | null, extra = "") {
+  // A real workspace's activity comes from the API (its lists are the query cache).
+  if (liveData) return;
   D().activity.unshift({ id: uid("a"), by: D().me, verb, task: t?.id ?? null, project: t?.project ?? null, at: Date.now(), extra });
   if (t) t.updated = Date.now();
 }

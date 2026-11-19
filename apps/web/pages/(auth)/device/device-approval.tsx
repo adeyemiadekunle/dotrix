@@ -1,7 +1,7 @@
 import { Badge } from "@dotrix/ui/components/badge";
 import { Button } from "@dotrix/ui/components/button";
 import { useMutation } from "@tanstack/react-query";
-import { CircleCheckIcon, CircleXIcon, TerminalIcon } from "lucide-react";
+import { CheckCircleIcon, XCircleIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { AuthCard } from "@/components/auth-card";
@@ -76,7 +76,7 @@ export function DeviceApproval({ initialCode }: { initialCode: string }) {
         <div className="grid gap-4">
           {initialCode && (
             <div className="bg-muted/50 text-muted-foreground flex items-center gap-2 rounded-md border p-3 text-sm">
-              <TerminalIcon className="size-4" />
+              <TerminalWindowIcon className="size-4" />
               Code <span className="text-foreground font-mono">{initialCode}</span>
             </div>
           )}
@@ -99,12 +99,12 @@ export function DeviceApproval({ initialCode }: { initialCode: string }) {
         <p className="text-muted-foreground flex gap-2 text-sm">
           {outcome === "approved" ? (
             <>
-              <CircleCheckIcon className="size-4 shrink-0 text-emerald-600" />
+              <CheckCircleIcon className="size-4 shrink-0 text-emerald-600" />
               Go back to your terminal; it&apos;s signed in. You can revoke it any time in Settings.
             </>
           ) : (
             <>
-              <CircleXIcon className="text-destructive size-4 shrink-0" />
+              <XCircleIcon className="text-destructive size-4 shrink-0" />
               The device wasn&apos;t signed in. You can close this page.
             </>
           )}
@@ -119,7 +119,7 @@ export function DeviceApproval({ initialCode }: { initialCode: string }) {
         <div className="grid gap-4">
           <div className="bg-muted/50 grid gap-2 rounded-md border p-3 text-sm">
             <div className="flex items-center gap-2 font-medium">
-              <TerminalIcon className="size-4" />
+              <TerminalWindowIcon className="size-4" />
               {lookup.data.client_name}
             </div>
             <div className="text-muted-foreground flex items-center gap-2">

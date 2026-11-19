@@ -6,23 +6,30 @@
 //   {"type":"tool","id":…,"name":…,"title":…,"input":{…}}   a tool call starts
 //   {"type":"tool_result","id":…,"status":"completed"|"failed","output":…}
 //   {"type":"done","stopReason":…,"usage":{…},"final":…}    the turn ended
+//   {"type":"warning","message":…}                    something the turn goes on without (the browser didn't start)
 //   {"type":"error","message":…}                      it couldn't run (shown to people: never names fx)
 //
-//   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]]  < brief
+//   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]] [--mcp-config JSON]  < brief
+//
+// --mcp-config gives fx MCP servers for the turn, in Claude Code's format ({"mcpServers": {name: {command, args}}}):
+// the platform passes the browser (playwright-mcp) this way, as it does for Claude Code. They go to fx with each
+// session it starts, resumes or loads (ACP's mcpServers), so a resumed conversation has them too.
 //
 // fx's settings are ours, written each turn: one OpenAI-compatible provider (the person's own, its key
 // read from NAME, which the sandbox holds), no auto-upgrade. The session runs in fx's `full-access` mode:
 // the sandbox, not fx, is the boundary, and nobody is there to answer a permission prompt. fx's own
 // session id is kept under ~/.fx/dotrix so the next turn (with --resume) continues the same conversation;
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
-import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { accessSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import tls from "node:tls";
+
+import { answers, notStarted } from "./mcp-check.mjs";
 
 const args = process.argv.slice(2);
 const arg = (name) => {
@@ -34,6 +41,7 @@ const keyEnv = arg("--key-env");
 const model = arg("--model");
 const dotrixSession = arg("--session");
 const resume = args.includes("--resume");
+const mcpConfig = arg("--mcp-config");
 const fxBin = process.env.DOTRIX_FX_BIN || "fx";
 
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -44,6 +52,50 @@ const fail = (message) => {
 
 if (!baseUrl || !keyEnv || !model) fail("The coding engine wasn't set up for this turn (base URL, key or model missing)");
 if (dotrixSession && !/^[A-Za-z0-9_-]{1,64}$/.test(dotrixSession)) fail("The coding engine wasn't set up for this turn (invalid session)");
+
+/** A command as fx needs it (0.0.16 takes only an absolute path to an executable): found on PATH like a shell would. */
+function executable(command) {
+  const runs = (path) => {
+    try {
+      accessSync(path, constants.X_OK);
+      return statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  };
+  if (isAbsolute(command)) return runs(command) ? command : null;
+  if (command.includes("/")) return null;
+  for (const dir of (process.env.PATH || "").split(delimiter)) if (dir && isAbsolute(dir) && runs(join(dir, command))) return join(dir, command);
+  return null;
+}
+
+/** ACP's stdio MCP servers from Claude Code's format; anything malformed fails the turn rather than going unsaid. */
+function mcpServersFrom(raw) {
+  if (!raw) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    fail("The coding engine wasn't set up for this turn (invalid MCP servers)");
+  }
+  const servers = parsed?.mcpServers;
+  if (!servers || typeof servers !== "object" || Array.isArray(servers)) fail("The coding engine wasn't set up for this turn (invalid MCP servers)");
+  return Object.entries(servers).map(([name, server]) => {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(name) || typeof server?.command !== "string" || !server.command)
+      fail("The coding engine wasn't set up for this turn (invalid MCP server)");
+    const command = executable(server.command);
+    if (!command) fail(`The coding engine's ${name === "browser" ? "browser" : `${name} tool`} isn't installed in this sandbox`);
+    const serverArgs = Array.isArray(server.args) ? server.args.map(String) : [];
+    const env = Object.entries(server.env && typeof server.env === "object" ? server.env : {}).map(([key, value]) => ({ name: key, value: String(value) }));
+    return { name, command, args: serverArgs, env };
+  });
+}
+// Only the servers that start go to fx; one that doesn't is said, and the turn goes on without it.
+const mcpServers = [];
+for (const server of mcpServersFrom(mcpConfig)) {
+  if (await answers(server)) mcpServers.push(server);
+  else emit({ type: "warning", message: notStarted(server.name) });
+}
 
 const brief = readFileSync(0, "utf8");
 if (!brief.trim()) fail("The coding engine got an empty brief");
@@ -85,7 +137,13 @@ async function forwarder(target, proxy) {
     });
     req.pipe(out);
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  // fx 0.0.17 pins its connection when saving a session. A random port makes
+  // every resumed turn look like a different provider. Each sandbox has its own
+  // network namespace, so reserve one fixed local relay port and fail on collision.
+  await new Promise((resolve, reject) => {
+    server.once("error", () => reject(new Error("The model relay port is unavailable; start a fresh coding session")));
+    server.listen(31821, "127.0.0.1", resolve);
+  });
   server.unref();
   // The provider's path (e.g. /v1) stays; only the origin becomes the forwarder's.
   return `http://127.0.0.1:${server.address().port}${upstream.pathname.replace(/\/$/, "")}`;
@@ -100,7 +158,15 @@ writeFileSync(
   join(fxHome, "settings.json"),
   JSON.stringify({
     provider: "dotrix",
+    // The repository is data, never configuration: none of its .fx.json, .fx/agents, skills,
+    // .mcp.json or AGENTS.md reaches Kai (fx's project_config; FX_PROJECT_CONFIG below too).
+    project_config: false,
+    // Kai's workers (subagents) working at once in one turn, the same bound as Dotrix's own parallel builds.
+    max_subagents: 2,
     auto_upgrade: false,
+    cache_warming: false,
+    session_titles: false,
+    sound: false,
     providers: {
       dotrix: {
         protocol: "openai-chat-completions",
@@ -123,11 +189,15 @@ const savedSession = () => {
   }
 };
 
+const fxEnv = { ...process.env, FX_AUTO_UPGRADE: "0", FX_PROJECT_CONFIG: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" };
+// Upstream fx 0.0.17 reports the same version as the Kai runtime's fx but has no project_config, so it would
+// take the repository's configuration: run only an fx that knows the setting and has it off.
+const setting = spawnSync(fxBin, ["config", "get", "project_config"], { env: fxEnv, encoding: "utf8", timeout: 15_000 });
+if (setting.error) fail(`The coding engine didn't start (${setting.error.code ?? "error"})`);
+if (setting.status !== 0 || setting.stdout.trim() !== "false") fail("The coding engine isn't the version Kai was checked with");
+
 // The model is the provider's default in the settings above, not `--model` (that names an AI Gateway model).
-const fx = spawn(fxBin, ["acp"], {
-  stdio: ["pipe", "pipe", "inherit"],
-  env: { ...process.env, FX_AUTO_UPGRADE: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" },
-});
+const fx = spawn(fxBin, ["acp"], { stdio: ["pipe", "pipe", "inherit"], env: fxEnv });
 // The code only: the OS's message names the binary.
 fx.on("error", (error) => fail(`The coding engine didn't start (${error.code ?? "error"})`));
 
@@ -161,6 +231,12 @@ const contentText = (content) =>
 
 function onUpdate(update) {
   if (replaying || !update) return;
+  const recovery = update._meta?.fx?.modelResponseRecovery;
+  if (recovery && ["need_user", "failed"].includes(recovery.state) && !cancelled) {
+    providerFailed = true;
+    emit({ type: "error", message: "The model request needs attention; check your provider connection and try again" });
+    cancel();
+  }
   switch (update.sessionUpdate) {
     case "agent_message_chunk": {
       if (update.messageId && update.messageId !== messageId) flush();
@@ -175,6 +251,7 @@ function onUpdate(update) {
       if (!tools.get(id) && (update.sessionUpdate === "tool_call" || update.name || update.rawInput)) {
         flush();
         tools.set(id, true);
+        if (update.name === "subagent") subagentCalls.set(id, update.rawInput?.request?.agent ?? update.rawInput?.agent ?? null);
         emit({ type: "tool", id, name: update.name ?? null, title: update.title ?? null, kind: update.kind ?? null, input: update.rawInput ?? {} });
       }
       if (update.status === "completed" || update.status === "failed") {
@@ -185,6 +262,53 @@ function onUpdate(update) {
     default:
       break; // plans, usage of the context, titles, commands: not what the session shows
   }
+}
+
+// Kai's own workers (fx's subagents) run in child sessions, whose tool calls ACP doesn't stream. fx's hook
+// events do (libfx/hook, asked for on each session below), so their commands and edits show in the session
+// too, named for the worker. The main session's tools come as session/update, so its hooks are skipped.
+const hooks = { fx: { hooks: { captureContent: true } } };
+const subagentCalls = new Map(); // the main session's subagent call id → the worker it names
+const workers = new Map(); // child session id → worker name
+const parseJson = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+function onHook(hook) {
+  if (replaying || !hook || typeof hook !== "object") return;
+  const data = hook.data ?? {};
+  if (hook.type === "delegation" && data.phase === "dispatched" && data.childSessionId) {
+    workers.set(data.childSessionId, subagentCalls.get(data.callId) ?? workers.get(hook.sessionId) ?? null);
+    return;
+  }
+  if (!hook.sessionId || hook.sessionId === hook.rootSessionId) return;
+  if (hook.type !== "tool.start" && hook.type !== "tool.end") return;
+  const callId = data.call?.callId;
+  if (!callId) return;
+  const id = `${hook.sessionId}:${callId}`;
+  if (hook.type === "tool.start") {
+    flush();
+    const args = parseJson(data.call.argumentsJson ?? "");
+    emit({
+      type: "tool",
+      id,
+      name: data.call.name ?? null,
+      title: null,
+      kind: null,
+      input: args && typeof args === "object" ? args : {},
+      agent: workers.get(hook.sessionId) ?? "a worker",
+    });
+    return;
+  }
+  // A command's result is JSON with what it printed; anything else is its text.
+  const result = parseJson(data.output ?? "");
+  const output =
+    typeof result?.output_delta === "string" ? result.output_delta : typeof result?.output === "string" ? result.output : String(data.output ?? "");
+  const failed = data.status !== "success" || (typeof result?.exit_code === "number" && result.exit_code !== 0);
+  emit({ type: "tool_result", id, status: failed ? "failed" : "completed", output: output.slice(-64_000) });
 }
 
 createInterface({ input: fx.stdout, crlfDelay: Infinity }).on("line", (line) => {
@@ -202,6 +326,7 @@ createInterface({ input: fx.stdout, crlfDelay: Infinity }).on("line", (line) => 
     return;
   }
   if (msg.method === "session/update") return onUpdate(msg.params?.update);
+  if (msg.method === "libfx/hook") return onHook(msg.params);
   if (msg.method === "session/request_permission" && msg.id !== undefined) {
     // full-access shouldn't ask; if it does, the sandbox is the boundary: allow this once.
     const options = msg.params?.options ?? [];
@@ -220,6 +345,7 @@ fx.on("exit", (code, signal) => {
 
 let sessionId = null;
 let cancelled = false;
+let providerFailed = false;
 const cancel = () => {
   if (cancelled) return;
   cancelled = true;
@@ -236,17 +362,17 @@ async function open() {
     replaying = true;
     try {
       try {
-        await call("session/resume", { sessionId: previous, cwd, mcpServers: [] });
+        await call("session/resume", { sessionId: previous, cwd, mcpServers, _meta: hooks });
       } catch (error) {
         if (error.code !== -32601) throw error;
-        await call("session/load", { sessionId: previous, cwd, mcpServers: [] });
+        await call("session/load", { sessionId: previous, cwd, mcpServers, _meta: hooks });
       }
       return { id: previous, resumed: true };
     } finally {
       replaying = false;
     }
   }
-  const created = await call("session/new", { cwd, mcpServers: [] });
+  const created = await call("session/new", { cwd, mcpServers, _meta: hooks });
   if (!created?.sessionId) throw new Error("session/new returned no session");
   if (sessionFile) writeFileSync(sessionFile, JSON.stringify({ fxSession: created.sessionId }), { mode: 0o600 });
   return { id: created.sessionId, resumed: false };
@@ -265,15 +391,23 @@ try {
   if (cancelled) notify("session/cancel", { sessionId });
   const result = await call("session/prompt", { sessionId, prompt: [{ type: "text", text: brief }] });
   flush();
-  if (egressRefused && result?.stopReason !== "end_turn") {
+  if (egressRefused) {
     emit({ type: "error", message: "The sandbox doesn't allow this model provider (its egress proxy refused it)" });
     process.exitCode = 1;
-  } else emit({ type: "done", stopReason: result?.stopReason ?? "end_turn", usage: result?.usage ?? null, final: lastMessage });
+  } else {
+    emit({
+      type: "done",
+      stopReason: providerFailed ? "refused" : cancelled ? "cancelled" : (result?.stopReason ?? "end_turn"),
+      usage: result?.usage ?? null,
+      final: lastMessage,
+    });
+    if (providerFailed) process.exitCode = 1;
+  }
 } catch (error) {
   flush();
-  if (cancelled) emit({ type: "done", stopReason: "cancelled", usage: null, final: lastMessage });
+  if (cancelled) emit({ type: "done", stopReason: providerFailed ? "refused" : "cancelled", usage: null, final: lastMessage });
   else emit({ type: "error", message: String(error?.message ?? error).slice(0, 2000) });
-  process.exitCode = cancelled ? 0 : 1;
+  process.exitCode = cancelled && !providerFailed ? 0 : 1;
 } finally {
   // fx ends when its input closes; wait for it, so no fx outlives the turn, and stop it if it doesn't.
   if (!exited) {

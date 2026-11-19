@@ -1,4 +1,4 @@
-"""Checking a report's claims against what was read (docs/agents-v2.md §6.3), in code.
+"""Checking a report's claims against what was read (docs/architecture.md), in code.
 
 Each claim quotes its sources. A quote counts when it occurs in the stored page (or, failing
 that, the search snippet), after normalising case, whitespace, punctuation, and Markdown link

@@ -180,7 +180,9 @@ class KnowledgeService:
         *,
         base_version: int | None = None,
         message: str | None = None,
+        commit: bool = True,
     ) -> FileRead:
+        """Write a version; `commit=False` joins a caller-owned transaction."""
         clean = _clean_path(path)
         if len(content.encode("utf-8")) > MAX_FILE_BYTES:
             raise FileTooLarge(f"Files are limited to {MAX_FILE_BYTES // 1_000_000} MB")
@@ -212,7 +214,10 @@ class KnowledgeService:
                 + (f": {message}" if message else ""),
                 details={"path": clean, "version": file.version},
             )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return FileRead.model_validate(file)
 
     async def delete(

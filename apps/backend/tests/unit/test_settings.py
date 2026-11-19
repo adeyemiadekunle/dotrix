@@ -54,7 +54,82 @@ def test_session_cookies_are_secure_when_deployed(env: str, secure: bool) -> Non
 def test_deployed_coding_runs_push_to_a_fork(env: str) -> None:
     with pytest.raises(ValueError, match="DOTRIX_CODING_FORK_OWNER"):
         settings(env=env, **DEPLOYED, coding_sandbox="docker")
-    assert settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork").coding_fork_owner
+    assert settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork",
+                    coding_docker_runtime="runsc").coding_fork_owner
     assert settings(env=env, **DEPLOYED).coding_fork_owner is None  # coding off: no fork needed
     with pytest.raises(ValueError):
         settings(coding_fork_owner="not/an-org")
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+@pytest.mark.parametrize("runtime", [None, "", "runc", "io.containerd.runc.v2", "custom"])
+def test_deployed_docker_coding_requires_gvisor(env: str, runtime: str | None) -> None:
+    with pytest.raises(ValueError, match="DOTRIX_CODING_DOCKER_RUNTIME=runsc"):
+        settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork",
+                 coding_docker_runtime=runtime)
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_deployed_coding_cannot_disable_the_worker_capacity_limit(env: str) -> None:
+    with pytest.raises(ValueError, match="DOTRIX_CODING_MAX_RUNS must be positive"):
+        settings(env=env, **DEPLOYED, coding_sandbox="docker", coding_fork_owner="dotrix-fork",
+                 coding_docker_runtime="runsc", coding_max_runs=0)
+    assert settings(env=env, **DEPLOYED, coding_max_runs=0).coding_sandbox == "off"
+
+
+def test_development_keeps_plain_docker_and_unlimited_runs_available() -> None:
+    local = settings(coding_sandbox="docker", coding_max_runs=0)
+    assert local.coding_docker_runtime is None
+    assert local.coding_max_runs == 0
+
+
+def test_the_admin_bootstrap_token_must_be_long_enough() -> None:
+    with pytest.raises(ValidationError):
+        settings(admin_bootstrap_token="too-short")
+    assert settings(admin_bootstrap_token="x" * 24).admin_bootstrap_token is not None
+
+
+def test_every_required_setting_is_in_env_example() -> None:
+    """Whatever the server can't start without is in .env.example, uncommented, so the README's
+    `cp .env.example .env` gives a server that starts."""
+    from pathlib import Path
+
+    from dotrix_backend.core.settings import Settings
+
+    example = (Path(__file__).resolve().parents[4] / ".env.example").read_text(encoding="utf-8")
+    names = {
+        line.split("=", 1)[0].strip() for line in example.splitlines() if "=" in line and not line.lstrip().startswith("#")
+    }
+    required = {f"DOTRIX_{name.upper()}" for name, field in Settings.model_fields.items() if field.is_required()}
+    assert required <= names, f"missing from .env.example: {sorted(required - names)}"
+
+
+@pytest.mark.parametrize(("env", "on"), [("development", True), ("test", True), ("staging", False), ("production", False)])
+def test_agent_scripts_are_on_locally_and_off_when_deployed_unless_set(env: str, on: bool) -> None:
+    deployed = DEPLOYED if env in ("staging", "production") else {}
+    assert settings(env=env, **deployed).agent_scripts_enabled is on
+    assert settings(env=env, agent_scripts=not on, **deployed).agent_scripts_enabled is (not on)
+
+
+def test_backend_env_is_exclusive_and_unrelated_cwd_env_is_ignored(tmp_path, monkeypatch):
+    from dotrix_backend.core.settings import Settings, settings_env_file
+
+    backend = tmp_path / 'backend.env'
+    legacy = tmp_path / 'root.env'
+    unrelated = tmp_path / 'other-app'
+    unrelated.mkdir()
+    monkeypatch.chdir(unrelated)
+    for name in ('DOTRIX_DATABASE_URL', 'DOTRIX_JWT_SECRET'):
+        monkeypatch.delenv(name, raising=False)
+    (unrelated / '.env').write_text('DOTRIX_DATABASE_URL=must-not-load\n')
+    legacy.write_text('DOTRIX_DATABASE_URL=legacy\nDOTRIX_JWT_SECRET=' + 'x' * 40 + '\n')
+    assert settings_env_file(backend, legacy) == legacy
+    backend.write_text('DOTRIX_DATABASE_URL=backend\nDOTRIX_JWT_SECRET=' + 'y' * 40 + '\n')
+    monkeypatch.setitem(Settings.model_config, 'env_file', settings_env_file(backend, legacy))
+    assert Settings().database_url == 'backend'
+    monkeypatch.setenv('DOTRIX_DATABASE_URL', 'process-wins')
+    assert Settings().database_url == 'process-wins'
+    monkeypatch.delenv('DOTRIX_DATABASE_URL')
+    backend.write_text('DOTRIX_DATABASE_URL=backend-only\n')
+    with pytest.raises(ValidationError):
+        Settings()  # The required JWT key must not leak in from the legacy root file.

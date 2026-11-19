@@ -672,6 +672,47 @@ async def test_specialists_can_run_on_a_cheaper_model(project, db_client: AsyncC
     assert "You are Lyra, the product agent" in str(specialist.received[0][0].content)
 
 
+async def test_read_only_specialist_reads_project_code(project, db_client, agent_script, db_session, monkeypatch):
+    """A delegated read-only child gets its contract's code tool through the real scheduler."""
+    from langchain_core.tools import tool
+
+    from dotrix_backend.modules.agents.llm import ModelChoice
+    from dotrix_backend.modules.projects.models import Project
+
+    ada, _, base = await project()
+    runner = db_client._transport.app.state.runner
+    saved_project = await db_session.get(Project, uuid.UUID(base.rsplit("/", 1)[-1]))
+    saved_project.specialist_model = "test:cheap"
+    await db_session.commit()
+
+    @tool
+    async def code_read(path: str) -> str:
+        """Read a permitted repository file."""
+        return "README evidence" if path == "README.md" else "Not found"
+
+    async def project_code(_workspace_id, _project_id, context):
+        return [code_read], context
+
+    monkeypatch.setattr(runner, "_code", project_code)
+    pm = agent_script.say(
+        tool_call("delegate_tasks", tasks=[{"key": "readme", "agent": "product", "brief": "Read README.md",
+                                            "expected_result": "Repository evidence"}]),
+        "Lyra read the README.",
+    )
+    specialist = agent_script.specialists_say(
+        tool_call("code_read", path="README.md"),
+        tool_call("submit_specialist_result", summary="README evidence", evidence=["README.md"]),
+        "README evidence",
+    )
+    monkeypatch.setattr(runner, "model_factory", lambda project, model, keys=None: ModelChoice(
+        model=specialist if model == "test:cheap" else pm, web_search=None))
+    done = await run(db_client, base, ada.headers, "Ask Lyra to read README.md")
+    assert done["status"] == "completed", done
+    assert "code_read" in specialist.tools_received[0]
+    messages = [message for turn in specialist.received for message in turn if message.type == "tool"]
+    assert any(message.name == "code_read" and "README evidence" in str(message.content) for message in messages)
+
+
 async def test_project_model_settings(project, db_client: AsyncClient, signup, add_member) -> None:
     ada, team, base = await project()
     res = await db_client.patch(
@@ -722,3 +763,75 @@ async def test_past_briefings_are_listed_by_kind(project, db_client: AsyncClient
     assert [b["reply"] for b in briefings] == ["Briefing two.", "Briefing one."]
     bad = await db_client.get(f"{base}/agent/runs", params={"kind": "nonsense"}, headers=ada.headers)
     assert bad.status_code == 422
+
+
+async def test_an_approved_overwrite_never_loses_a_persons_edit_made_while_it_waited(
+    project, db_client: AsyncClient, agent_script
+) -> None:
+    ada, _, base = await project()
+    model = agent_script.say(
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1: core.\n"),
+        "I'll read it again.",
+    )
+    paused = await run(db_client, base, ada.headers, "Rewrite the roadmap")
+    assert paused["status"] == "awaiting_approval"
+    # While the write waits, a person edits the page.
+    edited = await db_client.put(f"{base}/knowledge/files/roadmap.md", json={"content": "# Roadmap\n\nAda's plan.\n"},
+                                 headers=ada.headers)
+    assert edited.status_code == 200, edited.text
+
+    done = (await decide(db_client, base, paused, ada.headers, ("approve",))).json()
+    assert done["status"] == "completed"
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "# Roadmap\n\nAda's plan.\n"
+    told = [m.content for m in model.received[-1] if m.type == "tool"]
+    assert told and "changed since this conversation's turn started" in told[-1]
+
+
+async def test_after_rereading_a_changed_page_the_agents_approved_write_goes_through(
+    project, db_client: AsyncClient, agent_script
+) -> None:
+    """The reread survives the approval wait: the resumed run checks against what the agent saw."""
+    ada, _, base = await project()
+    model = agent_script.say(
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nPhase 1: core.\n"),
+        tool_call("read_file", file_path="/dotrix/roadmap.md"),
+        tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n\nAda's plan, phase 1 first.\n"),
+        "Updated.",
+    )
+    paused = await run(db_client, base, ada.headers, "Rewrite the roadmap")
+    await db_client.put(f"{base}/knowledge/files/roadmap.md", json={"content": "# Roadmap\n\nAda's plan.\n"},
+                        headers=ada.headers)
+    # Refused (she changed it), reread, and a new write that waits for her again.
+    again = (await decide(db_client, base, paused, ada.headers, ("approve",))).json()
+    assert again["status"] == "awaiting_approval", again
+    done = (await decide(db_client, base, again, ada.headers, ("approve",))).json()
+    assert done["status"] == "completed" and done["reply"] == "Updated.", done
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "# Roadmap\n\nAda's plan, phase 1 first.\n"
+    told = [m.content for m in model.received[-1] if m.type == "tool"]
+    assert "changed since" not in told[-1]
+
+
+async def test_a_write_or_edit_fails_when_the_page_changed_after_the_agent_read_it(
+    project, db_client: AsyncClient
+) -> None:
+    from dotrix_backend.modules.agents.storage_backend import PlatformKnowledgeBackend
+
+    ada, team, base = await project()
+    project_id = uuid.UUID(base.rsplit("/", 1)[1])
+    sessions = db_client._transport.app.state.jobs.ctx.session_factory  # type: ignore[attr-defined]
+    agent = PlatformKnowledgeBackend(sessions, workspace_id=uuid.UUID(team["id"]), project_id=project_id,
+                                     instructed_by_id=uuid.UUID(ada.id), approved_by_id=uuid.UUID(ada.id))
+
+    assert (await agent.aread("/roadmap.md")).error is None
+    await db_client.put(f"{base}/knowledge/files/roadmap.md", json={"content": "Ada's plan.\n"}, headers=ada.headers)
+    written = await agent.awrite("/roadmap.md", "The agent's plan.\n")
+    assert written.error and "Reload it" in written.error
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "Ada's plan.\n"
+
+    # Read again, it writes; and its own write counts as read, so a second write needs no reread.
+    assert (await agent.aread("/roadmap.md")).error is None
+    assert (await agent.awrite("/roadmap.md", "The agent's plan.\n")).error is None
+    assert (await agent.aedit("/roadmap.md", "agent's", "team's")).error is None
+    assert await read(db_client, base, "roadmap.md", ada.headers) == "The team's plan.\n"
+    # A brand new page needs no read.
+    assert (await agent.awrite("/progress/new.md", "New.\n")).error is None

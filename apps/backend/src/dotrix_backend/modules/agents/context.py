@@ -224,7 +224,8 @@ _PRIORITY_ORDER = case(
 )
 
 
-def _excerpt(text: str, limit: int = 200) -> str:
+def _one_line(text: str, limit: int = 200) -> str:
+    """A task description on one line, for the board (`_excerpt` keeps a file's lines)."""
     flat = " ".join(text.split())
     return flat if len(flat) <= limit else flat[:limit].rsplit(" ", 1)[0] + "…"
 
@@ -277,7 +278,7 @@ async def _board(session: AsyncSession, project: Project) -> str:
                 lines.append(f"- {i.key} [{i.status.value}, {i.priority.value}{due}] {i.title}{who(i)}")
                 # Why it's stuck, or what the most urgent work is about, without opening it.
                 if (i.status is IssueStatus.BLOCKED or i.priority is Priority.URGENT) and i.description.strip():
-                    lines.append(f"  {_excerpt(i.description)}")
+                    lines.append(f"  {_one_line(i.description)}")
     return "\n".join(lines)
 
 

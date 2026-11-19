@@ -1,17 +1,16 @@
 // The workspace activity feed: everything that changed, by people and agents.
 import { ActItem } from "../components/TaskList";
 import { dayBucket } from "../core/utils";
-import { D, S, canSee, proj, render } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveWorkspaceActivity } from "../../lib/workspace-data";
+import { S, canSee, proj, render } from "../data/store";
+import { useActivity, useMembers } from "../data/lists";
 import type { Activity as A } from "../data/types";
 import { Empty } from "../ui/helpers";
 
 export function ActivityPage() {
   const f = S.ui.actFilter;
   const whoF = S.ui.actWho;
-  const liveFeed = useLiveWorkspaceActivity(live.ws?.id, isLive());
-  let as = (isLive() ? (liveFeed ?? []) : D().activity).filter((a) => !a.project || canSee(proj(a.project)));
+  const { items: members } = useMembers();
+  let as = useActivity().items.filter((a) => !a.project || canSee(proj(a.project)));
   if (f !== "all")
     as = as.filter((a) =>
       f === "comments"
@@ -21,7 +20,7 @@ export function ActivityPage() {
           : f === "projects"
             ? a.verb.includes("project")
             : f === "agents"
-              ? !D().members.some((m) => m.id === a.by)
+              ? !members.some((m) => m.id === a.by)
               : true,
     );
   if (whoF !== "all") as = as.filter((a) => a.by === whoF);
@@ -57,7 +56,7 @@ export function ActivityPage() {
           aria-label="Filter by person"
         >
           <option value="all">Everyone</option>
-          {D().members.map((m) => (
+          {members.map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}
             </option>

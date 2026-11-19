@@ -2,7 +2,7 @@
 @layer components {
   .chat-grid {
     display: grid;
-    grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--list-w, 240px)) minmax(0, 1fr);
     flex: 1;
     min-height: 0;
   }
@@ -99,7 +99,7 @@
     color: var(--red);
   }
   .kp-diff {
-    font-size: 11.5px;
+    font-size: 12.5px;
     line-height: 1.55;
     overflow-x: auto;
   }
@@ -168,6 +168,12 @@
     text-align: left;
     border-radius: var(--r-sm);
     cursor: pointer;
+  }
+  .kp-folder .kp-chev {
+    transition: transform var(--dur);
+  }
+  .kp-folder[data-state="open"] .kp-chev {
+    transform: rotate(90deg);
   }
   .kp-node:hover {
     background: var(--surface-3);
@@ -246,20 +252,23 @@
     padding: 24px var(--gutter, 24px) 12px;
     width: 100%;
   }
+  /* A conversation as Codes shows a session (Claude Code's): a person's message in a bubble on the right, its edge
+     on the message box's; an agent's reply under its face and name, flush with the message box's left edge. */
   .chat-msg {
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    gap: 6px;
     padding: 10px 0;
   }
   .chat-msg .body {
-    flex: 1;
     min-width: 0;
   }
   .chat-msg .who {
     display: flex;
-    align-items: baseline;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
-    font-size: var(--fs-sm);
+    font-size: 14px;
   }
   .chat-msg .who b {
     font-weight: 600;
@@ -268,32 +277,40 @@
     color: var(--text-3);
     font-size: var(--fs-xs);
   }
-  /* What a person wrote sits on the right, their avatar beside it; the agents' replies stay on the left. */
   .chat-msg.user {
-    flex-direction: row-reverse;
-  }
-  .chat-msg.user .body {
-    display: flex;
-    flex-direction: column;
     align-items: flex-end;
+    gap: 4px;
+    padding-left: 15%;
   }
-  .chat-msg.user .who {
-    flex-direction: row-reverse;
-  }
-  .chat-msg.user .bubble {
-    background: var(--surface-2);
-    border-radius: var(--r-lg);
-    padding: 8px 12px;
-    display: inline-block;
-    max-width: 85%;
+  .chat-bubble {
+    max-width: 100%;
+    padding: 10px 16px;
+    border-radius: 18px;
+    background: var(--surface-3);
+    color: var(--text);
+    font-size: 14.5px;
+    line-height: 1.5;
     white-space: pre-wrap;
-    text-align: left;
-    margin-top: 3px;
+    word-break: break-word;
+  }
+  .chat-ask-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .chat-ask-meta .ibtn {
+    opacity: 0.75;
+  }
+  @media (max-width: 720px) {
+    .chat-msg.user {
+      padding-left: 8%;
+    }
   }
   .chat-msg .md {
-    font-size: var(--fs);
+    font-size: 14.5px;
     line-height: 1.6;
-    margin-top: 3px;
   }
   .chat-act {
     display: flex;
@@ -313,33 +330,6 @@
     margin: 0 auto;
     width: 100%;
     padding: 8px var(--gutter, 24px) 18px;
-  }
-  .chat-typing {
-    display: inline-flex;
-    gap: 3px;
-  }
-  .chat-typing i {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--text-3);
-    animation: chatdot 1s infinite ease-in-out;
-  }
-  .chat-typing i:nth-child(2) {
-    animation-delay: 0.15s;
-  }
-  .chat-typing i:nth-child(3) {
-    animation-delay: 0.3s;
-  }
-  @keyframes chatdot {
-    0%,
-    80%,
-    100% {
-      opacity: 0.3;
-    }
-    40% {
-      opacity: 1;
-    }
   }
   .change {
     border: 1px solid var(--border);
@@ -417,62 +407,6 @@
   }
   .chat-msg .who .faint {
     font-size: 11px;
-  }
-  .chat-msg .said {
-    white-space: pre-wrap;
-    margin-top: 3px;
-    line-height: 1.6;
-  }
-  .chat-steps {
-    margin-top: 4px;
-    font-size: var(--fs-xs);
-    color: var(--text-3);
-  }
-  .chat-steps-h {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 4px;
-    margin-left: -4px;
-    border-radius: var(--r-sm);
-    color: inherit;
-  }
-  .chat-steps-h:hover {
-    background: var(--surface-3);
-    color: var(--text-2);
-  }
-  .chat-steps-h .chev {
-    transition: transform var(--dur);
-  }
-  .chat-steps-h .chev.open {
-    transform: rotate(90deg);
-  }
-  .chat-steps ul {
-    list-style: none;
-    margin: 4px 0 2px;
-    padding: 0 0 0 22px;
-    display: grid;
-    gap: 3px;
-  }
-  .chat-steps li {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .chat-thinking {
-    margin-top: 6px;
-    font-size: var(--fs-xs);
-    color: var(--text-3);
-  }
-  .chat-thinking-text {
-    margin: 4px 0 2px;
-    padding: 6px 10px;
-    border-left: 2px solid var(--border);
-    white-space: pre-wrap;
-    line-height: 1.55;
-    font-style: italic;
-    max-height: 220px;
-    overflow-y: auto;
   }
   .chat-refs {
     display: flex;
@@ -758,36 +692,65 @@
   margin: 0 0 8px;
   overflow-wrap: anywhere;
 }
-.specialist-tasks {
-  margin: 6px 0 14px 36px;
-}
-.specialist-task {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md, 6px);
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  font-size: 12px;
-}
-.specialist-task summary {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  cursor: pointer;
-}
-.specialist-task summary .badge {
-  margin-left: auto;
-}
-.specialist-task p,
-.specialist-task li {
-  overflow-wrap: anywhere;
-}
 
-/* The agents panel (shell/AgentsPanel.tsx): a third column on wide screens, a sheet otherwise. */
-.shell.with-agents {
-  grid-template-columns: var(--side-w) minmax(0, 1fr) 300px;
+/* The agents panel (shell/AgentsPanel.tsx): over the page, above its launcher at the bottom right. */
+:root {
+  --launcher-b: 20px; /* the launcher's distance from the bottom */
 }
-.shell.collapsed.with-agents {
-  grid-template-columns: 52px minmax(0, 1fr) 300px;
+:root:has(.agents-launcher) {
+  --launcher-h: 60px; /* its height and the gap above it, for what stacks over it */
+}
+/* Chat's composer runs along the bottom: the launcher sits above it, beside the conversation. */
+:root:has(.chat-main .cmp-box) {
+  --launcher-b: 112px;
+}
+.agents-launcher {
+  position: fixed;
+  right: 20px;
+  bottom: var(--launcher-b);
+  z-index: 73;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 48px;
+  min-width: 48px;
+  padding: 0 10px;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: var(--shadow-pop);
+  transition: transform 0.15s var(--ease);
+}
+.agents-launcher:hover {
+  transform: translateY(-1px);
+}
+.agents-launcher:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+.al-faces {
+  display: flex;
+}
+.al-faces > span {
+  display: flex;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.al-faces > span + span {
+  margin-left: -9px;
+}
+.al-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--amber);
+  color: #1d1c1a;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
 }
 .agents-panel {
   display: flex;
@@ -970,14 +933,14 @@
   background: var(--amber);
   box-shadow: 0 0 0 2px var(--surface);
 }
-/* The short panel: at the bottom right, over the page, as tall as its agents need (every page but
-   Home on a wide screen). A click outside closes it. */
+/* The panel: at the bottom right, above the launcher, over the page, as tall as its agents need.
+   A click outside, Escape, or the launcher closes it. */
 .agents-panel.sheet {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
   width: min(340px, calc(100vw - 32px));
-  max-height: min(560px, calc(100vh - 96px));
+  max-height: min(560px, calc(100vh - 96px - var(--launcher-h, 0px)));
   z-index: 72;
   border: 0;
   border-radius: var(--r-lg);
@@ -993,26 +956,27 @@
   inset: 0;
   z-index: 71;
 }
-@media (max-width: 1199px) {
-  .shell.with-agents,
-  .shell.collapsed.with-agents {
-    grid-template-columns: var(--side-w) minmax(0, 1fr);
-  }
-  .shell.collapsed.with-agents {
-    grid-template-columns: 52px minmax(0, 1fr);
-  }
-}
 @media (max-width: 900px) {
-  .shell.with-agents,
-  .shell.collapsed.with-agents {
-    grid-template-columns: minmax(0, 1fr);
+  .agents-launcher {
+    right: 12px;
   }
   .agents-panel.sheet {
     right: 12px;
+  }
+}
+/* Phones: the sheet and the notices span the window, above the bottom navigation. Tablets keep
+   the corner cards. */
+@media (max-width: 640px) {
+  .agents-panel.sheet {
     left: 12px;
     width: auto;
-    bottom: 76px;
     max-height: min(560px, 70vh);
+  }
+  :root {
+    --launcher-b: calc(68px + env(safe-area-inset-bottom, 0px)); /* above the bottom navigation */
+  }
+  :root:has(.chat-main .cmp-box) {
+    --launcher-b: calc(160px + env(safe-area-inset-bottom, 0px));
   }
 }
 @keyframes apin {
@@ -1022,11 +986,11 @@
   }
 }
 
-/* Corner notices (shell/Notices.tsx); toasts move above them. */
+/* Corner notices (shell/Notices.tsx), above the agents launcher; toasts move above them. */
 .notices {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
   z-index: 99;
   display: flex;
   flex-direction: column;
@@ -1042,7 +1006,7 @@
   border: 1px solid var(--border);
 }
 #toasts {
-  bottom: calc(20px + var(--notices-h, 0px));
+  bottom: calc(var(--launcher-b) + var(--launcher-h, 0px) + var(--notices-h, 0px));
 }
 .notice {
   display: flex;
@@ -1053,11 +1017,6 @@
   background: var(--surface);
   box-shadow: var(--shadow-pop);
   animation: noticein 0.22s var(--ease) both;
-}
-.notice.blocked {
-  box-shadow:
-    var(--shadow-pop),
-    inset 3px 0 0 var(--red);
 }
 .notice-t {
   flex: 1;
@@ -1085,6 +1044,11 @@
   }
 }
 @media (max-width: 900px) {
+  #toasts {
+    bottom: calc(var(--launcher-b) + var(--launcher-h, 0px));
+  }
+}
+@media (max-width: 640px) {
   .notices {
     position: static;
     width: auto;
@@ -1099,14 +1063,14 @@
     box-shadow: none;
     border: 1px solid var(--border-strong);
   }
-  #toasts {
-    bottom: 76px;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .notice,
   .agents-panel {
     animation: none;
+  }
+  .agents-launcher {
+    transition: none;
   }
 }
 
@@ -1198,7 +1162,7 @@
 /* List, session, and panels side by side, each edge draggable (--list-w, --panel-w); below 1200px the
    panels take the list's place (the session's back arrow returns to it). */
 .chat-grid.with-panel {
-  grid-template-columns: minmax(0, var(--list-w, 300px)) minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 70vw));
+  grid-template-columns: minmax(0, var(--list-w, 240px)) minmax(280px, 1fr) minmax(0, min(var(--panel-w, 560px), 70vw));
 }
 @media (max-width: 1200px) {
   .chat-grid.with-panel {
@@ -1574,14 +1538,6 @@ body.resizing-row * {
   }
 }
 
-/* A project's group in Chat's and Code's lists: room between projects. */
-.chat-group {
-  margin-top: 6px;
-  padding: 10px 0 6px;
-}
-.chat-group + .chat-group {
-  border-top: 1px solid var(--border);
-}
 /* A coding session's details, over the chat from the header's ⋮ (it doesn't push the turns down). */
 .pop.cs-info {
   width: 420px;
@@ -1589,8 +1545,9 @@ body.resizing-row * {
   max-height: min(480px, 70vh);
   padding: 12px 14px;
 }
-/* Room between the sessions (and conversations) of one project. */
-.chat-group .sitem + .sitem {
+/* Room between the sessions (and conversations) in Chat's and Codes' lists. */
+.chat-list .sitem + .sitem,
+.chat-list .cs-row + .cs-row {
   margin-top: 4px;
 }
 
@@ -1905,13 +1862,6 @@ body.resizing-row * {
   gap: 6px;
   color: var(--text-2);
 }
-.side-panel-turn {
-  color: var(--text-3);
-  font-size: 12px;
-}
-.side-panel-select {
-  width: auto;
-}
 section.side-panel-body[hidden] {
   display: none;
 }
@@ -1996,4 +1946,2319 @@ section.side-panel-body[hidden] {
   gap: 3px;
   color: var(--amber);
   font-size: 11px;
+}
+
+/* ---------- Codes, after Claude Code's session view ----------
+ * The session bar: a title with its menu, the status, then the details and panes (screens/Chat.tsx Session). */
+.cs-head {
+  overflow: visible;
+  position: relative;
+  z-index: 6; /* over the panes, which float over the session on narrow screens */
+}
+.cs-title-wrap {
+  position: relative;
+  min-width: 0;
+  display: flex;
+}
+.cs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+.cs-title:hover,
+.cs-title.on {
+  background: var(--surface-2);
+}
+.cs-title svg {
+  flex: none;
+  color: var(--text-3);
+}
+.cs-from {
+  display: inline-flex;
+  color: var(--text-3);
+}
+.cs-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+.cs-menu.right {
+  left: auto;
+  right: 0;
+}
+.cs-menu > button,
+.cs-menu > a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cs-menu > button:hover,
+.cs-menu > a:hover {
+  background: var(--surface-2);
+}
+.cs-menu > button svg,
+.cs-menu > a svg {
+  color: var(--text-3);
+  flex: none;
+}
+.cs-menu > button[aria-checked="true"] > svg:last-child {
+  color: var(--acc);
+}
+.cs-menu kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-4);
+}
+.cs-menu hr {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--divider);
+}
+
+/* The session's details (components/SessionDetails.tsx): a column beside it, or a popover under its button. */
+.cs-details {
+  width: 300px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 12px;
+}
+.cs-details-pop {
+  position: absolute;
+  top: calc(var(--cs-head-h, 46px) + 4px);
+  right: 12px;
+  width: min(320px, calc(100% - 24px));
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+  padding: 8px;
+  z-index: 25;
+}
+.sd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sd-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 6px 8px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.cs-details-pop .sd-sec {
+  box-shadow: none;
+  background: none;
+  padding: 6px 4px;
+}
+.cs-details-pop .sd-sec + .sd-sec {
+  border-top: 1px solid var(--divider);
+  border-radius: 0;
+}
+.sd-sec h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.sd-count {
+  font-weight: 500;
+  color: var(--text-3);
+}
+.sd-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  min-width: 0;
+}
+.sd-row > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.sd-row a {
+  color: var(--text);
+  text-decoration: none;
+}
+.sd-row a:hover {
+  color: var(--acc);
+}
+.sd-link {
+  cursor: pointer;
+  width: 100%;
+}
+.sd-link:hover {
+  background: var(--surface-2);
+}
+.sd-dir {
+  max-width: 45%;
+  color: var(--text-4);
+  font-size: 11.5px;
+}
+.sd-more {
+  align-self: flex-start;
+  margin: 2px 6px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sd-more:hover {
+  color: var(--text);
+}
+.sd-empty {
+  margin: 0 6px 4px;
+  font-size: 12.5px;
+}
+.sd-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 2px 6px 6px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.sd-usage b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sd-state {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.sd-state.warm {
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+.sd-state.asleep {
+  background: var(--amber);
+}
+.sd-pr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 6px;
+}
+.sd-pr-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  min-width: 0;
+}
+.sd-pr-title svg {
+  flex: none;
+  color: var(--green);
+}
+.sd-pr-title:hover {
+  color: var(--acc);
+}
+.sd-pr-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 23px;
+  font-size: 12.5px;
+}
+.sd-lines {
+  display: inline-flex;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.plus {
+  color: var(--green);
+}
+.minus {
+  color: var(--red);
+}
+.sd-ci {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.sd-ci.passed {
+  color: var(--green);
+}
+.sd-ci.failed {
+  color: var(--red);
+}
+
+/* The panes beside a session: stacked in one resizable column, each with its own bar. */
+.side-panel.panes {
+  padding: 0;
+}
+.side-panel.panes > .pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.side-panel.panes > .pane + .pane {
+  border-top: 1px solid var(--border);
+}
+/* The Browser pane (components/BrowserPane.tsx, the desktop app only): tabs, an address bar, and the pages. */
+.browser {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.browser-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.browser-tab {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 180px;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.browser-tab.on {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.browser-tab-name,
+.browser-tab-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.browser-tab-name {
+  padding: 0 2px 0 10px;
+}
+.browser-tab-close {
+  padding: 0 7px 0 4px;
+  color: var(--text-3);
+  flex: none;
+}
+.browser-tab-close:hover {
+  color: var(--text);
+}
+.browser-busy {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+.browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin-left: 4px;
+  font-size: 12.5px;
+}
+.browser-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--red);
+  font-size: 12.5px;
+}
+.browser-pages {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  background: var(--surface);
+}
+/* A hidden tab keeps its page: display: none would drop a webview's contents, so it is only made invisible. */
+.browser-slot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  visibility: hidden;
+}
+.browser-slot.on {
+  visibility: visible;
+}
+.browser-page {
+  flex: 1;
+  border: 0;
+  background: #fff; /* a page without a background of its own expects a browser's white */
+}
+.browser-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+.browser-empty p {
+  margin: 0;
+  max-width: 320px;
+}
+.side-panel-branch {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* A session's turns, as Claude Code's transcript: your request on the right, Kai's reply below it without a
+ * name row, its steps folded into one line, and copy and the time under it. */
+.kt-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.kt {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kt-ask {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  padding-left: 15%;
+}
+.kt-bubble {
+  padding: 10px 16px;
+  border-radius: 18px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.kt-meta,
+.kt-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.kt-meta .ibtn,
+.kt-actions .ibtn {
+  opacity: 0.75;
+}
+.kt-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.kt-reply .md {
+  font-size: 14.5px;
+}
+.kt-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+}
+.kt-who b {
+  font-weight: 600;
+}
+.kt-error {
+  padding: 8px 12px;
+  border-radius: var(--r);
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 13px;
+}
+.kt-lines {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.kt-lines:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* The follow-up box, as Claude Code's: rounded, growing with what's typed, the send button inside; the model,
+ * the approval mode and the sandbox under it. */
+.kt-input {
+  padding-top: 4px;
+}
+.kt-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 10px 10px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--dur),
+    box-shadow var(--dur);
+}
+.kt-box:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.kt-box.off {
+  background: var(--surface-2);
+}
+.kt-box textarea {
+  flex: 1;
+  min-height: 24px;
+  max-height: 200px;
+  padding: 3px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.kt-send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  cursor: pointer;
+  transition: opacity var(--dur);
+}
+.kt-send:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.kt-stop {
+  background: var(--text);
+  color: var(--bg);
+}
+.kt-stop:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.conv-main {
+  container-type: inline-size;
+}
+.kt-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+  padding: 8px 14px 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.kt-foot .faint {
+  font-size: 11.5px;
+}
+@container (max-width: 560px) {
+  .kt-foot .faint {
+    display: none;
+  }
+  .chat-delivery-help {
+    display: none;
+  }
+  .cmp-foot {
+    white-space: normal;
+    flex-wrap: wrap;
+  }
+  .cmp-foot > .sp {
+    display: none;
+  }
+  .cmp-controls-right {
+    margin-left: auto;
+  }
+}
+@media (max-width: 640px) {
+  .kt-ask {
+    padding-left: 8%;
+  }
+}
+/* Changes: a "viewed" check on each file's bar (as Claude Code's diff); a viewed file folds and dims. */
+.kp-file-row {
+  display: flex;
+  align-items: center;
+}
+.kp-file-row .kp-file-h {
+  flex: 1;
+  min-width: 0;
+}
+.kp-viewed {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--text-4);
+  cursor: pointer;
+}
+.kp-viewed:hover {
+  color: var(--text-2);
+}
+.kp-viewed.on {
+  color: var(--green);
+}
+.kp-file.seen .kp-file-h {
+  opacity: 0.6;
+}
+/* Narrow screens: the panes float over the session, under its bar, so the bar's buttons stay in reach. */
+@media (max-width: 1200px) {
+  .side-panel.panes {
+    top: var(--cs-head-h, 46px);
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* The desktop app: a new version ready to install (shell/DesktopApp.tsx), and What's new. */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 14px 0;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-sm);
+}
+.update-bar > .i:first-child {
+  color: var(--acc);
+  flex-shrink: 0;
+}
+.update-bar .grow {
+  min-width: 0;
+}
+.wn {
+  display: grid;
+  gap: 28px;
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+}
+.wn-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.wn-head h3 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  flex: 1;
+}
+.wn-ver {
+  font-size: 11.5px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+}
+.wn-sec {
+  margin: 14px 0 6px;
+}
+.wn ul {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  display: grid;
+  gap: 6px;
+}
+.wn li {
+  line-height: 1.55;
+}
+.wn li::marker {
+  color: var(--text-3);
+}
+.wn li > div > p {
+  margin: 0;
+}
+
+/* Where a new session codes (WhereItCodes in screens/Chat.tsx). */
+.env-menu {
+  min-width: 260px;
+}
+.env-h {
+  display: block;
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.env-state {
+  font-size: 11.5px;
+}
+.env-note {
+  display: block;
+  padding: 4px 10px 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.env-sep {
+  display: block;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--divider);
+}
+
+/* Composer controls use Astryx slots: options in plus, model immediately before Send/Stop. */
+.cmp-box {
+  align-items: center;
+  padding: 7px 7px 7px 8px;
+}
+.cmp-box textarea {
+  padding: 4px 2px;
+}
+.cmp-plus {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.cmp-plus:hover,
+.cmp-plus[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.cmp-mode {
+  flex: none;
+  max-width: none;
+  margin-right: 2px;
+}
+.cmp-mode-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cmp-foot {
+  gap: 4px;
+  padding: 6px 8px 0;
+  min-height: 30px;
+}
+.cmp-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.cmp-controls-left {
+  justify-content: flex-start;
+}
+.cmp-controls-right {
+  justify-content: flex-end;
+}
+.chat-delivery-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 8px 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.chat-delivery-row select {
+  max-width: 210px;
+}
+.chat-delivery-help {
+  color: var(--text-3);
+}
+/* The Queue's rows (components/AgentTrace.tsx Queue): a message waiting to be sent while Nova works. */
+.chat-input-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.chat-input-state [data-slot="trace-line"] {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+.chat-input-message {
+  min-width: 0;
+}
+.chat-input-result {
+  white-space: nowrap;
+}
+.chat-input-error {
+  flex-basis: 100%;
+  padding-left: 24px;
+  color: var(--red);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.chat-share-action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-share-action .faint {
+  font-size: 11.5px;
+}
+.cmp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 50%;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cmp-chip .ibtn {
+  width: 18px;
+  height: 18px;
+}
+.fpick {
+  position: relative;
+  display: inline-flex;
+}
+.fpick .pick-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  max-width: 220px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.fpick .pick-open:hover,
+.fpick .pick-open[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.cmp-model .fpick .pick-open,
+.cmp-model:not(:has(.fpick)) {
+  color: var(--text);
+  font-weight: 500;
+}
+.cmp-model:not(:has(.fpick)) {
+  padding: 0 7px;
+  font-size: 13px;
+}
+.fpick .cmenu {
+  left: auto;
+  right: 0;
+}
+
+/* A new chat or coding session, as Claude Code's: who and where in the middle (ChoiceCard), the message box at the
+ * bottom. */
+.ns {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ns-mid {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 48px 16px 24px;
+}
+.ns-title {
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+.ns-bottom {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 0 16px 18px;
+}
+.cc {
+  width: min(440px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.cc > [role="listbox"] {
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+}
+.cc-item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.cc-item:hover:not(:disabled),
+.cc-item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.cc-item:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.cc-item > .i:first-child {
+  color: var(--text-2);
+  flex: none;
+}
+.cc-note {
+  font-size: 12px;
+}
+.cc-foot {
+  position: relative;
+  border-top: 1px solid var(--divider);
+  padding: 5px;
+}
+.cc-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.cc-more:hover,
+.cc-more[aria-expanded="true"] {
+  background: var(--surface-2);
+}
+.cc-menu {
+  position: fixed; /* placed by ChoiceCard: below the button, or above it when the window has more room there */
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+.cc-search {
+  height: 34px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--divider);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.cc-h {
+  padding: 8px 10px 4px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.cc-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--divider);
+}
+
+/* Project Knowledge follows the left edge of the project toolbar. */
+.pbody > .knowledge-documents {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 16px 24px 24px;
+}
+
+/* An agent's work (components/AgentTrace.tsx, on @dotrix/ui's Trace from shadcn's AI Elements): Reasoning,
+   Chain of Thought, Subagent and Tool lines under a reply in Chat and a turn in Codes. */
+.agent-trace {
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+}
+.agent-trace [data-slot="trace-line"] {
+  font-size: 12.5px;
+}
+.agent-trace-text {
+  white-space: pre-wrap;
+  font-style: italic;
+  line-height: 1.55;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.agent-trace-steps {
+  margin-top: 4px;
+}
+.agent-trace-subagents {
+  margin: 4px 0 14px;
+}
+.agent-trace-role {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.agent-trace-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.agent-trace-brief {
+  margin: 0;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.agent-trace-result {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.agent-trace-error {
+  margin: 0;
+  color: var(--red);
+}
+.agent-trace-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.agent-trace-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.agent-trace-source {
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-trace-output {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+.agent-trace-output pre {
+  width: 100%;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-trace-output.bad pre {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.kt-trace [data-slot="trace-line"] {
+  font-size: 13.5px;
+}
+.kt-trace [data-slot="trace-collapsible-content"] [data-slot="trace-line"] {
+  font-size: 12.5px;
+}
+
+/* The Model Selector (Pick with groupOf): the models under each provider's name. */
+.cmenu-group {
+  display: flex;
+  flex-direction: column;
+}
+.cmenu-group + .cmenu-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+.cmenu-h {
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+/* Test Results, Stack Trace and the reading of a command's output (AgentTrace.tsx), in a tool line and Terminal. */
+.agent-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-family: var(--font-sans);
+}
+.agent-reading .agent-trace {
+  margin-top: 0;
+}
+.agent-stack-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.agent-stack-error {
+  margin: 0;
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+.agent-stack-box ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.agent-stack-box ol.agent-stack-vendor {
+  color: var(--text-3);
+}
+.kp-prompt .kp-ok {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--green);
+}
+.kp-cmd .agent-reading {
+  margin: 6px 0 2px;
+}
+
+/* Sources and Inline Citation: "[S1]" in a reply as a chip naming the site, its page on hover. */
+.agent-cite {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  margin: 0 1px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-2) !important;
+  font-size: 11px;
+  line-height: 18px;
+  text-decoration: none !important;
+  vertical-align: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-cite:hover {
+  background: var(--accent-soft);
+  color: var(--acc) !important;
+}
+.agent-cite-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-cite-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.agent-cite-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.agent-source-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* Plan: a plan's tasks, criteria and questions in a Plan card, and a checkpoint's steps. */
+.agent-plan-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  font-size: 13px;
+}
+.agent-plan-n {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.agent-plan .agent-trace-wrap,
+.agent-plan [data-slot="trace-title"].agent-trace-wrap {
+  color: var(--text);
+}
+
+/* Queue: messages waiting above the message box. */
+.agent-queue {
+  margin: 0 8px 8px;
+}
+.agent-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Confirmation: a change waiting for a person, as one row. */
+.change-f.change-confirm {
+  padding: 4px;
+}
+.agent-confirm {
+  font-size: 12.5px;
+}
+.agent-confirm [data-slot="item-title"] {
+  font-size: 13px;
+}
+.agent-confirm [data-slot="item-description"] {
+  font-size: 12px;
+}
+
+/* Checkpoint: the commit a turn left, between turns in Codes. */
+.agent-checkpoint {
+  font-size: 12px;
+}
+.agent-checkpoint .kt-lines {
+  margin-left: 4px;
+}
+
+/* Context: a reply's tokens, broken down on hover. */
+.agent-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: default;
+}
+.agent-usage:hover,
+.agent-usage:focus-visible {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.agent-usage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.agent-usage-h {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-usage-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.agent-usage-bar span {
+  display: block;
+  height: 100%;
+  background: var(--acc);
+}
+.agent-usage-kv {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  margin: 0;
+}
+.agent-usage-kv dt {
+  color: var(--text-3);
+}
+.agent-usage-kv dd {
+  margin: 0;
+  text-align: right;
+}
+.agent-usage-note {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+/* Files and diffs as Claude Code shows them: the code highlighted (Shiki's light and dark colours, use-highlight.ts),
+   a file's bar with its icon and path as a breadcrumb, how the turn changed it, and Copy path. */
+.kp-tok {
+  color: var(--shiki-light);
+}
+.dark .kp-tok {
+  color: var(--shiki-dark);
+}
+.kp-diff {
+  font-size: 12px;
+  line-height: 1.6;
+}
+/* A file's content in Files: an editor's view, no diff colours (those are Changes'). */
+.kp-source {
+  overflow-x: auto;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.kp-src-line {
+  display: flex;
+  min-width: max-content;
+  white-space: pre;
+}
+.kp-src-line .kp-no {
+  width: 3.6em;
+  padding-right: 14px;
+}
+.kp-file-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: -2px 0 8px;
+  padding: 4px 0;
+  background: var(--bg);
+}
+.kp-file-icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.kp-crumbs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kp-crumb {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+}
+.kp-crumb-sep {
+  padding: 0 3px;
+  color: var(--text-4);
+}
+.kp-crumb-file {
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+/* Files: a changed file's name in its change's colour, as Claude Code's tree marks them. */
+.kp-node.file.modified .grow {
+  color: var(--amber);
+}
+.kp-node.file.added .grow {
+  color: var(--green);
+}
+.kp-node.file.deleted .grow {
+  color: var(--red);
+}
+
+/* A reply that failed (AgentTrace.tsx RunFailure): the failure, then what went wrong as plain text. */
+.agent-run-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-run-failure .agent-trace {
+  margin-top: 0;
+}
+.agent-run-failure-why {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--red-soft);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Onboarding (screens/Onboarding.tsx): one decision per screen on the left, progress dots under it,
+   a quiet preview of what the step sets up on the right (hidden on narrow screens). */
+/* Onboarding takes the whole window: the wordmark and theme toggle float over it, no footer. */
+.auth:has(.onb2) {
+  position: relative;
+}
+.auth:has(.onb2) .auth-top {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+}
+.auth:has(.onb2) .auth-foot {
+  display: none;
+}
+.auth-c:has(.onb2) {
+  padding: 0;
+  align-items: stretch;
+}
+.onb2 {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 100vh;
+}
+.onb2-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 40px;
+  padding: 88px 24px 40px;
+}
+.onb2-col {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+/* A standalone screen (sign in, loading, an error, a team workspace): centred like a card. */
+.onb2-col.center {
+  text-align: center;
+}
+.onb2-col.center .onb2-acts {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.onb2-head h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+}
+.onb2-head p {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+.onb2-form,
+.onb2-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.onb2-fields .field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.onb2-input {
+  min-height: 44px;
+  border-radius: var(--r-lg);
+  font-size: var(--fs-md);
+}
+textarea.onb2-input {
+  padding-top: 10px;
+}
+.onb2-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.onb2-name .onb2-input {
+  flex: 1;
+  min-width: 0;
+}
+.onb2-avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--acc);
+  color: var(--acc-fg, #fff);
+  font-weight: 600;
+  font-size: var(--fs-md);
+}
+.onb2-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  text-align: left;
+}
+.onb2-acts {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+.onb2-acts-wrap {
+  flex-wrap: wrap;
+}
+.onb2-btn {
+  min-height: 44px;
+  padding: 0 22px;
+  border-radius: 999px;
+  font-size: var(--fs-md);
+}
+.onb2-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: -8px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.onb2-back:hover {
+  color: var(--text);
+}
+.onb2-later {
+  align-self: center;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.onb2-later:hover {
+  color: var(--text);
+}
+.onb2-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.onb2-choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  transition:
+    border-color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.onb2-choice:hover {
+  background: var(--surface-2);
+}
+.onb2-choice.on {
+  border-color: var(--acc);
+  background: color-mix(in srgb, var(--acc) 7%, transparent);
+}
+.onb2-choice:has(input:focus-visible) {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+/* The radio covers its whole card, invisible: a click anywhere on the card is a click on it. */
+.onb2-choice input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.onb2-choice-i {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r);
+  display: grid;
+  place-items: center;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.onb2-choice.on .onb2-choice-i {
+  background: var(--acc);
+  color: var(--acc-fg, #fff);
+}
+.onb2-choice-t {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.onb2-choice-t b {
+  font-weight: 600;
+  font-size: var(--fs-md);
+}
+.onb2-choice-t span {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.onb2-team {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.onb2-resume {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.onb2-features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.onb2-features li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.onb2-features b {
+  font-weight: 600;
+}
+.onb2-features span {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.onb2-dots ol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.onb2-dots li {
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--text-4);
+  transition: width 0.2s var(--ease);
+}
+.onb2-dots li.done {
+  background: var(--text-3);
+}
+.onb2-dots li.on {
+  width: 28px;
+  background: var(--text);
+}
+/* The preview: full height beside the step. Its rows ease in one after another when the step
+   changes, the group floats slowly, and a soft glow in the accent drifts behind it. */
+.onb2-art {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--bg-side);
+  display: grid;
+  place-items: center;
+}
+.onb2-art::before {
+  content: "";
+  position: absolute;
+  width: 70%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--acc) 16%, transparent), transparent 65%);
+  animation: onb2-glow 16s ease-in-out infinite alternate;
+}
+.onb2-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 35%, var(--bg-side) 80%);
+  pointer-events: none;
+}
+.onb2-pv {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-width: 300px;
+  color: var(--text-3);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  animation: onb2-float 9s ease-in-out infinite;
+}
+.onb2-pv-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  white-space: nowrap;
+  opacity: 0;
+  animation: onb2-row 0.7s var(--ease) forwards;
+}
+.onb2-pv-row:nth-child(2) {
+  animation-delay: 0.08s;
+}
+.onb2-pv-row:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.onb2-pv-row:nth-child(4) {
+  animation-delay: 0.24s;
+}
+.onb2-pv-row:nth-child(5) {
+  animation-delay: 0.32s;
+}
+.onb2-pv-row:nth-child(6) {
+  animation-delay: 0.4s;
+}
+.onb2-pv-row:nth-child(7) {
+  animation-delay: 0.48s;
+}
+@keyframes onb2-row {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 0.6;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes onb2-float {
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes onb2-glow {
+  from {
+    transform: translate(-18%, -12%) scale(0.9);
+  }
+  to {
+    transform: translate(16%, 14%) scale(1.1);
+  }
+}
+.onb2-pv-key {
+  font-size: 20px;
+  color: var(--text-4);
+}
+.onb2-pv-role {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-4);
+}
+.onb2 .err {
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .onb2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .onb2-art {
+    display: none;
+  }
+  .onb2-main {
+    padding: 80px 16px 32px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onb2-dots li,
+  .onb2-choice {
+    transition: none;
+  }
+  .onb2-pv,
+  .onb2-art::before {
+    animation: none;
+  }
+  .onb2-pv-row {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+[data-motion="reduce"] .onb2-pv,
+[data-motion="reduce"] .onb2-art::before {
+  animation: none;
+}
+[data-motion="reduce"] .onb2-pv-row {
+  animation: none;
+  opacity: 0.6;
+}
+
+/* Saved background worker activity, nested under its coding turn. */
+.background-tasks {
+  margin: 8px 0 20px;
+}
+.background-tasks-heading,
+.background-task-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.background-tasks-heading {
+  flex-wrap: wrap;
+}
+.background-task-list {
+  margin-left: 7px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+}
+.background-task-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.background-task-body {
+  padding: 0 0 16px 26px;
+  min-width: 0;
+}
+.background-task-paths {
+  overflow-wrap: anywhere;
+}
+.background-task-check {
+  margin-top: 10px;
+}
+.background-task-check summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.background-task-check pre {
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.background-tasks button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+/* Responsive compositions share Astryx tokens; utility classes remain available for page layout. */
+@layer components {
+  .kn-mobile-nav,
+  .set-section-picker {
+    display: none;
+  }
+  .kn-grid > section {
+    min-width: 0;
+  }
+  .document-outline {
+    margin-bottom: 16px;
+  }
+  .document-outline > summary {
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    padding: 8px 0;
+  }
+  .cs-row-copy {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+  }
+  .cs-row-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    line-height: 1.4;
+    font-weight: 500;
+  }
+  .cs-row-meta {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .cs-row-copy > .badge {
+    align-self: flex-start;
+    max-width: 100%;
+    white-space: normal;
+    height: auto;
+    min-height: 22px;
+  }
+  .cs-demo-title {
+    min-width: 0;
+    font-weight: 600;
+  }
+  .drawer-key {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .kcard .meta > button,
+  .tabs > button[aria-label="Save view"] {
+    min-width: 24px;
+    min-height: 24px;
+    justify-content: center;
+  }
+  @media (max-width: 900px) {
+    .set-nav {
+      display: none;
+    }
+    .set-section-picker {
+      display: grid;
+      gap: 6px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .set-section-picker > select {
+      width: 100%;
+      min-height: 40px;
+    }
+  }
+  @media (max-width: 639px) {
+    .kn-mobile-nav {
+      display: block;
+    }
+    .kn-grid:not(.browsing) > aside,
+    .kn-grid.browsing > section {
+      display: none;
+    }
+    .kn-grid .panel-h {
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .kn-grid .panel-h .acts {
+      margin-left: 0;
+      width: 100%;
+    }
+    .dotrix-task-drawer .drawer-h {
+      gap: 6px;
+      padding-inline: 12px;
+      flex-wrap: wrap;
+    }
+    .dotrix-task-drawer .drawer-h > .pillbtn {
+      max-width: 128px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dotrix-task-drawer .drawer-b {
+      padding-inline: 16px;
+    }
+    .dotrix-modal #f-sub {
+      min-width: 0;
+      width: 100%;
+    }
+  }
+}
+/* These existing domain rules predate layers; keep their responsive overrides beside them. */
+.cs-row > .sitem {
+  height: auto;
+  padding: 10px 30px 10px 8px;
+  align-items: flex-start;
+  width: 100%;
+}
+.cs-head {
+  min-height: 56px;
+  height: auto;
+  padding-block: 8px;
+}
+.dotrix-composer .composer-textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  resize: none;
+  outline: none;
+}
+.agents-launcher.inline {
+  position: static;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 6px;
+  box-shadow: none;
+  flex: none;
+}
+.agents-launcher.inline .al-faces > span:not(:first-child) {
+  display: none;
+}
+:root:has(.agents-launcher.inline) {
+  --launcher-h: 0px;
+}
+.workspace-shell .notices:not(.in-panel) {
+  position: static;
+  width: auto;
+  flex-shrink: 0;
+  margin: 12px var(--gutter) 0;
+  z-index: auto;
+}
+.workspace-shell .notices:not(.in-panel) .notice {
+  box-shadow: none;
+  border: 1px solid var(--border);
+}
+
+.workspace-switcher {
+  justify-content: flex-start;
+  min-width: 0;
+}
+.workspace-switcher-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.workspace-topbar .workspace-switcher {
+  width: 36px;
+  padding: 4px;
+}
+.workspace-topbar .workspace-switcher-name,
+.workspace-topbar .workspace-switcher-caret {
+  display: none;
+}
+.workspace-switcher > span:first-child,
+.workspace-switcher > span:first-child > span {
+  width: 100%;
+  min-width: 0;
+}
+.workspace-switcher-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.workspace-switcher-name {
+  flex: 1;
+}
+.dotrix-composer-wrap.menu-open {
+  /* Keep room below the footer action so its menu need not flip above it. */
+  padding-bottom: calc(min(320px, 40dvh) + 48px);
+}
+
+.composer-model {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(220px, 42vw);
+}
+.composer-model > *,
+.composer-model [role="combobox"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Session navigation hides completely; the same panel icon remains in the main header. */
+.chat-side[hidden] {
+  display: none;
+}
+.chat-main {
+  min-width: 0;
+}
+.session-start-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+.session-start-header .chat-new-back {
+  position: static;
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .chat-grid.list-open .chat-side {
+    display: flex;
+  }
+  .chat-grid.list-open .chat-main {
+    display: none;
+  }
+}
+
+/* Astryx's input/footer slots form a pill at rest and separate rows while editing. */
+/* Reserve the first editing row below, so focus changes cannot move a clicked conversation action. */
+.compact-composer > div {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 8px;
+}
+.compact-composer > div > div:first-child {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  align-self: center;
+}
+.compact-composer > div > div:last-child {
+  display: contents;
+}
+.compact-composer > div > div:last-child > div:first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+.compact-composer > div > div:last-child > div:last-child {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div {
+  padding: 12px;
+  row-gap: 12px;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:first-child {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding: 4px;
+  min-height: 32px;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:last-child > div:first-child {
+  grid-column: 1;
+  grid-row: 2;
+}
+.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:last-child > div:last-child {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  justify-content: flex-end;
+}
+.compact-composer .composer-textarea {
+  min-height: 24px;
+  padding: 0;
+  line-height: 24px;
+}
+.compact-composer .composer-model {
+  max-width: min(200px, 32vw);
+}
+.composer-options-menu {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  min-width: 200px;
+  max-height: min(320px, 40dvh);
+  overflow-y: auto;
+}
+.composer-menu-option {
+  justify-content: flex-start;
+}
+.composer-menu-note,
+.composer-menu-heading {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.dotrix-composer-wrap {
+  position: relative;
+}
+.compact-composer:not(:focus-within, .has-draft, :has([aria-expanded="true"])) [aria-hidden="true"]:not(svg) {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Keep the main view in the flexible column when the list is display:none. */
+.chat-main {
+  grid-column: 2;
+}
+@media (max-width: 900px) {
+  .chat-main {
+    grid-column: 1;
+  }
+}
+.new-conversation {
+  flex-direction: column;
+}
+/* Reserve the first editing row on start screens so blur cannot move a choice during its click. */
+.ns-bottom .dotrix-composer-wrap,
+.dotrix-chat-layout .dotrix-composer-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 112px;
+}
+.ns-bottom .dotrix-composer-wrap:has(.coding-start-composer),
+.dotrix-chat-layout .kt-input.dotrix-composer-wrap {
+  min-height: 144px;
+}
+.composer-options-menu {
+  max-width: min(320px, calc(100vw - 32px));
+}
+.composer-environment-options {
+  display: grid;
+  gap: 4px;
+}
+
+.composer-menu-option[aria-pressed="true"] {
+  background-color: var(--surface-2);
+  color: var(--text);
 }

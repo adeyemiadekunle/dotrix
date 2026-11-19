@@ -86,7 +86,10 @@ async def test_about_no_project_and_only_projects_you_see(
     general = await db_client.post(f"{ws}/conversations/runs", json={"message": "Where do I ask about refunds?"},
                                    headers=cat.headers)
     assert general.status_code == 202, general.text
-    assert "- KUN: Kunemi" in model.received[0][0].content and "- OPS: Operations" in model.received[0][0].content
+    assert general.json()["project_ids"] == []
+    prompt = model.received[0][0].content
+    assert "# Context: General chat" in prompt
+    assert "- KUN: Kunemi" not in prompt and "- OPS: Operations" not in prompt
 
     # Cat starts one about KUN; when KUN is restricted away from Cat, it's gone for Cat.
     about = await db_client.post(f"{ws}/conversations/runs", headers=cat.headers,

@@ -504,7 +504,7 @@ export function seed(): Data {
   const tmp = tk("t3");
   tmp.updated = minsAgo(38);
   const base = {
-    ws: { name: "Dotrix", url: "dotrix", c: "#1D1C1A", brand: true },
+    ws: { id: "w1", name: "Dotrix", plan: "Team", url: "dotrix", c: "#1D1C1A", brand: true },
     workspaces: [
       { id: "w1", name: "Dotrix", c: "#1D1C1A", plan: "Team", brand: true },
       { id: "w2", name: "Personal", c: "#3D8E5F", plan: "Free" },

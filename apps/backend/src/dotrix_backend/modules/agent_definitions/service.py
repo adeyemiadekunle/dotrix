@@ -1,4 +1,4 @@
-"""Create, change, reset, and restore agents (docs/agents-v2.md §4.2, §4.8).
+"""Create, change, reset, and restore agents (docs/architecture.md).
 
 Changes are owners' and admins' (the routes check it); only owners may let an agent act without
 asking (decided D1). Every save is a new version and an audit event naming what changed.

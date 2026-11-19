@@ -1,4 +1,4 @@
-"""How much a source can be trusted, from its address alone (docs/agents-v2.md §6.2).
+"""How much a source can be trusted, from its address alone (docs/architecture.md).
 
 `primary`: governments, legislation, regulators, standards bodies, international
 organisations. `reputable`: established press, journals, preprint servers, and

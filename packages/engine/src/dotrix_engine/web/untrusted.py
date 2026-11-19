@@ -1,4 +1,4 @@
-"""Text from the web is data, never instructions (docs/agents-v2.md §6.1).
+"""Text from the web is data, never instructions (docs/architecture.md).
 
 Every piece of it reaches the model inside `<web_content source="S3">…</web_content>`, which
 the page can't close early, and a small detector flags pages that talk to AI agents, so the

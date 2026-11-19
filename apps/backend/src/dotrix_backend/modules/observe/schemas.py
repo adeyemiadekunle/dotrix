@@ -56,7 +56,12 @@ class ObservedRun(BaseModel):
     kind: Literal["chat", "coding"]
     id: uuid.UUID
     status: str
-    label: str = Field(description="The conversation's title or first message; the coding run's issue key")
+    label: str = Field(
+        description="The conversation's title or first message, or the coding run's issue key. The admin "
+        "console sees the project and work mode instead of a conversation's words."
+    )
+    workspace_id: uuid.UUID
+    workspace: str | None = Field(default=None, description="Admin console: the workspace's slug")
     project_id: uuid.UUID | None
     agent: str | None
     model: str | None
@@ -70,4 +75,5 @@ class ObservedRun(BaseModel):
     requested_by_id: uuid.UUID | None
     automation: bool = False
     created_at: datetime
+    started_at: datetime | None = Field(default=None, description="Coding runs: when a worker started the turn")
     finished_at: datetime | None

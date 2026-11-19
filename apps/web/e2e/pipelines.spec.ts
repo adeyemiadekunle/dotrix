@@ -10,14 +10,14 @@ test.fixme(true, NOT_WIRED);
 test("change the plan at a checkpoint, and the agent carries on with it", async ({ page }) => {
   await signUpWithProject(page);
   await page.getByRole("link", { name: "Chat", exact: true }).click();
-  const box = page.getByLabel("Message the agents");
+  const box = page.getByLabel("Message the agents", { exact: true });
   await box.fill("Plan: Write the spec; Assess the impact");
   await box.press("Enter");
 
   const card = page.getByText("The plan, before going on").locator("..").locator("..");
   await expect(card.getByText("Assess the impact")).toBeVisible();
   await card.getByRole("button", { name: "Change the plan" }).click();
-  await card.getByLabel("What to change in the plan").fill("Skip the impact");
+  await card.getByLabel("What to change in the plan", { exact: true }).fill("Skip the impact");
   await card.getByRole("button", { name: "Continue with changes" }).click();
 
   // The agent carries on with the change (the rule-based model says what it heard).
@@ -28,7 +28,7 @@ test("change the plan at a checkpoint, and the agent carries on with it", async 
 test("ask the Reviewer to review an issue, and triage a report", async ({ page }) => {
   const { key } = await signUpWithProject(page);
   await page.getByRole("button", { name: "New issue" }).click();
-  await page.getByLabel("Title").fill("Retry failed uploads");
+  await page.getByLabel("Title", { exact: true }).fill("Retry failed uploads");
   await page.getByRole("button", { name: "Create issue" }).click();
   await expect(page).toHaveURL(new RegExp(`issue=${key}-1`));
 

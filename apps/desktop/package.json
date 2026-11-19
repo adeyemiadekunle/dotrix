@@ -1,17 +1,85 @@
 {
   "name": "@dotrix/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
     "dev": "tsc && electron .",
     "typecheck": "tsc --noEmit",
-    "bundle-cli": "uv run --no-project python ../cli/scripts/standalone.py"
+    "bundle-cli": "uv run --no-project python ../cli/scripts/standalone.py",
+    "dist:win": "tsc && node scripts/build-config.mjs && electron-builder --win nsis --x64 --publish never",
+    "test": "tsc && node --test dist/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
     "electron": "^44.4.5",
+    "electron-builder": "26.17.0",
     "typescript": "catalog:"
+  },
+  "description": "dotrix for the desktop: the web app in a window, and local coding with the bundled CLI",
+  "author": "dotrix",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adeyemiadekunle/dotrix.git",
+    "directory": "apps/desktop"
+  },
+  "build": {
+    "appId": "app.dotrix.desktop",
+    "productName": "dotrix",
+    "executableName": "dotrix",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.test.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/dotrix",
+        "to": "dotrix",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "CHANGELOG.md",
+        "to": "CHANGELOG.md"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "dotrix-${version}-windows-x64-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "dotrix"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "adeyemiadekunle",
+        "repo": "dotrix",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
   }
 }

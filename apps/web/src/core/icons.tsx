@@ -1,11 +1,12 @@
-// Icons: ic(name, size, class) as <Ic>, any Lucide name,
-// bundled only if src/ names it (icons-plugin.ts).
+// Icons: <Ic n={name} s={size} />, Phosphor's regular weight (https://phosphoricons.com): any Phosphor
+// name, or one of dotrix's own names (icons-plugin.ts ALIASES), bundled only if src/ names it.
 import type { CSSProperties } from "react";
 import { ICONS } from "virtual:icons";
 
 import type { Workspace } from "../data/types";
 
-const FALLBACK = '<rect x="5" y="5" width="14" height="14" rx="3"/>';
+// An unknown name: Phosphor's square, so a missing icon still takes its place (in the 256-unit box).
+const FALLBACK = '<path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,176H48V48H208V208Z"/>';
 
 export function Ic({ n, s = 16, cls = "", style }: { n: string; s?: number; cls?: string; style?: CSSProperties }) {
   return (
@@ -13,12 +14,8 @@ export function Ic({ n, s = 16, cls = "", style }: { n: string; s?: number; cls?
       className={`i ${cls}`}
       width={s}
       height={s}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      viewBox="0 0 256 256"
+      fill="currentColor"
       aria-hidden="true"
       style={style}
       dangerouslySetInnerHTML={{ __html: ICONS[n] ?? FALLBACK }}

@@ -82,8 +82,10 @@ class GitHubApp(Protocol):
     async def repository(self, installation_id: int, repo_id: int) -> Repo: ...
     async def access_token(
         self, installation_id: int, *, repository_id: int | None = None, write: bool = False,
-        pull_requests: bool = False,
+        pull_requests: bool = False, actions: bool = False, issues: bool = False, read_issues: bool = False,
     ) -> str: ...
+    async def issue_page(self, full_name: str, *, token: str, page: int, state: str) -> tuple[list[dict], bool]: ...
+    async def read_issue(self, full_name: str, number: int, *, token: str) -> dict: ...
     async def create_pull_request(
         self, installation_id: int, full_name: str, *, head: str, base: str, title: str, body: str, token: str
     ) -> PullRequest: ...
@@ -173,7 +175,7 @@ class GitHubAppClient:
 
     async def access_token(
         self, installation_id: int, *, repository_id: int | None = None, write: bool = False,
-        pull_requests: bool = False, actions: bool = False, issues: bool = False,
+        pull_requests: bool = False, actions: bool = False, issues: bool = False, read_issues: bool = False,
     ) -> str:
         """An installation token (an hour long) for git; never stored. With `repository_id`, it
         works on that one repo only; `write` adds pushing and opening pull requests there,
@@ -188,10 +190,33 @@ class GitHubAppClient:
                 permissions["pull_requests"] = "write"
             if actions:
                 permissions["actions"] = "read"
+            if read_issues:
+                permissions["issues"] = "read"
             if issues:
                 permissions["issues"] = "write"
             body = {"repository_ids": [repository_id], "permissions": {"metadata": "read", **permissions}}
         return await self._installation_token(installation_id, body)
+
+    async def issue_page(self, full_name: str, *, token: str, page: int, state: str) -> tuple[list[dict], bool]:
+        """One bounded page; never follow a remote pagination URL."""
+        async with httpx.AsyncClient(transport=self.transport, timeout=30) as http:
+            try:
+                response = await http.get(f"{API_URL}/repos/{full_name}/issues", headers={**HEADERS, "Authorization": f"Bearer {token}"},
+                                          params={"state": state, "page": page, "per_page": 50, "sort": "created", "direction": "asc"})
+            except httpx.HTTPError as exc:
+                raise GitHubUnavailable("GitHub issues could not be read") from exc
+        if response.status_code in (403, 404):
+            raise Forbidden("The GitHub App needs Issues (read) access to this repository")
+        if response.status_code != 200:
+            raise GitHubUnavailable(f"GitHub issues answered {response.status_code}")
+        data = response.json()
+        if not isinstance(data, list) or len(data) > 50:
+            raise GitHubUnavailable("GitHub returned an invalid issue page")
+        return data, "next" in response.links
+
+    async def read_issue(self, full_name: str, number: int, *, token: str) -> dict:
+        """A selected issue, rechecked before an import writes anything."""
+        return await self._get(f"/repos/{full_name}/issues/{number}", token)
 
     async def create_pull_request(
         self, installation_id: int, full_name: str, *, head: str, base: str, title: str, body: str, token: str

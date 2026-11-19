@@ -25,6 +25,7 @@ from .events import PAGE_MAX as EVENTS_PAGE_MAX
 from .events import follow_run
 from .llm import available_models
 from .models import RunKind
+from .publication import ChatPublicationCreate, ChatPublicationRead, publications, publish
 from .runner import AgentRunner
 from .schemas import (
     AgentRunRead,
@@ -484,3 +485,19 @@ async def cancel_chat_input(thread_id: uuid.UUID, input_id: uuid.UUID, access: C
     """
     from .chat_inputs import cancel
     return await cancel(agents.session, access, thread_id, input_id)
+
+
+@router.post("/runs/{run_id}/publications", responses=errors(403, 409, 422))
+async def publish_chat_outcome(
+    run_id: uuid.UUID, data: ChatPublicationCreate, access: Chatter, session: SessionDep,
+) -> ChatPublicationRead:
+    """Publish only the edited, explicitly selected content; never a private transcript link."""
+    return await publish(session, access, run_id, data)
+
+
+@router.get("/runs/{run_id}/publications")
+async def list_chat_publications(
+    run_id: uuid.UUID, access: Chatter, session: SessionDep,
+) -> list[ChatPublicationRead]:
+    """The conversation owner's links to outcomes they explicitly shared."""
+    return await publications(session, access, run_id)

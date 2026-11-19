@@ -21,12 +21,19 @@ def search_files(query: str) -> str:
     ("mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
     ("groq", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
     ("openrouter", "https://openrouter.ai/api/v1", "openai/gpt-5.5"),
+    ("nvidia", "https://integrate.api.nvidia.com/v1", "nvidia/nemotron-3-ultra-550b-a55b"),
 ])
 def test_compatible_providers_use_their_fixed_endpoint(provider: str, endpoint: str, model: str) -> None:
     chat = build_chat_model(f"{provider}:{model}", "test-provider-key")
     assert chat.model_name == model and str(chat.openai_api_base) == endpoint
     assert chat.openai_api_key.get_secret_value() == "test-provider-key"
 
+
+
+def test_nvidia_asks_for_usage_while_streaming_so_a_run_s_tokens_are_counted() -> None:
+    # Off a custom endpoint ChatOpenAI leaves stream usage off, and a DeepAgents run on NVIDIA recorded 0 tokens.
+    assert build_chat_model("nvidia:nvidia/nemotron-3-ultra-550b-a55b", "k").stream_usage is True
+    assert build_chat_model("mistral:mistral-small-latest", "k").stream_usage is None  # not checked yet
 
 def test_anthropic_and_openai_ignore_a_base_url_in_the_servers_environment(monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://elsewhere.example")
@@ -67,6 +74,16 @@ def test_factory_builds_the_projects_model() -> None:
     choice = settings_model_factory(settings())(Project(model="google_genai:gemini-3.8-flash"), keys={"google_genai": "test-key"})
     assert isinstance(choice.model, GeminiWithBuiltinTools)
     assert choice.web_search == {"google_search": {}}
+
+
+@pytest.mark.parametrize("model", [
+    "xai:grok-4.7", "deepseek:deepseek-flash", "mistral:mistral-small-latest", "groq:openai/gpt-oss-120b",
+    "openrouter:openai/gpt-5.5", "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+])
+def test_providers_without_a_built_in_web_search_still_run(model: str) -> None:
+    """A conversation on them used to fail before its first model call (no native search to give)."""
+    choice = settings_model_factory(settings())(Project(model=model), keys={model.partition(":")[0]: "test-key"})
+    assert choice.model.model_name == model.partition(":")[2] and choice.web_search is None
 
 
 def test_e2e_models_need_the_flag_and_never_run_in_production() -> None:

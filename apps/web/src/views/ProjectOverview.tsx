@@ -1,19 +1,24 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Project overview and activity. dotrix adds
 // "Ask in Chat" for a summary, and the agents' latest conversations about the project.
 
+import { allowed } from "../core/can";
+import { personal } from "../core/features";
 import { openPop } from "../core/actions";
 import { STATUSES } from "../core/constants";
 import { Ic } from "../core/icons";
 import { editProject, share } from "../core/more";
 import { go } from "../core/nav";
 import { TODAY, ago, dayBucket, diffD, fmtDate, parse } from "../core/utils";
-import { D, isOver, mem, pColor, progressOf, task, tasksOf } from "../data/store";
+import { D, isOver, mem, pColor, progressOf, task } from "../data/store";
+import { useProjectActivity } from "../data/lists";
+import { useProjectTasks } from "../data/tasks";
 import { isLive, live, liveCommentsOf } from "../data/live";
-import { useLiveProjectActivity, useLiveProjectTasks } from "../../lib/workspace-data";
 import type { Activity, Project } from "../data/types";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PStatus, StIcon } from "../ui/helpers";
+import { ProjectReadiness } from "./ProjectReadiness";
 
 function goFilteredList(p: Project, st: string) {
   const v = viewOf("p:" + p.id);
@@ -24,9 +29,8 @@ function goFilteredList(p: Project, st: string) {
 
 export function ProjectOverview({ p }: { p: Project }) {
   const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
-  const liveTasks = useLiveProjectTasks(live.ws?.id, p.id, isLive());
-  const liveActs = useLiveProjectActivity(scope);
-  const ts = isLive() ? (liveTasks ?? []) : tasksOf(p.id);
+  const { tasks: ts } = useProjectTasks(p.id);
+  const { items: projectActs } = useProjectActivity(p.id);
   const pr = progressOf(p.id);
   const cnt = STATUSES.map((s) => ({ s, n: ts.filter((t) => t.status === s.id).length }));
   const over = ts.filter(isOver);
@@ -34,29 +38,53 @@ export function ProjectOverview({ p }: { p: Project }) {
     ts.filter((t) => t.status !== "done" && t.due),
     { f: "due", dir: 1 },
   ).slice(0, 6);
-  const acts = (isLive() ? (liveActs ?? []) : D().activity.filter((a) => a.project === p.id)).slice(0, 6);
+  const acts = projectActs.slice(0, 6);
   const daysLeft = p.due ? diffD(parse(p.due)!, TODAY) : null;
   const threads = D()
     .threads.filter((t) => t.project === p.id)
     .slice(0, 3);
   return (
     <div className="page" style={{ maxWidth: 1160, paddingTop: 22 }}>
+      <ProjectReadiness workspaceId={scope?.workspaceId} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} />
       <div className="grid2">
         <div className="stack">
-          <section className="panel">
+          <section className="panel" id="project-purpose">
             <div className="panel-h">
               <h2>About</h2>
               <div className="acts">
-                <button className="btn btn-sm btn-ghost" onClick={() => editProject(p.id)}>
+                {isLive() && live.ws && allowed("projects:manage") && (
+                  <a
+                    className="btn btn-sm btn-ghost"
+                    href={`/onboarding?${new URLSearchParams({ workspace: live.ws.id, project: p.id, mode: "project", step: "github" })}`}
+                  >
+                    <Ic n="github" s={13} />
+                    {p.repo ? "Repository setup" : "Connect repository"}
+                  </a>
+                )}
+                <ActionButton className="btn btn-sm btn-ghost" onClick={() => editProject(p.id)}>
                   <Ic n="pencil" s={13} />
                   Edit
-                </button>
+                </ActionButton>
               </div>
             </div>
             <div className="panel-b" style={{ fontSize: 14, lineHeight: 1.6, color: "var(--text)" }}>
               {p.desc}
             </div>
           </section>
+          {isLive() && p.repo && (
+            <section className="panel" aria-label="Repository baseline">
+              <div className="panel-b">
+                <h2>Understand this repository</h2>
+                <p>
+                  Inventory the code, review cited explanations and add goals that code cannot establish. Confirm the baseline’s limits before planning
+                  substantial changes.
+                </p>
+                <ActionButton className="btn btn-secondary" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=coverage" })}>
+                  Review repository baseline
+                </ActionButton>
+              </div>
+            </section>
+          )}
           <section className="panel">
             <div className="panel-h">
               <h2>Progress</h2>
@@ -107,9 +135,9 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-h">
               <h2>Coming up</h2>
               <div className="acts">
-                <button className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "list" })}>
+                <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "list" })}>
                   View list
-                </button>
+                </ActionButton>
               </div>
             </div>
             {soon.length ? (
@@ -135,16 +163,20 @@ export function ProjectOverview({ p }: { p: Project }) {
                     <PStatus s={p.status} />
                   </button>
                 </dd>
-                <dt>
-                  <Ic n="user" s={14} />
-                  Lead
-                </dt>
-                <dd>
-                  <span className="pillbtn">
-                    <Av id={p.lead} cls="sm" tip={false} />
-                    {mem(p.lead)?.name}
-                  </span>
-                </dd>
+                {!personal() && (
+                  <>
+                    <dt>
+                      <Ic n="user" s={14} />
+                      Lead
+                    </dt>
+                    <dd>
+                      <span className="pillbtn">
+                        <Av id={p.lead} cls="sm" tip={false} />
+                        {mem(p.lead)?.name}
+                      </span>
+                    </dd>
+                  </>
+                )}
                 <dt>
                   <Ic n="calendar" s={14} />
                   Start
@@ -159,16 +191,20 @@ export function ProjectOverview({ p }: { p: Project }) {
                 <dd>
                   <span className="pillbtn num">{fmtDate(p.due, true)}</span>
                 </dd>
-                <dt>
-                  <Ic n="user-plus" s={14} />
-                  Members
-                </dt>
-                <dd>
-                  <button className="pillbtn" onClick={() => share(p.id)}>
-                    <AvStack ids={p.members} max={6} />
-                    <span className="faint">{p.members.length}</span>
-                  </button>
-                </dd>
+                {!personal() && (
+                  <>
+                    <dt>
+                      <Ic n="user-plus" s={14} />
+                      Members
+                    </dt>
+                    <dd>
+                      <button className="pillbtn" onClick={() => share(p.id)}>
+                        <AvStack ids={p.members} max={6} />
+                        <span className="faint">{p.members.length}</span>
+                      </button>
+                    </dd>
+                  </>
+                )}
               </dl>
             </div>
           </section>
@@ -176,10 +212,10 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-h">
               <h2>Ask the agents</h2>
               <div className="acts">
-                <button className="btn btn-sm btn-secondary" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
+                <ActionButton className="btn btn-sm btn-secondary" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
                   <Ic n="message-square" s={13} />
                   Ask in Chat
-                </button>
+                </ActionButton>
               </div>
             </div>
             <div className="panel-b">
@@ -238,9 +274,9 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-h">
               <h2>Recent activity</h2>
               <div className="acts">
-                <button className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "activity" })}>
+                <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "activity" })}>
                   View all
-                </button>
+                </ActionButton>
               </div>
             </div>
             <div className="panel-b feed">{acts.length ? acts.map((a) => <ActItem key={a.id} a={a} />) : <span className="faint">No activity yet</span>}</div>
@@ -252,9 +288,7 @@ export function ProjectOverview({ p }: { p: Project }) {
 }
 
 export function ProjectActivity({ p }: { p: Project }) {
-  const scope = live.ws && isLive() ? { workspaceId: live.ws.id, projectId: p.id } : undefined;
-  const liveActs = useLiveProjectActivity(scope);
-  const as = isLive() ? (liveActs ?? []) : D().activity.filter((a) => a.project === p.id);
+  const { items: as } = useProjectActivity(p.id);
   // Live: comments ride the issue queries' logs — the drawer and Inbox fill the cache.
   const cs: Activity[] = (
     isLive()

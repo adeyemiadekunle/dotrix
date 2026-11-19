@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dotrix_backend.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, WorkspaceScopedMixin
@@ -34,5 +34,7 @@ class UserModelKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     provider: Mapped[str] = mapped_column(String(32))
     encrypted: Mapped[str] = mapped_column(Text)
     last4: Mapped[str] = mapped_column(String(4))
+    # Only credential saves advance this; rate-limit metadata has its own row update time.
+    credential_saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     limit_reached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     limit_message: Mapped[str | None] = mapped_column(String(500))

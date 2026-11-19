@@ -29,6 +29,7 @@ from dotrix_backend.core.errors import Forbidden
 from dotrix_engine.catalog import group, tool_id
 from dotrix_engine.contracts import PM_HANDLE, AgentPolicy, AgentSpec
 from dotrix_engine.runtimes import RuntimeHandoff, RuntimeTool, RuntimeToolContext
+from dotrix_engine.work_modes import planning_spec
 
 from .models import AgentApproval, AgentRuntimeCall, ApprovalStatus, WorkMode
 from .runtime_sessions import admit_runtime_run
@@ -85,19 +86,23 @@ def _changes(sessions: SessionFactory, scope: RuntimeRunScope, spec: AgentSpec, 
     from .storage_backend import PlatformKnowledgeBackend
     from .work_modes import codes, lead_tools
 
+    if work_mode is WorkMode.PLAN:
+        spec = planning_spec(spec)
+
     def asks(group_id: str) -> bool:
         return not all(spec.allowed(action) for action in group(group_id).actions)
 
     def board(approved_by_id: uuid.UUID | None) -> BoardContext:
         return BoardContext(sessions, scope.workspace_id, scope.project_id, scope.requested_by_id, approved_by_id,
-                            policy=policy, unattended=unattended, coding=codes(work_mode))
+                            policy=policy, unattended=unattended, coding=codes(work_mode), mode_context=mode_context)
 
     changes: list[_Change] = []
     if spec.can("knowledge.write"):
         def backend(approved_by_id: uuid.UUID | None) -> PlatformKnowledgeBackend:
             return PlatformKnowledgeBackend(sessions, workspace_id=scope.workspace_id, project_id=scope.project_id,
                                             instructed_by_id=scope.requested_by_id, approved_by_id=approved_by_id,
-                                            policy=policy, unattended=unattended)
+                                            policy=policy, unattended=unattended, run_id=scope.run_id,
+                                            read_versions=scope.read_versions)
 
         def path(value: str) -> str:
             return "/" + value.removeprefix("/dotrix/").lstrip("/")

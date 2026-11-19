@@ -18,6 +18,8 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
 from .schemas import (
+    CodeModeRead,
+    CodeModeSave,
     DefaultCodingToolSave,
     DefaultModelSave,
     ModelAccessRead,
@@ -51,6 +53,20 @@ async def model_access(
 
 
 me_router = APIRouter(prefix="/me", tags=["models"], responses=errors(401))
+
+
+@me_router.get("/code-mode")
+async def get_my_code_mode(user: CurrentUser, settings: SettingsDep) -> CodeModeRead:
+    """Your personal Code Mode preference; the server setting still controls availability."""
+    return CodeModeRead(enabled=user.code_mode_enabled, available=settings.agent_scripts_enabled)
+
+
+@me_router.put("/code-mode")
+async def set_my_code_mode(data: CodeModeSave, user: CurrentUser, session: SessionDep, settings: SettingsDep) -> CodeModeRead:
+    """Applies to new Nova turns on either chat runtime; bound turns keep their tools."""
+    user.code_mode_enabled = data.enabled
+    await session.commit()
+    return CodeModeRead(enabled=user.code_mode_enabled, available=settings.agent_scripts_enabled)
 
 
 @me_router.get("/models")

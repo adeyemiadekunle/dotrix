@@ -137,3 +137,59 @@ export function terminal(events: { kind: string; text: string; at: string; ref?:
   }
   return out;
 }
+
+const FILE_ICONS: Record<string, string> = {
+  ts: "file-ts",
+  mts: "file-ts",
+  cts: "file-ts",
+  tsx: "file-tsx",
+  js: "file-js",
+  mjs: "file-js",
+  cjs: "file-js",
+  jsx: "file-jsx",
+  py: "file-py",
+  rs: "file-rs",
+  c: "file-c",
+  h: "file-c",
+  cpp: "file-cpp",
+  cc: "file-cpp",
+  hpp: "file-cpp",
+  cs: "file-c-sharp",
+  css: "file-css",
+  scss: "file-css",
+  html: "file-html",
+  md: "file-md",
+  mdx: "file-md",
+  sql: "file-sql",
+  svg: "file-svg",
+  png: "file-image",
+  jpg: "file-image",
+  jpeg: "file-image",
+  gif: "file-image",
+  webp: "file-image",
+  csv: "file-csv",
+  txt: "file-txt",
+  lock: "file-lock",
+  vue: "file-vue",
+  zip: "file-zip",
+  pdf: "file-pdf",
+  json: "file-code",
+  yml: "file-code",
+  yaml: "file-code",
+  toml: "file-code",
+  go: "file-code",
+  java: "file-code",
+  kt: "file-code",
+  rb: "file-code",
+  php: "file-code",
+  sh: "file-code",
+  swift: "file-code",
+};
+
+/** A file's icon from its extension (Phosphor's file-* names), as Claude Code's tree marks each file's kind. */
+export function fileIcon(path: string): string {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  if (name.endsWith(".lock") || name === "pnpm-lock.yaml" || name === "package-lock.json") return "file-lock";
+  const dot = name.lastIndexOf(".");
+  return (dot > 0 && FILE_ICONS[name.slice(dot + 1)]) || "file";
+}

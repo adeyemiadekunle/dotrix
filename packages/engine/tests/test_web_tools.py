@@ -1,5 +1,5 @@
 """The agents' web tools: source ids, untrusted wrapping, limits, the extract fallback, tiers
-(docs/agents-v2.md §6)."""
+(docs/architecture.md)."""
 import httpx
 import pytest
 
@@ -95,30 +95,17 @@ async def test_limits_per_run() -> None:
     assert (usage.searches, usage.fetches) == (1, 1)
 
 
-async def test_tavily_credits_are_counted_and_capped() -> None:
-    class Tavily(FakeSearch):
-        name = "tavily"
-
-    usage = WebUsage()
-    web = tools(search=Tavily(default=HITS), usage=usage, limits=WebLimits(max_credits=3))
-    await web["web_search"]("q", depth="advanced")
-    assert usage.credits == 2
-    assert "allowance is used up" in await web["web_search"]("q", depth="advanced")
-    await web["web_search"]("q")
-    assert usage.credits == 3
-
-
 async def test_pages_we_cant_read_fall_back_to_the_extractor() -> None:
     search = FakeSearch(pages={"https://app.example/app": "# App\n\nRendered text"})
     usage = WebUsage()
     web = tools(search=search, extractor=search, usage=usage)
     out = await web["fetch_page"]("https://app.example/app")
-    assert "Rendered text" in out and usage.credits == 1
+    assert "Rendered text" in out and usage.credits == 0
     # Without an extractor, the error comes back to the agent.
     assert "JavaScript" in await tools()["fetch_page"]("https://app.example/app")
     # Blocked addresses never go to the extractor.
     assert "public internet" in await web["fetch_page"]("http://127.0.0.1/app")
-    assert usage.credits == 1
+    assert usage.credits == 0
 
 
 async def test_without_a_search_provider_only_fetch_page_is_given() -> None:
@@ -170,3 +157,10 @@ def test_the_same_page_listed_several_ways_is_one_source() -> None:
     first = log.note("https://www.gov.uk/vat/", kind="search")
     assert log.note("http://gov.uk/vat#rates", kind="search").label == first.label == "S1"
     assert len(log) == 1
+
+
+async def test_search_ignores_historical_credit_allowance():
+    search = FakeSearch(default=HITS)
+    web = tools(search=search, limits=WebLimits(max_credits=0))
+    out = await web["web_search"]("VAT")
+    assert "VAT rates" in out and len(search.queries) == 1

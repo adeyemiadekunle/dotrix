@@ -5,12 +5,14 @@ import json
 import sys
 import uuid
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, ValidationError
 
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.coding import guard
 from dotrix_backend.modules.coding.models import CodingAgent
 from dotrix_backend.modules.coding.sandbox import run_process, sandbox_policy
+from dotrix_backend.modules.coding.schemas import RunnerHeartbeat, RunnerResult
 from dotrix_backend.modules.coding.tools import (
     OPENCODE_PROVIDERS,
     TOOLS,
@@ -69,6 +71,34 @@ def test_claude_code_events_become_steps_and_tokens() -> None:
     assert "dontAsk" in argv and "--dangerously-skip-permissions" not in argv
 
 
+def test_claude_codes_refused_tool_calls_are_shown_once() -> None:
+    """`dontAsk` refuses what isn't allowed; the session says so instead of the call vanishing. The
+    events are as Claude Code 2.1.296 prints them: a `permission_denied` event when it refuses, then
+    the call again in its result's `permission_denials` (only that one carries the input)."""
+    tool, usage = ClaudeCode(), Usage()
+    lines = [
+        {"type": "assistant", "message": {"id": "m1", "content": [
+            {"type": "tool_use", "id": "toolu_2", "name": "Bash", "input": {"command": "touch /tmp/x"}},
+            {"type": "tool_use", "id": "toolu_3", "name": "TaskCreate", "input": {"subject": "Touch"}}]}},
+        {"type": "system", "subtype": "permission_denied", "tool_name": "Bash", "tool_use_id": "toolu_2",
+         "decision_reason_type": "mode", "message": "Permission to use Bash has been denied"},
+        # Its result is the engine's refusal, naming the engine: not shown as the command's output.
+        {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_2",
+         "is_error": True, "content": "Permission to use Bash has been denied because Claude Code is running in …"}]}},
+        {"type": "system", "subtype": "permission_denied", "tool_name": "NotebookEdit", "tool_use_id": "toolu_4"},
+        {"type": "result", "subtype": "success", "result": "Done.", "total_cost_usd": 0.01, "permission_denials": [
+            {"tool_name": "Bash", "tool_use_id": "toolu_2", "tool_input": {"command": "touch /tmp/x"}},
+            {"tool_name": "Write", "tool_use_id": "toolu_5", "tool_input": {"file_path": "/sandbox/repo/.env"}}]},
+    ]
+    steps = [(s.kind, s.text) for line in lines for s in tool.parse(json.dumps(line), usage).steps]
+    assert steps == [
+        ("tool", "Ran touch /tmp/x"),  # its own checklist (TaskCreate) is no step
+        ("error", "Not allowed to run touch /tmp/x"),
+        ("error", "Not allowed to use NotebookEdit"),
+        ("error", "Not allowed to change .env"),  # only in the result: said there
+    ]
+
+
 def test_codex_events_become_steps_and_tokens() -> None:
     tool, usage = Codex(), Usage()
     out = [tool.parse(json.dumps(e), usage) for e in (
@@ -105,7 +135,7 @@ def test_a_persons_default_needs_a_compatible_key_and_auto_supports_other_provid
     assert model_for(_settings(), CodingAgent.OPENCODE, {"xai"}) == "xai:grok-4.7"
     assert choose_agent(_settings(), {"xai"}, preferred="codex") is CodingAgent.OPENCODE
     assert choose_agent(_settings(openai_api_key=SecretStr("  "))) is None
-    for provider in ("xai", "deepseek", "mistral", "groq", "openrouter"):
+    for provider in ("xai", "deepseek", "mistral", "groq", "openrouter", "nvidia"):
         spec = OPENCODE_PROVIDERS[provider]
         model = f"{provider}:test-model"
         tool = tool_for(CodingAgent.OPENCODE, model)
@@ -122,7 +152,7 @@ def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
     assert claude.session_args(session, resumed=False) == ["--session-id", str(session)]
     assert claude.session_args(session, resumed=True) == ["--resume", str(session)]
     assert claude.resumes and claude.browser and ".claude" in claude.save_state(session)
-    assert codex.session_args(session, resumed=True) == [] and not codex.resumes and not codex.browser
+    assert codex.session_args(session, resumed=True) == [] and not codex.resumes and codex.browser
     assert claude.sandbox_env("k") == {"ANTHROPIC_API_KEY": "k"}
     assert codex.sandbox_env("k") == {"OPENAI_API_KEY": "k", "CODEX_API_KEY": "k"}
     keys = _settings(anthropic_api_key=SecretStr("a"), coding_claude_model="m1", coding_codex_model="m2")
@@ -131,6 +161,13 @@ def test_each_tool_says_how_it_resumes_and_reaches_its_model() -> None:
 
 
 def test_what_a_run_may_not_change() -> None:
+    key = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
+    import base64 as b64
+    assert guard.leaks(key, b"+API_KEY = '" + key.encode() + b"'\n")
+    assert guard.leaks(key, None, f"set it to {b64.b64encode(key.encode()).decode().rstrip('=')}")
+    assert guard.leaks(key, b64.urlsafe_b64encode(key.encode()))
+    assert not guard.leaks(key, b"+API_KEY = os.environ['ANTHROPIC_API_KEY']\n", "Reads the key from the environment.")
+    assert not guard.leaks(None, key) and not guard.leaks("short", "short")  # no key, or too short to tell
     assert guard.check(["src/a.py", "docs/dotrix.md", "docs/.github/notes.md", "src/Jenkinsfile.md"]) == []
     reasons = guard.check([".dotrix/x.md", "app/.dotrix/y.md", ".github/workflows/ci.yml", "lib/.git/config"])
     assert len(reasons) == 4 and ".dotrix/ stays on the platform" in reasons[0] and "CI configuration" in reasons[2]
@@ -229,9 +266,47 @@ def test_claude_code_gets_a_browser_only_from_the_platform() -> None:
     assert "--strict-mcp-config" in plain and "--mcp-config" not in plain  # never a repo's MCP servers
     with_browser = ClaudeCode().command("claude-haiku-5-5", browser=True)
     config = json.loads(with_browser[with_browser.index("--mcp-config") + 1])
-    assert list(config["mcpServers"]) == ["browser"] and config["mcpServers"]["browser"]["command"] == "playwright-mcp"
-    assert "--headless" in config["mcpServers"]["browser"]["args"]
+    server = config["mcpServers"]["browser"]
+    assert list(config["mcpServers"]) == ["browser"] and server["command"] == "sh" and server["args"][0] == "-c"
+    # Started in its output folder, which is its only workspace root: a screenshot it names never lands in the repository.
+    script = server["args"][1]
+    assert script.startswith("mkdir -p /tmp/playwright && cd /tmp/playwright && exec playwright-mcp ")
+    assert "--headless" in script and "--ignore-roots" in script and "--output-dir /tmp/playwright" in script
     assert "mcp__browser" in with_browser[with_browser.index("--allowedTools") + 1]
+
+
+def test_codex_gets_the_browser_and_says_when_it_didnt_start() -> None:
+    """Checked on Codex 0.169.0 with the real Playwright MCP 0.0.85 against a scripted Responses API: it calls the
+    browser without asking, and goes on silently when it doesn't start, so mcp-check.mjs runs first."""
+    from dotrix_backend.modules.coding.tools import BROWSER_MCP, MCP_CHECK, Codex, Usage
+
+    tool = Codex()
+    assert tool.browser
+    plain = tool.command("openai:gpt-5.5")
+    assert plain[0] == "codex" and plain[-1] == "-" and not any("mcp_servers" in arg for arg in plain)
+    argv = tool.command("openai:gpt-5.5", browser=True)
+    assert argv[:4] == ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh"]
+    assert argv[4] == MCP_CHECK and json.loads(argv[5]) == BROWSER_MCP
+    codex = argv[6:]
+    assert codex[0] == "codex" and codex[-1] == "-"  # the brief still on stdin
+    server = BROWSER_MCP["mcpServers"]["browser"]
+    assert f"mcp_servers.browser.command={json.dumps(server['command'])}" in codex
+    assert f"mcp_servers.browser.args={json.dumps(server['args'])}" in codex
+    assert "project_doc_max_bytes=0" in codex  # the repository's AGENTS.md is still never its instructions
+
+    usage = Usage()
+    lines = [
+        {"type": "warning", "message": "The browser didn't start"},
+        {"type": "item.started", "item": {"id": "i1", "type": "mcp_tool_call", "server": "browser", "tool": "browser_navigate",
+                                          "arguments": {"url": "http://localhost:8080/"}, "status": "in_progress"}},
+        {"type": "item.completed", "item": {"id": "i1", "type": "mcp_tool_call", "server": "browser", "tool": "browser_navigate",
+                                            "arguments": {"url": "http://localhost:8080/"}, "status": "completed", "error": None}},
+        {"type": "item.completed", "item": {"id": "i2", "type": "mcp_tool_call", "server": "browser", "tool": "browser_click",
+                                            "arguments": {}, "status": "failed", "error": {"message": "No such element"}}},
+    ]
+    steps = [(s.kind, s.text) for line in lines for s in tool.parse(json.dumps(line), usage).steps]
+    assert steps == [("error", "The browser didn't start"), ("tool", "Opened http://localhost:8080/ in the browser"),
+                     ("error", "The browser: No such element")]
 
 
 def test_the_browser_s_steps_read_like_the_rest() -> None:
@@ -300,6 +375,64 @@ def test_opencode_s_config_is_ours_and_the_key_is_only_in_its_environment(monkey
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://proxy:8080/")
     config = json.loads(dict(p.split("=", 1) for p in tool.command(None)[1:5])["OPENCODE_CONFIG_CONTENT"])
     assert "provider" not in config
+
+
+def test_opencode_gets_only_the_platform_browser_and_reports_startup_failure() -> None:
+    from dotrix_backend.modules.coding.tools import BROWSER_MCP, MCP_CHECK
+
+    tool = OpenCode(OPENCODE_PROVIDERS["nvidia"])
+    assert tool.browser
+    argv = tool.command("nvidia:nvidia/nemotron-3-ultra-550b-a55b", browser=True)
+    assert argv[:2] == ["sh", "-c"] and argv[4] == MCP_CHECK
+    assert json.loads(argv[5]) == BROWSER_MCP
+    command = argv[6:]
+    env = dict(pair.split("=", 1) for pair in command[1:command.index("opencode")])
+    config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    server = BROWSER_MCP["mcpServers"]["browser"]
+    assert config["mcp"] == {"browser": {"type": "local", "command": [server["command"], *server["args"]]}}
+    assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
+    assert config["permission"]["webfetch"] == "deny"
+    assert "/tmp/playwright" in str(config["mcp"]) and "--ignore-roots" in str(config["mcp"])
+    plain = tool.command("nvidia:nvidia/nemotron-3-ultra-550b-a55b")
+    assert "mcp" not in json.loads(next(arg.split("=", 1)[1] for arg in plain if arg.startswith("OPENCODE_CONFIG_CONTENT=")))
+    warning = tool.parse(json.dumps({"type": "warning", "message": "The browser didn't start"}), Usage())
+    assert warning.failed is None and [(s.kind, s.text) for s in warning.steps] == [("error", "The browser didn't start")]
+
+
+def test_opencode_browser_steps_cover_code_mode_and_direct_tool_calls() -> None:
+    tool, usage = OpenCode(OPENCODE_PROVIDERS["openai"]), Usage()
+    events = [
+        ("execute", {"code": "return await tools.browser.browser_snapshot({})"}, "Used the browser"),
+        ("execute", {"code": "return 1 + 1"}, "Ran a script"),
+        ("browser_browser_navigate", {"url": "http://localhost:8080/"}, "Opened http://localhost:8080/ in the browser"),
+        ("browser_browser_take_screenshot", {}, "Took a screenshot"),
+    ]
+    for name, args, expected in events:
+        result = tool.parse(_opencode_event("tool_use", tool=name, state={"status": "completed", "input": args}), usage)
+        assert [step.text for step in result.steps] == [expected]
+
+
+def test_opencode_reports_actual_nested_browser_calls_and_script_errors() -> None:
+    tool = OpenCode(OPENCODE_PROVIDERS["nvidia"])
+    calls = [{"tool": "browser.browser_navigate", "status": "completed", "input": {"url": "http://localhost:8080"}},
+             {"tool": "browser.browser_click", "status": "completed", "input": {"element": "Verify", "target": "e2"}},
+             {"tool": "browser.browser_take_screenshot", "status": "completed", "input": {"filename": "proof.png"}}]
+    state = {"status": "completed", "input": {"code": "return await verify()"},
+             "metadata": {"metadata": {"toolCalls": calls}}}
+    steps = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage()).steps
+    assert [step.text for step in steps] == ["Opened http://localhost:8080 in the browser", "Clicked Verify", "Took a screenshot"]
+    calls[1]["status"] = "error"
+    state["output"] = "No such element"
+    steps = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage()).steps
+    assert steps[1].kind == "error" and steps[1].text == "The browser: No such element"
+    state["metadata"]["metadata"] = {"error": True, "toolCalls": []}
+    state["output"] = "Unknown browser tool"
+    result = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage())
+    assert result.failed is None and result.steps[0].kind == "error" and "Unknown browser tool" in result.steps[0].text
+    calls[1]["status"] = "completed"
+    state.update(status="error", error="Bridge stopped", metadata={"metadata": {"toolCalls": calls}})
+    result = tool.parse(_opencode_event("tool_use", tool="execute", state=state), Usage())
+    assert result.steps[-1].kind == "error" and result.steps[-1].text == "The browser script: Bridge stopped"
 
 
 def test_opencode_events_become_steps_and_tokens() -> None:
@@ -381,3 +514,20 @@ def test_claude_code_and_codex_take_the_model_as_their_engine_names_it() -> None
     assert ClaudeCode().command("anthropic:claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]
     assert ClaudeCode().command("claude-haiku-5-5")[-2:] == ["--model", "claude-haiku-5-5"]  # a server setting's bare name
     assert Codex().command("openai:gpt-5.5")[-3:] == ["-c", 'model="gpt-5.5"', "-"]
+    # The repository's AGENTS.md never reaches Codex's model as instructions.
+    codex = Codex().command(None)
+    assert codex[codex.index("project_doc_max_bytes=0") - 1] == "-c"
+
+
+@pytest.mark.parametrize("value", ["-" + "a" * 39, "A" * 40, "g" * 40, "a" * 39, "a" * 41, "--upload-pack=" + "x" * 26])
+def test_a_runner_base_commit_must_be_a_full_hex_id(value):
+    with pytest.raises(ValidationError):
+        RunnerHeartbeat(lease_token=1, base_sha=value)
+    with pytest.raises(ValidationError):
+        RunnerResult(lease_token=1, outcome="no_changes", base_sha=value)
+
+
+def test_a_runner_base_commit_accepts_a_real_id_or_none():
+    for value in ("0123456789abcdef0123456789abcdef01234567", None):
+        assert RunnerHeartbeat(lease_token=1, base_sha=value).base_sha == value
+        assert RunnerResult(lease_token=1, outcome="no_changes", base_sha=value).base_sha == value

@@ -1,7 +1,8 @@
+import { Banner } from "@dotrix/ui/astryx";
 import { Button } from "@dotrix/ui/components/button";
 import { Input } from "@dotrix/ui/components/input";
 import { Label } from "@dotrix/ui/components/label";
-import { AlertCircleIcon, Loader2Icon } from "lucide-react";
+import { SpinnerGapIcon } from "@phosphor-icons/react";
 import { useId, type ComponentProps, type ReactNode } from "react";
 
 export function Field({ label, hint, action, ...input }: ComponentProps<typeof Input> & { label: string; hint?: ReactNode; action?: ReactNode }) {
@@ -15,7 +16,7 @@ export function Field({ label, hint, action, ...input }: ComponentProps<typeof I
         <span className="sp" />
         {action}
       </div>
-      <Input id={id} {...input} className={`input-lg ${input.className ?? ""}`} />
+      <Input id={id} aria-label={label} {...input} className={`input-lg ${input.className ?? ""}`} />
       {hint && <span className="hint">{hint}</span>}
     </div>
   );
@@ -24,7 +25,7 @@ export function Field({ label, hint, action, ...input }: ComponentProps<typeof I
 export function SubmitButton({ pending, children, ...props }: ComponentProps<typeof Button> & { pending: boolean }) {
   return (
     <Button type="submit" disabled={pending} {...props}>
-      {pending && <Loader2Icon className="animate-spin" />}
+      {pending && <SpinnerGapIcon className="animate-spin" />}
       {children}
     </Button>
   );
@@ -32,12 +33,7 @@ export function SubmitButton({ pending, children, ...props }: ComponentProps<typ
 
 export function FormError({ message }: { message?: string | null }) {
   if (!message) return null;
-  return (
-    <div className="alert danger" role="alert">
-      <AlertCircleIcon size={15} />
-      <span>{message}</span>
-    </div>
-  );
+  return <Banner status="error" title="Please check your details" description={message} />;
 }
 
 /**

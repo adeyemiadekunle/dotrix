@@ -1,10 +1,14 @@
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { Drawer as AstryxDrawer } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Task drawer: a side panel or
 // full page with the task's fields, description, subtasks (each with its own view), attachments,
 // comments (@mentions, reactions), and activity. dotrix adds the issue type, and coding: "Start
 // coding" asks Kai, the coding agent, to work on it, approved like any agent change.
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { applyPatch, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
+import { applyPatch, changeSubtasks, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
 import { startCoding } from "../core/agents";
 import {
   attachmentRemoved,
@@ -16,23 +20,22 @@ import {
   isLive,
   issueFileAttached,
   live,
-  taskPatched,
 } from "../data/live";
-import { TY, TYPES } from "../core/constants";
+import { TY } from "../core/constants";
 import { Ic } from "../core/icons";
 import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
-import { mdToHtml } from "../data/markdown";
-import { D, S, commentsOf, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
+import { D, S, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
 import { CODING_AGENT } from "../data/seed-dotrix";
 import type { CodingSession, Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";
 import { toast } from "../ui/toast";
+import { SharedCodingOutcomes } from "../components/SharedCodingOutcomes";
 import { useCodingRuns } from "@/lib/coding";
-import { useIssue } from "@/lib/issues";
-import { logActivity, logComment, toAttachment } from "@/lib/view-models";
+import { editorCanKeep } from "../data/markdown";
+import { useTask, useTaskDetail } from "../data/tasks";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -154,7 +157,7 @@ export function CommentItem({ c }: { c: Comment }) {
             <>
               <span className="sp" />
               {mine && !editing && (
-                <button
+                <ActionButton
                   className="ibtn ibtn-xs"
                   aria-label="Edit comment"
                   data-tip="Edit"
@@ -164,29 +167,31 @@ export function CommentItem({ c }: { c: Comment }) {
                   }}
                 >
                   <Ic n="pencil" s={12} />
-                </button>
+                </ActionButton>
               )}
-              <button
+              <ActionButton
                 className="ibtn ibtn-xs"
                 aria-label="Delete comment"
                 data-tip="Delete"
                 onClick={() => {
+                  if (isLive()) {
+                    commentDeleted(c); // for good: no undo; the save takes it out of the issue's history
+                    toast("Comment deleted");
+                    return;
+                  }
                   const snap = snapshot();
                   mutate(() => (D().comments = D().comments.filter((x) => x !== c)));
-                  if (isLive()) {
-                    commentDeleted(c); // for good: no undo
-                    toast("Comment deleted");
-                  } else toast("Comment deleted", { action: "Undo", onAction: () => restore(snap) });
+                  toast("Comment deleted", { action: "Undo", onAction: () => restore(snap) });
                 }}
               >
                 <Ic n="trash-2" s={12} />
-              </button>
+              </ActionButton>
             </>
           )}
         </div>
         {editing ? (
           <div className="txt">
-            <textarea
+            <DesignTextarea
               className="input"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -203,12 +208,12 @@ export function CommentItem({ c }: { c: Comment }) {
               style={{ width: "100%", resize: "vertical" }}
             />
             <div className="row" style={{ gap: 6, marginTop: 6 }}>
-              <button className="btn btn-primary btn-sm" onClick={saveEdit}>
+              <ActionButton className="btn btn-primary btn-sm" onClick={saveEdit}>
                 Save
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
+              </ActionButton>
+              <ActionButton className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>
                 Cancel
-              </button>
+              </ActionButton>
             </div>
           </div>
         ) : (
@@ -298,7 +303,7 @@ export function CommentBox({
           rows={2}
         />
         <div className="row">
-          <button
+          <ActionButton
             className="ibtn ibtn-xs"
             data-tip="Mention someone"
             aria-label="Mention"
@@ -310,7 +315,7 @@ export function CommentBox({
             }}
           >
             <Ic n="at-sign" s={14} />
-          </button>
+          </ActionButton>
           <label className="ibtn ibtn-xs" data-tip="Attach file" style={{ cursor: "pointer" }}>
             <Ic n="paperclip" s={14} />
             <input type="file" multiple hidden onChange={(e) => handleFiles(e.target.files, { project: t.project, task: t.id })} />
@@ -319,9 +324,9 @@ export function CommentBox({
           <span className="faint hide-m" style={{ fontSize: 11 }}>
             {MOD}+Enter
           </span>
-          <button className="btn btn-primary btn-sm" onClick={() => postComment(t.id)}>
+          <ActionButton className="btn btn-primary btn-sm" onClick={() => postComment(t.id)}>
             Comment
-          </button>
+          </ActionButton>
         </div>
       </div>
       {ment.length > 0 && (
@@ -340,8 +345,10 @@ export function CommentBox({
 }
 
 /* ---------- the rich-text description ---------- */
-function Rte({ t, desc }: { t: Task; desc: string }) {
+function Rte({ t, desc, md }: { t: Task; desc: string; md?: string }) {
+  const locked = md !== undefined && !editorCanKeep(md);
   const ref = useRef<HTMLDivElement>(null);
+  const atFocus = useRef("");
   useEffect(() => {
     if (ref.current && document.activeElement !== ref.current && ref.current.innerHTML !== desc) ref.current.innerHTML = desc;
   }, [desc]);
@@ -357,39 +364,43 @@ function Rte({ t, desc }: { t: Task; desc: string }) {
     <div className="dsec">
       <div className="dsec-h">
         <h3 id="d-desc-l">Description</h3>
-        <div className="rte-tb" role="toolbar" aria-label="Formatting" aria-controls="d-desc">
-          {(
-            [
-              ["bold", "bold", "Bold"],
-              ["italic", "italic", "Italic"],
-              ["insertUnorderedList", "list", "Bulleted list"],
-              ["insertOrderedList", "list-ordered", "Numbered list"],
-              ["formatBlock:h4", "heading", "Heading"],
-              ["createLink", "link", "Link"],
-            ] as const
-          ).map(([c, i, n]) => (
-            <button key={c} className="ibtn ibtn-xs" data-tip={n} aria-label={n} onMouseDown={(e) => (e.preventDefault(), cmd(c))}>
-              <Ic n={i} s={13} />
-            </button>
-          ))}
-        </div>
+        {!locked && (
+          <div className="rte-tb" role="toolbar" aria-label="Formatting" aria-controls="d-desc">
+            {(
+              [
+                ["bold", "bold", "Bold"],
+                ["italic", "italic", "Italic"],
+                ["insertUnorderedList", "list", "Bulleted list"],
+                ["insertOrderedList", "list-ordered", "Numbered list"],
+                ["formatBlock:h4", "heading", "Heading"],
+                ["createLink", "link", "Link"],
+              ] as const
+            ).map(([c, i, n]) => (
+              <ActionButton key={c} className="ibtn ibtn-xs" data-tip={n} aria-label={n} onMouseDown={(e) => (e.preventDefault(), cmd(c))}>
+                <Ic n={i} s={13} />
+              </ActionButton>
+            ))}
+          </div>
+        )}
       </div>
       <div className="rte">
         <div
           ref={ref}
           className="rte-body"
           id="d-desc"
-          contentEditable
+          contentEditable={!locked}
           suppressContentEditableWarning
           data-ph="Add a description…"
           role="textbox"
           aria-multiline="true"
           aria-labelledby="d-desc-l"
+          onFocus={(e) => (atFocus.current = e.currentTarget.innerHTML)}
           onBlur={(e) => {
             const html = e.currentTarget.innerHTML;
-            if (html !== desc) mutate(() => applyPatch(t, { desc: html }));
+            if (html !== atFocus.current) mutate(() => applyPatch(t, { desc: html }));
           }}
         />
+        {locked && <div className="muted">This description has formatting the editor can't change here.</div>}
       </div>
     </div>
   );
@@ -397,11 +408,11 @@ function Rte({ t, desc }: { t: Task; desc: string }) {
 
 /* ---------- subtasks ---------- */
 function toggleSub(t: Task, s: Subtask) {
+  const done = !s.done;
   mutate(() => {
-    s.done = !s.done;
-    logAct(s.done ? "completed subtask on" : "reopened subtask on", t, `“${s.title}”`);
+    changeSubtasks(t, (items) => items.map((x) => (x.id === s.id ? { ...x, done } : x)));
+    logAct(done ? "completed subtask on" : "reopened subtask on", t, `“${s.title}”`);
   });
-  taskPatched(t, ["subtasks"]);
 }
 function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
   const i = t.subtasks.indexOf(s);
@@ -426,10 +437,9 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         labels: [...t.labels],
         desc: s.note ? `<p>${s.note}</p>` : "",
       });
-      t.subtasks = t.subtasks.filter((x) => x !== s);
+      changeSubtasks(t, (items) => items.filter((x) => x.id !== s.id));
       logAct("converted a subtask of", t, `into ${n.key}`);
     });
-    taskPatched(t, ["subtasks"]);
     S.ui.subOpen = null;
     render();
     toast(`Converted to ${n!.key}`, { action: "Open", onAction: () => openTaskById(n!.id) });
@@ -447,7 +457,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         </span>
       </button>
       <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
-        <input
+        <SelectionInput
           type="checkbox"
           className="check round"
           style={{ marginTop: 9 }}
@@ -462,8 +472,8 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => {
             if (title.trim() && title.trim() !== s.title) {
-              mutate(() => ((s.title = title.trim()), (t.updated = Date.now())));
-              taskPatched(t, ["subtasks"]);
+              const next = title.trim();
+              mutate(() => changeSubtasks(t, (items) => items.map((x) => (x.id === s.id ? { ...x, title: next } : x))));
             }
           }}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), e.currentTarget.blur())}
@@ -512,7 +522,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         <div className="dsec-h">
           <h3 id="s-note-l">Notes</h3>
         </div>
-        <textarea
+        <DesignTextarea
           className="textarea"
           rows={4}
           defaultValue={s.note || ""}
@@ -525,33 +535,32 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         />
       </div>
       <div className="dsec row" style={{ gap: 6, flexWrap: "wrap" }}>
-        <button className="btn btn-secondary btn-sm" onClick={promote}>
+        <ActionButton className="btn btn-secondary btn-sm" onClick={promote}>
           <Ic n="arrow-up-right" s={13} />
           Convert to task
-        </button>
+        </ActionButton>
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => nav(-1)} disabled={i === 0} aria-label="Previous subtask">
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => nav(-1)} disabled={i === 0} aria-label="Previous subtask">
           <Ic n="chevron-left" s={14} />
           Previous
-        </button>
-        <button className="btn btn-sm btn-ghost" onClick={() => nav(1)} disabled={i === t.subtasks.length - 1} aria-label="Next subtask">
+        </ActionButton>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => nav(1)} disabled={i === t.subtasks.length - 1} aria-label="Next subtask">
           Next
           <Ic n="chevron-right" s={14} />
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           className="btn btn-sm btn-danger-ghost"
           onClick={() => {
             S.ui.subOpen = null;
             mutate(() => {
-              t.subtasks = t.subtasks.filter((x) => x !== s);
+              changeSubtasks(t, (items) => items.filter((x) => x.id !== s.id));
               logAct("removed a subtask from", t, `“${s.title}”`);
             });
-            taskPatched(t, ["subtasks"]);
           }}
         >
           <Ic n="trash-2" s={13} />
           Delete
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -601,12 +610,12 @@ function CodingSection({ t }: { t: Task }) {
     <div className="dsec">
       <div className="dsec-h">
         <h3>Coding</h3>
-        <span className="cnt">{sessions.length}</span>
+        {sessions.length > 0 && <span className="cnt">{sessions.length}</span>}
         <div className="acts">
-          <button className="btn btn-sm btn-ghost" onClick={start}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={start}>
             <Ic n="bot" s={13} />
             Start coding
-          </button>
+          </ActionButton>
         </div>
       </div>
       {latest ? (
@@ -632,10 +641,10 @@ function CodingSection({ t }: { t: Task }) {
                 PR #{latest.pr.number} · {latest.pr.state}
               </a>
             )}
-            <button className="btn btn-sm btn-ghost" onClick={() => openInCoding(`session=${latest.id}&from=issue`)}>
+            <ActionButton className="btn btn-sm btn-ghost" onClick={() => openInCoding(`session=${latest.id}&from=issue`)}>
               <Ic n="arrow-up-right" s={13} />
               Open the session
-            </button>
+            </ActionButton>
           </div>
         </div>
       ) : (
@@ -643,6 +652,7 @@ function CodingSection({ t }: { t: Task }) {
           {CODING_AGENT.name}, the coding agent, can work on this in a sandbox and open a pull request. Someone who may approve agent changes starts it.
         </p>
       )}
+      <SharedCodingOutcomes scope={scope} issueKey={t.key} />
     </div>
   );
 }
@@ -650,34 +660,14 @@ function CodingSection({ t }: { t: Task }) {
 /* ---------- the drawer ---------- */
 export function Drawer() {
   const id = S.ui.drawer;
-  const t = id ? task(id) : undefined;
-  const ref = useRef<HTMLElement>(null);
-  const scope = isLive() && live.ws && t ? { workspaceId: live.ws.id, projectId: t.project } : undefined;
-  const liveIssue = useIssue(scope, isLive() && t ? t.key : null);
-  useEffect(() => {
-    if (t && ref.current && !ref.current.contains(document.activeElement)) ref.current.focus({ preventScroll: true });
-  }, [id]);
-  useEffect(() => {
-    if (!t) return;
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !S.ui.pop && !S.ui.modals.length) closeDrawer();
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [id]);
+  const { task: t, find } = useTask(id);
+  const detail = useTaskDetail(t);
+  const ref = useRef<HTMLDialogElement>(null);
   if (!t) return null;
   const p = proj(t.project)!;
   const u = S.ui;
-  const issue = liveIssue.data;
-  const cs = isLive() ? (issue?.log ?? []).filter((e) => e.kind === "commented" && e.body).map((e) => logComment(e, t.id)) : commentsOf(t.id);
+  const { comments: cs, activity: acts, attachments: atts } = detail;
   const sd = t.subtasks.filter((s) => s.done).length;
-  const acts = isLive()
-    ? (issue?.log ?? [])
-        .filter((e) => e.kind !== "commented")
-        .map((e) => logActivity(e, t.id))
-        .reverse()
-    : D().activity.filter((a) => a.task === t.id);
-  const atts = isLive() ? (issue?.attachments ?? []).map(toAttachment) : t.attachments;
   const tab = u.drawerTab;
   const ups = uploads.filter((x) => x.task === t.id);
   const sub = u.subOpen && u.subOpen.tid === t.id ? t.subtasks.find((s) => s.id === u.subOpen!.sid) : undefined;
@@ -692,8 +682,19 @@ export function Drawer() {
   );
   return (
     <>
-      {u.drawerFull && <div className="drawer-scrim full enter" onClick={closeDrawer} />}
-      <aside ref={ref} className={`drawer enter ${u.drawerFull ? "full" : ""}`} role="dialog" aria-modal={u.drawerFull} aria-labelledby="d-h" tabIndex={-1}>
+      <AstryxDrawer
+        ref={ref}
+        className="dotrix-task-drawer"
+        isOpen
+        onOpenChange={(open) => {
+          if (!open) closeDrawer();
+        }}
+        label={sub ? `Subtask: ${sub.title}` : `Task: ${t.title}`}
+        width={u.drawerFull ? "min(960px, 100vw)" : "min(520px, 100vw)"}
+        experimental={{ isFullWidthOnMobile: true }}
+        hasScrim={u.drawerFull}
+        padding={0}
+      >
         <h2 className="sr" id="d-h">
           {sub ? "Subtask: " + sub.title : "Task: " + t.title}
         </h2>
@@ -703,19 +704,19 @@ export function Drawer() {
             {p.name}
           </button>
           <span className="faint">/</span>
-          <span className="mono faint" style={{ fontSize: 11.5, padding: "0 6px" }}>
+          <span className="mono faint drawer-key" style={{ fontSize: 12, padding: "0 6px" }}>
             {t.key}
           </span>
           <span className="sp" />
-          <button
+          <ActionButton
             className={`btn btn-sm ${t.status === "done" ? "btn-secondary" : "btn-ghost"}`}
             onClick={() => toggleDone(t.id)}
             style={t.status === "done" ? { color: "var(--green)" } : undefined}
           >
             <Ic n={t.status === "done" ? "circle-check" : "circle"} s={14} />
             <span className="hide-m">{t.status === "done" ? "Completed" : "Mark complete"}</span>
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             className="ibtn ibtn-sm"
             onClick={() => toggleFavTask(t.id)}
             data-tip={t.fav ? "Unfavorite" : "Favorite"}
@@ -724,29 +725,29 @@ export function Drawer() {
             style={t.fav ? { color: "var(--amber)" } : undefined}
           >
             <Ic n="star" s={15} />
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             className="ibtn ibtn-sm"
             onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/board?task=${t.key}`)}
             data-tip="Copy link"
             aria-label="Copy link"
           >
             <Ic n="link" s={15} />
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             className="ibtn ibtn-sm hide-m"
             onClick={() => ((u.drawerFull = !u.drawerFull), render())}
             data-tip={u.drawerFull ? "Side panel" : "Full page"}
             aria-label="Toggle full page"
           >
             <Ic n={u.drawerFull ? "minimize-2" : "maximize-2"} s={15} />
-          </button>
-          <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More">
+          </ActionButton>
+          <ActionButton className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More">
             <Ic n="ellipsis" s={15} />
-          </button>
-          <button className="ibtn ibtn-sm" onClick={closeDrawer} data-tip="Close  Esc" aria-label="Close">
+          </ActionButton>
+          <ActionButton className="ibtn ibtn-sm" onClick={closeDrawer} data-tip="Close  Esc" aria-label="Close">
             <Ic n="x" s={16} />
-          </button>
+          </ActionButton>
         </div>
         <div className="drawer-b">
           {sub ? (
@@ -792,19 +793,15 @@ export function Drawer() {
                 {prop(
                   TY[t.type].icon,
                   "Type",
-                  <select
-                    className="select"
-                    style={{ width: "auto", height: 26, fontSize: 12.5, borderColor: "transparent", backgroundColor: "transparent" }}
-                    value={t.type}
-                    aria-label="Type"
-                    onChange={(e) => updateTask(t.id, { type: e.target.value as Task["type"] })}
+                  <button
+                    className="pillbtn"
+                    aria-label={`Type: ${TY[t.type].name}`}
+                    aria-haspopup="menu"
+                    onClick={(e) => openPop(e.currentTarget, "issue-type", { id: t.id })}
                   >
-                    {TYPES.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.name}
-                      </option>
-                    ))}
-                  </select>,
+                    <Ic n={TY[t.type].icon} s={13} />
+                    {TY[t.type].name}
+                  </button>,
                 )}
                 {prop(
                   "tag",
@@ -850,13 +847,13 @@ export function Drawer() {
                   >
                     {t.deps.length ? (
                       t.deps.map((d) =>
-                        task(d) ? (
+                        find(d) ? (
                           <span key={d} style={{ display: "contents" }}>
                             <span className="depchip mono" style={{ fontSize: 11, padding: "1px 5px", borderRadius: 4, background: "var(--surface-3)" }}>
-                              {task(d)!.key}
+                              {find(d)!.key}
                             </span>
                             <span className="trunc" style={{ maxWidth: 160 }}>
-                              {task(d)!.title}
+                              {find(d)!.title}
                             </span>
                           </span>
                         ) : null,
@@ -870,24 +867,24 @@ export function Drawer() {
                   </button>,
                 )}
               </dl>
-              {isLive() && !issue ? (
+              {detail.state !== "ready" ? (
                 // The list rows carry no description — typing into an empty editor now would
                 // overwrite the real one on blur; wait for the detail query instead.
                 <div className="dsec">
                   <h3>Description</h3>
-                  {liveIssue.isError ? (
+                  {detail.state === "error" ? (
                     <div className="muted">
                       The description didn't load.{" "}
-                      <button className="btn btn-link" onClick={() => void liveIssue.refetch()}>
+                      <ActionButton className="btn btn-link" onClick={detail.retry}>
                         Try again
-                      </button>
+                      </ActionButton>
                     </div>
                   ) : (
                     <div className="muted">Loading…</div>
                   )}
                 </div>
               ) : (
-                <Rte t={t} desc={isLive() ? mdToHtml(issue?.description ?? "") : t.desc} />
+                <Rte t={t} desc={detail.desc} md={detail.md} />
               )}
               <Subtasks t={t} sd={sd} />
               <div className="dsec">
@@ -934,7 +931,7 @@ export function Drawer() {
                             {FT[f.type]?.n || "File"} · {f.size}
                           </div>
                         </div>
-                        <button
+                        <ActionButton
                           className="ibtn ibtn-xs x"
                           aria-label="Remove attachment"
                           onClick={(e) => {
@@ -948,7 +945,7 @@ export function Drawer() {
                           }}
                         >
                           <Ic n="x" s={12} />
-                        </button>
+                        </ActionButton>
                       </div>
                     ))}
                   </div>
@@ -1030,7 +1027,7 @@ export function Drawer() {
             </>
           )}
         </div>
-      </aside>
+      </AstryxDrawer>
     </>
   );
 }
@@ -1073,7 +1070,7 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
       </div>
       {t.subtasks.map((s) => (
         <div key={s.id} className={`subt ${s.done ? "done" : ""}`}>
-          <input
+          <SelectionInput
             type="checkbox"
             className="check"
             checked={s.done}
@@ -1090,14 +1087,14 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
             </span>
           )}
           {s.assignee && <Av id={s.assignee} cls="sm" />}
-          <button
+          <ActionButton
             className="ibtn ibtn-xs x"
             onClick={() => ((S.ui.subOpen = { tid: t.id, sid: s.id }), render())}
             aria-label="Open subtask details"
             tabIndex={-1}
           >
             <Ic n="chevron-right" s={14} />
-          </button>
+          </ActionButton>
         </div>
       ))}
       <div className="subt" style={{ color: "var(--text-3)" }}>
@@ -1111,10 +1108,9 @@ function Subtasks({ t, sd }: { t: Task; sd: number }) {
             if (e.key === "Enter" && v.trim()) {
               const title = v.trim();
               mutate(() => {
-                t.subtasks.push({ id: uid("s"), title, done: false });
+                changeSubtasks(t, (items) => [...items, { id: uid("s"), title, done: false }]);
                 logAct("added subtask to", t, `“${title}”`);
               });
-              taskPatched(t, ["subtasks"]);
               setV("");
             }
           }}

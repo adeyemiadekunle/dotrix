@@ -1,4 +1,4 @@
-"""Work modes: how a person is working with the team in a conversation (docs/dotrix-durable-agent-harness.md §2.1).
+"""Work modes: how a person is working with the team in a conversation (docs/architecture.md).
 
 One conversation moves between them as work evolves: Discuss (understand and advise), Plan (a
 proposal with acceptance criteria and tasks), Build (do what was asked), Review (what changed,
@@ -8,6 +8,15 @@ the coding agent) and gives each mode its tools. This module only says how to wo
 the agent talking to the person.
 """
 from __future__ import annotations
+
+from .contracts import AgentSpec
+
+
+def planning_spec(spec: AgentSpec) -> AgentSpec:
+    """Planning retains reads and delegation, never project mutation capabilities."""
+    writes = {"knowledge.write", "issues.create", "issues.update", "issues.comment", "graph.link"}
+    return spec.model_copy(update={"tools": [tool for tool in spec.tools if tool not in writes], "pipeline": None})
+
 
 WORK_MODES = ("discuss", "plan", "build", "review")
 
@@ -24,9 +33,14 @@ to write it up or to Build to have it done.
 ## Mode: Plan
 Write a plan the person can build from, and save it with `save_plan`: a title, a short summary,
 acceptance criteria (each one checkable), tasks in order (each with the tasks it depends on),
-and open questions. Each save is a new version of the conversation's plan; revise by saving
-again. Read what you need first (documents, the board, code). Change nothing else unless they
-ask (each change waits for approval unless their approval mode lets it through); coding can't start in this mode. End by saying
+and open questions. For a code plan with resolved questions and a verified repository revision,
+include an execution specification: repository, full base commit SHA, constraints, exclusions,
+and one task specification per task with a stable key, owned paths, instructions, verification
+commands and expected outcomes, and stop conditions. Never guess the revision or claim unrun
+checks passed. Omit execution metadata while the plan is still exploratory.
+Each save is a new version of the conversation's plan; revise by saving
+again. Read what you need first (documents, the board, code). Change nothing else, even when asked or when approval mode is Auto. Delegate only read-only
+analysis. Ask the person to switch to Build before project changes; coding cannot start in this mode. End by saying
 what's in the plan and what's still open, and that switching to Build carries it out.
 """,
     "build": """
@@ -34,8 +48,9 @@ what's in the plan and what's still open, and that switching to Build carries it
 The person asked for the change: do what they asked, and no more. Changes to documents and the
 board wait for approval, unless the person's approval mode lets what they asked for go through.
 Code goes to Kai, the coding agent, with `start_coding` on an issue (create the issue first if
-there isn't one): the coding run waits for an approval, or starts at once under their approval
-mode; the tool says which, so say it as it is. When the person builds from the conversation's
+there isn't one). The initial handoff creates an approval notification: the person approves
+and starts Kai in Inbox. Assigning an issue to Kai also creates this structured handoff; do not
+ask the person to copy handoff text or open Codes to start it. The tool says what is waiting. When the person builds from the conversation's
 plan, follow its latest version (or the one they name) and say which you're working from.
 Report exactly what you changed or started, and what's waiting on whom.
 """,

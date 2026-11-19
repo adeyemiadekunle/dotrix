@@ -4,15 +4,15 @@
 // when it starts. Runs work in the background, so active ones are polled until they finish or pause.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { useEffect } from "react";
+import { toast } from "@dotrix/ui/lib/toast";
 
-import { api, ensureSession, errorMessage, unwrap } from "./api";
-import type { Scope } from "./issues";
+import { ApiError, api, errorMessage, unwrap } from "./api";
+import { useEventStream } from "./runStream";
+import { issueQueriesOf, type Scope } from "./issues";
 
 export type Run = Schemas["AgentRunRead"];
 export type Approval = Schemas["ApprovalRead"];
-export type WorkspaceApproval = Schemas["WorkspaceApprovalRead"];
 export type Decision = Schemas["Decision"];
 
 export type AgentId = NonNullable<Schemas["RunCreate"]["agent"]>;
@@ -38,36 +38,8 @@ export const WORK_MODES: [WorkMode, string, string][] = [
 
 /** Each mode's icon, in the composer and its menu. */
 export const MODE_ICONS: Record<WorkMode, string> = { discuss: "message-circle", plan: "list-checks", build: "hammer", review: "eye" };
-export type ModelOption = Schemas["ModelOption"];
 
 export const isActive = (run: Pick<Run, "status">) => ["queued", "running", "waiting_children", "waiting_dependency"].includes(run.status);
-
-export type AgentOption = { id: AgentId; name: string; description: string };
-
-/** Who can answer in the chat, in the + menu's order: the built-ins. A project's own list
- * (with custom agents) comes from `useChatAgents` in `lib/agents.ts`. */
-export const AGENTS: AgentOption[] = [
-  { id: "auto", name: "Auto", description: "The project manager answers and brings in the specialists it needs" },
-  { id: "product", name: "Product agent", description: "Features, user stories, business rules, acceptance criteria" },
-  { id: "architecture", name: "Architecture agent", description: "The system's design and what a change would touch" },
-  { id: "research", name: "Research agent", description: "Searches the web: regulations, APIs, competitors, markets" },
-  { id: "reviewer", name: "Reviewer agent", description: "Checks what's built against the requirements (read-only)" },
-  { id: "documentation", name: "Documentation agent", description: "Keeps the documents tidy and writes decisions down" },
-];
-
-/** "Research agent", or "Auto" for the project manager; "@handle" for an agent not in `options`. */
-export function agentLabel(id: string | null | undefined, options: AgentOption[] = AGENTS): string {
-  return options.find((a) => a.id === (id || "auto"))?.name ?? `@${id}`;
-}
-
-/** "@research …" at the start of a message picks that agent: [agent, the rest], or null. */
-export function mentionedAgent(text: string, options: AgentOption[] = AGENTS): [AgentId, string] | null {
-  const match = /^@([a-z][a-z0-9-]*)\s+/i.exec(text);
-  if (!match) return null;
-  const said = match[1].toLowerCase();
-  const agent = options.find((a) => a.id === said) ?? options.find((a) => a.name.toLowerCase().startsWith(said));
-  return agent ? [agent.id, text.slice(match[0].length)] : null;
-}
 
 /** The models a conversation can start on in this workspace. */
 export function useModels(workspaceId: string | undefined) {
@@ -80,7 +52,43 @@ export function useModels(workspaceId: string | undefined) {
 }
 
 /** "gemini-3.8-flash" from "google_genai:gemini-3.8-flash". */
-export const modelName = (model: string | null | undefined) => (model ?? "").split(":").slice(1).join(":") || model || "";
+/** A model as people read it: "anthropic:claude-opus-5-5" → "Opus 5.5", "openai:gpt-5.4-mini" → "GPT-5.4 mini",
+ *  "google_genai:gemini-3.8-flash" → "Gemini 3.8 Flash". Anything else: its `name` when given (the API's), else its id
+ *  without the provider. */
+export const modelName = (model: string | null | undefined, name?: string): string => {
+  const id = (model ?? "").includes(":") ? (model ?? "").split(":").slice(1).join(":") : (model ?? "");
+  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  if (claude) return `${claude[1]![0]!.toUpperCase()}${claude[1]!.slice(1)} ${claude[2]}${claude[3] ? `.${claude[3]}` : ""}`;
+  const gpt = /^gpt-([\d.]+)(?:-(.+))?$/.exec(id);
+  if (gpt) return `GPT-${gpt[1]}${gpt[2] ? ` ${gpt[2].replaceAll("-", " ")}` : ""}`;
+  const gemini = /^gemini-([\d.]+)-(.+)$/.exec(id);
+  if (gemini)
+    return `Gemini ${gemini[1]} ${gemini[2]!
+      .split("-")
+      .map((w) => w[0]!.toUpperCase() + w.slice(1))
+      .join(" ")}`;
+  return name || id;
+};
+
+const PROVIDERS: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google_genai: "Google",
+  google: "Google",
+  xai: "xAI",
+  deepseek: "DeepSeek",
+  mistralai: "Mistral",
+  mistral: "Mistral",
+  groq: "Groq",
+  openrouter: "OpenRouter",
+  nvidia: "NVIDIA",
+};
+
+/** A model's provider as people read it, from its id's prefix ("openai:gpt-5.5" → "OpenAI"); "" without one. */
+export const providerName = (model: string): string => {
+  const prefix = model.includes(":") ? model.split(":")[0]! : "";
+  return PROVIDERS[prefix] ?? prefix;
+};
 
 // Kept in sync with ARCHITECTURE_DRAFT_PROMPT in the backend's agents service.
 const ARCHITECTURE_PROMPT_START = "Project setup: draft the architecture overview.";
@@ -106,7 +114,7 @@ export function useChatRuntimeOptions(scope: Scope | undefined) {
 const POLL_MS = 1500;
 const WAITING_POLL_MS = 5000;
 
-export const agentKeys = {
+const agentKeys = {
   project: (s: Scope) => ["agent", s.projectId] as const,
   thread: (s: Scope, threadId: string) => ["agent", s.projectId, "thread", threadId] as const,
   recent: (s: Scope) => ["agent", s.projectId, "recent"] as const,
@@ -136,17 +144,6 @@ export function useThread(scope: Scope | undefined, threadId: string | null) {
   });
 }
 
-export interface ThreadSummary {
-  threadId: string;
-  title: string;
-  kind: Run["kind"];
-  updatedAt: string;
-  waiting: boolean;
-}
-
-/** Recent conversations, newest activity first (grouped from recent runs). */
-export type WorkspaceThread = Schemas["WorkspaceThread"];
-
 /** Every conversation in the workspace's projects you can see, most recently active first (Chat). */
 export function useWorkspaceThreads(workspaceId: string | undefined, enabled = true) {
   return useQuery({
@@ -154,35 +151,6 @@ export function useWorkspaceThreads(workspaceId: string | undefined, enabled = t
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/threads", { params: { path: { workspace_id: workspaceId! } } })),
     enabled: Boolean(workspaceId) && enabled,
     refetchInterval: 20_000,
-  });
-}
-
-export function useRecentThreads(scope: Scope | undefined) {
-  return useQuery({
-    queryKey: scope ? agentKeys.recent(scope) : ["agent", "none"],
-    queryFn: async (): Promise<ThreadSummary[]> => {
-      const runs = await unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs", {
-          params: { path: path(scope!), query: { limit: 100 } },
-        }),
-      );
-      const threads = new Map<string, ThreadSummary>();
-      // Newest first: the first run seen sets the activity time; the oldest names the thread.
-      for (const run of runs) {
-        const known = threads.get(run.thread_id);
-        threads.set(run.thread_id, {
-          threadId: run.thread_id,
-          // Runs come newest first, so the last one seen is the thread's first run, which
-          // carries its title (older threads, from before titles, fall back to the message).
-          title: run.title ?? known?.title ?? runTitle(run),
-          kind: run.kind,
-          updatedAt: known?.updatedAt ?? run.updated_at,
-          waiting: (known?.waiting ?? false) || run.status === "awaiting_approval",
-        });
-      }
-      return [...threads.values()];
-    },
-    enabled: Boolean(scope),
   });
 }
 
@@ -198,7 +166,7 @@ function useAgentMutation<Vars, Result>(scope: Scope | undefined, fn: (scope: Sc
       await queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
       await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
       // Approved actions may have changed issues or files.
-      await queryClient.invalidateQueries({ queryKey: ["issues", scope.projectId] });
+      for (const queryKey of issueQueriesOf(scope)) await queryClient.invalidateQueries({ queryKey });
     },
   });
 }
@@ -215,6 +183,7 @@ export function useSendMessage(scope: Scope | undefined) {
         model,
         mentions = [],
         workMode = null,
+        planId = null,
         approvalMode = null,
         chatRuntime = null,
       }: {
@@ -224,6 +193,7 @@ export function useSendMessage(scope: Scope | undefined) {
         model?: string | null;
         mentions?: string[];
         workMode?: WorkMode | null;
+        planId?: string | null;
         approvalMode?: ApprovalMode | null;
         chatRuntime?: ChatRuntime | null;
       },
@@ -239,6 +209,7 @@ export function useSendMessage(scope: Scope | undefined) {
             model: threadId ? null : (model ?? null),
             mentions,
             work_mode: workMode,
+            plan_id: planId,
             approval_mode: approvalMode,
             chat_runtime: threadId ? null : chatRuntime,
           },
@@ -259,46 +230,6 @@ export function useThreadPlans(scope: Scope | undefined, threadId: string | null
       ),
     enabled: Boolean(scope && threadId),
   });
-}
-
-export function useBriefing(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, _: void) =>
-    unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/briefing", { params: { path: path(s) } })),
-  );
-}
-
-export function useArchitectureDraft(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, _: void) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/architecture-draft", {
-        params: { path: path(s) },
-        body: { repo_summary: null },
-      }),
-    ),
-  );
-}
-
-/** The Project Manager triages a bug report or request: duplicates first, then a proposed issue or comment. */
-export function useTriage(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, report: string) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/triage", {
-        params: { path: path(s) },
-        body: { report },
-      }),
-    ),
-  );
-}
-
-/** The Reviewer reviews one issue against its acceptance criteria. */
-export function useReviewIssue(scope: Scope | undefined) {
-  return useAgentMutation(scope, (s, key: string) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/issues/{key}/review", {
-        params: { path: { ...path(s), key } },
-      }),
-    ),
-  );
 }
 
 export function useDecide(scope: Scope | undefined) {
@@ -337,60 +268,20 @@ export interface RunStreamState {
 
 export function useRunStream(scope: Scope | undefined, runId: string, active: boolean): RunStreamState {
   const queryClient = useQueryClient();
-  const [text, setText] = useState("");
-  const [activity, setActivity] = useState<string | null>(null);
-  const [thinking, setThinking] = useState("");
-  // A dropped connection reconnects (the server sends the text so far again, from the run's kept
-  // events if its live stream is gone), a little later each time.
-  const [attempt, setAttempt] = useState(0);
-  const failures = useRef(0);
-  useEffect(() => {
-    if (!scope || !active) return;
-    let source: EventSource | undefined;
-    let closed = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    // An EventSource can't refresh an expired session itself: check it's current first.
-    void ensureSession().then(() => {
-      if (closed) return;
-      source = new EventSource(`/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream`);
-      const stream = source;
-      const read = (event: MessageEvent) => (JSON.parse(event.data) as { text: string }).text;
-      // Each connection (and each new step) starts with the text so far, then the thinking so far.
-      stream.addEventListener("text", (e) => {
-        setText(read(e as MessageEvent));
-        setThinking("");
-      });
-      stream.addEventListener("delta", (e) => setText((t) => t + read(e as MessageEvent)));
-      stream.addEventListener("activity", (e) => setActivity(read(e as MessageEvent)));
-      stream.addEventListener("thinking_text", (e) => setThinking(read(e as MessageEvent)));
-      stream.addEventListener("thinking", (e) => setThinking((t) => t + read(e as MessageEvent)));
-      // The stream ends when the run does (or wasn't running): don't let EventSource reconnect,
-      // and fetch the finished run right away rather than at the next poll (which also pauses
-      // while the tab is in the background).
-      stream.addEventListener("end", () => {
-        stream.close();
-        setActivity(null);
-        void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
-        void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
-        void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
-        void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
-      });
-      stream.addEventListener("open", () => (failures.current = 0));
-      stream.onerror = () => {
-        stream.close();
-        if (!closed) retry = setTimeout(() => setAttempt((a) => a + 1), Math.min(1000 * 2 ** failures.current++, 15_000));
-      };
-    });
-    return () => {
-      closed = true;
-      clearTimeout(retry);
-      source?.close();
-    };
-  }, [scope, runId, active, queryClient, attempt]);
-  return { text, activity, thinking };
+  return useEventStream({
+    url: scope ? `/v1/workspaces/${scope.workspaceId}/projects/${scope.projectId}/agent/runs/${runId}/stream` : undefined,
+    key: runId,
+    active,
+    onEnd: () => {
+      if (!scope) return;
+      void queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
+      void queryClient.invalidateQueries({ queryKey: ["approvals", scope.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications", scope.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
+      for (const queryKey of issueQueriesOf(scope)) void queryClient.invalidateQueries({ queryKey });
+    },
+  });
 }
-
-export type RunEvent = Schemas["RunEventRead"];
 
 /** What a run did, kept after it: its steps (what the agents were doing), in order, and what Nova thought. */
 export function useRunSteps(scope: Scope | undefined, runId: string, enabled: boolean) {
@@ -435,42 +326,9 @@ export function useContinueRun(scope: Scope | undefined) {
   );
 }
 
-export function useRenameThread(scope: Scope | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ threadId, title }: { threadId: string; title: string }) =>
-      unwrap(
-        api.PATCH("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/threads/{thread_id}", {
-          params: { path: { ...path(scope!), thread_id: threadId } },
-          body: { title },
-        }),
-      ),
-    onError: (e) => toast.error(errorMessage(e)),
-    onSettled: async () => {
-      if (!scope) return;
-      await queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });
-      await queryClient.invalidateQueries({ queryKey: ["threads", scope.workspaceId] });
-    },
-  });
-}
-
 /** A run someone stopped (it's recorded as failed with "Stopped by …"). */
 export const wasStopped = (run: Pick<Run, "status" | "error">) =>
   run.status === "cancelled" || (run.status === "failed" && (run.error ?? "").startsWith("Stopped"));
-
-/** What the agents did across the workspace in the last `days` days (owners and admins). */
-export function useWorkspaceAgentUsage(workspaceId: string | undefined, enabled: boolean, days = 7) {
-  return useQuery({
-    queryKey: ["agent-usage", workspaceId, days],
-    queryFn: () =>
-      unwrap(
-        api.GET("/v1/workspaces/{workspace_id}/agent-usage", {
-          params: { path: { workspace_id: workspaceId! }, query: { days } },
-        }),
-      ),
-    enabled: Boolean(workspaceId) && enabled,
-  });
-}
 
 export function useChatInputs(scope: Scope | undefined, threadId: string) {
   const client = useQueryClient();
@@ -496,6 +354,11 @@ export function useChatInputs(scope: Scope | undefined, threadId: string) {
   return query;
 }
 
+/** The server's answer when the turn a follow-up was meant for has already finished (agents/chat_inputs.py). */
+const IDLE = "The conversation is idle";
+
+/** Queue a follow-up or steer the active turn. Resolves to null when that turn had already finished (the page
+ * hadn't seen it end yet): send the message as a new one instead. */
 export function useSubmitChatInput(scope: Scope | undefined, threadId: string) {
   return useAgentMutation(scope, (s, body: Schemas["ChatInputCreate"]) =>
     unwrap(
@@ -503,7 +366,10 @@ export function useSubmitChatInput(scope: Scope | undefined, threadId: string) {
         params: { path: { ...path(s), thread_id: threadId } },
         body,
       }),
-    ),
+    ).catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 409 && e.problem?.detail?.startsWith(IDLE)) return null;
+      throw e;
+    }),
   );
 }
 

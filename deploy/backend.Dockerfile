@@ -1,13 +1,20 @@
+# syntax=docker/dockerfile:1
 # The API, the worker, and migrations: one image, three commands (deploy/docker-compose.dokploy.yml).
 #
 #   docker build -f deploy/backend.Dockerfile -t dotrix-backend .
 #
 # The worker starts coding sandboxes on the host's Docker (DOTRIX_CODING_SANDBOX=docker), so the
 # image carries the Docker CLI and git; it reaches the daemon through DOCKER_HOST (a socket proxy).
+#
+# Chat's fx host installs the Kai runtime (@kunemi-group/kai) from GitHub Packages, which needs a token with
+# read:packages, passed as a build secret so it stays out of the image's layers:
+#
+#   docker build -f deploy/backend.Dockerfile --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-backend .
 FROM node:22-bookworm-slim AS fx-host
 WORKDIR /fx
-COPY packages/engine/src/dotrix_engine/runtimes/fx_host/package.json packages/engine/src/dotrix_engine/runtimes/fx_host/package-lock.json ./
-RUN npm ci --omit=dev
+COPY packages/engine/src/dotrix_engine/runtimes/fx_host/package.json packages/engine/src/dotrix_engine/runtimes/fx_host/package-lock.json packages/engine/src/dotrix_engine/runtimes/fx_host/.npmrc ./
+RUN --mount=type=secret,id=kai_packages_token,required=true \
+  NODE_AUTH_TOKEN="$(cat /run/secrets/kai_packages_token)" npm ci --omit=dev
 
 FROM python:3.13-slim-bookworm
 
@@ -29,7 +36,6 @@ RUN uv sync --frozen --no-dev --no-install-workspace --package dotrix-backend
 
 COPY packages/engine packages/engine
 COPY --from=fx-host /fx/node_modules packages/engine/src/dotrix_engine/runtimes/fx_host/node_modules
-COPY apps/cli apps/cli
 COPY apps/backend apps/backend
 RUN uv sync --frozen --no-dev --package dotrix-backend
 

@@ -70,3 +70,13 @@ class RepoCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
     private: bool = True
     description: str = Field(default="", max_length=350)
+
+
+class RepositoryReadiness(BaseModel):
+    """A fresh read of the connected repository's default branch, not a cached checkout."""
+
+    ready: bool
+    full_name: str | None = None
+    default_branch: str | None = None
+    commit_sha: str | None = None
+    reason: str | None = None

@@ -1,15 +1,34 @@
+import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { Input as DesignInput } from "@dotrix/ui/components/input";
+import {
+  ChatLayout,
+  ChatMessageList,
+  ChatMessage,
+  ChatMessageBubble,
+  ChatComposer,
+  ChatComposerInput,
+  ChatSendButton,
+  type ChatComposerInputHandle,
+  Lightbox,
+  Selector,
+  ComplexSelector,
+  type ComplexSelectorHandle,
+  Button as DesignButton,
+} from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix's workspace Chat: conversations grouped by project (and
-// "All projects"), a new chat with project, agent, and model; replies with what the agent did
+// "General"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
 // The coding session itself (its turns, the new-session form, the list) is screens/Coding.tsx, built from the pieces exported here.
 // Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
 // URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Codes.
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps } from "react";
 
 import {
   isActive,
   modelName,
+  providerName,
   runTitle,
   useContinueRun,
   useRunSteps,
@@ -26,8 +45,8 @@ import {
   useWorkspaceThreads,
   wasStopped,
   WORK_MODES,
-  APPROVAL_MODES,
   MODE_ICONS,
+  APPROVAL_MODES,
   type AgentId,
   type ApprovalMode,
   type ChatRuntime,
@@ -37,8 +56,10 @@ import {
   type WorkMode,
 } from "@/lib/agent";
 import {
+  isActive as isOpenTurn,
   useCodingAvailability,
   useCodingSession,
+  useCodingSessionStream,
   useCodingSessions,
   useDecideCoding,
   useFollowUp,
@@ -56,28 +77,51 @@ import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { LimitNotice } from "../components/LimitNotice";
 import { approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
-import { desktop, useDesktopRunners } from "../core/desktop";
+import { desktop, desktopBrowser, useBrowserSettings, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { MOD, ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
-import { D, S, canSee, me, pColor, proj, projByKey, render, task, visibleProjects, who } from "../data/store";
+import { D, S, canSee, me, proj, projByKey, render, task, who } from "../data/store";
+import { useAgents, useProjects } from "../data/lists";
+import { useAllTasks } from "../data/tasks";
 import { Markdown } from "@/components/markdown";
+import { PublishChatOutcome } from "../components/PublishChatOutcome";
 import { RunApprovals } from "../components/RunApprovals";
 import { openDocument } from "./Knowledge";
 import { Av, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
-import { CODING_AGENT } from "../data/seed-dotrix";
-import { CODING_VIEWS, CodingPanel, type CodingView } from "../components/SidePanel";
+import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
+import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePanel";
+import { BackgroundTasks } from "../components/BackgroundTasks";
+import { SessionDetails, modeName } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
-import { useAtPicker } from "../components/AtPicker";
+import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
+import { ChoiceCard, type Choice } from "../components/ChoiceCard";
+import {
+  ChainOfThought,
+  Checkpoint,
+  Citation,
+  ContextUsage,
+  PlanSteps,
+  Queue,
+  Reasoning,
+  RunFailure,
+  Sources,
+  Subagents,
+  ToolCalls,
+  TraceList,
+  type Usage,
+} from "../components/AgentTrace";
 import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@dotrix/ui/components/trace";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
-const agentName = (h: string) => D().agents.find((a) => a.handle === h)?.name ?? h;
+const agentName = (h: string) =>
+  CODING_TOOLS.some((tool) => tool.id === h || tool.id === `agent:${h}`) ? CODING_AGENT.name : (D().agents.find((a) => a.handle === h)?.name ?? h);
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
 /** An agent as the store names it: the project manager is "auto". */
 const handleOf = (a: string | null | undefined) => (!a || a === "project-manager" || a === "pm" ? "auto" : a);
@@ -90,12 +134,11 @@ const SUGGESTIONS = [
   ["list-tree", "Turn the requirements into stories"],
 ];
 const ACROSS = [
-  ["layers", "Summarise all my projects"],
-  ["triangle-alert", "What's at risk this week?"],
+  ["sparkles", "Help me explore an idea"],
+  ["message-circle", "Help me think through a question"],
 ];
 
 // What fx does, under its composer.
-const FX_NOTE = "Nova runs on fx, in every mode. Its changes follow your approval mode, as usual.";
 
 function open(search: string) {
   go("chat", {}, { search });
@@ -119,32 +162,42 @@ interface Row {
 }
 
 function useRows(ws: string | undefined) {
-  const own = useWorkspaceThreads(ws);
-  const cross = useCrossConversations(ws);
-  const rows: Row[] = [
-    ...(own.data ?? []).map((t) => ({
-      id: t.thread_id,
-      title: t.title,
-      at: ms(t.updated_at),
-      projectId: t.project_id,
-      projectKey: t.project_key,
-      projectKeys: [],
-      waiting: t.waiting,
-    })),
-    ...(cross.data ?? []).map((c) => ({
-      id: c.thread_id,
-      title: c.title,
-      at: ms(c.updated_at),
-      projectId: null,
-      projectKey: null,
-      projectKeys: c.project_keys,
-      waiting: false,
-    })),
-  ];
+  const own = useWorkspaceThreads(isLive() ? ws : undefined);
+  const cross = useCrossConversations(isLive() ? ws : undefined);
+  const rows: Row[] = !isLive()
+    ? D().threads.map((thread) => ({
+        id: thread.id,
+        title: thread.title,
+        at: thread.at,
+        projectId: thread.project,
+        projectKey: thread.project ? (proj(thread.project)?.key ?? null) : null,
+        projectKeys: (thread.projects ?? []).flatMap((id) => proj(id)?.key ?? []),
+        waiting: thread.messages.some((message) => message.changes?.some((change) => change.status === "pending")),
+      }))
+    : [
+        ...(own.data ?? []).map((t) => ({
+          id: t.thread_id,
+          title: t.title,
+          at: ms(t.updated_at),
+          projectId: t.project_id,
+          projectKey: t.project_key,
+          projectKeys: [],
+          waiting: t.waiting,
+        })),
+        ...(cross.data ?? []).map((c) => ({
+          id: c.thread_id,
+          title: c.title,
+          at: ms(c.updated_at),
+          projectId: null,
+          projectKey: null,
+          projectKeys: c.project_keys,
+          waiting: false,
+        })),
+      ];
   return {
     rows,
-    loaded: own.isFetched && cross.isFetched,
-    failed: own.isError || cross.isError,
+    loaded: !isLive() || (own.isFetched && cross.isFetched),
+    failed: isLive() && (own.isError || cross.isError),
     retry: () => {
       void own.refetch();
       void cross.refetch();
@@ -166,39 +219,12 @@ function ThreadRow({ row, on }: { row: Row; on: boolean }) {
           {row.title}
         </span>
         <span className="faint" style={{ fontSize: 11.5 }}>
-          {row.projectKeys.length > 0 && `${row.projectKeys.join(", ")} · `}
+          {row.projectId ? `${proj(row.projectId)?.name ?? row.projectKey} · ` : row.projectKeys.length > 0 && `${row.projectKeys.join(", ")} · `}
           {ago(row.at)}
         </span>
       </span>
       {row.waiting && <span className="sdot" style={{ background: "var(--amber)", marginTop: 6 }} aria-label="Waiting for a decision" />}
     </button>
-  );
-}
-
-function Group({
-  title,
-  icon,
-  color,
-  children,
-  onNew,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  color?: string;
-  children: React.ReactNode;
-  onNew: () => void;
-}) {
-  return (
-    <div className="chat-group">
-      <div className="row" style={{ padding: "0 8px", height: 26, fontSize: 11.5, color: "var(--text-3)", fontWeight: 500 }}>
-        {icon ?? <span className="pdot" style={css({ "--c": color ?? "var(--text-3)", width: 7, height: 7 })} />}
-        <span className="grow trunc">{title}</span>
-        <button className="ibtn ibtn-xs" onClick={onNew} data-tip="New chat here" aria-label={`New chat in ${title}`}>
-          <Ic n="plus" s={13} />
-        </button>
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -218,46 +244,54 @@ const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running
 // Waiting on a person: to start, or (Manual) to push what it changed.
 const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"];
 
+/** Shared session chrome keeps sample and live panes on the same responsive layout. */
+export function SessionHeader({ className = "", children, ...props }: ComponentProps<"div">) {
+  return (
+    <div {...props} className={`row cs-head ${className}`}>
+      <SessionListToggle />
+      {children}
+    </div>
+  );
+}
+
 export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
   const [label0, c] = STATUS[cs.status];
   const label = cs.location === "local" && cs.status === "queued" ? "Waiting for your computer" : label0;
+  const title = cs.title ?? cs.issue_title;
   return (
     <div className={`cs-row ${on ? "on" : ""}`}>
       <button
         className={`sitem ${on ? "on" : ""}`}
-        style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start", width: "100%" }}
+        aria-label={`${cs.issue_key} ${title} · ${label}`}
+        title={title}
         onClick={() => openCoding(`session=${cs.session_id}`)}
       >
-        <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-          <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
-            {cs.pinned && <Ic n="pin" s={11} cls="cs-pin" />}
+        <span className="cs-row-copy">
+          <span className="cs-row-title">
+            {cs.pinned && <Ic n="pin" s={12} cls="cs-pin" />}
             {cs.thread_id && (
-              <span className="faint" aria-label="Started from a conversation" title="Started from a conversation">
-                <Ic n="message-square" s={11} />{" "}
+              <span className="faint" aria-label="Started from a conversation">
+                <Ic n="message-square" s={12} />
               </span>
             )}
-            <span className="mono faint" style={{ fontSize: 11 }}>
-              {cs.issue_key}
-            </span>{" "}
-            {cs.title ?? cs.issue_title}
+            {title}
           </span>
-          <span className="row faint" style={{ fontSize: 11.5, gap: 6 }}>
-            {CODING_AGENT.name} · {ago(ms(cs.updated_at))}
+          <span className="cs-row-meta">
+            <span className="mono">{cs.issue_key}</span>
+            <span>· {ago(ms(cs.updated_at))}</span>
             {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
           </span>
-        </span>
-        <span className={`badge ${c}`} style={{ marginTop: 2 }}>
-          {label}
+          <span className={`badge ${c}`}>{label}</span>
         </span>
       </button>
-      <button
+      <ActionButton
         className="ibtn ibtn-xs cs-more"
         onClick={(e) => openPop(e.currentTarget, "session", { id: cs.session_id, session: cs })}
         aria-label={`More for ${cs.issue_key}`}
         aria-haspopup="menu"
       >
         <Ic n="ellipsis" s={14} />
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -277,7 +311,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
   const files = latest?.files_changed ?? [];
   const ready = latest?.status === "changes_ready";
   return (
-    <div className="change" role="group" aria-label={`Kai on ${cs.issue_key}`} style={{ margin: "4px 0 12px 36px" }}>
+    <div className="change" role="group" aria-label={`Kai on ${cs.issue_key}`} style={{ margin: "4px 0 12px" }}>
       <div className="change-h">
         <Ic n="code" s={14} />
         <b style={{ fontWeight: 500 }}>
@@ -293,7 +327,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         {cs.branch && (
           <span className="row" style={{ gap: 4 }}>
             <Ic n="git-branch" s={12} />
-            <code>{cs.branch}</code>
+            <InlineCode>{cs.branch}</InlineCode>
           </span>
         )}
         {cs.pr_url && cs.pr_number && (
@@ -327,34 +361,38 @@ function SessionCard({ cs }: { cs: CodingSession }) {
       <div className="change-f row" style={{ gap: 6 }}>
         {latest?.can_decide && (
           <>
-            <button className="btn btn-sm btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}>
+            <ActionButton className="btn btn-sm btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}>
               {ready ? "Discard changes" : "Reject"}
-            </button>
-            <button className="btn btn-sm btn-primary" disabled={decide.isPending} onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}>
+            </ActionButton>
+            <ActionButton
+              className="btn btn-sm btn-primary"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+            >
               {ready ? "Accept and push" : "Approve"}
-            </button>
+            </ActionButton>
           </>
         )}
         {latest?.can_revert && (
-          <button className="btn btn-sm btn-ghost" disabled={revert.isPending} onClick={() => revert.mutate(latest.id)}>
+          <ActionButton className="btn btn-sm btn-ghost" disabled={revert.isPending} onClick={() => revert.mutate(latest.id)}>
             Revert this turn
-          </button>
+          </ActionButton>
         )}
         {latest?.can_stop && (
-          <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+          <ActionButton className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
             Stop
-          </button>
+          </ActionButton>
         )}
         {latest?.can_recover && (
-          <button className="btn btn-sm btn-secondary" disabled={recover.isPending} onClick={() => recover.mutate({ runId: latest.id, action: "check" })}>
+          <ActionButton className="btn btn-sm btn-secondary" disabled={recover.isPending} onClick={() => recover.mutate({ runId: latest.id, action: "check" })}>
             Check and recover
-          </button>
+          </ActionButton>
         )}
         <span className="sp" />
-        <button className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
           Open in Codes
           <Ic n="arrow-right" s={12} />
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -396,54 +434,83 @@ function refsOf(
   return { tasks, docs };
 }
 
-function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | null; tag?: string; children?: React.ReactNode }) {
+export function Message({
+  m,
+  projectId,
+  tag,
+  sources,
+  usage,
+  children,
+}: {
+  m: Msg;
+  projectId: string | null;
+  tag?: string;
+  /** The pages a reply read (S1, S2, …): its "[S1]" become inline citations, and they're listed under it. */
+  sources?: Run["sources"];
+  /** A reply's tokens, shown to whoever asked for it (and owners and admins). */
+  usage?: Usage & { mine: boolean };
+  children?: React.ReactNode;
+}) {
   const w = who(m.by);
-  const agent = m.role === "agent" ? D().agents.find((a) => a.handle === m.by) : null;
-  const [openSteps, setOpenSteps] = useState(false);
+  const { items: agents } = useAgents();
+  const agent = m.role === "agent" ? agents.find((a) => a.handle === m.by) : null;
   const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
   const liveDocs = useLiveKnowledgeFiles(isLive() && live.ws && projectId ? { workspaceId: live.ws.id, projectId } : undefined, isLive() && m.role === "agent");
   const refs =
     m.role === "agent" ? refsOf(projectId, m.text, m.activity, isLive() ? liveTasks : undefined, isLive() ? liveDocs : undefined) : { tasks: [], docs: [] };
   const p = proj(projectId ?? "");
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
-  return (
-    <div className={`chat-msg ${m.role}`}>
-      {m.role === "agent" ? <Face c={agent?.c ?? "#57544E"} size={26} mood="idle" /> : <Av id={m.by} cls="md" tip={false} />}
-      <div className="body">
-        <div className="who">
-          <b>{m.role === "agent" ? (agent?.name ?? agentName(m.by)) : m.by === D().me ? "You" : w?.name}</b>
-          {agent && <span className="role">{agent.role}</span>}
-          <time>{ago(m.at)}</time>
+  // Laid out as Codes lays out a session (Claude Code's): what a person wrote in a bubble on the right, its edge on
+  // the message box's; an agent's reply under its face and name, flush with the message box's left edge.
+  if (m.role === "user")
+    return (
+      <ChatMessage data-sender="user" sender="user" className="dotrix-message">
+        <ChatMessageBubble className="dotrix-user-bubble">{m.text}</ChatMessageBubble>
+        <div className="chat-ask-meta">
           {tag && <span className="badge">{tag}</span>}
-          {m.tokens && admin ? <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span> : null}
+          {m.by !== D().me && <span>{w?.name ?? "Someone"} ·</span>}
+          <time>{ago(m.at)}</time>
+          <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(m.text)} aria-label="Copy what you wrote" data-tip="Copy">
+            <Ic n="copy" s={13} />
+          </ActionButton>
+          <Av id={m.by} cls="sm" tip={false} />
         </div>
-        {m.activity && m.activity.length > 0 && (
-          <div className="chat-steps">
-            <button className="chat-steps-h" onClick={() => setOpenSteps(!openSteps)} aria-expanded={openSteps}>
-              <Ic n={openSteps ? "chevron-down" : "chevron-right"} s={12} />
-              Worked through {m.activity.length} step{m.activity.length > 1 ? "s" : ""}
-            </button>
-            {openSteps && (
-              <ul>
-                {m.activity.map((a) => (
-                  <li key={a}>
-                    <Ic n="check" s={11} />
-                    {a}
-                  </li>
-                ))}
-              </ul>
-            )}
+        {children}
+      </ChatMessage>
+    );
+  return (
+    <ChatMessage data-sender="assistant" sender="assistant" className="dotrix-message">
+      <div className="who">
+        <Face c={agent?.c ?? "#57544E"} size={22} mood="idle" />
+        <b>{agent?.name ?? agentName(m.by)}</b>
+        {agent && <span className="role">{agent.role}</span>}
+        <time>{ago(m.at)}</time>
+        {tag && <span className="badge">{tag}</span>}
+        {usage && (usage.mine || admin) ? (
+          <ContextUsage usage={usage} />
+        ) : m.tokens && admin ? (
+          <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>
+        ) : null}
+      </div>
+      <div className="body">
+        {m.activity && m.activity.length > 0 && <ChainOfThought steps={m.activity} />}
+        {m.text && (
+          <div className="md">
+            <Markdown
+              cite={
+                sources?.length
+                  ? (label) => {
+                      const source = sources.find((x) => x.label === label);
+                      return source ? <Citation source={source} /> : undefined;
+                    }
+                  : undefined
+              }
+            >
+              {m.text}
+            </Markdown>
           </div>
         )}
-        {m.role === "user" ? (
-          <div className="said">{m.text}</div>
-        ) : (
-          m.text && (
-            <div className="md">
-              <Markdown>{m.text}</Markdown>
-            </div>
-          )
-        )}
+        {m.role === "agent" && sources?.length ? <Sources sources={sources} /> : null}
         {(refs.tasks.length > 0 || refs.docs.length > 0) && (
           <div className="chat-refs">
             {refs.tasks.map((k) => (
@@ -463,7 +530,7 @@ function Message({ m, projectId, tag, children }: { m: Msg; projectId: string | 
         )}
         {children}
       </div>
-    </div>
+    </ChatMessage>
   );
 }
 
@@ -479,11 +546,12 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
     role: "agent",
     by: handleOf(run.agent),
     at: ms(run.finished_at ?? run.updated_at),
-    text: failed ? (wasStopped(run) ? "Stopped." : (run.error ?? "It didn't finish.")) : text,
-    activity: stream?.activity ? [stream.activity] : undefined,
+    // A failure is said as one, not as the agent's words (the provider's message can be anything: a quota, a refusal).
+    text: failed ? (wasStopped(run) ? "Stopped." : "") : text,
     tokens: (run.input_tokens ?? 0) + (run.output_tokens ?? 0) || undefined,
   };
   const shows = !stream || stream.text;
+  const broke = failed && !wasStopped(run);
   return (
     <>
       {run.source !== "coding_outcome" && (
@@ -493,8 +561,29 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
           tag={WORK_MODES.find(([v]) => v === run.work_mode)?.[1]}
         />
       )}
-      {shows && (reply.text || run.approvals?.length || limited) ? (
-        <Message m={reply} projectId={projectId}>
+      {shows && (reply.text || run.approvals?.length || limited || broke) ? (
+        <Message
+          m={reply}
+          projectId={projectId}
+          sources={stream ? undefined : run.sources}
+          usage={
+            stream
+              ? undefined
+              : {
+                  input: run.input_tokens,
+                  cached: run.cached_input_tokens,
+                  output: run.output_tokens,
+                  calls: run.model_calls,
+                  complete: run.usage_complete,
+                  model: run.model ? modelName(run.model) : null,
+                  mine: run.requested_by_id === D().me,
+                }
+          }
+        >
+          {broke && <RunFailure who={agentName(handleOf(run.agent))} message={run.error} />}
+          {scope && !stream && run.status === "completed" && run.requested_by_id === D().me && !!run.reply && (
+            <PublishChatOutcome scope={scope} runId={run.id} reply={run.reply} />
+          )}
           {projectId && <RunApprovals run={run} scope={scope} />}
           {projectId && !stream && <RunSteps scope={scope} runId={run.id} />}
           {limited && projectId && (
@@ -510,10 +599,10 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
               <span className="muted" style={{ fontSize: 12.5 }}>
                 It goes on from where it stopped; any change it repeats waits for your approval.
               </span>
-              <button className="btn btn-sm btn-secondary" disabled={cont.isPending} onClick={() => cont.mutate({ runId: run.id, whenReset: false })}>
+              <ActionButton className="btn btn-sm btn-secondary" disabled={cont.isPending} onClick={() => cont.mutate({ runId: run.id, whenReset: false })}>
                 <Ic n="play" s={12} />
                 Continue
-              </button>
+              </ActionButton>
             </div>
           )}
         </Message>
@@ -522,38 +611,9 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
   );
 }
 
-/** What the agents did for a reply (kept after the run), folded until asked for. */
+/** What the agents did for a reply (kept after the run): a Subagent line each, folded until asked for. */
 function SpecialistTasks({ tasks, scope }: { tasks: SpecialistTask[]; scope: Scope | undefined }) {
-  if (!tasks.length) return null;
-  return (
-    <section className="specialist-tasks" aria-label="Specialist activity">
-      {tasks.map((task) => (
-        <details className="specialist-task" key={task.id}>
-          <summary>
-            <b>{agentName(task.agent ?? "auto")}</b>
-            <span className="muted">{task.task_key}</span>
-            <span className="badge">{task.status.replaceAll("_", " ")}</span>
-          </summary>
-          <p>{task.task_result?.summary || task.error || task.message}</p>
-          {task.task_result?.risks?.map((risk, index) => (
-            <p className="muted" key={index}>
-              {risk}
-            </p>
-          ))}
-          {task.task_result?.evidence?.length ? (
-            <ul>
-              {task.task_result.evidence.map((ref, index) => (
-                <li className="mono" key={index}>
-                  {ref}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {task.status === "awaiting_approval" && <TaskApproval scope={scope} id={task.id} />}
-        </details>
-      ))}
-    </section>
-  );
+  return <Subagents tasks={tasks} approval={(task) => <TaskApproval scope={scope} id={task.id} />} />;
 }
 
 function TaskApproval({ scope, id }: { scope: Scope | undefined; id: string }) {
@@ -561,103 +621,66 @@ function TaskApproval({ scope, id }: { scope: Scope | undefined; id: string }) {
   return run ? <RunApprovals run={run} scope={scope} /> : null;
 }
 
-/** What Nova thought, as its model summarised it: live, the latest of it, as it comes; kept, all of it. */
-function Thinking({ text, live = false }: { text: string; live?: boolean }) {
-  const [open, setOpen] = useState(live);
-  const shown = live && text.length > 600 ? `…${text.slice(-600)}` : text;
-  return (
-    <div className="chat-thinking">
-      <button className="chat-steps-h" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
-        {live ? "Thinking" : "Thought"}
-      </button>
-      {open && (
-        <div className="chat-thinking-text" aria-live={live ? "polite" : undefined}>
-          {shown}
-        </div>
-      )}
-    </div>
-  );
-}
-
+/** A reply's steps and what its model thought, kept after the run: loaded when first opened. */
 function RunSteps({ scope, runId }: { scope: Scope | undefined; runId: string }) {
   const [open, setOpen] = useState(false);
   const steps = useRunSteps(scope, runId, open);
   return (
-    <div style={{ marginTop: 6 }}>
-      <button className="btn btn-sm btn-ghost" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
-        Steps
-      </button>
-      {open && (
-        <>
-          {steps.data?.thinking && <Thinking text={steps.data.thinking} />}
-          <ol className="muted" style={{ fontSize: 12.5, margin: "4px 0 0 20px" }} aria-label="Steps">
-            {steps.data?.steps.length ? (
-              steps.data.steps.map((label, i) => <li key={i}>{label}</li>)
-            ) : (
-              <li>{steps.isLoading ? "Loading…" : "No steps kept"}</li>
-            )}
-          </ol>
-        </>
-      )}
+    <div className="agent-trace-steps">
+      <ChainOfThought
+        title="Steps"
+        steps={steps.data?.steps ?? []}
+        thinking={steps.data?.thinking || undefined}
+        loading={steps.isLoading}
+        onOpenChange={setOpen}
+      />
     </div>
   );
 }
 
-const MODELS_ICON = "cpu";
-
 /** A version of the conversation's plan; the latest can be built (a Build message naming its version). */
 function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean; busy: boolean; onBuild: () => void }) {
   return (
-    <div className="change" role="group" aria-label={`Plan version ${plan.version}`} style={{ margin: "4px 0 12px 36px" }}>
+    <div className="change" role="group" aria-label={`Plan version ${plan.version}`} style={{ margin: "4px 0 12px" }}>
       <div className="change-h">
         <Ic n="list-checks" s={14} />
         <b style={{ fontWeight: 500 }}>{plan.title}</b>
         <span className="badge">Plan v{plan.version}</span>
       </div>
-      <div style={{ padding: "8px 12px", fontSize: 13 }}>
-        <p style={{ margin: "0 0 8px" }}>{plan.summary}</p>
-        {plan.acceptance_criteria.length > 0 && (
-          <>
-            <div className="faint" style={{ fontSize: 11.5 }}>
-              Acceptance criteria
-            </div>
-            <ul style={{ margin: "2px 0 8px", paddingLeft: 18 }}>
-              {plan.acceptance_criteria.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
-          </>
+      <div className="agent-plan-body">
+        <p style={{ margin: 0 }}>{plan.summary}</p>
+        <PlanSteps
+          title={`${plan.tasks.length} task${plan.tasks.length === 1 ? "" : "s"}`}
+          steps={plan.tasks.map((t) => ({
+            title: t.title,
+            detail: t.detail || undefined,
+            note: t.depends_on.length ? `after ${t.depends_on.join(", ")}` : undefined,
+          }))}
+        />
+        {plan.execution && (
+          <details>
+            <summary>
+              Implementation details · {plan.execution.repository} · {plan.execution.base_sha.slice(0, 8)}
+            </summary>
+            <TraceList title="Constraints" items={plan.execution.constraints ?? []} icon="question" />
+            <TraceList title="Out of scope" items={plan.execution.exclusions ?? []} icon="question" />
+            {plan.execution.tasks.map((task) => (
+              <div key={task.key}>
+                <p>
+                  <b>
+                    Task {task.task_number}: {task.key}
+                  </b>
+                </p>
+                <TraceList title="Owned paths" items={task.owned_paths} icon="file" />
+                <p>{task.instructions}</p>
+                <TraceList title="Verification" items={(task.checks ?? []).map((check) => `${check.command} — ${check.expected}`)} icon="check-square" />
+                <TraceList title="Stop conditions" items={task.stop_conditions} icon="question" />
+              </div>
+            ))}
+          </details>
         )}
-        <div className="faint" style={{ fontSize: 11.5 }}>
-          Tasks
-        </div>
-        <ol style={{ margin: "2px 0 8px", paddingLeft: 18 }}>
-          {plan.tasks.map((t, i) => (
-            <li key={i}>
-              {t.title}
-              {t.depends_on.length > 0 && <span className="faint"> · after {t.depends_on.join(", ")}</span>}
-              {t.detail && (
-                <div className="muted" style={{ fontSize: 12 }}>
-                  {t.detail}
-                </div>
-              )}
-            </li>
-          ))}
-        </ol>
-        {plan.open_questions.length > 0 && (
-          <>
-            <div className="faint" style={{ fontSize: 11.5 }}>
-              Open questions
-            </div>
-            <ul style={{ margin: "2px 0 0", paddingLeft: 18 }}>
-              {plan.open_questions.map((q) => (
-                <li key={q}>{q}</li>
-              ))}
-            </ul>
-          </>
-        )}
+        <TraceList title="Acceptance criteria" items={plan.acceptance_criteria} icon="check-square" />
+        <TraceList title="Open questions" items={plan.open_questions} icon="question" />
       </div>
       {latest && (
         <div className="change-f">
@@ -665,10 +688,10 @@ function PlanCard({ plan, latest, busy, onBuild }: { plan: Plan; latest: boolean
             Building asks for your approval before anything changes, and Kai's coding before it starts.
           </span>
           <span className="sp" />
-          <button className="btn btn-sm btn-primary" disabled={busy} onClick={onBuild}>
+          <ActionButton className="btn btn-sm btn-primary" disabled={busy} onClick={onBuild}>
             <Ic n="hammer" s={12} />
             Build this plan
-          </button>
+          </ActionButton>
         </div>
       )}
     </div>
@@ -681,61 +704,204 @@ function Pick({
   options,
   label,
   lead,
+  plain = false,
+  groupOf,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: [string, string][];
   label: string;
   lead?: React.ReactNode;
+  /** Compact text trigger for the composer and its options menu. */
+  plain?: boolean;
+  /** Options under headings (the Model Selector's providers): each option's group, "" for none. */
+  groupOf?: (value: string) => string;
 }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const name = options.find(([v]) => v === value)?.[1] ?? value;
+  const grouped = groupsOf(options, groupOf);
+  const choices = grouped.map(([title, rows]) => ({
+    type: "section" as const,
+    title: title || undefined,
+    options: rows.map(([value, label]) => ({ value, label })),
+  }));
   return (
-    <span
-      className="cpill pick"
-      onKeyDown={(e) => {
-        if (e.key === "Escape" && open) {
-          e.stopPropagation();
-          setOpen(false);
-          btnRef.current?.focus();
-        }
-      }}
-    >
-      <button
-        ref={btnRef}
-        type="button"
-        className="pick-open"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={`${label}: ${name}`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        {lead}
-        <span className="trunc">{name}</span>
-        <Ic n="chevron-down" s={11} />
-      </button>
-      {open && (
-        <>
-          <span className="pick-veil" aria-hidden onClick={() => setOpen(false)} />
-          <span className="cmenu" role="listbox" aria-label={label}>
-            {options.map(([v, l]) => (
-              <button
-                key={v}
-                type="button"
-                role="option"
-                aria-selected={v === value}
-                className={`mi ${v === value ? "on" : ""}`}
-                onClick={() => (onChange(v), setOpen(false))}
-              >
-                <span className="trunc">{l}</span>
-                {v === value && <Ic n="check" s={13} />}
-              </button>
-            ))}
+    <span className={plain ? "dotrix-inline-picker" : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {lead}
+      <Selector label={label} isLabelHidden value={value} onChange={onChange} options={choices} hasSearch={options.length > 8} size="sm" />
+    </span>
+  );
+}
+
+/** Options in their groups, in the order each group first appears; one unnamed group without `groupOf`. */
+function groupsOf(options: [string, string][], groupOf?: (value: string) => string): [string, [string, string][]][] {
+  if (!groupOf) return [["", options]];
+  const out = new Map<string, [string, string][]>();
+  for (const o of options) {
+    const g = groupOf(o[0]);
+    out.set(g, [...(out.get(g) ?? []), o]);
+  }
+  return out.size > 1 ? [...out] : [["", options]];
+}
+
+/** Where a new session codes, as Claude Code's environment menu: this computer (its folder for the
+ *  project, or a computer running `dotrix runner`), the cloud sandbox, and, in the desktop app, a folder to
+ *  add. */
+function WhereItCodes({
+  location,
+  setWhere,
+  cloudReady,
+  cloudWhy,
+  localReady,
+  localName,
+  localWhy,
+  folder,
+  canAdd,
+  adding,
+  onAdd,
+  onClose,
+}: {
+  location: "cloud" | "local";
+  setWhere: (where: "cloud" | "local") => void;
+  cloudReady: boolean;
+  cloudWhy?: string | null;
+  localReady: boolean;
+  localName?: string | null;
+  localWhy?: string | null;
+  folder?: DesktopRunner;
+  canAdd: boolean;
+  adding: boolean;
+  onAdd: () => void;
+  onClose: () => void;
+}) {
+  const folderName = folder ? folder.folder.split(/[\\/]/).filter(Boolean).pop() : null;
+  const localLabel = folderName ?? localName ?? "Your computer";
+  const starting = adding || folder?.state === "starting";
+  const choose = (where: "cloud" | "local") => {
+    setWhere(where);
+    onClose();
+  };
+  return (
+    <div className="composer-environment-options" role="group" aria-label="Where it codes">
+      <span className="composer-menu-heading">Environment</span>
+      {localReady || folder ? (
+        <DesignButton
+          label={localReady ? localLabel : `${localLabel} (${starting ? "Starting…" : folder?.state === "failed" ? "Stopped" : "Not ready"})`}
+          variant="ghost"
+          className="composer-menu-option"
+          icon={<Ic n="laptop" s={16} />}
+          aria-pressed={location === "local"}
+          isDisabled={!localReady}
+          data-tip={folder?.folder ?? localWhy ?? undefined}
+          onClick={() => choose("local")}
+        />
+      ) : (
+        !canAdd && (
+          <span className="composer-menu-note" title={localWhy ?? undefined}>
+            Run <InlineCode>dotrix runner</InlineCode> in your checkout, or use the desktop app
           </span>
-        </>
+        )
+      )}
+      {canAdd && (
+        <DesignButton
+          label={folder ? (folder.state === "failed" ? "Choose the folder again" : "Choose another folder") : "Add a folder"}
+          variant="ghost"
+          className="composer-menu-option"
+          icon={<Ic n="folder-plus" s={16} />}
+          isDisabled={starting}
+          onClick={() => {
+            onAdd();
+            choose("local");
+          }}
+        />
+      )}
+      <DesignButton
+        label="Cloud sandbox"
+        variant="ghost"
+        className="composer-menu-option"
+        icon={<Ic n="cloud" s={16} />}
+        aria-pressed={location === "cloud"}
+        data-tip={cloudReady ? "In a sandbox on the platform" : (cloudWhy ?? undefined)}
+        onClick={() => choose("cloud")}
+      />
+    </div>
+  );
+}
+
+/** New sessions choose a model; existing sessions keep the model admitted for their run. */
+function ComposerModel({
+  model,
+  models,
+  onChange,
+  empty = "No models connected",
+}: {
+  model?: string | null;
+  models?: [string, string][];
+  onChange?: (model: string) => void;
+  empty?: string;
+}) {
+  return (
+    <span className="cmp-model composer-model">
+      {onChange && models?.length ? (
+        <Pick plain value={model ?? ""} onChange={onChange} options={models} label="Model" groupOf={providerName} />
+      ) : (
+        <DesignButton label={model ? modelName(model) : empty} aria-label="Model" variant="ghost" size="sm" isDisabled />
       )}
     </span>
+  );
+}
+
+function CodingOptions({
+  mode,
+  setMode,
+  local,
+  disabled = false,
+  onOpenChange,
+  focusInput,
+  children,
+}: {
+  mode: "plan" | "build";
+  setMode: (mode: "plan" | "build") => void;
+  local: boolean;
+  disabled?: boolean;
+  onOpenChange: (open: boolean) => void;
+  focusInput: () => void;
+  children?: (close: () => void) => React.ReactNode;
+}) {
+  return (
+    <ComplexSelector
+      label="Code options"
+      isLabelHidden
+      value=""
+      placement="below"
+      alignment="start"
+      isDisabled={disabled}
+      onOpenChange={onOpenChange}
+      renderTrigger={(props) => (
+        <DesignButton {...props} role="button" label="Code options" variant="ghost" size="sm" isIconOnly icon={<Ic n="plus" s={20} />} />
+      )}
+    >
+      {(_value, _change, close) => (
+        <div className="composer-options-menu">
+          <span className="composer-menu-heading">Mode</span>
+          {(["build", "plan"] as const).map((value) => (
+            <DesignButton
+              key={value}
+              className="composer-menu-option"
+              label={value === "plan" ? "Plan (read only)" : "Build"}
+              variant="ghost"
+              aria-pressed={mode === value}
+              icon={<Ic n={mode === value ? "check" : value === "plan" ? "list-checks" : "hammer"} s={16} />}
+              isDisabled={disabled || (value === "plan" && local)}
+              onClick={() => {
+                setMode(value);
+                close();
+                focusInput();
+              }}
+            />
+          ))}
+          {children?.(close)}
+        </div>
+      )}
+    </ComplexSelector>
   );
 }
 
@@ -758,6 +924,8 @@ function Composer({
   setApproval,
   runtime,
   setRuntime,
+  onStop,
+  stopDisabled = false,
   modeOptions = WORK_MODES,
   disabled = false,
 }: {
@@ -779,16 +947,52 @@ function Composer({
   setApproval?: (m: ApprovalMode) => void;
   runtime?: ChatRuntime;
   setRuntime?: (runtime: ChatRuntime) => void;
+  onStop?: () => void;
+  stopDisabled?: boolean;
   modeOptions?: typeof WORK_MODES;
   disabled?: boolean;
 }) {
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const a = D().agents.find((x) => x.handle === agent);
+  const ref = useRef<ChatComposerInputHandle>(null);
+  const picker = useRef<ComplexSelectorHandle>(null);
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false);
+  const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!composerMenuOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const scroller = wrapper.current?.closest(".ns");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [composerMenuOpen]);
+  const a = useAgents().items.find((x) => x.handle === agent);
   // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
-  const at = useAtPicker({ text, setText, ref, projects: contexts, project: context, onProject: setContext, modes: modeOptions, mode, onMode: setMode });
+  const choices = useMemo(
+    () => [
+      ...(contexts && setContext ? contexts.map(([id, label]) => ({ id: `project:${id}`, label, auxiliaryData: { group: "Projects" } })) : []),
+      ...(setMode ? modeOptions.map(([id, label]) => ({ id: `mode:${id}`, label, auxiliaryData: { group: "Modes" } })) : []),
+    ],
+    [contexts, setContext, setMode, modeOptions],
+  );
+  const choose = (id: string) => {
+    if (id.startsWith("project:")) setContext?.(id.slice(8));
+    else if (id.startsWith("mode:")) setMode?.(id.slice(5) as WorkMode);
+    return "";
+  };
+  const triggers = [
+    {
+      character: "@",
+      searchSource: {
+        search: (query: string) => choices.filter((choice) => choice.label.toLowerCase().includes(query.toLowerCase())),
+        bootstrap: () => choices,
+      },
+      onSelect: (item: { id: string }) => choose(item.id),
+      menuLabel: contexts ? "Projects and modes" : "Modes",
+    },
+  ];
+
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
@@ -806,130 +1010,153 @@ function Composer({
       setSubmitting(false);
     }
   };
-  const modeLabel = WORK_MODES.find(([v]) => v === mode)?.[1] ?? "";
   return (
-    <div style={{ position: "relative" }}>
-      <div className="cbox">
-        <textarea
-          ref={ref}
-          rows={2}
-          placeholder={placeholder}
-          value={text}
-          disabled={submitting}
-          onChange={(e) => at.onChange(e.target)}
-          onKeyDown={(e) => {
-            if (at.onKeyDown(e)) return;
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          aria-label="Message"
-          aria-expanded={at.open}
-        />
-        <div className="cbox-row">
-          {(contexts || (mode && setMode)) && (
-            <button
-              type="button"
-              className="cpill pick"
-              onClick={at.start}
-              aria-label="Project and mode"
-              aria-haspopup="listbox"
-              aria-expanded={at.open}
-              data-tip="Pick a project or a mode (or type @)"
+    <div ref={wrapper} className={`dotrix-composer-wrap ${composerMenuOpen ? "menu-open" : ""}`} style={{ position: "relative" }}>
+      <ChatComposer
+        className={`dotrix-composer compact-composer ${text ? "has-draft" : ""}`}
+        onSubmit={() => {
+          void send();
+        }}
+        value={text}
+        isDisabled={disabled || submitting}
+        input={
+          <ChatComposerInput
+            handleRef={ref}
+            value={text}
+            onChange={setText}
+            placeholder={placeholder}
+            label="Message"
+            triggers={triggers}
+            pasteAsToken={false}
+            hasHistory={false}
+            onKeyDown={(event) => {
+              // Astryx's default Enter clears synchronously. Dotrix clears only
+              // after the server accepts the message, retaining failed drafts.
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+            isDisabled={submitting || disabled}
+            onSubmit={() => {
+              void send();
+            }}
+          />
+        }
+        footerActions={
+          <>
+            <ComplexSelector
+              handleRef={picker}
+              label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
+              isLabelHidden
+              value=""
+              placement="below"
+              alignment="start"
+              onOpenChange={setComposerMenuOpen}
+              renderTrigger={(triggerProps) => (
+                <DesignButton
+                  {...triggerProps}
+                  role="button"
+                  label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
+                  variant="ghost"
+                  size="sm"
+                  isIconOnly
+                  icon={<Ic n="plus" s={18} />}
+                />
+              )}
             >
-              <Ic n="plus" s={12} />
-            </button>
-          )}
-          {contexts && setContext && context !== undefined ? (
-            <button
-              className="cpill pick"
-              onClick={at.start}
-              aria-label={`Project: ${contexts.find(([v]) => v === context)?.[1]}`}
-              aria-haspopup="listbox"
-              aria-expanded={at.open}
-              data-tip="Pick a project or a mode (or type @)"
-            >
-              <Ic n={context ? "at-sign" : "layers"} s={12} />
-              <span className="trunc">{contexts.find(([v]) => v === context)?.[1]}</span>
-            </button>
-          ) : (
-            context && (
-              <span className="cpill" data-tip="What the agents read: the project's documents and board">
-                <Ic n="at-sign" s={12} />
-                {context}
-              </span>
-            )
-          )}
-          {mode && setMode && (
-            <button
-              className="cpill pick"
-              onClick={at.start}
-              aria-label={`Mode: ${modeLabel}`}
-              aria-haspopup="listbox"
-              aria-expanded={at.open}
-              data-tip={WORK_MODES.find(([v]) => v === mode)?.[2]}
-            >
-              <Ic n={MODE_ICONS[mode]} s={12} />
-              <span className="trunc">{modeLabel}</span>
-            </button>
-          )}
-          {approval && setApproval && approvals.length > 1 && (
-            <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
-              <Pick
-                value={approval}
-                onChange={(v) => setApproval(v as ApprovalMode)}
-                options={approvals.map(([v, l]): [string, string] => [v, l])}
-                label="Approvals"
-                lead={<Ic n={approval === "manual" ? "shield-check" : "zap"} s={12} />}
+              {(_value, _change, close) => (
+                <div className="composer-options-menu">
+                  {choices.map((choice, index) => (
+                    <Fragment key={choice.id}>
+                      {(index === 0 || choices[index - 1]?.auxiliaryData.group !== choice.auxiliaryData.group) && (
+                        <span className="composer-menu-heading">{choice.auxiliaryData.group}</span>
+                      )}
+                      <DesignButton
+                        label={choice.label}
+                        variant="ghost"
+                        className="composer-menu-option"
+                        icon={
+                          <Ic
+                            n={
+                              choice.id === `mode:${mode}` || choice.id === `project:${context}`
+                                ? "check"
+                                : choice.id.startsWith("mode:")
+                                  ? MODE_ICONS[choice.id.slice(5) as WorkMode]
+                                  : choice.id === "project:"
+                                    ? "layers"
+                                    : "folder"
+                            }
+                            s={16}
+                          />
+                        }
+                        aria-pressed={choice.id.startsWith("mode:") ? choice.id === `mode:${mode}` : choice.id === `project:${context}`}
+                        onClick={() => {
+                          choose(choice.id);
+                          close();
+                          ref.current?.focus();
+                        }}
+                      />
+                    </Fragment>
+                  ))}
+                  {choices.length === 0 && <span className="composer-menu-note">General chat</span>}
+                  {approval && setApproval && approvals.length > 1 && (
+                    <span>
+                      <Pick
+                        plain
+                        value={approval}
+                        onChange={(v) => setApproval(v as ApprovalMode)}
+                        options={approvals.map(([v, l]): [string, string] => [v, l])}
+                        label="Approvals"
+                      />
+                    </span>
+                  )}
+                  {runtime &&
+                    (setRuntime ? (
+                      <Pick
+                        plain
+                        value={runtime}
+                        onChange={(v) => setRuntime(v as ChatRuntime)}
+                        options={[
+                          ["deepagents", "Standard"],
+                          ["fx", "fx"],
+                        ]}
+                        label="Chat runtime"
+                      />
+                    ) : (
+                      runtime === "fx" && <span data-tip="This conversation runs on fx">fx</span>
+                    ))}
+                  {agent !== "auto" && a && setAgent && (
+                    <button className="cmp-chip" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
+                      Involve {a.name} <Ic n="x" s={10} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </ComplexSelector>
+          </>
+        }
+        sendActions={<ComposerModel model={model} models={models} onChange={setModel} empty={setModel ? "No models connected" : "Model not recorded"} />}
+        sendButton={
+          <>
+            {(!onStop || text.trim()) && (
+              <ChatSendButton
+                onSend={() => {
+                  void send();
+                }}
+                isDisabled={!text.trim() || S.ui.offline || disabled || submitting}
               />
-            </span>
-          )}
-          {agent !== "auto" && a && setAgent && (
-            <button className="cpill" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
-              Involve {a.name} <Ic n="x" s={10} />
-            </button>
-          )}
-          {runtime &&
-            (setRuntime ? (
-              <Pick
-                value={runtime}
-                onChange={(v) => setRuntime(v as ChatRuntime)}
-                options={[
-                  ["deepagents", "Standard"],
-                  ["fx", "fx"],
-                ]}
-                label="Chat runtime"
-              />
-            ) : (
-              runtime === "fx" && (
-                <span className="cpill" data-tip="This conversation runs on fx">
-                  fx
-                </span>
-              )
-            ))}
-          {setModel && models?.length ? (
-            <Pick value={model ?? ""} onChange={setModel} options={models ?? []} label="Model" lead={<Ic n={MODELS_ICON} s={12} />} />
-          ) : (
-            model && (
-              <span className="cpill" data-tip="The model is fixed once a conversation starts">
-                <Ic n={MODELS_ICON} s={12} />
-                {model}
-              </span>
-            )
-          )}
-          <span className="sp" />
-          <button className="cbox-send" onClick={send} disabled={!text.trim() || S.ui.offline || disabled || submitting} aria-label="Send">
-            <Ic n="arrow-up" s={14} />
-          </button>
-        </div>
-      </div>
-      {at.menu}
+            )}
+            {onStop && <ChatSendButton isStopShown onStop={onStop} isDisabled={stopDisabled} aria-label="Stop run" />}
+          </>
+        }
+      />
     </div>
   );
 }
 
 function Conversation({ id, projectId, title }: { id: string; projectId: string | null; title: string }) {
+  const { items: agents } = useAgents();
   const ws = wsId();
   const p = proj(projectId ?? "");
   const scope = useMemo(() => (ws && projectId ? { workspaceId: ws, projectId } : undefined), [ws, projectId]);
@@ -970,11 +1197,6 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   const coded = (useCodingSessions(ws, Boolean(projectId)).data ?? []).filter((c) => c.thread_id === id);
   const anchorOf = (c: CodingSession) => runs.filter((r) => ms(r.created_at) <= ms(c.started_at)).at(-1)?.id ?? last?.id;
   const latestPlan = plans.at(-1);
-  const end = useRef<HTMLDivElement>(null);
-  const busy = active && !stream.text;
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [id, runs.length, busy, stream.text]);
   const say = (message: string, m: WorkMode = mode) => {
     if (inputBusy) {
       const kind = awaitingApproval ? "queue" : inputKind;
@@ -982,8 +1204,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
       const signature = JSON.stringify([id, projectId, message, kind, m, approval]);
       const client_id = retry?.signature === signature ? retry.client_id : crypto.randomUUID();
       retryInput.current = { signature, client_id };
-      return submitInput.mutateAsync({ message, kind, client_id, work_mode: m, approval_mode: approval }).then(() => {
+      return submitInput.mutateAsync({ message, kind, client_id, work_mode: m, approval_mode: approval }).then((queued) => {
         retryInput.current = null;
+        // The turn had just finished: this is a new message, not a follow-up.
+        if (!queued) return send.mutateAsync({ message, threadId: id, agent, workMode: m, approvalMode: approval }).then(() => {});
       });
     }
     return projectId
@@ -992,7 +1216,14 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   };
   const build = (plan: Plan) => {
     setMode("build");
-    say(`Build plan version ${plan.version}: ${plan.title}`, "build");
+    send.mutate({
+      message: `Build plan version ${plan.version}: ${plan.title}`,
+      threadId: id,
+      agent,
+      workMode: "build",
+      approvalMode: approval,
+      planId: plan.id,
+    });
   };
   const halt = () => working && (projectId ? stop.mutate(working.id) : stopCross.mutate(working.id));
   const about = [...new Set(runs.flatMap((r) => r.project_ids ?? []))].map((pid) => proj(pid)?.name).filter(Boolean);
@@ -1004,10 +1235,10 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
   return (
     <div className="conv">
       <div className="conv-main">
-        <div className="row" style={{ height: 46, padding: "0 16px", borderBottom: "1px solid var(--border)", gap: 8, flexShrink: 0 }}>
-          <button className="ibtn ibtn-sm" onClick={() => open("")} aria-label="Back to conversations">
+        <SessionHeader>
+          <ActionButton className="ibtn ibtn-sm" onClick={() => open("")} aria-label="Back to conversations">
             <Ic n="arrow-left" s={15} />
-          </button>
+          </ActionButton>
           <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
             {title || (runs[0] ? (runs[0].title ?? runTitle(runs[0])) : "")}
           </b>
@@ -1020,12 +1251,12 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
           ) : (
             <span className="pillbtn">
               <Ic n="layers" s={13} />
-              {about.join(", ") || "All projects"}
+              {about.join(", ") || "General"}
             </span>
           )}
           <span className="chat-faces hide-m" aria-label="Agents in this conversation">
             {[...new Set(runs.map((r) => handleOf(r.agent)))].map((h) => {
-              const ag = D().agents.find((x) => x.handle === h);
+              const ag = agents.find((x) => x.handle === h);
               return ag ? (
                 <span key={h} data-tip={`${ag.name} · ${ag.role}`}>
                   <Face c={ag.c} size={20} mood={moodOf(h)} />
@@ -1033,134 +1264,142 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               ) : null;
             })}
           </span>
-        </div>
-        <div className="chat-scroll">
-          <div className="chat-col">
-            {runs.map((r) => (
-              <div key={r.id}>
-                <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
-                <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} />
-                {plans
-                  .filter((pl) => pl.run_id === r.id)
-                  .map((pl) => (
-                    <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
-                  ))}
-                {coded
-                  .filter((c) => anchorOf(c) === r.id)
-                  .map((c) => (
-                    <SessionCard key={c.session_id} cs={c} />
-                  ))}
-              </div>
-            ))}
-            {active && (
-              <div className="chat-msg">
-                <Face c={D().agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={26} mood="working" />
-                <div className="body">
-                  {busy && (
-                    <div className="who">
-                      <b>{agentName(agent)}</b>
-                      <span className="role">{D().agents.find((a) => a.handle === agent)?.role}</span>
-                    </div>
-                  )}
-                  <div className="row muted" style={{ gap: 8, fontSize: 12.5, marginTop: 6 }}>
-                    <span className="chat-typing">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    {stream.activity ?? `${agentName(agent)} is thinking…`}
-                    <span className="sp" />
-                    <button className="btn btn-sm btn-ghost" onClick={halt}>
-                      Stop
-                    </button>
-                  </div>
-                  {stream.thinking && !stream.text && <Thinking text={stream.thinking} live />}
+        </SessionHeader>
+        <ChatLayout
+          className="dotrix-chat-layout"
+          density={S.prefs.density === "compact" ? "compact" : "balanced"}
+          composer={
+            <div className="chat-input">
+              {inputBusy && (
+                <div className="chat-delivery-row">
+                  <label htmlFor="chat-delivery-kind">Send as</label>
+                  <select
+                    id="chat-delivery-kind"
+                    aria-label="Delivery action"
+                    value={awaitingApproval ? "queue" : inputKind}
+                    onChange={(event) => setInputKind(event.target.value as "queue" | "steer")}
+                  >
+                    <option value="queue">Queue after this turn</option>
+                    {!awaitingApproval && <option value="steer">Steer this turn</option>}
+                  </select>
                 </div>
-              </div>
-            )}
-            <div ref={end} />
-          </div>
-        </div>
-        <div className="chat-input">
-          {inputBusy && (
-            <label className="row muted" style={{ gap: 8, fontSize: 12, marginBottom: 8 }}>
-              Send as
-              <select
-                aria-label="Delivery action"
-                value={awaitingApproval ? "queue" : inputKind}
-                onChange={(event) => setInputKind(event.target.value as "queue" | "steer")}
-              >
-                <option value="queue">Queue after this turn</option>
-                {!awaitingApproval && <option value="steer">Steer this turn</option>}
-              </select>
-              <span>
-                {inputKind === "steer" && !awaitingApproval ? "Applies at the next safe point; keeps current approvals." : "Waits until this turn completes."}
-              </span>
-            </label>
-          )}
-          {chatInputs
-            .filter(
-              (item) =>
-                item.status === "pending" ||
-                item.status === "sending" ||
-                item.status === "rejected" ||
-                (item.status === "accepted" && item.run_id === working?.id),
-            )
-            .slice(0, 20)
-            .reverse()
-            .map((item) => (
-              <div key={item.id} className="row muted" style={{ gap: 8, fontSize: 12, marginBottom: 6 }}>
-                <span>
-                  {item.kind === "queue" ? "Queued follow-up" : "Steering"}: {item.message}
-                </span>
-                <span>{item.status === "accepted" ? "Steering accepted" : item.status}</span>
-                {item.error && <span>{item.error}</span>}
-                {item.status === "pending" && (
-                  <button className="btn btn-sm btn-ghost" disabled={cancelInput.isPending} onClick={() => cancelInput.mutate(item.id)}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            ))}
-          <Composer
-            placeholder="Ask Nova, or type @ to pick a mode"
-            agent={agent}
-            model={modelName(last?.conversation_model) || undefined}
-            context={p?.name ?? "All projects"}
-            onSend={(q) => say(q)}
-            mode={projectId ? mode : undefined}
-            setMode={projectId ? setMode : undefined}
-            modeOptions={WORK_MODES}
-            runtime={fxPreview ? "fx" : undefined}
-            approval={projectId ? approval : undefined}
-            setApproval={projectId ? setApproval : undefined}
-            autoFocus
-          />
-          {fxPreview && (
-            <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-              {fxRun?.orchestration ? FX_NOTE : `${FX_NOTE} It can't involve specialists here.`}
+              )}
+              <Queue
+                entries={chatInputs
+                  .filter(
+                    (item) =>
+                      item.status === "pending" ||
+                      item.status === "sending" ||
+                      item.status === "rejected" ||
+                      (item.status === "accepted" && item.run_id === working?.id),
+                  )
+                  .slice(0, 20)
+                  .reverse()
+                  .map((item) => ({
+                    id: item.id,
+                    kind: item.kind,
+                    message: item.message,
+                    status: item.status,
+                    error: item.error,
+                    said:
+                      item.status === "accepted"
+                        ? item.kind === "steer"
+                          ? "Accepted for the next safe point"
+                          : "Queued after this turn"
+                        : item.status === "rejected"
+                          ? "Not delivered"
+                          : item.status === "sending"
+                            ? "Sending…"
+                            : "Waiting to send",
+                    onCancel: item.status === "pending" ? () => cancelInput.mutate(item.id) : undefined,
+                    cancelling: cancelInput.isPending,
+                  }))}
+              />
+              <Composer
+                placeholder="Ask Nova, or type @ to pick a mode"
+                agent={agent}
+                model={last?.conversation_model ?? last?.model ?? undefined}
+                context={p?.name ?? "General"}
+                onSend={(q) => say(q)}
+                mode={projectId ? mode : undefined}
+                setMode={projectId ? setMode : undefined}
+                modeOptions={WORK_MODES}
+                runtime={fxPreview ? "fx" : undefined}
+                approval={projectId ? approval : undefined}
+                setApproval={projectId ? setApproval : undefined}
+                onStop={active ? halt : undefined}
+                stopDisabled={stop.isPending || stopCross.isPending}
+                autoFocus
+              />
             </div>
-          )}
-          {!projectId && (
-            <div className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
-              <Ic n="lock" s={11} /> In all projects the agents only read; for a change they'll say which project's chat to ask in.
+          }
+        >
+          <ChatMessageList>
+            <div className="chat-col">
+              {runs.map((r) => (
+                <div key={r.id}>
+                  <RunMessages run={r} projectId={projectId} scope={scope} stream={r.id === last?.id && active ? stream : null} />
+                  <SpecialistTasks tasks={delegated.filter((task) => task.parent_run_id === r.id)} scope={scope} />
+                  {plans
+                    .filter((pl) => pl.run_id === r.id)
+                    .map((pl) => (
+                      <PlanCard key={pl.id} plan={pl} latest={pl.id === latestPlan?.id} busy={active} onBuild={() => build(pl)} />
+                    ))}
+                  {coded
+                    .filter((c) => anchorOf(c) === r.id)
+                    .map((c) => (
+                      <SessionCard key={c.session_id} cs={c} />
+                    ))}
+                </div>
+              ))}
+              {active && (
+                <div className="chat-msg agent working">
+                  <div className="who">
+                    <Face c={agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
+                    <b>{agents.find((a) => a.handle === agent)?.name ?? agent}</b>
+                    <span className="role">{agents.find((a) => a.handle === agent)?.role}</span>
+                  </div>
+                  <div className="body">
+                    <Trace className="agent-trace" aria-live="polite">
+                      <TraceLine status="running">
+                        <TraceIcon>
+                          <Ic n="spinner-gap" cls="animate-spin" />
+                        </TraceIcon>
+                        <TraceTitle>{stream.activity ?? `${agentName(agent)} is thinking…`}</TraceTitle>
+                      </TraceLine>
+                    </Trace>
+                    {stream.thinking && !stream.text && <Reasoning text={stream.thinking} live />}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </ChatMessageList>
+        </ChatLayout>
       </div>
     </div>
   );
 }
 
-function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null; across: boolean; q: string; agent0: string | null }) {
+function NewChat({
+  projectKey,
+  across,
+  q,
+  agent0,
+  mode0,
+}: {
+  projectKey: string | null;
+  across: boolean;
+  q: string;
+  agent0: string | null;
+  mode0: string | null;
+}) {
   const ws = wsId();
-  const ps = visibleProjects().filter((p) => canSee(p) && !p.archived);
-  const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ps[0]?.id ?? ""));
-  const [picked, setPicked] = useState<string[]>(ps.slice(0, 3).map((p) => p.id));
+  const ps = useProjects().items.filter((p) => canSee(p));
+  const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ""));
   const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
-  const [mode, setMode] = useState<WorkMode>("discuss");
+  const [mode, setMode] = useState<WorkMode>(mode0 === "plan" ? "plan" : "discuss");
   const [runtime, setRuntime] = useState<ChatRuntime>("deepagents");
   const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
@@ -1176,50 +1415,59 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
       ? send
           .mutateAsync({ message: text, threadId: null, ...body, workMode: mode, approvalMode: approval, chatRuntime: runtime })
           .then((run) => `thread=${run.thread_id}&project=${proj(pid)?.key}`)
-      : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: picked, ...body }).then((run) => `thread=${run.thread_id}&across=1`);
+      : sendCross.mutateAsync({ message: text, thread_id: null, project_ids: [], ...body }).then((run) => `thread=${run.thread_id}&across=1`);
     started.then(open, () => {});
   };
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
-    <div className="conv">
-      <button className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
-        <Ic n="arrow-left" s={16} />
-      </button>
-      <div className="chat-scroll" style={{ display: "flex" }}>
-        <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-          <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>
+    <div className="conv new-conversation">
+      <div className="session-start-header">
+        <SessionListToggle />
+        <ActionButton className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
+          <Ic n="arrow-left" s={16} />
+        </ActionButton>
+      </div>
+      <div className="ns">
+        <div className="ns-mid">
+          <h2 className="ns-title">
             {greeting()}, {me()?.name.split(" ")[0]}
           </h2>
-          <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
-            Ask the agents about a project: they read its documents and board, and propose changes for you to approve.
-          </p>
-          {!pid && (
-            <div className="row" role="group" aria-label="Projects" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap", justifyContent: "center" }}>
-              <span className="faint" style={{ fontSize: 12 }}>
-                Projects
-              </span>
-              {ps.map((p) => (
-                <label key={p.id} className="badge" style={{ cursor: "pointer", gap: 5 }}>
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(p.id)}
-                    onChange={() => setPicked(picked.includes(p.id) ? picked.filter((x) => x !== p.id) : [...picked, p.id])}
-                  />
-                  {p.name}
-                </label>
-              ))}
-            </div>
-          )}
+          <ChoiceCard
+            label="Chat context"
+            choices={[
+              ...ps.map((p): Choice => ({ id: p.id, label: p.name, icon: <PIcon p={p} s={14} />, on: pid === p.id, onPick: () => setPid(p.id) })),
+              {
+                id: "",
+                label: "General",
+                icon: <Ic n="layers" s={16} />,
+                on: !pid,
+                onPick: () => {
+                  setPid("");
+                  setRuntime("deepagents");
+                },
+              },
+            ]}
+          />
+        </div>
+        <div className="ns-bottom">
+          <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12, justifyContent: "center" }}>
+            {sugg.map(([i, s]) => (
+              <ActionButton key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable}>
+                <Ic n={i!} s={13} />
+                {s}
+              </ActionButton>
+            ))}
+          </div>
           <Composer
             key={q}
-            placeholder="Ask anything, or type @ to pick a project or a mode"
+            placeholder={pid ? `Ask anything about ${ps.find((p) => p.id === pid)?.name ?? "this project"}` : "Ask Nova anything"}
             agent={agent}
             setAgent={setAgent}
             model={model}
             setModel={setModel}
-            models={availableModels.map((m): [string, string] => [m.id, m.name])}
+            models={availableModels.map((m): [string, string] => [m.id, modelName(m.id, m.name)])}
             context={pid}
-            contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "All projects"]]}
+            contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "General"]]}
             setContext={(value) => {
               setPid(value);
               if (!value) setRuntime("deepagents");
@@ -1236,19 +1484,7 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
             autoFocus
             initial={q}
           />
-          {runtime === "fx" && (
-            <div className="faint" style={{ fontSize: 11.5, marginTop: 6, textAlign: "center" }}>
-              {unavailable ? "Connect a compatible personal model in settings to use fx." : FX_NOTE}
-            </div>
-          )}
-          <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 14, justifyContent: "center" }}>
-            {sugg.map(([i, s]) => (
-              <button key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable || (!pid && !picked.length)}>
-                <Ic n={i!} s={13} />
-                {s}
-              </button>
-            ))}
-          </div>
+          {unavailable && <p role="alert">Connect a compatible personal model in settings to use fx.</p>}
         </div>
       </div>
     </div>
@@ -1260,25 +1496,29 @@ function NewChat({ projectKey, across, q, agent0 }: { projectKey: string | null;
 export function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
   const ps = new Set(
-    visibleProjects()
-      .filter((p) => canSee(p) && !p.archived)
+    useProjects()
+      .items.filter((p) => canSee(p))
       .map((p) => p.id),
   );
   const personal = D().ws.kind === "personal";
-  const liveTasks = useLiveAllTasks(live.ws?.id, isLive());
-  const mine =
-    (isLive() ? liveTasks : undefined)?.filter(
-      (t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me),
-    ) ??
-    (!isLive()
-      ? D().tasks.filter((t) => ps.has(t.project) && !t.archived && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me))
-      : []);
-  const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (D().tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
+  const { tasks } = useAllTasks();
+  const mine = tasks.filter((t) => ps.has(t.project) && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
+  // A real workspace's tasks are known by key; the sample's by id.
+  const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
   const [note, setNote] = useState("");
+  const [codingMode, setCodingMode] = useState<"plan" | "build">("build");
   const [menu, setMenu] = useState<string | null>(null);
   const [menuBtn, setMenuBtn] = useState(false);
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const composerWrap = useRef<HTMLDivElement>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [note]);
   const t = mine.find((issue) => issue.id === tid) ?? task(tid);
   const ws = wsId();
   const pid = t?.project;
@@ -1314,9 +1554,20 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
       .catch((e: unknown) => toast(e instanceof Error ? e.message : "This computer's runner didn't start", { kind: "err" }))
       .finally(() => setAdding(false));
   };
-  const start = useStartCoding(scope, t?.key ?? "", defaultApproval(), location, null, model);
+  // How much goes through without waiting, as in Chat: your default to start, among the modes you may use.
+  const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
+  const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
+  const start = useStartCoding(scope, t?.key ?? "", approval, location, null, model, codingMode);
   // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
   const menuOpen = menu !== null || menuBtn;
+  useEffect(() => {
+    if (!optionsOpen && !menuOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const scroller = composerWrap.current?.closest(".ns");
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [optionsOpen, menuOpen]);
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!t) return;
@@ -1351,120 +1602,206 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
     ref.current?.focus();
   };
   return (
-    <div className="chat-scroll" style={{ display: "flex" }}>
-      <div className="chat-col" style={{ margin: "auto", paddingTop: 56, paddingBottom: 40 }}>
-        <h2 style={{ fontSize: "var(--fs-2xl)", fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px", textAlign: "center" }}>Start a session</h2>
-        <p className="muted" style={{ margin: "0 0 18px", textAlign: "center" }}>
-          Kai works on an issue on its own branch and opens a pull request. It starts once someone who may approve agent changes says yes.
-        </p>
-        <div style={{ position: "relative" }}>
-          <div className="cbox">
-            <textarea
-              ref={ref}
-              rows={3}
-              value={note}
-              autoFocus
-              placeholder={
-                t
-                  ? `What should it do? It gets ${t.key}'s description and acceptance criteria either way`
-                  : `Type @ or / to pick ${personal ? "an issue" : "one of your issues"}, then say what to do`
-              }
-              onChange={(e) => onText(e.target)}
-              onKeyDown={(e) => {
-                if (menuOpen && found.length) {
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
-                    return;
+    <div className="ns">
+      <div className="session-start-header">
+        <SessionListToggle />
+      </div>
+      <div className="ns-mid">
+        <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
+        <h2 className="ns-title">Start a session</h2>
+        {avail && (
+          <ChoiceCard
+            label="Choose environment"
+            choices={[
+              ...(avail.local_available || hereRunner || avail.local_runner
+                ? [
+                    {
+                      id: "local",
+                      label: (hereRunner ? hereRunner.folder.split(/[\\/]/).filter(Boolean).pop() : null) ?? avail?.local_runner ?? "Your computer",
+                      icon: <Ic n="laptop" s={16} />,
+                      group: "This computer",
+                      on: location === "local",
+                      disabled: !avail.local_available,
+                      note: avail.local_available ? undefined : hereRunner?.state === "failed" ? "Stopped" : "Starting…",
+                      tip:
+                        hereRunner?.isolation === "sbx"
+                          ? `In a Docker sandbox on this computer, on ${hereRunner.folder}: Kai may run commands there`
+                          : (hereRunner?.folder ?? "In a worktree of your checkout, with the coding tool signed in there"),
+                      onPick: () => setWhere("local"),
+                    } satisfies Choice,
+                  ]
+                : []),
+              {
+                id: "cloud",
+                label: "Cloud sandbox",
+                icon: <Ic n="cloud" s={16} />,
+                group: "Cloud",
+                on: location === "cloud",
+                note: avail.available ? undefined : "Off",
+                tip: avail.available ? "In a sandbox on the platform" : (avail.reason ?? undefined),
+                onPick: () => setWhere("cloud"),
+              },
+            ]}
+            extra={
+              here && slug && pkey
+                ? (close) => (
+                    <button
+                      type="button"
+                      className="cc-item"
+                      disabled={adding || hereRunner?.state === "starting"}
+                      onClick={() => {
+                        codeHere();
+                        setWhere("local");
+                        close();
+                      }}
+                    >
+                      <Ic n="folder-plus" s={16} />
+                      <span className="trunc grow">{hereRunner ? "Choose another folder" : "Add a folder"}</span>
+                    </button>
+                  )
+                : undefined
+            }
+          />
+        )}
+      </div>
+      <div className="ns-bottom">
+        <div ref={composerWrap} className={`dotrix-composer-wrap ${optionsOpen || menuOpen ? "menu-open" : ""}`}>
+          <ChatComposer
+            className={`dotrix-composer compact-composer coding-start-composer ${note ? "has-draft" : ""}`}
+            value={note}
+            onSubmit={go_}
+            input={
+              <textarea
+                data-dotrix-control
+                className="composer-textarea"
+                ref={ref}
+                rows={1}
+                value={note}
+                autoFocus
+                placeholder={t ? `What should Kai do on ${t.key}?` : `Type @ to pick ${personal ? "an issue" : "one of your issues"}`}
+                onChange={(e) => onText(e.target)}
+                onKeyDown={(e) => {
+                  if (menuOpen && found.length) {
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setHl((hl + (e.key === "ArrowDown" ? 1 : found.length - 1)) % found.length);
+                      return;
+                    }
+                    if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+                      e.preventDefault();
+                      pick(found[hl]!.id);
+                      return;
+                    }
                   }
-                  if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
-                    e.preventDefault();
-                    pick(found[hl]!.id);
-                    return;
+                  if (e.key === "Escape" && menuOpen) {
+                    e.stopPropagation();
+                    setMenu(null);
+                    setMenuBtn(false);
                   }
-                }
-                if (e.key === "Escape" && menuOpen) {
-                  e.stopPropagation();
-                  setMenu(null);
-                  setMenuBtn(false);
-                }
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go_();
-              }}
-              aria-label="What should it do"
-              aria-expanded={menuOpen}
-              aria-controls="cs-issues"
-            />
-            <div className="cbox-row">
-              {t ? (
-                <span className="cpill" style={{ color: "var(--text)" }}>
-                  <Ic n="square-check" s={12} />
-                  <span className="trunc">
-                    {t.key} {t.title}
-                  </span>
-                  <button className="ibtn ibtn-xs" style={{ width: 16, height: 16, marginRight: -4 }} onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
-                    <Ic n="x" s={11} />
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    go_();
+                  }
+                }}
+                aria-label="What should it do"
+                aria-expanded={menuOpen}
+                aria-controls="cs-issues"
+              />
+            }
+            footerActions={
+              <CodingOptions
+                mode={codingMode}
+                setMode={setCodingMode}
+                local={location === "local"}
+                onOpenChange={setOptionsOpen}
+                focusInput={() => ref.current?.focus()}
+              >
+                {(close) => (
+                  <>
+                    <DesignButton
+                      label="Pick an issue"
+                      variant="ghost"
+                      className="composer-menu-option"
+                      icon={<Ic n="square-check" s={16} />}
+                      onClick={() => {
+                        close();
+                        ask();
+                      }}
+                    />
+                    {approvals.length > 1 && (
+                      <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
+                        <Pick
+                          plain
+                          value={approval}
+                          onChange={(v) => setApproval(v as ApprovalMode)}
+                          options={approvals.map(([v, l]): [string, string] => [v, l])}
+                          label="Approvals"
+                        />
+                      </span>
+                    )}
+                    {avail && (avail.local_available || location === "local" || here) && (
+                      <WhereItCodes
+                        location={location}
+                        setWhere={setWhere}
+                        cloudReady={avail.available}
+                        cloudWhy={avail.reason}
+                        localReady={avail.local_available}
+                        localName={avail.local_runner}
+                        localWhy={avail.local_reason}
+                        folder={hereRunner}
+                        canAdd={Boolean(here && slug && pkey)}
+                        adding={adding}
+                        onAdd={codeHere}
+                        onClose={() => {
+                          close();
+                          ref.current?.focus();
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+              </CodingOptions>
+            }
+            sendActions={
+              <ComposerModel
+                model={model}
+                models={models.map((m): [string, string] => [m, modelName(m)])}
+                onChange={setChosenModel}
+                empty={location === "local" ? "Model managed locally" : !t ? "Pick an issue first" : "No models connected"}
+              />
+            }
+            sendButton={
+              <>
+                <span
+                  data-tip={
+                    !t
+                      ? "Pick an issue first"
+                      : !ready
+                        ? ((location === "local" ? avail?.local_reason : avail?.reason) ?? "Kai can't code here yet")
+                        : "Start coding"
+                  }
+                >
+                  <button className="kt-send" onClick={go_} disabled={!t || !ready || start.isPending} aria-label="Start coding">
+                    <Ic n="arrow-up" s={15} />
                   </button>
                 </span>
-              ) : (
-                <button className="cpill pick" onClick={ask} aria-label="Pick an issue" aria-haspopup="listbox" aria-expanded={menuOpen}>
-                  <Ic n="at-sign" s={12} />
-                  Issue
-                </button>
-              )}
-              {avail && (avail.local_available || location === "local") && (
-                <button
-                  className="cpill pick"
-                  onClick={() => setWhere(location === "local" ? "cloud" : "local")}
-                  aria-label="Where it codes"
-                  data-tip={
-                    location === "local"
-                      ? "In a worktree of your checkout, with the coding tool signed in there; the platform pushes what's accepted"
-                      : "In a sandbox on the platform"
-                  }
-                >
-                  <Ic n={location === "local" ? "laptop" : "cloud"} s={12} />
-                  {location === "local" ? `On ${avail.local_runner ?? "your computer"}` : "Cloud"}
-                </button>
-              )}
-              {model && (
-                <Pick value={model} label="Model" lead={<Ic n="sparkles" s={12} />} onChange={setChosenModel} options={models.map((m) => [m, modelName(m)])} />
-              )}
-              {avail && location === "cloud" && !avail.available && (
-                <span className="cpill" data-tip={avail.reason ?? undefined}>
-                  Coding is off
+              </>
+            }
+          />
+          <div className="kt-foot cmp-foot">
+            {t && (
+              <span className="cmp-chip" title={`${t.key} ${t.title}`}>
+                <Ic n="square-check" s={12} />
+                <span className="trunc">
+                  {t.key} {t.title}
                 </span>
-              )}
-              {avail && location === "local" && !avail.local_available && !here && (
-                <span className="cpill" data-tip={avail.local_reason ?? undefined}>
-                  <Ic n="laptop" s={12} />
-                  Not on this computer yet
-                </span>
-              )}
-              {avail && location === "local" && !avail.local_available && here && (
-                <button
-                  className="cpill pick"
-                  onClick={codeHere}
-                  disabled={!slug || !pkey || adding}
-                  aria-label="Local"
-                  data-tip={
-                    hereRunner?.state === "failed"
-                      ? (hereRunner.message ?? "This computer's runner stopped")
-                      : "Choose your checkout of the project's repository: this app codes its turns there, in a worktree"
-                  }
-                >
-                  <Ic n="folder-plus" s={12} />
-                  {adding || hereRunner?.state === "starting" ? "Starting…" : hereRunner?.state === "failed" ? "Runner stopped: choose again" : "Local"}
-                </button>
-              )}
-              <span className="sp" />
-              <span className="faint hide-m" style={{ fontSize: 11 }}>
-                {MOD}+Enter to start
+                <ActionButton className="ibtn ibtn-xs" onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
+                  <Ic n="x" s={11} />
+                </ActionButton>
               </span>
-              <button className="btn btn-sm btn-primary" onClick={go_} disabled={!t || !ready || start.isPending}>
-                <Ic n="code" s={13} />
-                Start coding
-              </button>
-            </div>
+            )}
+            {!t && <span className="faint">Pick an issue, then where and on which model</span>}
+            <span className="sp" />
           </div>
           {menuOpen && (
             <>
@@ -1481,7 +1818,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 id="cs-issues"
                 role="listbox"
                 aria-label="Issues"
-                style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, maxWidth: 520, zIndex: 80 }}
+                style={{ position: "absolute", bottom: 0, left: 0, right: 0, maxHeight: "min(320px, 40dvh)", maxWidth: 520, zIndex: 80 }}
               >
                 {found.length ? (
                   found.map((x, i) => (
@@ -1605,73 +1942,267 @@ function CiCard({ turn, scope, canFix, onFix }: { turn: CodingRun; scope: Scope 
           A follow-up turn on the same branch, approved like the first.
         </span>
         <span className="sp" />
-        <button className="btn btn-sm btn-primary" disabled={!canFix} onClick={fix}>
+        <ActionButton className="btn btn-sm btn-primary" disabled={!canFix} onClick={fix}>
           <Ic n="wrench" s={13} />
           Ask {CODING_AGENT.name} to fix
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
 }
+
+/** What a turn did, in a line, as Claude Code folds its tool calls: "Read 2 files, ran 2 commands, edited 3 files". */
+function stepsSummary(events: CodingRun["events"]): string {
+  let read = 0,
+    edited = 0,
+    ran = 0,
+    other = 0;
+  for (const e of events) {
+    if (e.kind !== "tool") continue;
+    if (/^Read\b/.test(e.text)) read++;
+    else if (/^(Edited|Wrote|Created|Deleted)\b/.test(e.text)) edited++;
+    else if (/^Ran\b/.test(e.text)) ran++;
+    else other++;
+  }
+  const parts = [
+    read && `read ${read} file${read > 1 ? "s" : ""}`,
+    ran && `ran ${ran} command${ran > 1 ? "s" : ""}`,
+    edited && `edited ${edited} file${edited > 1 ? "s" : ""}`,
+    other && `used ${other} other tool${other > 1 ? "s" : ""}`,
+  ].filter(Boolean) as string[];
+  const line = parts.join(", ");
+  return line ? line[0]!.toUpperCase() + line.slice(1) : "Worked on it";
+}
+
+function copyText(text: string) {
+  void navigator.clipboard
+    ?.writeText(text)
+    .then(() => toast("Copied"))
+    .catch(() => toast("It couldn't be copied"));
+}
+
+/** One of Kai's turns: your request on the right; then what it did folded into one line (open it for each step),
+ *  its summary, and a row with copy, the time, and its changes. */
+function KaiTurn({
+  turn,
+  issueTitle,
+  busy,
+  revert,
+  onPath,
+  onChanges,
+  onShot,
+  shotSrc,
+}: {
+  turn: CodingRun;
+  issueTitle: string;
+  busy: boolean;
+  revert: ReturnType<typeof useRevertCoding>;
+  onPath: (path: string, turnId?: string) => void;
+  onChanges: (turnId: string) => void;
+  onShot: (src: string, name: string) => void;
+  shotSrc: (runId: string, index: number) => string;
+}) {
+  const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output")); // output: under its command
+  const working = turn.status === "running";
+  const asked = turn.note || `Work on ${turn.issue_key}${issueTitle ? `: ${issueTitle}` : ""}`;
+  const mine = turn.requested_by_id === D().me;
+  const added = turn.files_changed.reduce((n, f) => n + Number(f.added ?? 0), 0);
+  const removed = turn.files_changed.reduce((n, f) => n + Number(f.removed ?? 0), 0);
+  return (
+    <div className="kt">
+      <div className="kt-ask">
+        <div className="kt-bubble">{asked}</div>
+        <div className="kt-meta">
+          {!mine && <span>{who(turn.requested_by_id ?? "")?.name ?? "Someone"} ·</span>}
+          <span>{ago(ms(turn.created_at))}</span>
+          <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(asked)} aria-label="Copy the request" data-tip="Copy">
+            <Ic n="copy" s={13} />
+          </ActionButton>
+        </div>
+      </div>
+      {(steps.length > 0 || turn.summary || turn.error) && (
+        <div className="kt-reply">
+          <div className="kt-who">
+            <Av id={CODING_AGENT.id} cls="sm" tip={false} />
+            <b>{CODING_AGENT.name}</b>
+          </div>
+          {steps.length > 0 && (
+            <Trace className="agent-trace kt-trace">
+              <TraceCollapsible>
+                <TraceCollapsibleTrigger>
+                  <TraceLine status={working ? "running" : undefined}>
+                    <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
+                    <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events)}</TraceTitle>
+                  </TraceLine>
+                </TraceCollapsibleTrigger>
+                <TraceCollapsibleContent>
+                  <ToolCalls
+                    events={turn.events.slice(-200)}
+                    running={working}
+                    onPath={(path) => onPath(path, turn.id)}
+                    known={turn.files_changed.map(fileOf)}
+                    render={(text) => <PathLinks text={text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />}
+                  />
+                </TraceCollapsibleContent>
+              </TraceCollapsible>
+            </Trace>
+          )}
+          {turn.summary && (
+            <div className="md">
+              <Markdown
+                onCode={(code) =>
+                  turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, "")) ? () => onPath(code.replace(/:\d+$/, ""), turn.id) : undefined
+                }
+              >
+                {turn.summary}
+              </Markdown>
+            </div>
+          )}
+          {turn.error && <div className="kt-error">{turn.error}</div>}
+          {(turn.screenshots ?? []).length > 0 && (
+            <div className="cs-shots" aria-label="Screenshots from the browser">
+              {(turn.screenshots ?? []).map((sh) => {
+                const src = shotSrc(turn.id, sh.index);
+                return (
+                  <button key={sh.index} className="cs-shot" onClick={() => onShot(src, sh.name)} aria-label={`Open the screenshot ${sh.name}`}>
+                    <img src={src} alt={`Screenshot: ${sh.name}`} loading="lazy" />
+                    <span className="faint trunc">{sh.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="kt-actions">
+            {turn.summary && (
+              <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(turn.summary ?? "")} aria-label="Copy Kai's reply" data-tip="Copy">
+                <Ic n="copy" s={13} />
+              </ActionButton>
+            )}
+            {turn.finished_at && <span className="faint">{ago(ms(turn.finished_at))}</span>}
+            {mine && (
+              <ContextUsage
+                usage={{ input: turn.input_tokens, output: turn.output_tokens, cost: turn.cost_usd, model: turn.model ? modelName(turn.model) : null }}
+              />
+            )}
+            {turn.files_changed.length > 0 && (
+              <button className="kt-lines" onClick={() => onChanges(turn.id)} data-tip="Open these changes">
+                <Ic n="git-compare" s={12} />
+                {turn.files_changed.length} file{turn.files_changed.length > 1 ? "s" : ""}
+                <span className="plus">+{added}</span>
+                <span className="minus">−{removed}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {turn.commit_sha && (
+        <Checkpoint
+          label={
+            <span>
+              {turn.revert_of ? "Reverted" : `Turn ${turn.turn}`} · <span className="mono">{turn.commit_sha.slice(0, 7)}</span>
+              {turn.branch ? <span className="faint"> on {turn.branch}</span> : null}
+            </span>
+          }
+        >
+          {turn.can_revert && !busy && (
+            <button className="kt-lines" disabled={revert.isPending} onClick={() => revert.mutate(turn.id)}>
+              <Ic n="undo-2" s={12} />
+              Revert this turn
+            </button>
+          )}
+        </Checkpoint>
+      )}
+    </div>
+  );
+}
+
+/** The panes a session can show beside it; the address keeps the open ones (`panel=changes,files`). */
+const paneList = (value: string | null, PANES: typeof CODING_VIEWS): CodingView[] =>
+  (value ?? "")
+    .split(",")
+    .map((v) => (v === "coding" ? "changes" : v))
+    .filter((v): v is CodingView => PANES.some((p) => p.id === v))
+    .filter((v, i, all) => all.indexOf(v) === i);
 
 export function Session({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
   const latest = turns.at(-1);
+  const [codingMode, setCodingMode] = useState<"plan" | "build">("build");
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  // The open session is followed as it happens; its turns land in the query above.
+  useCodingSessionStream(scope, cs.session_id, turns.some(isOpenTurn));
   const decide = useDecideCoding(scope, cs.issue_key);
   const stop = useStopCoding(scope, cs.issue_key);
   const recover = useRecoverCoding(scope, cs.issue_key);
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
   const search = useRoute().search;
-  // Which view the side panel shows: the address's (`panel=`, or Files for a `file=` link), else the last one
-  // opened in this browser ("" when it was closed). Older links say `panel=coding`: Changes.
-  const [lastView, setLastView] = useStoredText("dotrix.coding.panelView", "");
-  const asked = search.get("panel") === "coding" ? "changes" : search.get("panel");
-  const view = (CODING_VIEWS.find((v) => v.id === (asked ?? (search.has("file") ? "files" : lastView)))?.id ?? null) as CodingView | null;
-  const showView = (next: CodingView | null, extra: Record<string, string> = {}) => {
+  // The open panes: the address's (`panel=`, Files for a `file=` link), else the ones last open in this browser.
+  const [lastPanes, setLastPanes] = useStoredText("dotrix.coding.panes", "");
+  const asked = search.get("panel");
+  // Browser is a pane only in the desktop app, and only while it's on there (Settings → Browser).
+  const browserOff = useBrowserSettings()?.enabled === false;
+  const PANES = useMemo(() => CODING_VIEWS.filter((view) => view.id !== "browser" || !browserOff), [browserOff]);
+  const panes = paneList(asked ?? (search.has("file") ? "files" : lastPanes), PANES);
+  const setPanes = (next: CodingView[], extra: Record<string, string> = {}) => {
     const query = new URLSearchParams(search);
-    // Switching views keeps the file and turn a link opened; closing, or opening something new, lets them go.
-    for (const key of !next || Object.keys(extra).length ? ["panel", "file", "line", "turn"] : ["panel"]) query.delete(key);
-    if (next) query.set("panel", next);
+    // Opening a file or a turn sets them; closing the last pane lets them go.
+    for (const key of !next.length || Object.keys(extra).length ? ["panel", "file", "line", "turn", "ref"] : ["panel"]) query.delete(key);
+    if (next.length) query.set("panel", next.join(","));
     for (const [key, value] of Object.entries(extra)) query.set(key, value);
     go("codes", {}, { search: query.toString(), replace: true });
-    setLastView(next ?? "");
+    setLastPanes(next.join(","));
   };
-  const closePanel = () => showView(null);
-  // The address always says when the panel is open (the list beside the session folds for it: screens/Coding.tsx).
+  const openPane = (view: CodingView, extra: Record<string, string> = {}) => setPanes(panes.includes(view) ? panes : [...panes, view], extra);
+  const closePane = (view: CodingView) => setPanes(panes.filter((v) => v !== view));
+  const togglePane = (view: CodingView) => (panes.includes(view) ? closePane(view) : openPane(view));
+  // The address always says which panes are open (the list beside the session folds for them: screens/Coding.tsx).
   useEffect(() => {
-    if (view && !search.has("panel")) showView(view);
+    if (panes.length && !search.has("panel")) setPanes(panes);
   });
-  const toggleView = (next: CodingView) => showView(view === next ? null : next);
+  // The session's details: a column beside it on wide screens (hidden by its button), a popover on narrow ones.
+  const [detailsHidden, setDetailsHidden] = useStoredFlag("dotrix.coding.detailsHidden");
+  const [detailsPop, setDetailsPop] = useState(false);
+  const wide = useWide("(min-width: 1280px)");
+  const detailsColumn = wide && !detailsHidden && panes.length === 0;
+  const toggleDetails = () => (wide && panes.length === 0 ? setDetailsHidden(!detailsHidden) : setDetailsPop(!detailsPop));
   /** A file the session changed, opened in Files (in the latest turn that changed it, or the latest). */
   const openPath = (path: string, turnId?: string) => {
     const owner = turnId ?? [...turns].reverse().find((t) => t.files_changed.some((f) => fileOf(f) === path))?.id ?? latest?.id;
-    showView("files", { file: path, ...(owner ? { turn: owner } : {}) });
+    setDetailsPop(false);
+    openPane("files", { file: path, ...(owner ? { turn: owner } : {}) });
   };
-  // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panel, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
-  const keys = useRef({ view, toggleView, closePanel });
-  keys.current = { view, toggleView, closePanel };
+  const openChanges = (turnId?: string) => {
+    setDetailsPop(false);
+    openPane("changes", turnId ? { turn: turnId } : {});
+  };
+  // In the desktop app, Kai asking for its browser tab in this session opens the Browser pane (components/BrowserPane.tsx makes the tab).
+  const showBrowser = useRef(openPane);
+  showBrowser.current = openPane;
+  useEffect(() => desktopBrowser()?.onKai((request) => request.sessionId === cs.session_id && showBrowser.current("browser")), [cs.session_id]);
+  // Claude Code's shortcuts: ⌘/Ctrl+\ closes the panes, ⌘/Ctrl+Shift+D the changes, Ctrl+` the terminal.
+  const keys = useRef({ panes, togglePane, setPanes });
+  keys.current = { panes, togglePane, setPanes };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === "\\" && keys.current.view) {
+      if (mod && e.key === "\\" && keys.current.panes.length) {
         e.preventDefault();
-        keys.current.closePanel();
+        keys.current.setPanes([]);
       } else if (mod && e.shiftKey && e.key.toLowerCase() === "d") {
         e.preventDefault();
-        keys.current.toggleView("changes");
+        keys.current.togglePane("changes");
       } else if (e.ctrlKey && e.key === "`") {
         e.preventDefault();
-        keys.current.toggleView("terminal");
+        keys.current.togglePane("terminal");
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
   const t = isLive() ? { id: cs.issue_key, key: cs.issue_key } : D().tasks.find((x) => x.key === cs.issue_key);
-  const p = proj(cs.project_id);
   // People see Kai; the engine underneath (cs.agent) stays on the run and in the logs.
   const kai = CODING_AGENT.name;
   const [ask, setAsk] = useState("");
@@ -1680,493 +2211,493 @@ export function Session({ cs }: { cs: CodingSession }) {
   const busy = BUSY.includes(cs.status) || cs.state === "closed";
   // The latest turn that reached the PR: CI runs on its commit.
   const pushed = [...turns].reverse().find((t) => t.commit_sha && t.pr_number);
-  // Its details (project, repo, branches, commit, PR) float over the chat from the ⋮: on hover,
-  // or pinned by a click until a click elsewhere or Escape.
-  const [info, setInfo] = useState<null | "hover" | "pinned">(null);
   // A screenshot opened large over everything; Escape or a click closes it.
   const [shot, setShot] = useState<{ src: string; name: string } | null>(null);
+  // The title's menu and the panes menu (the "…"), closed by a click elsewhere or Escape.
+  const [menu, setMenu] = useState<null | "title" | "panes">(null);
   useEffect(() => {
-    if (!shot) return;
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setShot(null);
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, [shot]);
-  const infoBtn = useRef<HTMLButtonElement>(null);
-  const leave = useRef<number>(0);
-  useEffect(() => setInfo(null), [cs.session_id]);
-  useEffect(() => {
-    if (info !== "pinned") return;
+    if (!shot && !menu && !detailsPop) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (shot) return;
+      setMenu(null);
+      setDetailsPop(false);
+    };
     const away = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      if (!t.closest(".cs-info") && !infoBtn.current?.contains(t)) setInfo(null);
+      const target = e.target as HTMLElement;
+      if (menu && !target.closest(".cs-menu, [data-menu]")) setMenu(null);
+      if (detailsPop && !target.closest(".cs-details-pop, [data-details]")) setDetailsPop(false);
     };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setInfo(null);
-    document.addEventListener("mousedown", away);
     document.addEventListener("keydown", esc);
+    document.addEventListener("mousedown", away);
     return () => {
-      document.removeEventListener("mousedown", away);
       document.removeEventListener("keydown", esc);
+      document.removeEventListener("mousedown", away);
     };
-  }, [info]);
-  const hoverIn = () => {
-    window.clearTimeout(leave.current);
-    setInfo((i) => i ?? "hover");
-  };
-  const hoverOut = () => {
-    leave.current = window.setTimeout(() => setInfo((i) => (i === "hover" ? null : i)), 180);
-  };
+  }, [shot, menu, detailsPop]);
+  useEffect(() => {
+    setMenu(null);
+    setDetailsPop(false);
+  }, [cs.session_id]);
   const send = () => {
     if (busy || !ask.trim()) return;
-    follow.mutate(ask.trim());
+    follow.mutate({ message: ask.trim(), work_mode: codingMode });
     setAsk("");
   };
-  const at = infoBtn.current?.getBoundingClientRect();
-  const files = latest?.files_changed ?? [];
-  const changedTurn = [...turns].reverse().find((t) => t.files_changed.length > 0);
+  const box = useRef<HTMLTextAreaElement>(null);
+  // The message box grows with what's typed, up to about eight lines.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [ask]);
   const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
+  // The bar's height (it wraps on phones): the panes float under it on narrow screens.
+  const convRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const head = headRef.current;
+    if (!head) return;
+    const ro = new ResizeObserver(() => convRef.current?.style.setProperty("--cs-head-h", `${head.offsetHeight}px`));
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, []);
+  const details = (
+    <SessionDetails cs={cs} turns={turns} onOpenFile={openPath} onOpenChanges={openChanges} onShot={(src, name) => setShot({ src, name })} shotSrc={shotSrc} />
+  );
+  const detailsOn = detailsColumn || detailsPop;
   return (
-    <div className="conv">
+    <div className="conv" ref={convRef}>
       <div className="conv-main">
-        <div className="row cs-head">
-          <button className="ibtn ibtn-sm" onClick={() => openCoding("")} aria-label="Back to sessions">
+        <SessionHeader ref={headRef}>
+          <ActionButton className="ibtn ibtn-sm cs-back" onClick={() => openCoding("")} aria-label="Back to sessions" data-tip="Sessions">
             <Ic n="arrow-left" s={15} />
-          </button>
-          <button
-            className="mono faint cs-key"
-            style={{ fontSize: 12, whiteSpace: "nowrap" }}
-            onClick={() => t && openTask(t.id)}
-            data-tip="Open the issue"
-            aria-label={`Open ${cs.issue_key}`}
-          >
-            {cs.issue_key}
-          </button>
-          <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
-            {cs.title ?? cs.issue_title}
-          </b>
-          <button
-            ref={infoBtn}
-            className={`ibtn ibtn-sm ${info ? "on" : ""}`}
-            onClick={() => setInfo(info === "pinned" ? null : "pinned")}
-            onMouseEnter={hoverIn}
-            onMouseLeave={hoverOut}
-            aria-label={info ? "Hide the session's details" : "Show the session's details"}
-            aria-expanded={!!info}
-            aria-haspopup="dialog"
-          >
-            <Ic n="ellipsis-vertical" s={15} />
-          </button>
-          <span className={`badge ${c}`}>{label}</span>
-          {cs.thread_id && (
-            // Started from a conversation: its outcome goes back there; the link opens it (it stays private to whoever started it).
+          </ActionButton>
+          <div className="cs-title-wrap">
             <button
-              className="pillbtn"
-              onClick={() => open(`thread=${cs.thread_id}&project=${cs.project_key}`)}
-              data-tip="The conversation this session came from"
+              className={`cs-title ${menu === "title" ? "on" : ""}`}
+              data-menu
+              onClick={() => setMenu(menu === "title" ? null : "title")}
+              aria-haspopup="menu"
+              aria-expanded={menu === "title"}
             >
-              <Ic n="message-square" s={12} />
-              From a conversation
+              <span className="trunc">{cs.title ?? cs.issue_title}</span>
+              <Ic n="chevron-down" s={14} />
             </button>
-          )}
-          <span className="sp" />
-          {changedTurn && (
-            <LineCounts
-              files={changedTurn.files_changed}
-              onClick={() => showView("changes", { turn: changedTurn.id })}
-              tip={`Changes in turn ${changedTurn.turn}`}
-            />
-          )}
-          {/* Each view opens the side panel on it, as Claude Code's title bar opens its panes (icons, named on hover); the open one closes it. */}
-          <div className="cs-views" role="group" aria-label="Side panel">
-            {CODING_VIEWS.map((v) => (
-              <button
-                key={v.id}
-                className={`cs-view ${view === v.id ? "on" : ""}`}
-                onClick={() => toggleView(v.id)}
-                aria-pressed={view === v.id}
-                aria-label={v.label}
-                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.id === "terminal" ? `${v.label}  Ctrl \`` : v.label}
-              >
-                <Ic n={v.icon} s={15} />
-              </button>
-            ))}
-          </div>
-        </div>
-        {shot && (
-          <div className="cs-lightbox" role="dialog" aria-label={`Screenshot: ${shot.name}`} onClick={() => setShot(null)}>
-            <img src={shot.src} alt={`Screenshot: ${shot.name}`} />
-            <span>{shot.name}</span>
-          </div>
-        )}
-        {info && at && (
-          <div
-            className="pop cs-info"
-            role="dialog"
-            aria-label="The session's details"
-            style={{ top: at.bottom + 6, left: Math.max(8, Math.min(at.left - 8, window.innerWidth - 436)) }}
-            onMouseEnter={hoverIn}
-            onMouseLeave={hoverOut}
-          >
-            <dl className="kv" style={{ margin: 0 }}>
-              <dt>
-                <Ic n="folder" s={14} />
-                Project
-              </dt>
-              <dd>
-                <span className="row" style={{ gap: 6 }}>
-                  {p && <span className="pdot" style={css({ "--c": pColor(p) })} />}
-                  {cs.project_name}
-                </span>
-              </dd>
-              <dt>
-                <Ic n="folder-git-2" s={14} />
-                Repository
-              </dt>
-              <dd>
-                {latest?.repo_full_name ? (
-                  <a
-                    href={`https://github.com/${latest.repo_full_name}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mono"
-                    style={{ fontSize: 12, color: "var(--acc)" }}
-                  >
-                    {latest.repo_full_name}
-                  </a>
-                ) : (
-                  <span className="faint">No repository connected to {cs.project_name}</span>
-                )}
-              </dd>
-              <dt>
-                <Ic n="git-branch" s={14} />
-                Branch
-              </dt>
-              <dd className="mono" style={{ fontSize: 12 }}>
-                {latest?.base_branch && (
-                  <span className="faint">
-                    {latest.base_branch}
-                    {latest.base_sha ? `@${latest.base_sha.slice(0, 7)}` : ""} →{" "}
-                  </span>
-                )}
-                {cs.branch ?? <span className="faint">a new branch, made when it starts</span>}
-              </dd>
-              <dt>
-                <Ic n="git-commit-horizontal" s={14} />
-                Commit
-              </dt>
-              <dd>
-                {latest?.commit_sha ? (
-                  <span className="mono faint" style={{ fontSize: 12 }}>
-                    {latest.commit_sha.slice(0, 7)}
-                  </span>
-                ) : (
-                  <span className="faint">none yet</span>
-                )}
-              </dd>
-              <dt>
-                <Ic n="git-pull-request" s={14} />
-                Pull request
-              </dt>
-              <dd>
-                {cs.pr_url && cs.pr_number ? (
-                  <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <a href={cs.pr_url} target="_blank" rel="noreferrer" className="row" style={{ gap: 6, color: "var(--acc)" }}>
-                      #{cs.pr_number}
-                      {cs.pr_state && (
-                        <span className={`badge ${cs.pr_state === "merged" ? "accent" : cs.pr_state === "open" ? "green" : ""}`}>{cs.pr_state}</span>
-                      )}
-                    </a>
-                    {pushed?.ci_state && <span className={`badge ${pushed.ci_state === "passed" ? "green" : "red"}`}>CI {pushed.ci_state}</span>}
-                    {pushed?.review_posted_url && (
-                      <a href={pushed.review_posted_url} target="_blank" rel="noreferrer" style={{ color: "var(--acc)", fontSize: 12 }}>
-                        Juno's review
-                      </a>
-                    )}
-                  </span>
-                ) : (
-                  <span className="faint">none yet</span>
-                )}
-              </dd>
-            </dl>
-          </div>
-        )}
-        <div className="chat-scroll">
-          <div className="chat-col">
-            {files.length > 0 && (
-              <div className="change" aria-label="Files changed">
-                <div className="change-h">
-                  <Ic n="files" s={14} />
-                  <b style={{ fontWeight: 500 }}>
-                    {files.length} file{files.length > 1 ? "s" : ""} changed
-                  </b>
-                  <span className="sp" />
-                  <LineCounts files={files} onClick={() => latest && showView("changes", { turn: latest.id })} tip="Open the changes" />
-                </div>
-                <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                  {files.map((f, i) => (
-                    <button key={i} className="path-link trunc" onClick={() => openPath(fileOf(f), latest?.id)} data-tip="Open in Files">
-                      {fileOf(f)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {turns.map((turn, i) => (
-              <div key={turn.id} style={{ marginBottom: 14 }}>
-                <div className="chat-msg user">
-                  <Av id={turn.requested_by_id ?? D().me} cls="md" tip={false} />
-                  <div className="body">
-                    <div className="who">
-                      <b>{turn.requested_by_id === D().me ? "You" : (who(turn.requested_by_id ?? "")?.name ?? "Someone")}</b>
-                      <time>
-                        Turn {i + 1} · {ago(ms(turn.created_at))}
-                      </time>
-                    </div>
-                    <div className="bubble">{turn.note || `Work on ${cs.issue_key}: ${cs.issue_title}`}</div>
-                  </div>
-                </div>
-                {(turn.events.length > 0 || turn.summary || turn.error) && (
-                  <div className="chat-msg">
-                    <Av id={CODING_AGENT.id} cls="md" tip={false} />
-                    <div className="body">
-                      <div className="who">
-                        <b>{kai}</b>
-                      </div>
-                      <div className="chat-act" style={{ flexDirection: "column", gap: 2 }}>
-                        {turn.events
-                          .filter((e) => e.kind !== "text" && !e.kind.startsWith("output")) // output: the panel's Terminal
-                          .slice(-30)
-                          .map((e, j) => (
-                            <span key={j}>
-                              <Ic n={e.kind === "error" ? "triangle-alert" : "check"} s={11} />
-                              <PathLinks text={e.text} paths={turn.files_changed.map(fileOf)} onPath={(path) => openPath(path, turn.id)} />
-                            </span>
-                          ))}
-                      </div>
-                      {turn.summary && (
-                        <div className="md">
-                          <Markdown
-                            onCode={(code) =>
-                              turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, ""))
-                                ? () => openPath(code.replace(/:\d+$/, ""), turn.id)
-                                : undefined
-                            }
-                          >
-                            {turn.summary}
-                          </Markdown>
-                        </div>
-                      )}
-                      {turn.error && <div className="faint">{turn.error}</div>}
-                      {turn.can_revert && !busy && (
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          style={{ alignSelf: "flex-start", marginTop: 4 }}
-                          disabled={revert.isPending}
-                          onClick={() => revert.mutate(turn.id)}
-                        >
-                          <Ic n="undo-2" s={12} />
-                          Revert this turn
-                        </button>
-                      )}
-                      {(turn.screenshots ?? []).length > 0 && (
-                        <div className="cs-shots" aria-label="Screenshots from the browser">
-                          {(turn.screenshots ?? []).map((sh) => {
-                            const src = shotSrc(turn.id, sh.index);
-                            return (
-                              <button
-                                key={sh.index}
-                                className="cs-shot"
-                                onClick={() => setShot({ src, name: sh.name })}
-                                aria-label={`Open the screenshot ${sh.name}`}
-                              >
-                                <img src={src} alt={`Screenshot: ${sh.name}`} loading="lazy" />
-                                <span className="faint trunc">{sh.name}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-            {latest?.status === "awaiting_approval" && (
-              <div className="change">
-                <div className="change-h">
-                  <Ic n="shield-check" s={14} />
-                  <b style={{ fontWeight: 500 }}>Waiting for someone who may approve agent changes</b>
-                </div>
-                <div className="change-f">
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    It works on its own branch and opens a pull request; a person merges.
-                  </span>
-                  <span className="sp" />
-                  {latest.can_decide && (
-                    <>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
-                      >
-                        Reject
-                      </button>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
-                      >
-                        <Ic n="check" s={13} />
-                        Approve
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-            {latest?.status === "changes_ready" && (
-              <div className="change" role="group" aria-label="Changes waiting to be accepted">
-                <div className="change-h">
-                  <Ic n="shield-check" s={14} />
-                  <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
-                </div>
-                {latest.files_changed.length > 0 && (
-                  <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                    {latest.files_changed.map((f) => (
-                      <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
-                        <button className="path-link trunc grow" onClick={() => openPath(fileOf(f), latest.id)} data-tip="Open in Files">
-                          {fileOf(f)}
-                        </button>
-                        <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
-                        <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(latest.ci_sensitive ?? []).length > 0 && <CiSensitiveNote files={latest.ci_sensitive ?? []} />}
-                <div className="change-f">
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    Accepted, they're pushed to {latest.branch ? <code>{latest.branch}</code> : "a new branch"} and the pull request is opened or updated.
-                  </span>
-                  <span className="sp" />
-                  {latest.can_stop && !latest.can_decide && (
-                    <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
-                      Discard
-                    </button>
-                  )}
-                  {latest.can_decide && (
-                    <>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
-                      >
-                        Discard
-                      </button>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={decide.isPending}
-                        onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
-                      >
-                        <Ic n="check" s={13} />
-                        Accept and push
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-            {pushed?.ci_state && <CiCard turn={pushed} scope={scope} canFix={!busy && !follow.isPending} onFix={(message) => follow.mutate(message)} />}
-            {(latest?.status === "running" || latest?.status === "queued") && (
-              <div className="row" style={{ gap: 8 }}>
-                <span className="chat-typing">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span className="muted" style={{ fontSize: 12.5 }}>
-                  {latest.status === "queued" ? `${kai} starts soon` : `${kai} is working`}
-                </span>
-                <span className="sp" />
-                {latest.can_stop && (
-                  <button className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
-                    <Ic n="square" s={12} />
-                    Stop
+            {menu === "title" && (
+              <div className="pop cs-menu" role="menu" aria-label="Session">
+                <button role="menuitem" onClick={() => (setMenu(null), t && openTask(t.id))}>
+                  <Ic n="circle-dot" s={14} />
+                  Open {cs.issue_key}
+                </button>
+                {cs.thread_id && (
+                  <button role="menuitem" onClick={() => (setMenu(null), open(`thread=${cs.thread_id}&project=${cs.project_key}`))}>
+                    <Ic n="message-square" s={14} />
+                    Open the conversation it came from
                   </button>
                 )}
+                {cs.pr_url && (
+                  <a role="menuitem" href={cs.pr_url} target="_blank" rel="noreferrer" onClick={() => setMenu(null)}>
+                    <Ic n="git-pull-request" s={14} />
+                    Open pull request #{cs.pr_number}
+                  </a>
+                )}
+                <button role="menuitem" onClick={() => (setMenu(null), copyText(location.href))}>
+                  <Ic n="link" s={14} />
+                  Copy a link to this session
+                </button>
               </div>
             )}
-            {latest?.status === "recovery_required" && (
-              <div className="change" role="status">
-                <div className="change-h">
-                  <Ic n="shield-check" s={14} />
-                  <b style={{ fontWeight: 500 }}>This turn was cut off before it finished</b>
-                </div>
-                <div className="change-f">
-                  <span className="faint" style={{ fontSize: 12 }}>
-                    {latest.error || "Check GitHub to see what it published before another turn."}
-                  </span>
-                  <span className="sp" />
-                  {latest.can_recover && (
+          </div>
+          <span className={`badge ${c}`}>{label}</span>
+          {cs.thread_id && (
+            // Started from a conversation: its outcome goes back there (it stays private to whoever started it).
+            <span className="cs-from" data-tip="Started from a conversation">
+              <Ic n="message-square" s={13} />
+            </span>
+          )}
+          <span className="sp" />
+          {/* As Claude Code's session bar: the details, then each pane (several can be open, stacked), then the menu of panes. */}
+          <div className="cs-views" role="group" aria-label="Session panes">
+            <button
+              className={`cs-view ${detailsOn ? "on" : ""}`}
+              data-details
+              onClick={toggleDetails}
+              aria-pressed={detailsOn}
+              aria-label="Session details"
+              data-tip="Details"
+            >
+              <Ic n="list-bullets" s={16} />
+            </button>
+            {PANES.filter((v) => v.id === "changes" || v.id === "files").map((v) => (
+              <button
+                key={v.id}
+                className={`cs-view ${panes.includes(v.id) ? "on" : ""}`}
+                onClick={() => togglePane(v.id)}
+                aria-pressed={panes.includes(v.id)}
+                aria-label={v.label}
+                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.label}
+              >
+                <Ic n={v.id === "changes" ? "plus-minus" : "folder-simple"} s={16} />
+              </button>
+            ))}
+            <div className="cs-title-wrap">
+              <button
+                className={`cs-view ${menu === "panes" ? "on" : ""}`}
+                data-menu
+                onClick={() => setMenu(menu === "panes" ? null : "panes")}
+                aria-haspopup="menu"
+                aria-expanded={menu === "panes"}
+                aria-label="Panes"
+                data-tip={menu === "panes" ? undefined : "Panes"}
+              >
+                <Ic n="dots-three" s={18} />
+              </button>
+              {menu === "panes" && (
+                <div className="pop cs-menu right" role="menu" aria-label="Panes">
+                  {PANES.map((v) => (
+                    <button key={v.id} role="menuitemcheckbox" aria-checked={panes.includes(v.id)} onClick={() => togglePane(v.id)}>
+                      <Ic n={v.icon} s={14} />
+                      <span className="grow">{v.label}</span>
+                      {v.id === "changes" && <kbd>{MOD}⇧D</kbd>}
+                      {v.id === "terminal" && <kbd>Ctrl `</kbd>}
+                      {panes.includes(v.id) && <Ic n="check" s={14} />}
+                    </button>
+                  ))}
+                  {panes.length > 0 && (
                     <>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={recover.isPending}
-                        onClick={() => recover.mutate({ runId: latest.id, action: "discard" })}
-                      >
-                        Discard
-                      </button>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={recover.isPending}
-                        onClick={() => recover.mutate({ runId: latest.id, action: "check" })}
-                      >
-                        <Ic n="refresh-cw" s={12} />
-                        Check and recover
+                      <hr />
+                      <button role="menuitem" onClick={() => (setMenu(null), setPanes([]))}>
+                        <Ic n="x" s={14} />
+                        <span className="grow">Close all panes</span>
+                        <kbd>{MOD}\</kbd>
                       </button>
                     </>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="chat-input">
-          <div className="cbox">
-            <textarea
-              rows={2}
-              placeholder={
-                cs.state === "closed"
-                  ? "This session is closed"
-                  : cs.status === "recovery_required"
-                    ? "Recover the previous turn before continuing"
-                    : busy
-                      ? "A turn is waiting or working…"
-                      : `Ask ${kai} for a follow-up on the same branch`
-              }
-              value={ask}
-              disabled={busy}
-              onChange={(e) => setAsk(e.target.value)}
-              aria-label="Follow-up"
-              onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && send()}
-            />
-            <div className="row">
-              <span className="faint" style={{ fontSize: 11.5 }}>
-                {MOD}+Enter to send · approved like the first turn
-              </span>
-              <span className="sp" />
-              <button className="btn btn-primary btn-sm" disabled={busy || !ask.trim() || follow.isPending} onClick={send}>
-                <Ic n="arrow-up" s={13} />
-                Send
-              </button>
+              )}
             </div>
           </div>
-        </div>
+        </SessionHeader>
+        {shot && (
+          <Lightbox
+            isOpen
+            hasZoom
+            onOpenChange={(open) => {
+              if (!open) setShot(null);
+            }}
+            media={{ src: shot.src, alt: `Screenshot: ${shot.name}`, caption: shot.name }}
+          />
+        )}
+        {detailsPop && (
+          <div className="pop cs-details-pop" role="dialog" aria-label="Session details">
+            {details}
+          </div>
+        )}
+        <ChatLayout
+          className="dotrix-chat-layout"
+          density={S.prefs.density === "compact" ? "compact" : "balanced"}
+          composer={
+            <div className={`chat-input kt-input dotrix-composer-wrap ${optionsOpen ? "menu-open" : ""}`}>
+              <ChatComposer
+                className={`dotrix-composer compact-composer ${ask ? "has-draft" : ""}`}
+                value={ask}
+                isDisabled={busy}
+                isStopShown={Boolean(latest?.can_stop && (latest.status === "running" || latest.status === "queued"))}
+                onSubmit={send}
+                footerActions={
+                  <CodingOptions
+                    mode={codingMode}
+                    setMode={setCodingMode}
+                    local={latest?.location === "local"}
+                    disabled={busy}
+                    onOpenChange={setOptionsOpen}
+                    focusInput={() => box.current?.focus()}
+                  >
+                    {() => <span className="composer-menu-note">Approvals: {modeName(latest?.approval_mode)}</span>}
+                  </CodingOptions>
+                }
+                input={
+                  <textarea
+                    data-dotrix-control
+                    className="composer-textarea"
+                    ref={box}
+                    rows={1}
+                    placeholder={
+                      cs.state === "closed"
+                        ? "This session is closed"
+                        : cs.status === "recovery_required"
+                          ? "Recover the previous turn before continuing"
+                          : busy
+                            ? "A turn is waiting or working…"
+                            : `Ask ${kai} for a follow-up on the same branch`
+                    }
+                    value={ask}
+                    disabled={busy}
+                    onChange={(e) => setAsk(e.target.value)}
+                    aria-label="Follow-up"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        send();
+                      }
+                    }}
+                  />
+                }
+                sendActions={<ComposerModel model={latest?.model} empty={cs.location === "local" ? "Model managed locally" : "Model not recorded"} />}
+                sendButton={
+                  <>
+                    {latest?.can_stop && (latest.status === "running" || latest.status === "queued") ? (
+                      <ChatSendButton isStopShown isDisabled={stop.isPending} onStop={() => stop.mutate(latest.id)} aria-label="Stop coding turn" />
+                    ) : (
+                      <ChatSendButton isDisabled={busy || !ask.trim() || follow.isPending} onSend={send} />
+                    )}
+                  </>
+                }
+              />
+              <div className="kt-foot">
+                <span className="sp" />
+                {cs.location !== "local" && cs.sandbox && (
+                  <span
+                    className={`sd-state ${cs.sandbox}`}
+                    data-tip={
+                      cs.sandbox === "warm"
+                        ? "Sandbox ready"
+                        : cs.sandbox === "asleep"
+                          ? "Sandbox asleep: it wakes on the next turn"
+                          : "No sandbox: the next turn starts one"
+                    }
+                    aria-label={`Sandbox ${cs.sandbox}`}
+                  />
+                )}
+              </div>
+            </div>
+          }
+        >
+          <ChatMessageList>
+            <div className="chat-col kt-col">
+              {turns.map((turn) => (
+                <Fragment key={turn.id}>
+                  <KaiTurn
+                    turn={turn}
+                    issueTitle={cs.issue_title}
+                    busy={busy}
+                    revert={revert}
+                    onPath={openPath}
+                    onChanges={openChanges}
+                    onShot={(src, name) => setShot({ src, name })}
+                    shotSrc={shotSrc}
+                  />
+                  <BackgroundTasks scope={scope} run={turn} />
+                </Fragment>
+              ))}
+              {latest?.plan_result && (
+                <div className="change" aria-label="Kai's saved plan">
+                  <h3>{String(latest.plan_result.title ?? "Implementation plan")}</h3>
+                  <p>{String(latest.plan_result.summary ?? "")}</p>
+                  <ol>
+                    {(Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks : []).map((task, index) => (
+                      <li key={index}>
+                        <b>{String(task.title)}</b>
+                        <p>{String(task.detail ?? "")}</p>
+                      </li>
+                    ))}
+                  </ol>
+                  <TraceList
+                    title="Acceptance criteria"
+                    items={Array.isArray(latest.plan_result.acceptance_criteria) ? latest.plan_result.acceptance_criteria.map(String) : []}
+                    icon="check-square"
+                  />
+                  <TraceList
+                    title="Open questions"
+                    items={Array.isArray(latest.plan_result.open_questions) ? latest.plan_result.open_questions.map(String) : []}
+                    icon="question"
+                  />
+                  <ActionButton
+                    className="btn btn-primary"
+                    disabled={busy || follow.isPending}
+                    onClick={() =>
+                      follow.mutate({
+                        message: "Build the selected plan",
+                        work_mode: "build",
+                        source_plan_id: latest.id,
+                      })
+                    }
+                  >
+                    Build this plan
+                  </ActionButton>
+                </div>
+              )}
+              {latest?.status === "awaiting_approval" && (
+                <div className="change">
+                  <div className="change-h">
+                    <Ic n="shield-check" s={14} />
+                    <b style={{ fontWeight: 500 }}>Waiting for someone who may approve agent changes</b>
+                  </div>
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      It works on its own branch and opens a pull request; a person merges.
+                    </span>
+                    <span className="sp" />
+                    {latest.can_decide && (
+                      <>
+                        <ActionButton
+                          className="btn btn-sm btn-secondary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                        >
+                          Reject
+                        </ActionButton>
+                        <ActionButton
+                          className="btn btn-sm btn-primary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                        >
+                          <Ic n="check" s={13} />
+                          Approve
+                        </ActionButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {latest?.status === "changes_ready" && (
+                <div className="change" role="group" aria-label="Changes waiting to be accepted">
+                  <div className="change-h">
+                    <Ic n="shield-check" s={14} />
+                    <b style={{ fontWeight: 500 }}>Changes ready: nothing is pushed until someone accepts them</b>
+                    <span className="sp" />
+                    <LineCounts files={latest.files_changed} onClick={() => openChanges(latest.id)} tip="Open the changes" />
+                  </div>
+                  {latest.files_changed.length > 0 && (
+                    <div className="change-b mono" style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+                      {latest.files_changed.map((f) => (
+                        <span key={fileOf(f)} className="row" style={{ gap: 8 }}>
+                          <button className="path-link trunc grow" onClick={() => openPath(fileOf(f), latest.id)} data-tip="Open in Files">
+                            {fileOf(f)}
+                          </button>
+                          <span style={{ color: "var(--green)" }}>+{String(f.added ?? 0)}</span>
+                          <span style={{ color: "var(--red)" }}>-{String(f.removed ?? 0)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(latest.ci_sensitive ?? []).length > 0 && <CiSensitiveNote files={latest.ci_sensitive ?? []} />}
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      Accepted, they're pushed to {latest.branch ? <InlineCode>{latest.branch}</InlineCode> : "a new branch"} and the pull request is opened or
+                      updated.
+                    </span>
+                    <span className="sp" />
+                    {latest.can_stop && !latest.can_decide && (
+                      <ActionButton className="btn btn-sm btn-secondary" disabled={stop.isPending} onClick={() => stop.mutate(latest.id)}>
+                        Discard
+                      </ActionButton>
+                    )}
+                    {latest.can_decide && (
+                      <>
+                        <ActionButton
+                          className="btn btn-sm btn-secondary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "reject" })}
+                        >
+                          Discard
+                        </ActionButton>
+                        <ActionButton
+                          className="btn btn-sm btn-primary"
+                          disabled={decide.isPending}
+                          onClick={() => decide.mutate({ runId: latest.id, decision: "approve" })}
+                        >
+                          <Ic n="check" s={13} />
+                          Accept and push
+                        </ActionButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {pushed?.ci_state && <CiCard turn={pushed} scope={scope} canFix={!busy && !follow.isPending} onFix={(message) => follow.mutate(message)} />}
+              {(latest?.status === "running" || latest?.status === "queued") && (
+                <div className="row" style={{ gap: 8 }}>
+                  <span className="chat-typing">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span className="muted" style={{ fontSize: 12.5 }}>
+                    {latest.status === "queued" ? `${kai} starts soon` : `${kai} is working`}
+                  </span>
+                </div>
+              )}
+              {latest?.status === "recovery_required" && (
+                <div className="change" role="status">
+                  <div className="change-h">
+                    <Ic n="shield-check" s={14} />
+                    <b style={{ fontWeight: 500 }}>This turn was cut off before it finished</b>
+                  </div>
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      {latest.error || "Check GitHub to see what it published before another turn."}
+                    </span>
+                    <span className="sp" />
+                    {latest.can_recover && (
+                      <>
+                        <ActionButton
+                          className="btn btn-sm btn-secondary"
+                          disabled={recover.isPending}
+                          onClick={() => recover.mutate({ runId: latest.id, action: "discard" })}
+                        >
+                          Discard
+                        </ActionButton>
+                        <ActionButton
+                          className="btn btn-sm btn-primary"
+                          disabled={recover.isPending}
+                          onClick={() => recover.mutate({ runId: latest.id, action: "check" })}
+                        >
+                          <Ic n="refresh-cw" s={12} />
+                          Check and recover
+                        </ActionButton>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </ChatMessageList>
+        </ChatLayout>
       </div>
-      {view && (
-        <CodingPanel scope={scope} cs={cs} view={view} onView={showView} onClose={closePanel} onAskFix={setAsk} fixLabel={`Ask ${CODING_AGENT.name} to fix`} />
+      {panes.length > 0 && (
+        <CodingPanes
+          scope={scope}
+          cs={cs}
+          views={panes}
+          onOpen={openPane}
+          onClose={closePane}
+          onCloseAll={() => setPanes([])}
+          onAskFix={setAsk}
+          fixLabel={`Ask ${CODING_AGENT.name} to fix`}
+        />
+      )}
+      {detailsColumn && (
+        <aside className="cs-details" aria-label="Session details">
+          {details}
+        </aside>
       )}
     </div>
   );
+}
+
+/** Whether the window matches `query` now, kept current as it's resized. */
+function useWide(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const change = () => setOn(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, [query]);
+  return on;
 }
 
 const MISSING_THREAD = "This conversation isn't here: it was deleted, or isn't one you can see.";
@@ -2184,27 +2715,30 @@ export const Pending = ({
   inbox?: boolean;
   back?: [string, () => void];
 }) => (
-  <div className="chat-scroll" style={{ display: "flex" }}>
-    <div className="chat-pending" role={loading ? "status" : undefined}>
-      {loading && <DotsLoader px={44} />}
-      <span>{text}</span>
-      {onRetry && (
-        <button className="btn btn-secondary btn-sm" onClick={onRetry}>
-          Try again
-        </button>
-      )}
-      {inbox && (
-        <button className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
-          Open Inbox
-        </button>
-      )}
-      {!loading && (
-        <button className="btn btn-ghost btn-sm" onClick={back[1]}>
-          {back[0]}
-        </button>
-      )}
+  <>
+    <SessionHeader />
+    <div className="chat-scroll" style={{ display: "flex" }}>
+      <div className="chat-pending" role={loading ? "status" : undefined}>
+        {loading && <DotsLoader px={44} />}
+        <span>{text}</span>
+        {onRetry && (
+          <ActionButton className="btn btn-secondary btn-sm" onClick={onRetry}>
+            Try again
+          </ActionButton>
+        )}
+        {inbox && (
+          <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+            Open Inbox
+          </ActionButton>
+        )}
+        {!loading && (
+          <ActionButton className="btn btn-ghost btn-sm" onClick={back[1]}>
+            {back[0]}
+          </ActionButton>
+        )}
+      </div>
     </div>
-  </div>
+  </>
 );
 
 /** Older links to a coding session or a new one (`?session=`, `?tab=coding`) open in Codes. */
@@ -2219,6 +2753,26 @@ function ToCoding({ search }: { search: URLSearchParams }) {
   return null;
 }
 
+function DemoConversation({ id }: { id: string }) {
+  const thread = D().threads.find((item) => item.id === id);
+  if (!thread) return <Pending text="This sample conversation is no longer available." />;
+  return (
+    <>
+      <SessionHeader>
+        <b className="trunc">{thread.title}</b>
+      </SessionHeader>
+      <div className="chat-scroll">
+        <div className="chat-col">
+          <p className="muted">Sample conversation · Sign in to work with Nova.</p>
+          {thread.messages.map((message) => (
+            <Message key={message.id} m={message} projectId={thread.project} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function Chat() {
   const { search } = useRoute();
   if (search.has("session") || search.get("tab") === "coding") return <ToCoding search={search} />;
@@ -2231,7 +2785,6 @@ function Conversations({ search }: { search: URLSearchParams }) {
   const across = search.get("across") === "1";
   const threadId = search.get("thread");
   const q = S.ui.chatQ.toLowerCase();
-  const ps = visibleProjects().filter(canSee);
   const { rows, loaded, failed, retry } = useRows(ws);
   const allSessions = useCodingSessions(ws).data ?? [];
   const row = rows.find((r) => r.id === threadId);
@@ -2248,102 +2801,74 @@ function Conversations({ search }: { search: URLSearchParams }) {
     .sort((a, b) => b.at - a.at);
   const hasSel = Boolean(threadId || projectKey || across || search.get("q") || search.get("new"));
   // Column widths, dragged by their edges and kept in this browser.
-  const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 300, 220, 480);
-  // The list folds to a rail (like the sidebar) to give the conversation the room; not on phones.
-  const [listMinSet, setListMin] = useStoredFlag("dotrix.chat.listMin");
-  const listMin = listMinSet && !window.matchMedia("(max-width: 900px)").matches;
-  // A project's conversations, the latest first. Kai's sessions are listed in Codes.
-  const itemsOf = (projectId: string) => threads.filter((t) => t.projectId === projectId).map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />);
+  const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 240, 220, 480);
+  const sidebar = useSessionSidebar("chat", hasSel ? search.toString() : "");
   return (
-    <div className="page flush">
-      <div className={`chat-grid ${hasSel ? "has-sel" : ""}`} style={css({ "--list-w": listMin ? "52px" : `${listW}px` })}>
-        <aside className={`chat-side ${listMin ? "min" : ""}`}>
-          {listMin ? (
-            <div className="chat-rail">
-              <button className="ibtn" onClick={() => setListMin(false)} aria-label="Show the list" data-tip="Show the list" data-tip-pos="right">
-                <Ic n="panel-left-open" s={16} />
-              </button>
-              <button className="ibtn" onClick={() => open("new=1")} aria-label="New chat" data-tip="New chat" data-tip-pos="right">
-                <Ic n="square-pen" s={16} />
-              </button>
+    <SessionSidebarContext value={sidebar}>
+      <div className="page flush">
+        <div
+          className={`chat-grid ${hasSel ? "has-sel" : ""} ${sidebar.listOpen ? "list-open" : ""}`}
+          style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
+        >
+          <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
+            <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={220} max={480} onResize={setListW} />
+            <div style={{ padding: "18px 16px 8px" }} className="row">
+              <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
+              <span className="sp" />
+              <SessionListToggle />
             </div>
-          ) : (
-            <>
-              <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(d) => setListW((w) => w + d)} />
-              <div style={{ padding: "18px 16px 8px" }} className="row">
-                <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
-                <span className="sp" />
-                <button className="ibtn ibtn-sm chat-fold" onClick={() => setListMin(true)} aria-label="Hide the list" data-tip="Hide the list">
-                  <Ic n="panel-left-close" s={15} />
-                </button>
+            <div className="chat-new">
+              <ActionButton className="btn btn-secondary" onClick={() => open("new=1")}>
+                <Ic n="square-pen" s={14} /> New chat
+              </ActionButton>
+            </div>
+            <div style={{ padding: "0 14px 8px" }}>
+              <div className="inwrap">
+                <Ic n="search" s={13} />
+                <DesignInput
+                  className="input search-sm"
+                  style={{ width: "100%" }}
+                  placeholder="Find a conversation"
+                  value={S.ui.chatQ}
+                  onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
+                  aria-label="Find"
+                />
               </div>
-              <div className="chat-new">
-                <button className="btn btn-secondary" onClick={() => open("new=1")}>
-                  <Ic n="square-pen" s={14} /> New chat
-                </button>
-              </div>
-              <div style={{ padding: "0 14px 8px" }}>
-                <div className="inwrap">
-                  <Ic n="search" s={13} />
-                  <input
-                    className="input search-sm"
-                    style={{ width: "100%" }}
-                    placeholder="Find a conversation"
-                    value={S.ui.chatQ}
-                    onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
-                    aria-label="Find"
-                  />
+            </div>
+            <nav className="chat-list" aria-label="Conversations" onClick={sidebar.closeList}>
+              {threads.length ? (
+                threads.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />)
+              ) : (
+                <div className="faint" style={{ fontSize: 12, padding: "6px 8px" }}>
+                  {q ? "No conversation matches." : loaded ? "No conversations yet" : "Loading…"}
                 </div>
-              </div>
-              <nav className="chat-list" aria-label="Conversations">
-                {ps.map((p) => {
-                  const list = itemsOf(p.id);
-                  if (!list.length && q) return null;
-                  return (
-                    <Group key={p.id} title={p.name} color={pColor(p)} onNew={() => open(`project=${p.key}`)}>
-                      {list.length ? (
-                        list
-                      ) : (
-                        <div className="faint" style={{ fontSize: 12, padding: "2px 8px 4px" }}>
-                          No conversations yet
-                        </div>
-                      )}
-                    </Group>
-                  );
-                })}
-                <Group title="Conversations" icon={<Ic n="layers" s={12} />} onNew={() => open("across=1")}>
-                  {threads
-                    .filter((t) => !t.projectId)
-                    .map((t) => (
-                      <ThreadRow key={t.id} row={t} on={threadId === t.id} />
-                    ))}
-                </Group>
-              </nav>
-            </>
-          )}
-        </aside>
-        <section className="chat-main">
-          {!isLive() && threadId ? (
-            <Pending text="This conversation isn't available in the demo. Review the request in Inbox." inbox />
-          ) : threadId ? (
-            thread ? (
-              <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
-            ) : failed ? (
-              <Pending text="The conversation couldn't be loaded." onRetry={retry} />
+              )}
+            </nav>
+          </aside>
+          <section className="chat-main">
+            {!isLive() && threadId ? (
+              <DemoConversation key={threadId} id={threadId} />
+            ) : threadId ? (
+              thread ? (
+                <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
+              ) : failed ? (
+                <Pending text="The conversation couldn't be loaded." onRetry={retry} />
+              ) : (
+                <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} loading={!loaded} />
+              )
             ) : (
-              <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} loading={!loaded} />
-            )
-          ) : (
-            <NewChat
-              key={`${projectKey}-${across}-${search.get("q")}`}
-              projectKey={projectKey}
-              across={across}
-              q={search.get("q") ?? ""}
-              agent0={search.get("agent")}
-            />
-          )}
-        </section>
+              <NewChat
+                key={`${projectKey}-${across}-${search.get("q")}`}
+                projectKey={projectKey}
+                across={across}
+                q={search.get("q") ?? ""}
+                agent0={search.get("agent")}
+                mode0={search.get("mode")}
+              />
+            )}
+          </section>
+        </div>
       </div>
-    </div>
+    </SessionSidebarContext>
   );
 }

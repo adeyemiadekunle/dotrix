@@ -32,7 +32,7 @@ class CodingAvailability(BaseModel):
         description="Your compatible default tool: Codex with OpenAI, Claude Code with Anthropic, "
         "or OpenCode with another connected provider"
     )
-    sandbox: str | None = Field(description="`docker`, `openshell`, or `local` (development, no isolation)")
+    sandbox: str | None = Field(description="`docker`, `docker-cloud`, `openshell`, or `local` (development, no isolation)")
     reason: str | None = Field(description="Why not, when it isn't available")
     local_available: bool = Field(default=False, description="Whether you can code here on your own computer")
     local_runner: str | None = Field(default=None, description="Your computer that would code (the one seen last)")
@@ -53,6 +53,7 @@ _LOCATION = ("Where it codes: `cloud` (a sandbox on the platform) or `local` (yo
 
 
 class CodingRunCreate(BaseModel):
+    work_mode: Literal["plan", "build"] = "build"
     note: str | None = Field(default=None, max_length=5_000, description="Anything to add to the issue for the agent")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation = Field(default=CodingLocation.CLOUD, description=_LOCATION)
@@ -62,6 +63,8 @@ class CodingRunCreate(BaseModel):
 
 
 class CodingFollowUp(BaseModel):
+    work_mode: Literal["plan", "build"] = "build"
+    source_plan_id: uuid.UUID | None = None
     message: str = Field(min_length=1, max_length=5_000, description="What to do in this turn")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation | None = Field(default=None, description=_LOCATION)
@@ -111,7 +114,38 @@ class CodingScreenshot(BaseModel):
     content_type: str
 
 
+class CodingTaskRead(BaseModel):
+    key: str
+    status: str
+    attempt: int = 0
+    owned_paths: list[str] = Field(default_factory=list)
+    checks: list[dict[str, Any]] = Field(default_factory=list)
+    usage: dict[str, Any] = Field(default_factory=dict)
+
+
+class CodingCapabilityRead(BaseModel):
+    id: str
+    label: str
+    available: bool
+    reason: str | None = None
+
+
+class CodingSkillRead(BaseModel):
+    name: str
+    description: str
+    sha256: str
+    resources: list[str]
+    missing_resources: list[str]
+    unavailable_tools: list[str]
+
+
 class CodingRunRead(BaseModel):
+    environment_image_id: str | None = None
+    capabilities: list[CodingCapabilityRead] = Field(default_factory=list)
+    skills: list[CodingSkillRead] = Field(default_factory=list)
+    tasks: list[CodingTaskRead] = Field(default_factory=list)
+    work_mode: Literal["plan", "build"] = "build"
+    plan_result: dict[str, Any] | None = None
     id: uuid.UUID
     project_id: uuid.UUID
     issue_key: str
@@ -198,6 +232,11 @@ class CodingSessionRead(BaseModel):
         default=CodingSessionState.IDLE,
         description="`warm`: its sandbox is up between turns; `idle`: the next turn starts one and resumes; `closed`: closed by hand",
     )
+    sandbox: Literal["warm", "asleep"] | None = Field(
+        default=None,
+        description="Its cloud sandbox between turns: `warm` (running), `asleep` (stopped, files kept; deleted after "
+        "the sleep days), or none (the next turn starts one). Whoever started it, or owners and admins, can delete it.",
+    )
     title: str = Field(default="", description="Its own name when renamed, else its issue's title")
     pinned: bool = False
     archived: bool = False
@@ -215,7 +254,9 @@ class CodingRunnerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="This computer's name; registering it again updates it")
     platform: str | None = Field(default=None, max_length=40)
     tools: list[CodingAgent] = Field(default_factory=list, max_length=5, description="Coding tools found, preferred first")
-    isolation: Literal["srt", "none"] = Field(description="`srt` (the sandbox runtime) or `none` (a worktree only)")
+    isolation: Literal["sbx", "srt", "none"] = Field(
+        description="`sbx` (a Docker Sandboxes microVM on that computer), `srt` (the sandbox runtime), or `none` (a worktree only)"
+    )
     project_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200, description="Projects it has checkouts of")
 
 
@@ -259,10 +300,13 @@ class CodingClaimed(BaseModel):
     run: CodingClaim | None = Field(description="None: nothing waits for this runner")
 
 
+COMMIT_SHA = r"^[0-9a-f]{40}$"  # a full commit ID, as `git rev-parse` prints it
+
+
 class RunnerHeartbeat(BaseModel):
     lease_token: int
     events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
-    base_sha: str | None = Field(default=None, min_length=40, max_length=40)
+    base_sha: str | None = Field(default=None, pattern=COMMIT_SHA)
     worktree: str | None = Field(default=None, max_length=1024, description="The turn's worktree on this computer")
 
 
@@ -274,7 +318,10 @@ class RunnerResult(BaseModel):
     lease_token: int
     outcome: Literal["changes", "no_changes", "failed", "stopped"]
     patch: str | None = Field(default=None, max_length=20_000_000, description="`git diff --cached --binary` against base_sha")
-    base_sha: str | None = Field(default=None, min_length=40, max_length=40)
+    patch_b64: str | None = Field(
+        default=None, max_length=14_000_000,
+        description="The same patch, base64-encoded: exact for files that aren't UTF-8 text. Wins over `patch`")
+    base_sha: str | None = Field(default=None, pattern=COMMIT_SHA)
     summary: str | None = Field(default=None, max_length=20_000)
     error: str | None = Field(default=None, max_length=2_000)
     events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
@@ -311,3 +358,35 @@ class CodingFile(BaseModel):
     after: str | None = Field(description="Its text after the turn (none: deleted, or isn't shown)")
     binary: bool
     too_large: bool = Field(description="Over 1 MB: not shown")
+
+
+class SandboxNetworkUpdate(BaseModel):
+    """The hosts Kai's sandboxes may reach besides the model API, here (workspace or project)."""
+
+    presets: list[str] = Field(default_factory=list, max_length=20,
+                               description="Named presets (package registries), e.g. npm, pypi")
+    hosts: list[str] = Field(default_factory=list, max_length=50,
+                             description="Exact host names, or *.domain for one domain's hosts")
+
+
+class SandboxNetworkRead(BaseModel):
+    presets: list[str] = Field(description="The presets chosen here")
+    hosts: list[str] = Field(description="The custom hosts chosen here")
+    effective: list[str] = Field(
+        description="Everything a sandbox here may reach besides the model API (a project: the workspace's too)")
+    available_presets: dict[str, dict[str, Any]] = Field(description="Each preset's name and its hosts")
+
+
+class SharedCodingOutcomeRead(BaseModel):
+    """Published PR evidence; no private brief, summary, events, keys or Chat references."""
+
+    pr_number: int
+    pr_url: str
+    pr_state: PrState | None
+    commit_sha: str | None
+    turn: int
+    finished_at: datetime | None
+    ci_state: Literal["passed", "failed"] | None
+    review_url: str | None
+    ci_review_url: str | None
+    session_id: uuid.UUID | None = Field(description="Only present for the coding session's owner")

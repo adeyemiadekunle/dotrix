@@ -40,3 +40,18 @@ class RunSlots:
             yield
         finally:
             self._free.release()
+
+    @asynccontextmanager
+    async def extra(self) -> AsyncIterator[bool]:
+        """Reserve an optional second sandbox without waiting while a parent owns a slot."""
+        if self._free is None:
+            yield True
+            return
+        if self._free.locked():
+            yield False
+            return
+        await self._free.acquire()
+        try:
+            yield True
+        finally:
+            self._free.release()

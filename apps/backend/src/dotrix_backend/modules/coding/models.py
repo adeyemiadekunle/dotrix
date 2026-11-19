@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -100,6 +101,12 @@ WAITING = frozenset({CodingRunStatus.AWAITING_APPROVAL, CodingRunStatus.CHANGES_
 
 
 class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    work_mode: Mapped[str] = mapped_column(String(8), default="build", server_default="build")
+    plan_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    execution_plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    skill_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    task_records: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
     __tablename__ = "coding_runs"
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -130,6 +137,8 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     recovery_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # What the agent is told: the issue, its acceptance criteria, linked documents (as data).
     # Fixed when asked for, so the approver sees exactly what will be sent.
+    environment_image_id: Mapped[str | None] = mapped_column(String(80))
+    environment_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     brief: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)  # what the person asking added
 
@@ -144,6 +153,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # The turn's changes while they wait to be accepted (`changes_ready`), as a binary patch on the
     # session's branch; cleared once pushed or rejected. Who accepted them, and when.
     pending_patch: Mapped[str | None] = mapped_column(Text, deferred=True)
+    # The same patch, byte for byte (files that aren't UTF-8 text survive). `pending_patch` (text) is
+    # read only for turns that were already waiting before this column existed.
+    pending_patch_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     # The turn's changes as a patch against `base_sha`, kept after it's pushed or discarded: the
     # session's Changes and Files show it (pending_patch is only the copy waiting to be pushed).
     diff: Mapped[str | None] = mapped_column(Text, deferred=True)
@@ -234,6 +246,10 @@ class CodingSession(WorkspaceScopedMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Its sandbox asleep between turns (Docker Cloud: stopped, files kept), to wake for the next one: where
+    # it is, its key's secret and placeholder, and which key and network it was opened with (a digest).
+    sandbox_handle: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    sandbox_slept_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CodingRunner(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
@@ -248,8 +264,16 @@ class CodingRunner(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     name: Mapped[str] = mapped_column(String(100))  # the machine's name, as its owner sees it
     platform: Mapped[str | None] = mapped_column(String(40))  # e.g. "darwin", "linux"
     tools: Mapped[list[str]] = mapped_column(JSONB, default=list)  # coding tools found there, preferred first
-    isolation: Mapped[str] = mapped_column(String(16), default="none")  # "srt", or "none" (a worktree only)
+    isolation: Mapped[str] = mapped_column(String(16), default="none")  # "sbx" (Docker Sandboxes), "srt", or "none" (a worktree only)
     project_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)  # the projects it has checkouts of
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+def waiting_patch(bytes_value: bytes | None, text_value: str | None) -> bytes | None:
+    """The patch waiting to be pushed: the exact bytes, or (a turn that waited before they were kept)
+    the old text column's value."""
+    if bytes_value is not None:
+        return bytes(bytes_value)
+    return text_value.encode() if text_value is not None else None

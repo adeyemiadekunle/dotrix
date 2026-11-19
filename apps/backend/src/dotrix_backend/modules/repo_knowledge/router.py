@@ -6,14 +6,18 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from dotrix_backend.api.deps import SessionDep
+from dotrix_backend.core.errors import Conflict, Unprocessable
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.modules.agents.router import Agents
 from dotrix_backend.modules.agents.schemas import AgentRunRead
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.projects.deps import KnowledgeEditor, ProjectViewer
 
+from .baseline import BaselineService
 from .models import PathStatus
 from .schemas import (
+    BaselineReviewCreate,
+    RepoBaselineRead,
     RepoCoverageRead,
     RepoDependenciesRead,
     RepoExplainRequest,
@@ -63,6 +67,14 @@ async def explain_repository(
     service = RepoKnowledgeService(session, checkouts)
     await service.snapshot(access.project)
     stale = [p.path for p in (await service.pages(access.project)).pages if p.stale] if data.refresh else []
+    if data.pages and not data.refresh:
+        raise Unprocessable("Select pages only when refreshing stale repository knowledge")
+    if data.refresh:
+        if data.pages and not set(data.pages).issubset(stale):
+            raise Conflict("The selected pages are no longer stale wiki pages; reload coverage")
+        stale = list(dict.fromkeys(data.pages)) if data.pages else stale
+        if not stale:
+            raise Unprocessable("There are no stale wiki pages to refresh")
     return await agents.explain_repository(access, data.domains, stale=stale)
 
 
@@ -97,3 +109,17 @@ async def list_repository_paths(
     return await RepoKnowledgeService(session, checkouts).paths(
         access.project, status=status, domain=domain, prefix=prefix, after=after, limit=limit,
     )
+
+
+@router.get("/baseline")
+async def repository_baseline(access: ProjectViewer, session: SessionDep, checkouts: Checkouts) -> RepoBaselineRead:
+    """Current evidence and the latest shared human review; confirmation never implies full understanding."""
+    return await BaselineService(session, checkouts).state(access.project)
+
+
+@router.post("/baseline/reviews", responses=errors(403, 409, 422))
+async def review_repository_baseline(
+    data: BaselineReviewCreate, access: KnowledgeEditor, session: SessionDep, checkouts: Checkouts,
+) -> RepoBaselineRead:
+    """Review an exact evidence digest. Stale submissions fail; retry the same request ID safely. No model runs."""
+    return await BaselineService(session, checkouts).review(access, data)

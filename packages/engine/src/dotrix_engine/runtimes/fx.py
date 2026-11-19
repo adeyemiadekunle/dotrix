@@ -23,12 +23,69 @@ from .contracts import (
     RuntimeHandoff,
     RuntimeJournalStore,
     RuntimeToolContext,
+    RuntimeToolError,
     TurnResult,
     UnsupportedRuntimeOperation,
     validate_session,
 )
 
 _HOST = Path(__file__).with_name("fx_host")
+_TOOL_ERROR_CHARS = 1_000
+# Each libfx artifact this host may run, with the earlier artifacts whose saved journals it was shown
+# to resume through this host (tests/integration/test_fx_cross_version.py, with both installed). The
+# host runs only the version its package.json pins, and only when that version is listed here; a run
+# bound to an artifact missing from its reader's list fails closed rather than resume on it.
+LIBFX_ARTIFACTS: dict[str, tuple[str, ...]] = {
+    "0.0.16": (),
+    "0.0.17-kai.1": ("0.0.16",),
+}
+# The package each version comes from. fx's own releases are `libfx` on npm; the Kai runtime's
+# (adeyemiadekunle/kai-runtime) are `@kunemi-group/kai` on GitHub Packages, versioned
+# <fx release>-kai.<n>, which a host installs under the name `libfx` with an npm alias.
+_KAI_PACKAGE = "@kunemi-group/kai"
+
+
+def libfx_package(version: str) -> str:
+    """The npm package a libfx version is published as."""
+    return _KAI_PACKAGE if re.fullmatch(r"\d+\.\d+\.\d+-kai\.\d+", version) else "libfx"
+
+
+def _declared(spec: str) -> str:
+    """The version a package.json dependency on libfx names, exactly: `X` or `npm:<package>@X`."""
+    if spec.startswith("npm:"):
+        package, _, version = spec[len("npm:"):].rpartition("@")
+        if package != libfx_package(version):
+            raise RuntimeError(f"libfx {version} is published as {libfx_package(version)}, not {package}")
+        return version
+    if libfx_package(spec) != "libfx":
+        raise RuntimeError(f"libfx {spec} must be installed as npm:{libfx_package(spec)}@{spec}")
+    return spec
+
+
+def libfx_version(host: Path | None = None) -> str:
+    """The libfx version a host pins in its package.json, refused unless this module admits it."""
+    declared = _declared(json.loads(((host or _HOST) / "package.json").read_text())["dependencies"]["libfx"])
+    if declared not in LIBFX_ARTIFACTS:
+        raise RuntimeError(f"libfx {declared} is not an admitted fx host artifact")
+    return declared
+
+
+def installed_libfx_version(host: Path | None = None) -> str | None:
+    """The libfx version installed in a host's node_modules, or None when it isn't installed. A package
+    other than the one its version is published as (see libfx_package) is refused."""
+    manifest = (host or _HOST) / "node_modules" / "libfx" / "package.json"
+    if not manifest.is_file():
+        return None
+    installed = json.loads(manifest.read_text())
+    if installed["name"] != libfx_package(installed["version"]):
+        raise RuntimeError(f"{installed['name']} {installed['version']} is not a libfx artifact this host admits")
+    return installed["version"]
+
+
+def _said(message: str) -> str:
+    """A tool error as the model reads it: one bounded paragraph."""
+    flat = " ".join(message.split()) or "Tool failed."
+    return flat if len(flat) <= _TOOL_ERROR_CHARS else flat[: _TOOL_ERROR_CHARS - 1] + "…"
 _LOCAL_METADATA = ".dotrix-fx-runtime.json"
 _LOCAL_SESSION = re.compile(r"^wrun_[A-Za-z0-9]+$")
 
@@ -43,7 +100,7 @@ def fx_configuration_digest(
     Credentials are deliberately excluded.
     """
     identity = {
-        "version": "libfx-0.0.16", "name": config.name, "instructions": config.instructions,
+        "version": f"libfx-{libfx_version()}", "name": config.name, "instructions": config.instructions,
         "model": model, "base_url": base_url, "effort": effort, "context_window": context_window,
         "tools": [{"name": tool.name, "description": tool.description, "schema": tool.input_schema,
                    "idempotent": tool.idempotent, "writes": tool.writes,
@@ -77,7 +134,7 @@ def _prepare_local_dir(path: Path, config: AgentRuntimeConfig, model: str, base_
 
 
 class FxRuntime:
-    """Experimental memory, local or host-journal runtime; platform controls remain external."""
+    """Memory, local or host-journal runtime; platform controls remain external."""
 
     capabilities = RuntimeCapabilities(streaming=True, cancellation=True, steering=True)
 
@@ -127,8 +184,12 @@ class FxRuntime:
             raise ValueError("A host journal needs exactly one engine session and cannot use local storage")
         if engine_session is not None:
             validate_session(engine_session, "session")
-        if not (_HOST / "node_modules" / "libfx").exists():
+        expected = libfx_version(_HOST)
+        installed = installed_libfx_version(_HOST)
+        if installed is None:
             raise RuntimeError(f"libfx is not installed; run npm ci --prefix {_HOST}")
+        if installed != expected:
+            raise RuntimeError(f"libfx {installed} is installed but this host pins {expected}; run npm ci --prefix {_HOST}")
         if local_dir is not None:
             local_dir = Path(local_dir)
             await asyncio.to_thread(_prepare_local_dir, local_dir, config, model, base_url, effort, context_window)
@@ -139,7 +200,7 @@ class FxRuntime:
         runtime = cls(config, process, local=local_dir is not None, journal=journal, engine_session=engine_session)
         try:
             await runtime._request({
-                "op": "init", "name": config.name, "instructions": config.instructions, "model": model,
+                "op": "init", "libfxVersion": expected, "name": config.name, "instructions": config.instructions, "model": model,
                 "baseUrl": base_url, "apiKey": api_key, "effort": effort, "contextWindow": context_window,
                 "localDir": str(local_dir) if local_dir is not None else None,
                 "persistence": journal is not None, "ephemeralEngine": ephemeral_engine, "sessionId": engine_session,
@@ -218,6 +279,8 @@ class FxRuntime:
                 # Check serializability before sending, so a malformed host result fails the tool, not the bridge.
                 json.dumps(result)
                 reply = {"op": "tool_reply", "id": event["id"], "ok": True, "result": result}
+        except RuntimeToolError as exc:
+            reply = {"op": "tool_reply", "id": event.get("id"), "ok": False, "error": _said(str(exc))}
         except Exception:
             reply = {"op": "tool_reply", "id": event.get("id"), "ok": False}
         with contextlib.suppress(BrokenPipeError, ConnectionError, RuntimeError):

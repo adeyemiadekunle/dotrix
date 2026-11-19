@@ -1,25 +1,27 @@
 # Coding runs: sandbox setup
 
 Kai, the coding agent, works on an issue in a sandbox: from "Start coding" on the issue, Build
-mode in Chat, or a session in Chat's Code tab. Underneath, Kai is one of three headless tools,
-each behind `CodingTool` (`apps/backend/src/dotrix_backend/modules/coding/tools.py`):
+mode in Chat, or "New session" in Codes. Underneath, Kai is one of four headless engines, each
+behind `CodingTool` (`apps/backend/src/dotrix_backend/modules/coding/tools.py`). People only
+ever see Kai; the engine is never named in a step, failure, commit or PR.
 
-| Tool | Runs on | Chosen by |
+| Engine | Runs on | Chosen when |
 | --- | --- | --- |
-| Claude Code | Anthropic | Your default or session choice; Auto when Anthropic is available without OpenAI |
-| Codex | OpenAI | Your default or session choice; Auto when OpenAI is available |
-| OpenCode 2 (pinned in the image) | Anthropic, OpenAI, Google, xAI/Grok, DeepSeek, Mistral, Groq, OpenRouter | Your default or session choice; Auto with another provider |
+| Claude Code | Anthropic | Automatically for an Anthropic model |
+| Codex | OpenAI | Automatically for an OpenAI model |
+| OpenCode 2 | Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA | Automatically for the other providers |
+| fx (ACP, `fx-acp.mjs`) | OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA (not Google yet) | Only when a person prefers it, or `DOTRIX_CODING_AGENT=fx` |
 
-Account → Your models saves a personal default. A new session can override it; follow-up turns
-keep their recorded tool and model. Unavailable defaults fall back to a compatible tool. OpenCode
-uses an available model from the platform catalogue; its session picker can choose another.
-Every person brings their own provider key. The web app requires a usable personal key before
+A new session picks a model (your default model to start), and the engine follows it: your
+preferred engine in Account → Your models where it can run that model, otherwise the one in the
+table. Follow-up turns keep their recorded engine and model. Every person brings their own
+provider key. The web app requires a usable personal key before
 continuing in a real workspace (the seeded demo stays public). Shared workspace and server model keys
 are not supported. Scheduled runs use the creator's own key.
 
 The worker gives the tool a copy of the repo and a brief, reads its changes back, then pushes a
 new branch and opens a PR through the dotrix GitHub App. This folder holds what the sandbox
-needs: the image (all three tools, git, Playwright MCP for the agent's own browser, and the
+needs: the image (all four engines, git, Playwright MCP for the agent's own browser, and the
 egress proxy) and the OpenShell provider profiles for the model keys.
 
 ## A run, from start to PR
@@ -42,8 +44,8 @@ egress proxy) and the OpenShell provider profiles for the model keys.
    (`.gitlab-ci.yml`, `Jenkinsfile`, …). Files CI runs without being CI configuration (build
    scripts, test setup) are named on the PR for a person to review first.
 7. **The push.** A new branch (`dotrix/<key>-<title>-<id>`, never the default branch, never
-   forced), then the PR. The issue moves to review and the Reviewer reads the PR. A person
-   merges.
+   forced), then the PR. The issue moves to review and Juno reviews the PR, posting the review
+   on GitHub. A person merges.
 
 **Sessions.** A session keeps its sandbox warm between turns (`DOTRIX_CODING_WARM_MAX` per
 workspace, closed after `DOTRIX_CODING_IDLE_MINUTES`). Claude Code's transcript and OpenCode's
@@ -58,7 +60,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 `recovery_required` and is settled from what GitHub shows (`coding/recovery.py`):
 - its PR is adopted, or opened, when the branch is at the recorded commit;
 - the turn runs again, twice in all, when nothing was published;
-- anything else waits for Recover in the Code tab.
+- anything else waits for Recover in Codes.
 
 ## How a run is contained
 
@@ -88,9 +90,27 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   `~/.fx/settings.json` each turn (one OpenAI-compatible provider, its key read from the provider's
   variable by name, auto-upgrade off) and drives `fx acp`; the sandbox, not fx, is the boundary, and
   nobody is there to answer fx's permission prompts. fx's web tools reach nothing (the sandbox blocks
-  them). fx (0.0.16) ignores `HTTPS_PROXY`, so behind the egress proxy the driver points it at a forwarder
-  on 127.0.0.1 that tunnels each request to the configured provider (and nothing else) through the proxy;
-  a refusal ends the turn at once ("The sandbox doesn't allow this model provider"). People only ever see Kai: no step, failure, commit message or PR names the engine. Which engine ran is on the run, in the audit log, and in the worker's log; a session picks a model and the engine follows it (a preferred engine in Account → Your models).
+  them). fx (0.0.17) ignores `HTTPS_PROXY`, so behind the egress proxy the driver points it at a forwarder
+  on 127.0.0.1:31821 that tunnels each request to the configured provider (and nothing else) through the proxy;
+  a refusal ends the turn at once ("The sandbox doesn't allow this model provider"). fx gets the browser as
+  Claude Code does: the driver passes `--mcp-config` (Playwright MCP) to every session it starts, resumes or loads
+  (ACP's `mcpServers`, each command resolved to an absolute path, which fx 0.0.16 requires), after checking each server
+  answers `initialize` (`mcp-check.mjs`); one that doesn't is left out and said ("The browser didn't start"), since fx
+  would go on silently.
+- **Codex gets the same browser** as `-c mcp_servers.browser.command/args`. It calls it without asking
+  (`danger-full-access`) and reports its calls as `mcp_tool_call` items. Codex (0.169.0) also goes on silently when a
+  server doesn't start, and `required = true` would fail the whole turn instead, so its command runs `mcp-check.mjs`
+  first (`sh -c 'node /opt/dotrix/mcp-check.mjs --mcp-config …; exec codex …'`), which only prints the warning.
+- **The browser writes only to /tmp/playwright.** Playwright MCP runs in that folder with `--ignore-roots`, so it is
+  its only workspace root: started in the repository, it saved a screenshot the agent named into the repository, and
+  the turn committed it (Playwright MCP 0.0.85).
+- **OpenCode gets the same browser** through `OPENCODE_CONFIG_CONTENT` as a local MCP server. The pinned
+  OpenCode 2.3.0 exposes its tools through `execute` (`tools.browser.browser_navigate`, and so on).
+  The command runs `mcp-check.mjs` first to report a browser that cannot start without failing the whole turn.
+  Actual nested browser calls become normal session steps; script and tool errors are shown too. The server
+  comes from the platform, never the repository's config, and is reattached on each new or resumed turn.
+  The cloud browser is headless: screenshots are kept with the turn; it is not the desktop app's live Browser pane.
+- **People only ever see Kai.** No step, failure, commit message or PR names the engine. Which engine ran is on the run, in the audit log, and in the worker's log; a session picks a model and the engine follows it (a preferred engine in Account → Your models).
 - **Filesystem.** The repo and `/tmp` are writable; the system is read-only. The agent runs as
   the image's unprivileged `sandbox` user (uid 1500).
 - **Limits.** Personal BYOK has no platform token-budget setting or coding token-cap enforcement.
@@ -109,19 +129,20 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 
 | Setting | Default | What |
 | --- | --- | --- |
-| `DOTRIX_CODING_SANDBOX` | `off` outside Compose; `docker` in Compose | `docker`, `openshell`, or `local` (development only: no isolation; production refuses it) |
+| `DOTRIX_CODING_SANDBOX` | `off` outside Compose; `docker` in Compose | `docker`, `docker-cloud`, `openshell`, or `local` (development only: no isolation; production refuses it) |
+| `DOTRIX_DOCKER_CLOUD_ID`, `DOTRIX_DOCKER_CLOUD_PAT` | none | For `docker-cloud`: the Docker ID and a personal access token with Cloud Sandboxes access |
 | `DOTRIX_CODING_IMAGE` | `dotrix-coding:latest` | The image built from this folder |
 | `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, `opencode`, or `fx` |
 | `DOTRIX_CODING_CLAUDE_MODEL`, `DOTRIX_CODING_CODEX_MODEL` | the tool's default | A model for Claude Code or Codex |
 | `DOTRIX_CODING_OPENCODE_MODEL` | first available catalogue model | Optional server default, e.g. `xai:grok-4.7` |
-| `DOTRIX_CODING_FX_MODEL` | first available model | fx's default, on an OpenAI-compatible endpoint: OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter (not Google yet) |
+| `DOTRIX_CODING_FX_MODEL` | first available model | fx's default, on an OpenAI-compatible endpoint: OpenAI, Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA (not Google yet) |
 | `DOTRIX_CODING_FX_DRIVER` | `/opt/dotrix/fx-acp.mjs` | Where the image puts the ACP driver |
 | `DOTRIX_CODING_TIMEOUT_MINUTES` | 30 | Per turn |
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
 | `DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES` | 3, 30 | Warm sandboxes kept per workspace, and for how long idle (0: every turn starts fresh and resumes from the saved session) |
-| `DOTRIX_CODING_MAX_RUNS` | 2 | Runs working at once per worker (0: no limit) |
+| `DOTRIX_CODING_MAX_RUNS` | 2 | Runs working at once per worker (0: no limit in development; must be positive in staging/production) |
 | `DOTRIX_CODING_MEMORY`, `DOTRIX_CODING_CPUS` | `4g`, 2 | Each Docker sandbox |
-| `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's | `runsc` for gVisor |
+| `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's in development; `runsc` in the deployment example | Deployed Docker coding requires `runsc` (gVisor installed and registered on the Docker host) |
 | `DOTRIX_CODING_FORK_OWNER` | none | The organisation branches are pushed to as a fork (required in staging and production) |
 
 You also need the GitHub App, with Contents (write) and Pull requests (write). For Juno on Kai's PRs
@@ -131,6 +152,32 @@ it to the **Check suite** event: Juno's review is posted on the PR as a comment 
 a failed check suite on Kai's commit gets Juno's look at the failed jobs' logs, posted on the PR, with
 "Ask Kai to fix" in Codes. Without Actions (read) Juno is told the logs couldn't be read. Switch them off
 with `DOTRIX_GITHUB_PR_REVIEWS=false` and `DOTRIX_GITHUB_CI_MONITOR=false`.
+
+## Docker Cloud sandboxes (no Docker on the worker)
+
+`DOTRIX_CODING_SANDBOX=docker-cloud` runs each turn in a Docker Cloud sandbox through the Docker
+Sandboxes API (`modules/coding/docker_cloud.py`): a microVM from this image, pulled from a registry
+(`DOTRIX_CODING_IMAGE=docker.io/acme/dotrix-coding:0.1.0`), with an inline `denyAll` network policy
+allowing only the engine's model API host. Instead of `docker exec`:
+
+- the repo goes in as a tar through the sandbox's file service and is unpacked by the image's user;
+- each command is a process whose output is read from a cursor (stdout a line at a time, stderr's
+  tail), with stdin uploaded as a file and opened as the process's standard input;
+- Stop is SIGINT, then SIGKILL after 5 s; the turn's time limit is SIGKILL;
+- the model key is a Docker secret: the sandbox holds a placeholder, and Docker writes the key into
+  requests to the model API only (custom injection with the engine's header; Docker's own
+  integration for hosts it serves itself). Without a secret the key goes in each process's
+  environment, and then extra allowed hosts are refused;
+- the hosts owners and admins allow (Settings → Network, `coding/network.py`) join the model
+  API in the policy;
+- between turns the sandbox sleeps (stopped, files kept) and the next turn wakes it; the worker's
+  sweep deletes sleepers after 7 days, closed or deleted sessions', and leftovers;
+- the sandbox's own timeout (turn time + idle time + 10 minutes, renewed by each command) stops it
+  if the worker doesn't.
+
+It needs `DOTRIX_DOCKER_CLOUD_ID` and `DOTRIX_DOCKER_CLOUD_PAT` (a personal access token with Cloud
+Sandboxes access); see deploy/README.md. Docker's API is experimental; its reference is at
+https://docs.docker.com/reference/api/sandboxes/latest/.
 
 ## Set up Docker (the simplest: once per machine that runs agents)
 
@@ -156,7 +203,11 @@ Each run gets:
   (above) and refuses everything else.
 - **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
   capabilities dropped, `no-new-privileges`, the `sandbox` user, `DOTRIX_CODING_MEMORY` and
-  `DOTRIX_CODING_CPUS`, 512 processes. The repo is copied in as a tar extracted by that user.
+  `DOTRIX_CODING_CPUS`, 512 processes, with swap disabled. The egress container is limited to
+  256 MiB without swap, 0.25 CPU and 128 processes. Both use the configured runtime. Before
+  repository files are copied in, the worker inspects each container's actual runtime; a missing,
+  mismatched or uninspectable runtime ends the attempt and cleans up without retrying on plain
+  Docker. The repo is copied in as a tar extracted by the unprivileged user.
 - **Cleanup:** both containers, the volume, and the network are removed when the run (or, for a
   warm session, the session) ends, however it ends. Each carries the label `dotrix.run=<run id>`
   (`docker ps -a --filter label=dotrix.run` finds any a crash left behind).
@@ -175,9 +226,11 @@ checks all of this against a real container (it's skipped where the image isn't 
    The machine that runs agents also needs the `openshell` CLI, selected to that gateway, and
    an `ssh` client: uploads to a sandbox go over SSH.
 2. Build the image, which installs Claude Code, Codex, OpenCode, fx, and git, each at a pinned version
-   (`CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`, `FX_VERSION`; fx from releases.fx.sh,
-   checked against its SHA-256). Raise one with `--build-arg` only after checking its events and flags:
-   `docker build -t dotrix-coding:latest infra/coding`
+   (`CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`, `KAI_CLI_VERSION`; fx is the Kai runtime's
+   command, `@kunemi-group/kai-cli-linux-<cpu>` from GitHub Packages, checked against the SHA-256 the
+   Dockerfile pins). Raise one with `--build-arg` only after checking its events and flags. The fx install
+   needs a GitHub token with `read:packages` as a build secret:
+   `docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding`
 3. Import the provider profiles:
    ```shell
    openshell provider profile import -f infra/coding/dotrix-claude-code.yaml --global
@@ -187,7 +240,7 @@ checks all of this against a real container (it's skipped where the image isn't 
    openshell provider profile import -f infra/coding/dotrix-opencode-openai.yaml --global
    openshell provider profile import -f infra/coding/dotrix-opencode-google.yaml --global
    # fx, one per provider it may run on (not yet checked on a gateway):
-   for p in openai anthropic xai deepseek mistral groq openrouter; do
+   for p in openai anthropic xai deepseek mistral groq openrouter nvidia; do
      openshell provider profile import -f "infra/coding/dotrix-fx-$p.yaml" --global
    done
    ```
@@ -208,17 +261,21 @@ it.
 ## Status
 
 - **Checked:** Claude Code in the Docker sandbox on a real model (a turn, resume across two
-  containers, Stop, cumulative cost) and the whole flow to a PR and the Reviewer. OpenCode was
+  containers, Stop, cumulative cost) and the whole flow to a PR and Juno's review. Codex on
+  GPT-5.5 in the Docker sandbox through the egress proxy, issue to PR (2026-10-31). OpenCode was
   checked against fake Anthropic and OpenAI-compatible APIs (turns, resume in a fresh sandbox,
   Stop, base URLs), and through the egress proxy to the real api.anthropic.com.
 - The coding image also completed fake local API runs for xAI (Responses), DeepSeek, Mistral,
-  Groq, and OpenRouter (Chat Completions), each using only its selected provider's test key.
+  Groq, and OpenRouter (Chat Completions), each using only its selected provider's test key. NVIDIA
+  (2026-11-10): OpenCode 2.1.4 knows it from its own catalogue (`nvidia`, 22 models), and OpenCode and fx
+  each ran a turn against a fake Chat Completions endpoint in the image (the key as `Bearer`, the model name
+  as NVIDIA's, tools sent), then each fixed a one-line bug on NVIDIA's real API on Nemotron 3 Ultra (read,
+  edit, ran a check, reported; usage back). Not yet through the egress proxy or on a gateway.
   The real Docker isolation and Stop tests passed with this image.
 - **Not yet:**
   - Paid model calls with the added providers.
   - The OpenCode profiles on an OpenShell gateway.
   - OpenCode's browser.
-  - Codex (needs an OpenAI key).
   - **The image with every engine, 2026-10-30.** Built from this Dockerfile (Claude Code 2.1.296, Codex
     0.166.0, OpenCode 2.1.4, fx 0.0.16 from releases.fx.sh with its SHA-256, Playwright MCP 0.0.83); the
     Docker sandbox tests pass with it (`tests/unit/test_coding_docker.py`: edits, nothing else reachable,
@@ -231,8 +288,17 @@ it.
     API directly; the internal Docker network in front of it is what the sandbox tests cover.
   - **fx outside a container** too: against a fake model (resume, Stop) and on Claude Haiku 5.5 (a follow-up,
     the session saved and restored into a fresh home).
-  - Not yet: Codex on a model, the other providers on paid models, the profiles on a gateway, fx's browser.
+  - Not yet: the other providers on paid models, the profiles on a gateway, fx's browser.
   - Coding runs through Dokploy's Docker proxy (see [deploy/README.md](../../deploy/README.md)).
+- **Engines raised, 2026-11-13: Claude Code 2.1.323, Codex 0.169.0, OpenCode 2.3.0, Playwright MCP 0.0.85**
+  (fx stays 0.0.16, its latest). Each new version ran beside the one it replaces against a scripted model
+  API (Anthropic Messages and OpenAI Responses), with Kai's own commands, environment, saved sessions and
+  parsers from `tools.py`: a turn that writes a file and runs a check, then a follow-up resumed in a fresh
+  home. Steps, command output, summaries, tokens, cost and resume came out the same. OpenCode 2.3.0 now
+  also emits the last step's `step_finish` (counted once by message id). Codex 0.166.0 applied a
+  repository's own `.codex/config.toml` and 0.169.0 doesn't; both sent the repository's `AGENTS.md` to the
+  model until `-c project_doc_max_bytes=0` (now in Kai's command). Playwright MCP 0.0.85 keeps every flag
+  `tools.py` passes; its browser wasn't run. Not yet: these versions on real models, in the built image.
 
 ## Check a sandbox by hand
 
@@ -272,3 +338,26 @@ What a check showed (OpenShell built from source, a local gateway on Docker, thi
 - `curl` to api.anthropic.com was denied too: only Claude Code's binary is let through there
   (`ALLOWED …/claude-code/bin/claude.exe -> api.anthropic.com:443`).
 - The agent's edits came back as a patch, and the sandbox and provider were gone afterwards.
+
+## Local turns (on a person's own computer)
+
+Local turns don't use this image. `dotrix runner` (or the desktop app, which runs it) codes a
+person's own turns in a git worktree of their checkout under `~/.dotrix/worktrees`, with the
+coding tool signed in on that computer; the platform never sends a key or a GitHub token there.
+With Docker Sandboxes (`sbx`) installed, each turn runs in a microVM of its own with only its
+worktree mounted, and may run commands; without it the tool only edits files. The patch comes
+back to the platform, which checks and pushes it like a cloud turn. See
+`apps/cli/src/dotrix_cli/runner.py`.
+
+### fx 0.0.17 update
+
+The coding image source pins 0.0.17; previous image checks above describe 0.0.16.
+The model forwarder uses a stable sandbox port (31821), since 0.0.17 refuses a
+resumed session whose provider base URL changed. A collision fails startup.
+Failed or user-input-required model recovery also fails the turn rather than
+publishing an incomplete edit. The real binary/Node driver new-turn and resume
+protocol was checked in Bubblewrap with scripted responses; a rebuilt/deployed
+Docker image and live NVIDIA cloud/browser runs remain separate validation.
+Native Linux shell support uses the host-owned namespace relay documented in
+[the browser support guide](../../docs/kai-browser-support.md). Nova's libfx chat
+host remains at 0.0.16 pending its own persistence and recovery validation.

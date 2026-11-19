@@ -26,6 +26,7 @@ _NPM_SCOPES = (("dependencies", "runtime"), ("devDependencies", "dev"), ("option
 _NPM_LOCKS = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock")
 _PY_LOCKS = ("uv.lock", "poetry.lock")
 _REQUIREMENTS = re.compile(r"(^|/)requirements[^/]*\.txt$")
+_VERSION = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.!+_-]*$")
 _PEP508 = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(\[[^\]]*\])?\s*(.*)$")
 
 
@@ -91,11 +92,32 @@ def read_dependencies(root: Path, paths: Iterable[str]) -> Dependencies:
                 out.unread.append((path, "No reader for this manifest yet"))
         except _Unread as why:
             out.unread.append((path, str(why)))
+        except OSError as exc:
+            out.unread.append((path, f"Couldn't read it: {type(exc).__name__}"))
+        except (AttributeError, TypeError, KeyError):  # a shape no reader expected: this file only
+            out.unread.append((path, "Unexpected shape"))
     return out
 
 
 class _Unread(Exception):
     """A file that couldn't be read; the message says why (safe to show)."""
+
+
+def _table(value: object, what: str) -> dict:
+    """A manifest's table, or unread when it has another shape."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise _Unread(f"Unexpected shape: {what} isn't a table")
+    return value
+
+
+def _strings(value: object, what: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise _Unread(f"Unexpected shape: {what} isn't a list of requirements")
+    return value
 
 
 def _text(root: Path, path: str) -> str:
@@ -178,12 +200,28 @@ def _npm(root: Path, path: str, lock: str | None, parsed: dict | None) -> list[D
     specs = (parsed or {}).get("specs", {})
     found = []
     for key, scope in _NPM_SCOPES:
-        for name, declared in (data.get(key) or {}).items():
+        for name, declared in _table(data.get(key), key).items():
             locked = versions.get(name) if isinstance(versions, dict) else None  # type: ignore[union-attr]
             if locked is None and isinstance(specs, dict):
                 locked = specs.get(f"{name}@{declared}")
             found.append(Dependency("npm", name, str(declared), locked, scope, path, lock if locked else None))
     return found
+
+
+def _logical_lines(text: str) -> list[str]:
+    """Lines with backslash continuations joined."""
+    lines: list[str] = []
+    current = ""
+    for raw in text.splitlines():
+        stripped = raw.rstrip()
+        if stripped.endswith("\\"):
+            current += stripped[:-1]
+            continue
+        lines.append(current + raw.lstrip() if current else raw)
+        current = ""
+    if current:
+        lines.append(current)
+    return lines
 
 
 def _pep503(name: str) -> str:
@@ -195,24 +233,32 @@ def _python(root: Path, path: str, lock: str | None, parsed: dict | None) -> lis
     declared: list[tuple[str, str, str]] = []  # (requirement, scope, raw)
     if path.endswith(".txt"):
         scope = "dev" if re.search(r"dev|test|lint", PurePosixPath(path).name) else "runtime"
-        for line in text.splitlines():
-            line = line.split("#", 1)[0].strip()
-            if line and not line.startswith(("-", "git+", "http")):
+        for line in _logical_lines(text):
+            line = re.sub(r"(^|\s)#.*$", "", line).strip()
+            if not line or line.startswith(("-", "git+", "http")):
+                continue
+            tokens = line.split()
+            cut = next((i for i, t in enumerate(tokens) if t.startswith("--")), len(tokens))
+            line = " ".join(tokens[:cut])
+            if line:
                 declared.append((line, scope, line))
     else:
         try:
             data = tomllib.loads(text)
         except tomllib.TOMLDecodeError as exc:
             raise _Unread(f"Couldn't parse it: {exc}") from exc
-        project = data.get("project") or {}
-        declared += [(r, "runtime", r) for r in project.get("dependencies") or []]
-        for extra in (project.get("optional-dependencies") or {}).values():
-            declared += [(r, "optional", r) for r in extra]
-        for group in (data.get("dependency-groups") or {}).values():
-            declared += [(r, "dev", r) for r in group if isinstance(r, str)]
-        poetry = (data.get("tool") or {}).get("poetry") or {}
-        tables = [(poetry.get("dependencies") or {}, "runtime"), (poetry.get("dev-dependencies") or {}, "dev")]
-        tables += [((g or {}).get("dependencies") or {}, "dev") for g in (poetry.get("group") or {}).values()]
+        project = _table(data.get("project"), "project")
+        declared += [(r, "runtime", r) for r in _strings(project.get("dependencies"), "project.dependencies")]
+        for extra in _table(project.get("optional-dependencies"), "optional-dependencies").values():
+            declared += [(r, "optional", r) for r in _strings(extra, "an optional-dependencies group")]
+        for group in _table(data.get("dependency-groups"), "dependency-groups").values():
+            declared += [(r, "dev", r) for r in (group if isinstance(group, list) else []) if isinstance(r, str)]
+        poetry = _table(_table(data.get("tool"), "tool").get("poetry"), "tool.poetry")
+        tables = [(_table(poetry.get("dependencies"), "poetry dependencies"), "runtime"),
+                  (_table(poetry.get("dev-dependencies"), "poetry dev-dependencies"), "dev")]
+        for g in _table(poetry.get("group"), "poetry group").values():
+            tables.append((_table(_table(g, "a poetry group").get("dependencies"), "a poetry group's dependencies"),
+                           "dev"))
         for table, scope in tables:
             for name, spec in table.items():
                 if name.lower() != "python":
@@ -226,8 +272,9 @@ def _python(root: Path, path: str, lock: str | None, parsed: dict | None) -> lis
             continue
         name, spec = m.group(1), m.group(3).strip() or None
         locked = versions.get(_pep503(name)) if isinstance(versions, dict) else None
-        if locked is None and spec and spec.startswith("=="):
-            locked = spec[2:].strip()
+        if locked is None and spec and spec.startswith(("===", "==")):
+            candidate = spec.lstrip("=").strip()
+            locked = candidate if _VERSION.match(candidate) else None
         found.append(Dependency("pypi", name, spec, locked, scope, path, lock if locked and lock else None))
     return found
 
@@ -240,7 +287,7 @@ def _cargo(root: Path, path: str, lock: str | None, parsed: dict | None) -> list
     versions = (parsed or {}).get("versions", {})
     found = []
     for key, scope in (("dependencies", "runtime"), ("dev-dependencies", "dev"), ("build-dependencies", "dev")):
-        for name, spec in (data.get(key) or {}).items():
+        for name, spec in _table(data.get(key), key).items():
             declared = spec.get("version") or spec.get("path") or spec.get("git") if isinstance(spec, dict) else spec
             crate = spec.get("package", name) if isinstance(spec, dict) else name
             locked = versions.get(crate) if isinstance(versions, dict) else None

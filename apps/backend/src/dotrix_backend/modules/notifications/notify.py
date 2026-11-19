@@ -79,6 +79,14 @@ class Notifier:
         self._add(project, requester_id, NotificationKind.LIMIT, at, run_id=run_id, title=title,
                   excerpt=_excerpt(said), actor_agent=agent)
 
+    def coding_done(
+        self, *, workspace_id: uuid.UUID, project_id: uuid.UUID, requester_id: uuid.UUID, coding_run_id: uuid.UUID,
+        issue_id: uuid.UUID | None, title: str, at: datetime, agent: str, why: str | None = None,
+    ) -> None:
+        """A coding turn someone asked for ended: its PR, no changes, or why it didn't finish."""
+        self._add_at(workspace_id, project_id, requester_id, NotificationKind.CODING, at, coding_run_id=coding_run_id,
+                     issue_id=issue_id, title=title, actor_agent=agent, excerpt=_excerpt(why) if why else None)
+
     def decided(
         self, project: Project, requester_id: uuid.UUID, run_id: uuid.UUID | None, title: str, at: datetime, *,
         approved: int, rejected: int, reason: str | None, actor_user_id: uuid.UUID,
@@ -196,10 +204,20 @@ class Notifier:
         actor_user_id: uuid.UUID | None = None, actor_agent: str | None = None, excerpt: str | None = None,
         coding_run_id: uuid.UUID | None = None,
     ) -> None:
+        self._add_at(project.workspace_id, project.id, user_id, kind, at, title=title, count=count, run_id=run_id,
+                     issue_id=issue_id, actor_user_id=actor_user_id, actor_agent=actor_agent, excerpt=excerpt,
+                     coding_run_id=coding_run_id)
+
+    def _add_at(
+        self, workspace_id: uuid.UUID, project_id: uuid.UUID, user_id: uuid.UUID, kind: NotificationKind,
+        at: datetime, *, title: str, count: int = 1, run_id: uuid.UUID | None = None,
+        issue_id: uuid.UUID | None = None, actor_user_id: uuid.UUID | None = None, actor_agent: str | None = None,
+        excerpt: str | None = None, coding_run_id: uuid.UUID | None = None,
+    ) -> None:
         self.session.add(
             Notification(
-                workspace_id=project.workspace_id,
-                project_id=project.id,
+                workspace_id=workspace_id,
+                project_id=project_id,
                 user_id=user_id,
                 kind=kind,
                 run_id=run_id,

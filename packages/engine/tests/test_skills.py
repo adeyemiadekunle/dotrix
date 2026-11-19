@@ -10,7 +10,7 @@ def test_every_default_skill_names_its_agents_and_they_exist() -> None:
         assert describe_skill(text), name
     assert set(skills_for(SKILLS, "coding")) == {
         "threat-model-a-feature", "security-review", "design-an-api", "plan-a-schema-change",
-        "review-a-backend-change", "review-a-frontend-change", "build-a-ui-change", "definition-of-done"}
+        "review-a-backend-change", "review-a-frontend-change", "build-a-ui-change", "definition-of-done", "write-an-executable-plan"}
     assert "evaluate-a-library" in skills_for(SKILLS, "research") and "write-a-runbook" in skills_for(SKILLS, "documentation")
     assert skills_for({"ours": "# Ours\nDescription: for all\n"}, "product") == {"ours": "# Ours\nDescription: for all\n"}
 

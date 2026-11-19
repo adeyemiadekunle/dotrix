@@ -19,21 +19,55 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+  searxng:
+    # Pinned multi-platform image; update after checking the JSON API and health endpoint.
+    image: docker.io/searxng/searxng@sha256:eb8b09ffa83aebbe8b8d3ded23cfd224b2d3b01db4f3af9eb03876ef6def6dda
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Generate SEARXNG_SECRET with openssl rand -hex 32}
+    configs:
+      - source: searxng-settings
+        target: /etc/searxng/settings.yml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    ports: ["127.0.0.1:${DOTRIX_SEARXNG_PORT:-8081}:8080"] # native backend only
   redis:
     image: redis:7
     restart: unless-stopped
     ports: ["127.0.0.1:6379:6379"] # localhost only
-  # S3-compatible object storage for document originals. Console: http://localhost:9001
-  minio:
-    image: minio/minio:latest
+  # S3-compatible object storage for document originals: RustFS (MinIO's images left Docker Hub).
+  # Console: http://localhost:9001
+  storage:
+    image: rustfs/rustfs:1.0.3
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    # Required, from .env (see .env.example); compose refuses to start without them.
+    # Required, from .env (see .env.example); compose refuses to start without them. The variables keep
+    # MinIO's names so existing .env files work.
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:?}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
     ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"] # localhost only
-    volumes: [miniodata:/data]
+    volumes: [storagedata:/data]
 volumes:
   pgdata:
-  miniodata:
+  storagedata:
+
+# Inline so both native-service and repo-root app Compose commands resolve it identically.
+configs:
+  searxng-settings:
+    content: |
+      use_default_settings: true
+      server:
+        limiter: false
+        public_instance: false
+      search:
+        formats:
+          - html
+          - json

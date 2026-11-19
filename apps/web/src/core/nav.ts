@@ -58,7 +58,7 @@ const SIMPLE: Partial<Record<Route, string>> = {
   codes: "codes",
 };
 
-function href(route: Route, params: Params = {}): string {
+export function href(route: Route, params: Params = {}): string {
   const base = `/w/${currentSlug()}`;
   if (route === "home") return base;
   if (route === "project") return `${base}/p/${params.id}/${params.tab || "board"}`;

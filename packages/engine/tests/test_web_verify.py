@@ -1,4 +1,4 @@
-"""A report's claims checked against what was read, in code (docs/agents-v2.md §6.3)."""
+"""A report's claims checked against what was read, in code (docs/architecture.md)."""
 import pytest
 
 from dotrix_engine.web import Source, check_claim, quote_in

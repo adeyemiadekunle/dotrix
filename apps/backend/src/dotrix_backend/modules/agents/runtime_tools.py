@@ -1,4 +1,4 @@
-"""Read-only platform tools for experimental chat runtimes.
+"""Read-only platform tools for the chat runtimes.
 
 The fx pilot selects these for project Chat. A caller must first bind a runtime
 session to an admitted platform run; session IDs supplied by a model are not authority.
@@ -6,13 +6,16 @@ session to an admitted platform run; session IDs supplied by a model are not aut
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Any
 
 from langchain_core.tools import StructuredTool
+from pydantic import ValidationError
 from sqlalchemy import select
 
-from dotrix_backend.core.errors import Conflict, Forbidden
+from dotrix_backend.core.errors import Conflict, DomainError, Forbidden
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.search.embeddings import Embedder
@@ -20,7 +23,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.catalog import tool_id
 from dotrix_engine.contracts import PM_HANDLE, AgentSpec
-from dotrix_engine.runtimes import RuntimeTool, RuntimeToolContext
+from dotrix_engine.runtimes import RuntimeTool, RuntimeToolContext, RuntimeToolError
 
 from .knowledge_tools import build_knowledge_tools
 from .models import AgentRun, AgentRuntimeBinding, RunStatus
@@ -40,6 +43,10 @@ class RuntimeRunScope:
     agent: str
     lease_token: int
     session_id: str
+    skill_snapshot: dict[str, str] | None = field(default=None, compare=False)
+    resource_snapshot: dict | None = field(default=None, compare=False)
+    # The version each document's last read saw, shared by this run's read and change tools.
+    read_versions: dict[str, int] = field(default_factory=dict, compare=False, repr=False)
 
 
 async def _authorize_read(
@@ -87,6 +94,7 @@ def scoped_knowledge_tools(
     tools = []
     for fn in build_knowledge_tools(
         sessions, workspace_id=scope.workspace_id, project_id=scope.project_id, embedder=embedder,
+        skill_snapshot=scope.skill_snapshot, resource_snapshot=scope.resource_snapshot,
     ):
         tool = StructuredTool.from_function(coroutine=fn)
         capability = tool_id(tool)
@@ -118,33 +126,14 @@ def scoped_project_tools(
     Only explicit read capabilities may cross this boundary. Authorization surrounds
     every invocation, including results that finish after a lease or access change.
     """
-    from dataclasses import asdict
-
     from .board_tools import BoardContext, build_board_tools
     from .graph_tools import build_graph_tools
     from .storage_backend import PlatformKnowledgeBackend
 
     backend = PlatformKnowledgeBackend(sessions, workspace_id=scope.workspace_id, project_id=scope.project_id,
-                                       instructed_by_id=scope.requested_by_id)
-
-    def path(value: str) -> str:
-        return "/" + value.removeprefix("/dotrix/").lstrip("/")
-
-    async def read_file(file_path: str, offset: int = 0, limit: int = 2000) -> dict:
-        """Read a project document by /dotrix/ path, optionally a range of lines."""
-        return asdict(await backend.aread(path(file_path), offset, limit))
-
-    async def ls(path: str = "/dotrix/") -> dict:
-        """List a project document folder."""
-        return asdict(await backend.als("/" + path.removeprefix("/dotrix/").lstrip("/")))
-
-    async def glob(pattern: str, path: str = "/dotrix/") -> dict:
-        """Find project documents by glob pattern."""
-        return asdict(await backend.aglob(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/")))
-
-    async def grep(pattern: str, path: str = "/dotrix/", glob: str | None = None) -> dict:
-        """Search within project documents. Prefer sections to large full reads."""
-        return asdict(await backend.agrep(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/"), glob, max_count=100))
+                                       instructed_by_id=scope.requested_by_id, run_id=scope.run_id,
+                                       read_versions=scope.read_versions)
+    read_file, ls, glob, grep = document_reads(backend)
 
     ctx = BoardContext(sessions, scope.workspace_id, scope.project_id, scope.requested_by_id, None, coding=False)
     board, _, _ = build_board_tools(ctx)
@@ -168,3 +157,72 @@ def scoped_project_tools(
         tools.append(RuntimeTool(tool.name, tool.description, tool.args_schema.model_json_schema(),
                                  idempotent=True, writes=False, execute_scoped=execute))
     return tools
+
+
+def document_reads(backend: Any) -> list[Callable]:
+    """Reading the project's documents by /dotrix/ path through a knowledge backend: `read_file`, `ls`, `glob`
+    and `grep`, for a runtime without DeepAgents' own file tools (fx) and for scripts on either runtime."""
+    from dataclasses import asdict
+
+    def path(value: str) -> str:
+        return "/" + value.removeprefix("/dotrix/").lstrip("/")
+
+    async def read_file(file_path: str, offset: int = 0, limit: int = 2000) -> dict:
+        """Read a project document by /dotrix/ path, optionally a range of lines."""
+        return asdict(await backend.aread(path(file_path), offset, limit))
+
+    async def ls(path: str = "/dotrix/") -> dict:
+        """List a project document folder."""
+        return asdict(await backend.als("/" + path.removeprefix("/dotrix/").lstrip("/")))
+
+    async def glob(pattern: str, path: str = "/dotrix/") -> dict:
+        """Find project documents by glob pattern."""
+        return asdict(await backend.aglob(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/")))
+
+    async def grep(pattern: str, path: str = "/dotrix/", glob: str | None = None) -> dict:
+        """Search within project documents. Prefer sections to large full reads."""
+        return asdict(await backend.agrep(pattern, "/" + path.removeprefix("/dotrix/").lstrip("/"), glob, max_count=100))
+
+    return [read_file, ls, glob, grep]
+
+
+def _refusal(exc: Exception) -> RuntimeToolError | None:
+    """What the model may read of a tool's failure: the platform's own refusal, or what was wrong
+    with its arguments. Anything else (a crash, a driver error) stays "Tool failed."."""
+    if isinstance(exc, DomainError):
+        return RuntimeToolError(exc.detail)
+    if isinstance(exc, ValidationError):
+        problems = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'arguments'}: {e['msg']}" for e in exc.errors()[:5])
+        return RuntimeToolError(f"Invalid arguments: {problems}")
+    return None
+
+
+def readable_failures(tool: RuntimeTool) -> RuntimeTool:
+    """The same tool, its refusals said to the model as Claude Code returns a tool's error, so it can
+    correct its arguments, ask the person, or work within what it may do rather than retry blind.
+    The handler and its checks are unchanged; only how a failure is reported."""
+    def told(exc: Exception) -> Exception:
+        refusal = _refusal(exc)
+        if refusal is None:
+            return exc
+        refusal.__cause__ = exc
+        return refusal
+
+    if tool.execute_scoped is not None:
+        scoped = tool.execute_scoped
+
+        async def execute_scoped(arguments: dict, context: RuntimeToolContext):
+            try:
+                return await scoped(arguments, context)
+            except Exception as exc:
+                raise told(exc) from exc
+        return replace(tool, execute_scoped=execute_scoped)
+    assert tool.execute is not None
+    plain = tool.execute
+
+    async def execute(arguments: dict):
+        try:
+            return await plain(arguments)
+        except Exception as exc:
+            raise told(exc) from exc
+    return replace(tool, execute=execute)

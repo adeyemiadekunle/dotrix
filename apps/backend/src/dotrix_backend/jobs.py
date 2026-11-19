@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from .core.email import EmailMessage, EmailSendError
 from .core.jobs import JobContext, JobFunction
+from .modules.admin.trail import delete_older
 from .modules.agents.service import continue_due_runs
 from .modules.api_tokens.repository import DeviceAuthorizationRepository
 from .modules.auth.repository import (
@@ -23,7 +24,7 @@ from .modules.code.service import CodeService
 from .modules.coding.github_reviews import post_review as post_coding_review
 from .modules.coding.github_reviews import triage_ci
 from .modules.coding.models import CodingRun, CodingRunStatus
-from .modules.connectors.webhook import delete_stale_deliveries
+from .modules.connectors.webhook import delete_stale_deliveries, enqueue_stale_pending
 from .modules.documents.service import DocumentService
 from .modules.execution.service import accept_operation, load_operation
 from .modules.invites.repository import InviteRepository
@@ -37,7 +38,9 @@ logger = logging.getLogger(__name__)
 
 # How long finished rows are kept before cleanup deletes them.
 TOKEN_RETENTION = timedelta(days=7)  # refresh tokens after expiry; email links after use or expiry; device logins
+ADMIN_TRAIL_RETENTION = timedelta(days=400)  # the admin console's trail
 INVITE_RETENTION = timedelta(days=30)  # after expiry, revocation, or acceptance
+FOLLOW_UP_GRACE = timedelta(minutes=1)  # a GitHub delivery's jobs unqueued this long are queued by the sweep
 CLEANUP_INTERVAL_SECONDS = 3600
 INDEX_INTERVAL_SECONDS = 60
 AUTOMATIONS_INTERVAL_SECONDS = 60
@@ -69,10 +72,13 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
     in the API process in local mode); safe to run any time, from any number of processes."""
     # Imported here: it imports the issues service, which needs every model loaded first.
     from .modules.coding.runner import end_cut_off_runs
+    from .modules.connectors.issue_import import cleanup_import_previews
 
     at = datetime.fromisoformat(now) if now else datetime.now(UTC)
     token_cutoff, invite_cutoff = at - TOKEN_RETENTION, at - INVITE_RETENTION
     async with ctx.session_factory() as session:
+        # Deliveries whose follow-up jobs never got queued (GitHub didn't redeliver): queue them now.
+        queued = await enqueue_stale_pending(session, ctx.jobs, at - FOLLOW_UP_GRACE) if ctx.jobs is not None else 0
         deleted = {
             "refresh_tokens": await RefreshTokenRepository(session).delete_stale(token_cutoff),
             "auth_sessions": await AuthSessionRepository(session).delete_stale(
@@ -88,10 +94,14 @@ async def cleanup_expired(ctx: JobContext, *, now: str | None = None) -> dict[st
             "cut_off_coding_runs": await end_cut_off_runs(session, ctx.settings)
             if ctx.settings.jobs != "worker" else 0,
             "github_deliveries": await delete_stale_deliveries(session, token_cutoff),
+            "github_import_previews": await cleanup_import_previews(session, at),
+            "admin_events": await delete_older(session, at - ADMIN_TRAIL_RETENTION),
         }
         await session.commit()
         if ctx.checkouts is not None:
             deleted["checkouts"] = await CodeService(session, ctx.checkouts).prune()
+    if queued:
+        logger.info("cleanup queued the follow-ups of %d GitHub deliveries that GitHub never redelivered", queued)
     if any(deleted.values()):
         logger.info("cleanup deleted %s", ", ".join(f"{n} {name}" for name, n in deleted.items() if n))
     return deleted
@@ -179,6 +189,19 @@ async def email_notifications(ctx: JobContext) -> dict[str, int]:
     return done
 
 
+async def check_operator_alerts(ctx: JobContext) -> dict[str, int]:
+    """Email the operators when the deployment needs attention, and when it clears (modules/admin/alerts.py).
+    Runs in the worker every `alert_interval_minutes`, or a loop in the API in local mode."""
+    from .modules.admin.alerts import (
+        evaluate,  # imported here: the admin console's reads pull in most models
+    )
+
+    done = await evaluate(ctx, getattr(ctx.jobs, "redis", None))
+    if done["opened"] or done["cleared"]:
+        logger.info("operator alerts: %s", done)
+    return done
+
+
 async def convert_document(ctx: JobContext, *, document_id: str) -> None:
     """An uploaded document's markdown, made outside the request (big PDFs take a while)."""
     if ctx.storage is None:
@@ -187,10 +210,10 @@ async def convert_document(ctx: JobContext, *, document_id: str) -> None:
         await DocumentService(session, ctx.storage).convert(uuid.UUID(document_id))
 
 
-async def send_magic_link(ctx: JobContext, *, email: str) -> None:
+async def send_magic_link(ctx: JobContext, *, email: str, next_path: str | None = None) -> None:
     """Like password resets: the lookup happens here, so the response can't reveal accounts."""
     async with ctx.session_factory() as session:
-        await AuthService(session, ctx.settings, ctx.email).send_magic_link(email)
+        await AuthService(session, ctx.settings, ctx.email).send_magic_link(email, next_path=next_path)
 
 
 async def index_knowledge(ctx: JobContext, *, project_id: str | None = None) -> int:
@@ -211,7 +234,16 @@ async def index_knowledge(ctx: JobContext, *, project_id: str | None = None) -> 
     return done
 
 
+
+async def discard_coding_sandbox(ctx: JobContext, *, handle: dict) -> None:
+    """Delete a session's sleeping cloud sandbox (its session was closed or deleted, or someone deleted
+    the sandbox). The worker's sweep catches what this misses."""
+    sandbox = getattr(ctx.coding, "sandbox", None) if ctx.coding is not None else None
+    if sandbox is not None and hasattr(sandbox, "discard"):
+        await sandbox.discard(handle)
+
 JOBS: dict[str, JobFunction] = {
+    "discard_coding_sandbox": discard_coding_sandbox,
     "send_email": send_email,
     "send_password_reset": send_password_reset,
     "send_magic_link": send_magic_link,
@@ -224,4 +256,5 @@ JOBS: dict[str, JobFunction] = {
     "post_coding_review": post_coding_review,
     "triage_ci": triage_ci,
     "email_notifications": email_notifications,
+    "check_operator_alerts": check_operator_alerts,
 }

@@ -8,15 +8,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.errors import Conflict, Forbidden, NotFound
+from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.agents.models import (
     ACTIVE_STATUSES,
     AgentApproval,
     AgentRun,
     AgentRunOutput,
+    ChatPublication,
 )
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.auth.repository import UserRepository
+from dotrix_backend.modules.connectors.import_models import GitHubImportedIssue
 from dotrix_backend.modules.connectors.models import ConnectedRepo
 from dotrix_backend.modules.documents.models import Document
 from dotrix_backend.modules.issues.models import (
@@ -29,12 +32,13 @@ from dotrix_backend.modules.issues.models import (
 )
 from dotrix_backend.modules.knowledge.models import AuthorType, KnowledgeFile, KnowledgeVersion
 from dotrix_backend.modules.knowledge.service import KnowledgeService
-from dotrix_backend.modules.repo_knowledge.models import RepoPath, RepoSnapshot
+from dotrix_backend.modules.repo_knowledge.models import RepoBaselineReview, RepoPath, RepoSnapshot
 from dotrix_backend.modules.research.models import ResearchSource
 from dotrix_backend.modules.search.models import KnowledgeChunk
-from dotrix_backend.modules.workspaces.models import Membership, Role
+from dotrix_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
+from dotrix_backend.modules.workspaces.storage import ensure_room, project_bytes
 from dotrix_engine.layout import skeleton
 
 from .models import Project, ProjectAccessLevel, ProjectMember, ProjectStar
@@ -55,7 +59,7 @@ class RepoTaken(Conflict):
 # too: it belongs to the workspace, not the project.
 _PROJECT_ROWS = (
     KnowledgeFile, KnowledgeVersion, Issue, AgentRun, AgentApproval, AgentRunOutput, ResearchSource, Document,
-    KnowledgeChunk, ProjectMember, IssueAttachment, RepoSnapshot,
+    KnowledgeChunk, ProjectMember, IssueAttachment, RepoSnapshot, RepoBaselineReview, ChatPublication, GitHubImportedIssue,
 )
 
 
@@ -200,12 +204,20 @@ class ProjectService:
             await self.session.delete(existing)
         await self.session.commit()
 
-    async def move(self, project: Project, actor: Membership, target_id: uuid.UUID) -> ProjectRead:
+    async def move(
+        self,
+        project: Project,
+        actor: Membership,
+        target_id: uuid.UUID,
+        *,
+        organisations: bool = True,
+        settings: Settings,
+    ) -> ProjectRead:
         """Move a project, with everything in it, to another workspace where you can set up
         projects (owners and admins in both). Its key and repo must be free there, and no agent
-        run may be working or waiting on an approval."""
+        run may be working or waiting on an approval. Not into an organisation while they're off."""
         target = await MembershipRepository(self.session).get(target_id, actor.user_id)
-        if target is None:
+        if target is None or not organisations and target.workspace.kind is not WorkspaceKind.PERSONAL:
             raise NotFound("Workspace not found")
         if not can(target, Permission.MANAGE_PROJECTS):
             raise Forbidden(f"Your role there ({target.role}) can't add projects")
@@ -223,6 +235,8 @@ class ProjectService:
         )
         if active is not None:
             raise Conflict("An agent run is still working or waiting for approval; stop it or decide it first")
+        # Its uploads must fit in the other workspace's storage limit.
+        await ensure_room(self.session, target_id, settings, await project_bytes(self.session, project.id))
 
         # Its repo was reached through this workspace's GitHub installation: connect it again there.
         await self.session.execute(delete(ConnectedRepo).where(ConnectedRepo.project_id == project.id))

@@ -1,6 +1,7 @@
+import { LinkProvider } from "@dotrix/ui/astryx";
 import { Button } from "@dotrix/ui/components/button";
 import { Outlet, useMatches } from "@tanstack/react-router";
-import { SearchXIcon } from "lucide-react";
+import { MagnifyingGlassMinusIcon } from "@phosphor-icons/react";
 import { useEffect } from "react";
 
 import { EmptyState } from "@/components/states";
@@ -22,7 +23,11 @@ export function RootLayout() {
   useEffect(() => {
     if (title) document.title = `${title} · ${APP_NAME}`;
   }, [title]);
-  return <Outlet />;
+  return (
+    <LinkProvider component={Link}>
+      <Outlet />
+    </LinkProvider>
+  );
 }
 
 /** An address that's no page of the app. */
@@ -30,7 +35,7 @@ export function NotFoundPage() {
   return (
     <div className="flex min-h-svh items-center justify-center p-6 [&>div]:max-w-lg [&>div]:self-center">
       <EmptyState
-        icon={SearchXIcon}
+        icon={MagnifyingGlassMinusIcon}
         title="This page doesn't exist"
         description="Check the link, or go back to your workspace."
         action={

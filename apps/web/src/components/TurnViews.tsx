@@ -1,13 +1,20 @@
+import { SelectionInput } from "@dotrix/ui/components/selection-input";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // A coding turn's work as the side panel shows it (components/SidePanel.tsx): its diff, the repository's
 // files as the turn leaves it, and the commands it ran. Desktop turns show the live worktree on this computer.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+
+import { TreeList } from "@dotrix/ui/astryx";
+import type { TreeListItemData } from "@dotrix/ui/astryx";
+import { languageOf, useHighlight, type HighlightToken } from "@dotrix/ui/hooks/use-highlight";
 
 import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
 import type { Scope } from "@/lib/issues";
 
 import { desktop, useDesktopRunners, worktreeHere } from "../core/desktop";
 import { Ic } from "../core/icons";
-import { buildTree, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
+import { OutputReading } from "./AgentTrace";
+import { buildTree, fileIcon, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
 import { toast } from "../ui/toast";
 
 const LONG_OUTPUT = 24; // lines of a command's output shown before "Show all"
@@ -40,20 +47,20 @@ export function ChangesView({
   return error ? (
     <p className="muted">
       The changes couldn't be loaded.{" "}
-      <button className="btn btn-sm btn-ghost" onClick={onRetry}>
+      <ActionButton className="btn btn-sm btn-ghost" onClick={onRetry}>
         Try again
-      </button>
+      </ActionButton>
     </p>
   ) : (
-    <Changes files={files} loading={loading} turn={run} notes={notes} onNote={onNote} />
+    <ChangeList files={files} loading={loading} turn={run} notes={notes} onNote={onNote} />
   );
 }
 
-/** The repository as the turn leaves it (live from the worktree when it codes on this computer). */
+/** The repository as the turn leaves it (live from the worktree when it codes on this computer): its files' contents.
+ *  What the turn changed in them is Changes' to show. */
 export function FilesView({
   scope,
   run,
-  files,
   initialFile,
   initialLine,
   referenceVersion,
@@ -61,7 +68,6 @@ export function FilesView({
 }: {
   scope: Scope | undefined;
   run: CodingRun;
-  files: DiffFile[];
   initialFile?: string;
   initialLine?: number;
   referenceVersion?: number;
@@ -73,7 +79,6 @@ export function FilesView({
       key={`${run.id}:${initialFile ?? ""}:${initialLine ?? ""}:${referenceVersion ?? ""}`}
       scope={scope}
       run={run}
-      diffs={files}
       worktree={worktree}
       initialPath={initialFile}
       initialLine={initialLine}
@@ -91,17 +96,17 @@ export function TerminalView({ scope, run, enabled = true }: { scope: Scope | un
     return (
       <p className="muted">
         The commands couldn't be loaded.{" "}
-        <button className="btn btn-sm btn-ghost" onClick={() => void events.refetch()}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => void events.refetch()}>
           Try again
-        </button>
+        </ActionButton>
       </p>
     );
-  return <Terminal entries={commands} working={run.status === "running"} />;
+  return <CommandList entries={commands} working={run.status === "running"} />;
 }
 
 /* ---------- Changes: each file's diff ---------- */
 
-function Changes({
+export function ChangeList({
   files,
   loading,
   turn,
@@ -110,11 +115,13 @@ function Changes({
 }: {
   files: DiffFile[];
   loading: boolean;
-  turn: CodingRun;
+  turn: Pick<CodingRun, "status" | "turn">;
   notes?: Map<string, DiffNote[]>;
   onNote?: () => void;
 }) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [viewed, setViewed] = useState<Set<string>>(new Set());
+  const toggle = (set: Set<string>, path: string) => (set.has(path) ? new Set([...set].filter((p) => p !== path)) : new Set(set).add(path));
   if (loading) return <p className="muted">Loading the changes…</p>;
   if (!files.length)
     return (
@@ -132,30 +139,47 @@ function Changes({
         {files.length} file{files.length === 1 ? "" : "s"} changed
         <span style={{ color: "var(--green)" }}>+{added}</span>
         <span style={{ color: "var(--red)" }}>-{removed}</span>
+        {viewed.size > 0 && (
+          <span className="sp" style={{ textAlign: "right" }}>
+            {viewed.size} of {files.length} viewed
+          </span>
+        )}
       </div>
       {files.map((f) => {
-        const open = !closed.has(f.path);
+        const seen = viewed.has(f.path);
+        const open = !closed.has(f.path) && !seen;
         return (
-          <section key={f.path} className="kp-file">
-            <button
-              className="kp-file-h"
-              aria-expanded={open}
-              onClick={() => setClosed((s) => (s.has(f.path) ? new Set([...s].filter((p) => p !== f.path)) : new Set(s).add(f.path)))}
-            >
-              <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
-              <span className={`kp-st ${f.status}`}>{f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}</span>
-              <span className="trunc grow mono">{f.path}</span>
-              {!!notes?.get(f.path)?.length && (
-                <span className="kp-note-count" title="Juno's findings on this file">
-                  <Ic n="shield-check" s={11} />
-                  {notes.get(f.path)!.length}
-                </span>
-              )}
-              <span style={{ color: "var(--green)" }}>+{f.added}</span>
-              <span style={{ color: "var(--red)" }}>-{f.removed}</span>
-            </button>
+          <section key={f.path} className={`kp-file ${seen ? "seen" : ""}`}>
+            <div className="kp-file-row">
+              <button className="kp-file-h" aria-expanded={open} onClick={() => setClosed((s) => toggle(s, f.path))}>
+                <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
+                <span className={`kp-st ${f.status}`}>{f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}</span>
+                <span className="trunc grow mono">{f.path}</span>
+                {!!notes?.get(f.path)?.length && (
+                  <span className="kp-note-count" title="Juno's findings on this file">
+                    <Ic n="shield-check" s={11} />
+                    {notes.get(f.path)!.length}
+                  </span>
+                )}
+                <span style={{ color: "var(--green)" }}>+{f.added}</span>
+                <span style={{ color: "var(--red)" }}>-{f.removed}</span>
+              </button>
+              <button
+                className={`kp-viewed ${seen ? "on" : ""}`}
+                onClick={() => setViewed((s) => toggle(s, f.path))}
+                aria-pressed={seen}
+                aria-label={seen ? `Mark ${f.path} as not viewed` : `Mark ${f.path} as viewed`}
+                data-tip={seen ? "Viewed" : "Mark as viewed"}
+              >
+                <Ic n={seen ? "circle-check" : "circle"} s={15} />
+              </button>
+            </div>
             {open &&
-              (f.binary ? <p className="muted kp-note">A binary file: not shown.</p> : <Hunks hunks={f.hunks} notes={notes?.get(f.path)} onNote={onNote} />)}
+              (f.binary ? (
+                <p className="muted kp-note">A binary file: not shown.</p>
+              ) : (
+                <Hunks hunks={f.hunks} path={f.path} notes={notes?.get(f.path)} onNote={onNote} />
+              ))}
           </section>
         );
       })}
@@ -163,33 +187,77 @@ function Changes({
   );
 }
 
-function Hunks({ hunks, notes = [], onNote }: { hunks: DiffHunk[]; notes?: DiffNote[]; onNote?: () => void }) {
+/** A line's text, coloured when its tokens are known. */
+function HighlightedLine({ text, tokens }: { text: string; tokens?: HighlightToken[] }) {
+  if (!tokens?.length || tokens.map((t) => t.content).join("") !== text) return <>{text || " "}</>;
+  return (
+    <>
+      {tokens.map((t, i) => (
+        <span key={i} className="kp-tok" style={t.style}>
+          {t.content}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** A diff's hunks, coloured as Claude Code's diff is: each side's lines highlighted together (the new side for added and
+ *  unchanged lines, the old side for removed ones), so the code reads as code. */
+function Hunks({ hunks, path, notes = [], onNote }: { hunks: DiffHunk[]; path?: string; notes?: DiffNote[]; onNote?: () => void }) {
+  const sides = useMemo(() => {
+    const after: string[] = [];
+    const before: string[] = [];
+    const at = hunks.map((h) =>
+      h.lines.map((l) => {
+        const place = l.kind === "del" ? before.length : after.length;
+        if (l.kind !== "del") after.push(l.text);
+        if (l.kind !== "add") before.push(l.text);
+        return l.kind === "ctx" ? { after: after.length - 1 } : l.kind === "add" ? { after: place } : { before: place };
+      }),
+    );
+    return { after: after.join("\n"), before: before.join("\n"), at };
+  }, [hunks]);
+  const language = path ? languageOf(path) : undefined;
+  const afterTokens = useHighlight(sides.after, language);
+  const beforeTokens = useHighlight(sides.before, language);
   return (
     <div className="kp-diff mono" role="table" aria-label="Diff">
       {hunks.map((h, i) => (
         <div key={i}>
           <div className="kp-hunk">{h.header}</div>
-          {h.lines.map((l, j) => (
-            <Fragment key={j}>
-              <div className={`kp-line ${l.kind}`} role="row">
-                <span className="kp-no">{l.old ?? ""}</span>
-                <span className="kp-no">{l.new ?? ""}</span>
-                <span className="kp-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>
-                <span className="kp-text">{l.text || " "}</span>
-              </div>
-              {l.kind !== "del" &&
-                notes
-                  .filter((n) => n.line === l.new)
-                  .map((n, k) => (
-                    <button key={k} className="kp-finding" onClick={onNote} aria-label={`Juno's finding on line ${n.line}: ${n.title}`}>
-                      <Ic n="shield-check" s={12} />
-                      <b>Juno</b>
-                      {n.severity && <span className="badge">{n.severity}</span>}
-                      <span className="trunc">{n.title}</span>
-                    </button>
-                  ))}
-            </Fragment>
-          ))}
+          {h.lines.map((l, j) => {
+            const place = sides.at[i]![j]!;
+            const tokens = "before" in place ? beforeTokens?.[place.before!] : afterTokens?.[place.after!];
+            return (
+              <Fragment key={j}>
+                <div className={`kp-line ${l.kind}`} role="row">
+                  <span role="cell" className="kp-no">
+                    {l.old ?? ""}
+                  </span>
+                  <span role="cell" className="kp-no">
+                    {l.new ?? ""}
+                  </span>
+                  <span role="cell" className="kp-sign">
+                    {l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}
+                  </span>
+                  <span role="cell" className="kp-text">
+                    <HighlightedLine text={l.text} tokens={tokens} />
+                  </span>
+                </div>
+                {l.kind !== "del" &&
+                  notes
+                    .filter((n) => n.line === l.new)
+                    .map((n, k) => (
+                      <button key={k} className="kp-finding" onClick={onNote} aria-label={`Juno's finding on line ${n.line}: ${n.title}`}>
+                        <Ic n="shield-check" s={12} />
+                        <b>Juno</b>
+                        {n.severity && <span className="badge">{n.severity}</span>}
+                        <span className="trunc">{n.title}</span>
+                      </button>
+                    ))}
+              </Fragment>
+            );
+          })}
         </div>
       ))}
     </div>
@@ -204,12 +272,12 @@ function WorktreeButtons({ worktree }: { worktree: string }) {
   const bridge = desktop()!;
   return (
     <>
-      <button className="ibtn ibtn-sm" onClick={act(bridge.worktree.open)} aria-label="Open the worktree" data-tip={`Open ${worktree}`}>
+      <ActionButton className="ibtn ibtn-sm" onClick={act(bridge.worktree.open)} aria-label="Open the worktree" data-tip={`Open ${worktree}`}>
         <Ic n="folder-open" s={14} />
-      </button>
-      <button className="ibtn ibtn-sm" onClick={act(bridge.worktree.reveal)} aria-label="Show the worktree in its folder" data-tip="Show in folder">
+      </ActionButton>
+      <ActionButton className="ibtn ibtn-sm" onClick={act(bridge.worktree.reveal)} aria-label="Show the worktree in its folder" data-tip="Show in folder">
         <Ic n="external-link" s={14} />
-      </button>
+      </ActionButton>
     </>
   );
 }
@@ -217,7 +285,6 @@ function WorktreeButtons({ worktree }: { worktree: string }) {
 function Files({
   scope,
   run,
-  diffs,
   worktree,
   initialPath,
   initialLine,
@@ -225,7 +292,6 @@ function Files({
 }: {
   scope: Scope | undefined;
   run: CodingRun;
-  diffs: DiffFile[];
   worktree: string | null;
   initialPath?: string;
   initialLine?: number;
@@ -241,7 +307,6 @@ function Files({
         scope={scope}
         run={run}
         path={open}
-        diff={worktree ? undefined : diffs.find((d) => d.path === open)}
         worktree={worktree}
         initialLine={open === initialPath ? initialLine : undefined}
         onBack={() => setOpen(null)}
@@ -253,9 +318,9 @@ function Files({
     return (
       <p className="muted">
         {tree.error instanceof Error ? tree.error.message : "The files can't be read here."}{" "}
-        <button className="btn btn-sm btn-ghost" onClick={() => void tree.refetch()}>
+        <ActionButton className="btn btn-sm btn-ghost" onClick={() => void tree.refetch()}>
           Try again
-        </button>
+        </ActionButton>
       </p>
     );
   return (
@@ -268,52 +333,46 @@ function Files({
         </div>
       )}
       <label className="row faint" style={{ gap: 6, fontSize: 12, marginBottom: 6 }}>
-        <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
+        <SelectionInput aria-label="Changed only ( )" type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         Changed only ({root.changed})
         <span className="sp" />
         <span className="mono">{run.base_sha.slice(0, 7)}</span>
       </label>
-      <div className="kp-tree mono" role="tree" aria-label="Files">
-        {root.children.map((n) => (
-          <Node key={n.path} node={n} depth={0} onOpen={setOpen} expanded={changedOnly} />
-        ))}
-      </div>
+      <FileTree nodes={root.children} onOpen={setOpen} expanded={changedOnly} />
       {tree.data?.truncated && <p className="faint kp-note">Only the first 20,000 files are listed.</p>}
     </div>
   );
 }
 
-function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number; onOpen: (path: string) => void; expanded: boolean }) {
-  const [open, setOpen] = useState(expanded || node.changed > 0);
-  const pad = { paddingLeft: 6 + depth * 14 };
-  if (node.file) {
-    const st = node.file.status;
-    return (
-      <button role="treeitem" className={`kp-node file ${st}`} style={pad} onClick={() => onOpen(node.path)}>
-        <Ic n="file" s={12} />
-        <span className="trunc grow">{node.name}</span>
-        {st !== "unchanged" && <span className={`kp-st ${st}`}>{st === "added" ? "A" : st === "deleted" ? "D" : "M"}</span>}
-      </button>
-    );
-  }
-  return (
-    <div role="group">
-      <button role="treeitem" aria-expanded={open} className="kp-node" style={pad} onClick={() => setOpen(!open)}>
-        <Ic n={open ? "chevron-down" : "chevron-right"} s={12} />
-        <Ic n={open ? "folder-open" : "folder"} s={12} />
-        <span className="trunc grow">{node.name}</span>
-        {node.changed > 0 && <span className="faint">{node.changed}</span>}
-      </button>
-      {open && node.children.map((c) => <Node key={c.path} node={c} depth={depth + 1} onOpen={onOpen} expanded={expanded} />)}
-    </div>
-  );
+export function FileTree({ nodes, onOpen, expanded = false }: { nodes: TreeNode[]; onOpen: (path: string) => void; expanded?: boolean }) {
+  const item = (node: TreeNode): TreeListItemData => ({
+    id: node.path,
+    label: node.name,
+    startContent: <Ic n={node.file ? fileIcon(node.path) : "folder"} s={15} />,
+    endContent:
+      node.file && node.file.status !== "unchanged" ? (
+        <span className={`kp-st ${node.file.status}`} aria-label={node.file.status}>
+          {node.file.status === "added" ? "A" : node.file.status === "deleted" ? "D" : "M"}
+        </span>
+      ) : node.changed > 0 ? (
+        <span className="faint">{node.changed}</span>
+      ) : undefined,
+    isExpanded: expanded || node.changed > 0,
+    children: node.file ? undefined : node.children.map(item),
+    onClick: node.file ? () => onOpen(node.path) : undefined,
+  });
+  return <TreeList items={nodes.map(item)} density="compact" className="mono" aria-label="Files" />;
 }
 
+const STATUS_SAID: Record<string, string> = { added: "Added", deleted: "Deleted", modified: "Modified" };
+
+/** A file as Claude Code's file view shows it: its path as a breadcrumb under the file's icon, whether the turn changed
+ *  it, Copy path; then its content with line numbers, highlighted (the line a reference names marked). Its diff is in
+ *  Changes. */
 function FileView({
   scope,
   run,
   path,
-  diff,
   worktree,
   initialLine,
   onBack,
@@ -321,53 +380,58 @@ function FileView({
   scope: Scope | undefined;
   run: CodingRun;
   path: string;
-  diff: DiffFile | undefined;
   worktree: string | null;
   initialLine?: number;
   onBack: () => void;
 }) {
-  const file = useCodingFile(scope, run.id, path, worktree);
-  const [view, setView] = useState<"file" | "diff">(initialLine ? "file" : diff ? "diff" : "file");
+  const file = useCodingFile(scope, run.id, path, worktree, run.status === "running");
   const lineRef = useRef<HTMLDivElement>(null);
   const text = file.data?.after ?? file.data?.before ?? "";
+  const tokens = useHighlight(text, languageOf(path));
   useEffect(() => {
-    if (view === "file" && initialLine && file.data) lineRef.current?.scrollIntoView({ block: "nearest" });
-  }, [file.data, initialLine, view]);
+    if (initialLine && file.data) lineRef.current?.scrollIntoView({ block: "nearest" });
+  }, [file.data, initialLine]);
+  const parts = path.split("/");
+  const status = file.data?.status && file.data.status !== "unchanged" ? file.data.status : null;
+  const copyPath = () =>
+    void navigator.clipboard
+      ?.writeText(path)
+      .then(() => toast("Path copied"))
+      .catch(() => toast("It couldn't be copied"));
   return (
-    <div>
-      <div className="row" style={{ gap: 6, marginBottom: 6 }}>
-        <button className="ibtn ibtn-sm" onClick={onBack} aria-label="Back to the files">
+    <div className="kp-fileview">
+      <div className="kp-file-bar">
+        <ActionButton className="ibtn ibtn-sm" onClick={onBack} aria-label="Back to the files">
           <Ic n="arrow-left" s={13} />
-        </button>
-        <span className="mono trunc grow" style={{ fontSize: 12 }}>
-          {path}
+        </ActionButton>
+        <Ic n={fileIcon(path)} s={14} cls="kp-file-icon" />
+        <span className="kp-crumbs mono" title={path}>
+          {parts.map((part, i) => (
+            <Fragment key={i}>
+              {i > 0 && <span className="kp-crumb-sep">/</span>}
+              <span className={i === parts.length - 1 ? "kp-crumb-file" : "kp-crumb"}>{part}</span>
+            </Fragment>
+          ))}
         </span>
-        {worktree && <WorktreeButtons worktree={worktree} />}
-        {diff && (
-          <div className="seg seg-sm" role="tablist" aria-label="Show">
-            <button role="tab" aria-selected={view === "diff"} className={view === "diff" ? "on" : ""} onClick={() => setView("diff")}>
-              Diff
-            </button>
-            <button role="tab" aria-selected={view === "file"} className={view === "file" ? "on" : ""} onClick={() => setView("file")}>
-              File
-            </button>
-          </div>
+        {status && (
+          <span className={`kp-st ${status}`} title={STATUS_SAID[status]} aria-label={STATUS_SAID[status]}>
+            {status === "added" ? "A" : status === "deleted" ? "D" : "M"}
+          </span>
         )}
+        <span className="sp" />
+        {worktree && <WorktreeButtons worktree={worktree} />}
+        <ActionButton className="ibtn ibtn-sm" onClick={copyPath} aria-label="Copy the path" data-tip="Copy path">
+          <Ic n="copy" s={13} />
+        </ActionButton>
       </div>
-      {view === "diff" && diff ? (
-        diff.binary ? (
-          <p className="muted">A binary file: not shown.</p>
-        ) : (
-          <Hunks hunks={diff.hunks} />
-        )
-      ) : file.isLoading ? (
+      {file.isLoading ? (
         <p className="muted">Loading…</p>
       ) : file.error ? (
         <p className="muted">
           {file.error instanceof Error ? file.error.message : "This file can't be read."}{" "}
-          <button className="btn btn-sm btn-ghost" onClick={() => void file.refetch()}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => void file.refetch()}>
             Try again
-          </button>
+          </ActionButton>
         </p>
       ) : file.data?.binary ? (
         <p className="muted">A binary file: not shown.</p>
@@ -376,16 +440,20 @@ function FileView({
       ) : file.data?.status === "deleted" ? (
         <p className="muted">The turn deleted this file.</p>
       ) : (
-        <div className="kp-diff mono" role="table" aria-label={path}>
-          {text.split("\n").map((l, i) => (
+        <div className="kp-source mono" role="table" aria-label={path}>
+          {(text.endsWith("\n") ? text.slice(0, -1) : text).split("\n").map((l, i) => (
             <div
               key={i}
               ref={i + 1 === initialLine ? lineRef : undefined}
-              className={`kp-line ctx ${i + 1 === initialLine ? "kp-line-reference" : ""}`}
+              className={`kp-src-line ${i + 1 === initialLine ? "kp-line-reference" : ""}`}
               role="row"
             >
-              <span className="kp-no">{i + 1}</span>
-              <span className="kp-text">{l || " "}</span>
+              <span role="rowheader" className="kp-no">
+                {i + 1}
+              </span>
+              <span role="cell" className="kp-text">
+                <HighlightedLine text={l} tokens={tokens?.[i]} />
+              </span>
             </div>
           ))}
         </div>
@@ -396,7 +464,7 @@ function FileView({
 
 /* ---------- Terminal: each command with its output ---------- */
 
-function Terminal({ entries, working }: { entries: ReturnType<typeof terminal>; working: boolean }) {
+export function CommandList({ entries, working }: { entries: ReturnType<typeof terminal>; working: boolean }) {
   if (!entries.length) return <p className="muted">{working ? "No commands run yet." : "It ran no commands."}</p>;
   return (
     <div className="kp-term mono" aria-label="Commands">
@@ -407,6 +475,8 @@ function Terminal({ entries, working }: { entries: ReturnType<typeof terminal>; 
   );
 }
 
+/** Terminal: one command as it ran, a mark for how it ended, its output, and that output read (Test Results and
+ *  Stack Trace) when it's a test run or a crash. */
 function Command({ entry, running }: { entry: ReturnType<typeof terminal>[number]; running: boolean }) {
   const [all, setAll] = useState(false);
   const lines = (entry.output ?? "").split("\n");
@@ -419,8 +489,15 @@ function Command({ entry, running }: { entry: ReturnType<typeof terminal>[number
           {entry.command}
           {running && <span className="faint"> …</span>}
         </span>
-        {entry.failed && <Ic n="triangle-alert" s={12} cls="kp-fail" />}
+        {running ? (
+          <Ic n="spinner-gap" s={12} cls="animate-spin" />
+        ) : entry.failed ? (
+          <Ic n="triangle-alert" s={12} cls="kp-fail" />
+        ) : entry.output !== null ? (
+          <Ic n="check" s={12} cls="kp-ok" />
+        ) : null}
       </div>
+      {!running && entry.output && <OutputReading text={entry.output} failed={entry.failed} />}
       {entry.output !== null && entry.output !== "" && (
         <>
           {!all && lines.length > LONG_OUTPUT && (

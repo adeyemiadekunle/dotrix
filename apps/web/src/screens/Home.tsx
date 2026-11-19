@@ -1,3 +1,4 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 // Home, with dotrix's "Waiting for a decision": what the
 // agents ask you to approve or steer, first in the right column. The workspace's Overview and
 // Activity pages folded into this: its stats, workload, and milestones sit here, and the
@@ -9,15 +10,17 @@ import { Ic } from "../core/icons";
 import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
 import { DAY, MONL, TODAY, WDL, ago, diffD, fmtDate, greeting, parse, relDate } from "../core/utils";
-import { D, S, allTasks, canSee, isOver, pColor, progressOf, proj, visibleProjects, who } from "../data/store";
-import { isLive, live } from "../data/live";
-import { useLiveAllTasks, useLiveNotifications } from "../../lib/workspace-data";
+import { D, S, canSee, isOver, pColor, progressOf, proj, who } from "../data/store";
+import { useNotifs, useProjects } from "../data/lists";
+import { isMine, personal as isPersonal, tasksLabel } from "../core/features";
+import { isLive } from "../data/live";
+import { useAllTasks } from "../data/tasks";
 import type { Notif } from "../data/types";
 import { STATUSES } from "../core/constants";
 import { MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar, StIcon } from "../ui/helpers";
-import { tabKeys } from "../ui/tabs";
+import { TabList, Tab } from "@dotrix/ui/astryx";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -39,7 +42,8 @@ export function goTasks(f: "open" | "done" | "overdue") {
 function AgentItem({ n }: { n: Notif }) {
   const w = who(n.by);
   const p = n.project ? proj(n.project) : n.task ? proj(D().tasks.find((t) => t.id === n.task)?.project) : null;
-  const open = () => (isLive() && n.thread ? go("chat", {}, { search: `thread=${n.thread}` }) : go("inbox", {}, { search: `n=${n.id}` }));
+  const open = () =>
+    isLive() && n.thread && !n.codingRun ? go("chat", {}, { search: `thread=${n.thread}&project=${p?.key ?? ""}` }) : go("inbox", {}, { search: `n=${n.id}` });
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: 10, padding: "8px 0", cursor: "pointer" }} onClick={open} role="button" tabIndex={0}>
       <Av id={n.by} cls="md" tip={false} />
@@ -50,7 +54,7 @@ function AgentItem({ n }: { n: Notif }) {
         <div className="trunc muted" style={{ fontSize: 12.5 }}>
           {n.snippet}
         </div>
-        <div className="row faint" style={{ gap: 6, marginTop: 3, fontSize: 11.5 }}>
+        <div className="row faint" style={{ gap: 6, marginTop: 3, fontSize: 12 }}>
           {p && (
             <>
               <span className="pdot" style={css({ "--c": pColor(p), width: 6, height: 6 })} />
@@ -74,9 +78,9 @@ function DecisionPanel({ waiting }: { waiting: Notif[] }) {
         <h2>Waiting for a decision</h2>
         <span className="badge amber">{waiting.length}</span>
         <div className="acts">
-          <button className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+          <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
             View all
-          </button>
+          </ActionButton>
         </div>
       </div>
       <div className="panel-b" style={{ paddingBottom: 6 }}>
@@ -102,11 +106,11 @@ export function Home() {
     measure();
     return () => observer.disconnect();
   }, []);
-  const liveAll = useLiveAllTasks(live.ws?.id, isLive());
-  const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
-  const all = isLive() ? (liveAll ?? []) : allTasks();
-  const mineAll = all.filter((t) => t.assignee === D().me);
-  const activeP = visibleProjects().filter((p) => canSee(p) && p.status !== "complete");
+  const { tasks: all } = useAllTasks();
+  const { items: notifs } = useNotifs();
+  const { items: projects } = useProjects();
+  const mineAll = all.filter(isMine);
+  const activeP = projects.filter((p) => canSee(p) && p.status !== "complete");
   const open = all.filter((t) => t.status !== "done");
   const doneWk = all.filter((t) => t.status === "done" && t.completedAt && Date.now() - t.completedAt < 7 * DAY);
   const over = all.filter(isOver);
@@ -130,9 +134,13 @@ export function Home() {
     ),
   });
   const dls = [dl("Today", 0, 0), dl("Tomorrow", 1, 1), dl("This week", 2, 7)];
-  const waiting = (isLive() ? (liveNotifs ?? []) : D().notifs).filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
+  const waiting = notifs.filter((n) => (n.type === "approval" || n.type === "checkpoint") && !n.read);
   // From the old workspace Overview: tasks by status and how the work is spread.
   const counts = STATUSES.map((st) => ({ st, n: all.filter((t) => t.status === st.id).length }));
+  // A personal workspace is one person's: no teammates to invite or to balance work across, and
+  // every task is yours.
+  const personal = isPersonal();
+  const dueWeek = open.filter((t) => t.due && diffD(parse(t.due)!, TODAY) >= 0 && diffD(parse(t.due)!, TODAY) <= 7).length;
   const load = D()
     .members.filter((m) => m.status === "active")
     .map((m) => ({ m, ts: all.filter((t) => t.assignee === m.id && t.status !== "done") }))
@@ -160,22 +168,22 @@ export function Home() {
           </p>
         </div>
         <div className="acts">
-          {canInvite() && (
-            <button className="btn btn-secondary hide-m" onClick={invite}>
+          {canInvite() && !personal && (
+            <ActionButton className="btn btn-secondary hide-m" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
-            </button>
+            </ActionButton>
           )}
           {allowed("projects:manage") && (
-            <button className="btn btn-secondary hide-m" onClick={newProject}>
+            <ActionButton className="btn btn-secondary hide-m" onClick={newProject}>
               <Ic n="folder-plus" s={14} />
               New project
-            </button>
+            </ActionButton>
           )}
-          <button className="btn btn-primary" onClick={() => newTask()}>
+          <ActionButton className="btn btn-primary" onClick={() => newTask()}>
             <Ic n="plus" s={14} />
             New task
-          </button>
+          </ActionButton>
         </div>
       </div>
       {waiting.length > 0 && (
@@ -198,7 +206,7 @@ export function Home() {
             Open tasks
           </span>
           <span className="v">{open.length}</span>
-          <span className="d">{open.filter((t) => t.assignee === D().me).length} assigned to you</span>
+          <span className="d">{personal ? `${dueWeek} due this week` : `${open.filter((t) => t.assignee === D().me).length} assigned to you`}</span>
         </button>
         <button className="stat" onClick={() => goTasks("done")}>
           <span className="k">
@@ -223,33 +231,30 @@ export function Home() {
         <div className="stack">
           <section className="panel" aria-labelledby="h-mytasks">
             <div className="panel-h">
-              <h2 id="h-mytasks">My tasks</h2>
+              <h2 id="h-mytasks">{personal ? "Tasks" : "My tasks"}</h2>
               <div className="acts">
-                <div className="seg" role="tablist" aria-label="My tasks" onKeyDown={tabKeys}>
+                <TabList role="tablist" aria-label={personal ? "Tasks" : "My tasks"} value={tab} onChange={(value) => setTab(value as typeof tab)} size="sm">
                   {(
                     [
                       ["upcoming", "Upcoming"],
                       ["overdue", "Overdue"],
                       ["completed", "Completed"],
                     ] as const
-                  ).map(([k, n]) => (
-                    <button
-                      key={k}
-                      id={`home-tab-${k}`}
-                      role="tab"
-                      aria-selected={tab === k}
+                  ).map(([key, label]) => (
+                    <Tab
+                      key={key}
+                      id={`home-tab-${key}`}
+                      value={key}
+                      onFocus={() => setTab(key)}
+                      label={label}
+                      endContent={<span className="faint">{lists[key].length}</span>}
                       aria-controls="home-task-panel"
-                      tabIndex={tab === k ? 0 : -1}
-                      className={tab === k ? "on" : ""}
-                      onClick={() => setTab(k)}
-                    >
-                      {n} <span className="faint">{lists[k].length}</span>
-                    </button>
+                    />
                   ))}
-                </div>
-                <button className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip="Open My Tasks" aria-label="Open My Tasks">
+                </TabList>
+                <ActionButton className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip={`Open ${tasksLabel()}`} aria-label={`Open ${tasksLabel()}`}>
                   <Ic n="arrow-up-right" s={15} />
-                </button>
+                </ActionButton>
               </div>
             </div>
             <div id="home-task-panel" role="tabpanel" aria-labelledby={`home-tab-${tab}`}>
@@ -259,7 +264,13 @@ export function Home() {
                 <Empty
                   icon={tab === "overdue" ? "circle-check" : "list-checks"}
                   title={tab === "overdue" ? "Nothing overdue" : "No tasks here"}
-                  text={tab === "overdue" ? "Every task assigned to you is on schedule." : "Add a task to get things moving."}
+                  text={
+                    tab === "overdue"
+                      ? personal
+                        ? "Every task is on schedule."
+                        : "Every task assigned to you is on schedule."
+                      : "Add a task to get things moving."
+                  }
                   cls="sm"
                 />
               )}
@@ -274,9 +285,9 @@ export function Home() {
             <div className="panel-h">
               <h2>Project progress</h2>
               <div className="acts">
-                <button className="btn btn-sm btn-ghost" onClick={() => go("projects")}>
+                <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("projects")}>
                   All projects
-                </button>
+                </ActionButton>
               </div>
             </div>
             {tableOverflow && (
@@ -300,7 +311,7 @@ export function Home() {
                     <th>Open</th>
                     <th>Overdue</th>
                     <th style={{ textAlign: "left" }}>Due</th>
-                    <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>
+                    {!personal && <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -322,7 +333,7 @@ export function Home() {
                         <td>
                           <span className="row">
                             <ProgBar v={pr} cls={p.status === "risk" ? "red" : ""} />
-                            <span className="num faint" style={{ fontSize: 11.5, width: 30 }}>
+                            <span className="num faint" style={{ fontSize: 12, width: 30 }}>
                               {pr}%
                             </span>
                           </span>
@@ -334,9 +345,11 @@ export function Home() {
                         <td style={{ textAlign: "left" }} className="num muted">
                           {fmtDate(p.due)}
                         </td>
-                        <td style={{ textAlign: "right", paddingRight: 14 }}>
-                          <AvStack ids={p.members} max={3} />
-                        </td>
+                        {!personal && (
+                          <td style={{ textAlign: "right", paddingRight: 14 }}>
+                            <AvStack ids={p.members} max={3} />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -347,7 +360,7 @@ export function Home() {
           <section className="panel">
             <div className="panel-h">
               <h2>Tasks by status</h2>
-              <span className="faint" style={{ fontSize: 11.5 }}>
+              <span className="faint" style={{ fontSize: 12 }}>
                 {all.length} across {activeP.length} projects
               </span>
             </div>
@@ -387,7 +400,7 @@ export function Home() {
             <div className="panel-b" style={{ paddingBottom: 6 }}>
               {ms.length > 0 && (
                 <div style={{ marginBottom: 10 }}>
-                  <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
+                  <div className="row" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
                     Milestones
                     <span className="faint" style={{ fontWeight: 500 }}>
                       {ms.length}
@@ -413,7 +426,7 @@ export function Home() {
               )}
               {dls.map((g) => (
                 <div key={g.lab} style={{ marginBottom: 10 }}>
-                  <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
+                  <div className="row" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
                     {g.lab}
                     <span className="faint" style={{ fontWeight: 500 }}>
                       {g.ts.length}
@@ -430,7 +443,7 @@ export function Home() {
                         </div>
                       ))}
                       {g.ts.length > 4 && (
-                        <div className="faint" style={{ fontSize: 11.5, paddingLeft: 16 }}>
+                        <div className="faint" style={{ fontSize: 12, paddingLeft: 16 }}>
                           +{g.ts.length - 4} more
                         </div>
                       )}
@@ -445,37 +458,39 @@ export function Home() {
             </div>
           </section>
 
-          <section className="panel">
-            <div className="panel-h">
-              <h2>Workload</h2>
-              <div className="acts">
-                <span className="faint" style={{ fontSize: 11.5 }}>
-                  Open tasks per person
-                </span>
-              </div>
-            </div>
-            <div className="panel-b">
-              {load.map((l) => (
-                <div key={l.m.id} className="row" style={{ height: 30, fontSize: 13, cursor: "pointer" }} onClick={() => go("member", { id: l.m.id })}>
-                  <Av id={l.m.id} cls="sm" tip={false} />
-                  <span style={{ width: 96 }} className="trunc">
-                    {l.m.name.split(" ")[0]}
-                  </span>
-                  <span className="grow" style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--surface-3)" }}>
-                    <span style={{ display: "flex", width: `${(l.ts.length / maxL) * 100}%` }}>
-                      {STATUSES.filter((st) => st.id !== "done").map((st) => {
-                        const n = l.ts.filter((t) => t.status === st.id).length;
-                        return n ? <i key={st.id} style={{ display: "block", flex: n, background: `var(--st-${st.id})` }} /> : null;
-                      })}
-                    </span>
-                  </span>
-                  <span className="num muted" style={{ width: 22, textAlign: "right" }}>
-                    {l.ts.length}
+          {!personal && (
+            <section className="panel">
+              <div className="panel-h">
+                <h2>Workload</h2>
+                <div className="acts">
+                  <span className="faint" style={{ fontSize: 12 }}>
+                    Open tasks per person
                   </span>
                 </div>
-              ))}
-            </div>
-          </section>
+              </div>
+              <div className="panel-b">
+                {load.map((l) => (
+                  <div key={l.m.id} className="row" style={{ height: 30, fontSize: 13, cursor: "pointer" }} onClick={() => go("member", { id: l.m.id })}>
+                    <Av id={l.m.id} cls="sm" tip={false} />
+                    <span style={{ width: 96 }} className="trunc">
+                      {l.m.name.split(" ")[0]}
+                    </span>
+                    <span className="grow" style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--surface-3)" }}>
+                      <span style={{ display: "flex", width: `${(l.ts.length / maxL) * 100}%` }}>
+                        {STATUSES.filter((st) => st.id !== "done").map((st) => {
+                          const n = l.ts.filter((t) => t.status === st.id).length;
+                          return n ? <i key={st.id} style={{ display: "block", flex: n, background: `var(--st-${st.id})` }} /> : null;
+                        })}
+                      </span>
+                    </span>
+                    <span className="num muted" style={{ width: 22, textAlign: "right" }}>
+                      {l.ts.length}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>

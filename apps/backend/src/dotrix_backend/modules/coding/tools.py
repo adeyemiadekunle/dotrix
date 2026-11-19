@@ -5,7 +5,8 @@ what the run page shows (steps) and what the run used (tokens).
   Headless has no prompts, so the tools it may use are pre-allowed (`--permission-mode dontAsk`
   refuses the rest); the sandbox's policy is the boundary for what Bash can reach.
 - Codex: `codex exec --json … -`, the brief on stdin, with Codex's own sandbox off
-  (`danger-full-access`) because the run is already in one.
+  (`danger-full-access`) because the run is already in one, and the repo's AGENTS.md not read
+  (`project_doc_max_bytes=0`).
 - OpenCode 2: `opencode run --standalone --format json --auto`, the brief on stdin, on any provider's
   model (one OpenCode per provider: its key and the one host the sandbox lets it reach). Its config
   is ours, never the repo's (`OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_CONFIG_CONTENT`).
@@ -31,23 +32,35 @@ CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
 # The agent's browser: Playwright MCP in the sandbox (infra/coding/Dockerfile), headless Chromium with
 # its profile in memory. It opens what the agent serves on localhost; the sandbox's network rules apply
 # to everything else. Only the platform's MCP servers load (--strict-mcp-config), never a repo's.
+# It runs in its output folder with --ignore-roots, so that folder is the only one it writes to: started in the
+# repository, it would save a screenshot the agent names ("page.png") there, and the turn would commit it
+# (checked on Playwright MCP 0.0.85, 2026-11-13). All four cloud engines get the same server.
 BROWSER_SERVER = "browser"
+BROWSER_OUTPUT = "/tmp/playwright"
+_BROWSER_ARGS = ["--headless", "--isolated", "--ignore-roots", "--browser", "chromium", "--no-sandbox", "--output-dir", BROWSER_OUTPUT]
 BROWSER_MCP = {
     "mcpServers": {
         BROWSER_SERVER: {
-            "command": "playwright-mcp",
-            "args": ["--headless", "--isolated", "--browser", "chromium", "--no-sandbox", "--output-dir", "/tmp/playwright"],
+            "command": "sh",
+            "args": ["-c", f"mkdir -p {BROWSER_OUTPUT} && cd {BROWSER_OUTPUT} && exec playwright-mcp {' '.join(_BROWSER_ARGS)}"],
         }
     }
 }
+# fx 0.0.16 and Codex 0.169.0 go on silently when an MCP server doesn't start, so the image's mcp-check.mjs checks it
+# first and prints {"type":"warning","message":"The browser didn't start"} (fx-acp.mjs imports it; Codex runs it).
+MCP_CHECK = "/opt/dotrix/mcp-check.mjs"
 BROWSER_RULE = """\
 - You have a headless browser (the `browser` tools). When the change shows in a web page, start
   the app's dev server in the background on localhost and note its process id (for example
   `python3 -m http.server 8080 >/tmp/server.log 2>&1 & echo $! >/tmp/server.pid` for static files,
   or the project's dev script), open it, check the change works, and take a screenshot of it: the
   browser saves screenshots in /tmp/playwright, never in the repository, and the person sees them.
+  Read `browser_snapshot` for current element targets before clicking or typing; navigation may
+  return a snapshot file link rather than the element list.
   When you're done, stop the server with `kill $(cat /tmp/server.pid)`. Pages outside this machine
   can't be reached, and that's expected.
+- If the browser tools are in your Code Mode catalog, call them through `execute`, for example
+  `await tools.browser.browser_navigate({url: "http://localhost:8080"})`. Keep the results you need.
 """
 
 
@@ -91,6 +104,10 @@ class Usage:
     _commands: set[str] = field(default_factory=set)
     # fx: each tool call's description, for when it fails (its result comes on a later line).
     _tools: dict[str, str] = field(default_factory=dict)
+    # Claude Code: the tool calls it refused (`dontAsk`), said once whether its event or its result names them,
+    # and each call's input, which its refusal event leaves out.
+    _denied: set[str] = field(default_factory=set)
+    _inputs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def total(self) -> int:
@@ -157,7 +174,7 @@ def _relative(path: str) -> str:
 
 
 def _describe_browser(action: str, args: dict[str, Any]) -> str:
-    target = _clip(str(args.get("element") or args.get("ref") or ""), 80)
+    target = _clip(str(args.get("element") or args.get("target") or args.get("ref") or ""), 80)
     match action:
         case "browser_navigate":
             return f"Opened {_clip(str(args.get('url', '')), 120)} in the browser"
@@ -197,10 +214,33 @@ def _describe_claude_tool(name: str, args: dict[str, Any]) -> str | None:
             return f"Read {path}"
         case "Glob" | "Grep":
             return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
-        case "TodoWrite":
+        case "TodoWrite" | "TaskCreate" | "TaskUpdate" | "TaskGet" | "TaskList":  # its own checklist
             return None
         case _:
             return f"Used {name}"
+
+
+def _denied_step(denial: dict[str, Any], usage: Usage) -> Step | None:
+    """A tool call Claude Code refused, as a step: once per call (its `permission_denied` event and its
+    result's `permission_denials` both name it; only the result carries the call's input)."""
+    ref = str(denial.get("tool_use_id") or "")
+    if ref and ref in usage._denied:
+        return None
+    if ref:
+        usage._denied.add(ref)
+    name = str(denial.get("tool_name") or "")
+    args = denial.get("tool_input") or usage._inputs.get(ref) or {}
+    path = _relative(str(args.get("file_path") or args.get("path") or ""))
+    match name:
+        case "Bash" if args.get("command"):
+            what = f"run {_clip(str(args['command']), 160)}"
+        case "Edit" | "MultiEdit" | "Write" | "NotebookEdit" if path:
+            what = f"change {path}"
+        case "":
+            what = "use a tool"
+        case _:
+            what = f"use {name}"
+    return Step("error", f"Not allowed to {what}")
 
 
 class ClaudeCode(_NoUsageCommand):
@@ -257,6 +297,9 @@ class ClaudeCode(_NoUsageCommand):
                 out.failed = f"The model provider refused the key ({error})"
             else:
                 out.steps.append(Step("error", f"A model call failed ({error}); retry {event.get('attempt')}"))
+        elif kind == "system" and event.get("subtype") == "permission_denied":
+            if step := _denied_step(event, usage):
+                out.steps.append(step)
         elif kind == "assistant":
             message = event.get("message") or {}
             for block in message.get("content") or []:
@@ -265,6 +308,8 @@ class ClaudeCode(_NoUsageCommand):
                 elif block.get("type") == "tool_use":
                     said = _describe_claude_tool(str(block.get("name")), block.get("input") or {})
                     ref = str(block.get("id") or "") or None
+                    if ref and isinstance(block.get("input"), dict):
+                        usage._inputs[ref] = block["input"]
                     if block.get("name") == "Bash" and ref:
                         usage._commands.add(ref)
                     if said:
@@ -280,8 +325,9 @@ class ClaudeCode(_NoUsageCommand):
                 usage.output_tokens = sum(o for _, o in usage._calls.values())
         elif kind == "user":  # the results of its tool calls: a command's output is kept
             for block in (event.get("message") or {}).get("content") or []:
+                # A refused call's result is the engine's own refusal text (which names it): its step says it.
                 if isinstance(block, dict) and block.get("type") == "tool_result" \
-                        and block.get("tool_use_id") in usage._commands:
+                        and block.get("tool_use_id") in usage._commands and block.get("tool_use_id") not in usage._denied:
                     out.steps.append(output_step(_tool_result_text(block.get("content")), block["tool_use_id"],
                                                  failed=bool(block.get("is_error"))))
         elif kind == "result":
@@ -293,6 +339,9 @@ class ClaudeCode(_NoUsageCommand):
                 usage.output_tokens = max(usage.output_tokens, int(totals.get("output_tokens") or 0))
             if event.get("total_cost_usd") is not None:
                 usage.cost_usd = float(event["total_cost_usd"])
+            for denial in event.get("permission_denials") or []:
+                if isinstance(denial, dict) and (step := _denied_step(denial, usage)):
+                    out.steps.append(step)
             if event.get("is_error") or str(event.get("subtype", "")).startswith("error"):
                 out.failed = _clip(str(event.get("result") or event.get("subtype") or f"{CODING_AGENT_NAME} stopped"), 500)
             elif event.get("result"):
@@ -308,7 +357,7 @@ class Codex(_NoUsageCommand):
     provider_type = "dotrix-codex"
     api_host = "api.openai.com"
     resumes = False  # `--ephemeral`: each turn starts afresh
-    browser = False  # not yet
+    browser = True  # Playwright MCP as `mcp_servers.browser` (checked on Codex 0.169.0, 2026-11-13)
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return []
@@ -326,8 +375,20 @@ class Codex(_NoUsageCommand):
         return settings.coding_codex_model
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
-        argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral"]
-        return argv + (["-c", f'model="{_bare(model)}"'] if model else []) + ["-"]
+        # `project_doc_max_bytes=0`: the repository's AGENTS.md is data, never Codex's instructions (it would
+        # otherwise reach the model as `<INSTRUCTIONS>`; checked on 0.166.0 and 0.169.0 against a scripted model).
+        argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral",
+                "-c", "project_doc_max_bytes=0"]
+        argv += ["-c", f'model="{_bare(model)}"'] if model else []
+        if not browser:
+            return argv + ["-"]
+        # The browser as a Codex MCP server (`-c` takes TOML values, which these JSON strings and arrays are). Codex
+        # calls it without asking (danger-full-access) and goes on silently if it doesn't start, so mcp-check.mjs says
+        # so first; it never fails the turn, and a missing check (an older image) only goes unsaid.
+        server = BROWSER_MCP["mcpServers"][BROWSER_SERVER]
+        argv += ["-c", f"mcp_servers.{BROWSER_SERVER}.command={json.dumps(server['command'])}",
+                 "-c", f"mcp_servers.{BROWSER_SERVER}.args={json.dumps(server['args'])}", "-"]
+        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(BROWSER_MCP), *argv]
 
     def parse(self, line: str, usage: Usage) -> Parsed:
         out = Parsed()
@@ -338,6 +399,17 @@ class Codex(_NoUsageCommand):
         item = event.get("item") or {}
         if kind == "thread.started":
             out.steps.append(Step("step", "Started"))
+        elif kind == "warning" and str(event.get("message", "")).strip():  # mcp-check.mjs: the browser didn't start
+            out.steps.append(Step("error", _clip(str(event["message"]))))
+        elif kind == "item.started" and item.get("type") == "mcp_tool_call":
+            args = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+            tool = str(item.get("tool") or "")
+            said = _describe_browser(tool, args) if item.get("server") == BROWSER_SERVER else f"Used {tool}"
+            out.steps.append(Step("tool", said))
+        elif kind == "item.completed" and item.get("type") == "mcp_tool_call" and (item.get("error") or item.get("status") == "failed"):
+            error = item.get("error")
+            detail = error.get("message") if isinstance(error, dict) else error
+            out.steps.append(Step("error", _clip(f"The browser: {detail or 'failed'}" if item.get("server") == BROWSER_SERVER else str(detail or "A tool failed"))))
         elif kind == "item.started" and item.get("type") == "command_execution":
             out.steps.append(Step("tool", f"Ran {_clip(str(item.get('command', '')), 160)}", item.get("id")))
         elif kind == "item.completed":
@@ -388,6 +460,7 @@ OPENCODE_PROVIDERS = {
         OpenCodeProvider("mistral", "mistral", "Mistral", "MISTRAL_API_KEY", "api.mistral.ai", "mistral_api_key"),
         OpenCodeProvider("groq", "groq", "Groq", "GROQ_API_KEY", "api.groq.com", "groq_api_key"),
         OpenCodeProvider("openrouter", "openrouter", "OpenRouter", "OPENROUTER_API_KEY", "openrouter.ai", "openrouter_api_key"),
+        OpenCodeProvider("nvidia", "nvidia", "NVIDIA", "NVIDIA_API_KEY", "integrate.api.nvidia.com", "nvidia_api_key"),
     )
 }
 # Never offered to the model: the sandbox can't reach the web, and a run has nobody to answer.
@@ -401,6 +474,8 @@ def opencode_session(session: uuid.UUID) -> str:
 
 
 def _describe_opencode_tool(name: str, args: dict[str, Any]) -> str | None:
+    if name.startswith(f"{BROWSER_SERVER}_"):
+        return _describe_browser(name.removeprefix(f"{BROWSER_SERVER}_"), args)
     path = _relative(str(args.get("path") or ""))
     match name:
         case "shell":
@@ -414,7 +489,7 @@ def _describe_opencode_tool(name: str, args: dict[str, Any]) -> str | None:
         case "glob" | "grep":
             return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
         case "execute":
-            return "Ran a script"
+            return "Used the browser" if f"tools.{BROWSER_SERVER}" in str(args.get("code", "")) else "Ran a script"
         case "subagent":
             return f"Asked a subagent to {_clip(str(args.get('description', '')), 120)}"
         case "skill":
@@ -442,13 +517,13 @@ _OPENCODE_TOTALS = (
 
 
 class OpenCode:
-    """OpenCode 2 on one provider. Checked against a fake model (2.1.4): the brief on stdin, `-s` our
+    """OpenCode 2 on one provider. Checked against a fake model (2.1.4, 2.3.0): the brief on stdin, `-s` our
     session id, events `step_start` / `text` / `tool_use` / `step_finish` / `error`, SIGINT stops it."""
 
     agent = CodingAgent.OPENCODE
     name = "OpenCode"
     resumes = True
-    browser = False  # not yet: Playwright MCP through `OPENCODE_CONFIG_CONTENT` is unchecked
+    browser = True  # Playwright MCP through the pinned CLI's Code Mode catalog
 
     def __init__(self, provider: OpenCodeProvider) -> None:
         self.opencode_provider = provider
@@ -456,7 +531,7 @@ class OpenCode:
         self.key_env, self.api_host = provider.key_env, provider.api_host
         self.provider_type = f"dotrix-opencode-{provider.opencode}"  # infra/coding/dotrix-opencode-*.yaml
 
-    def _env(self, model: str | None = None) -> list[str]:
+    def _env(self, model: str | None = None, *, browser: bool = False) -> list[str]:
         """Its settings, before every command (`env …`): the same in each sandbox, OpenShell's too,
         which passes the sandbox nothing but the key. None of them is a secret."""
         config: dict[str, Any] = {
@@ -472,6 +547,9 @@ class OpenCode:
             config.setdefault("provider", {}).setdefault(self.opencode_provider.opencode, {})["models"] = {
                 model.partition(":")[2]: {}
             }
+        if browser:
+            server = BROWSER_MCP["mcpServers"][BROWSER_SERVER]
+            config["mcp"] = {BROWSER_SERVER: {"type": "local", "command": [server["command"], *server["args"]]}}
         return [
             f"OPENCODE_CONFIG_CONTENT={json.dumps(config, separators=(',', ':'))}",
             "OPENCODE_DISABLE_PROJECT_CONFIG=1",  # the repo's opencode.json is data, not config
@@ -483,10 +561,12 @@ class OpenCode:
         return "env " + " ".join(shlex.quote(pair) for pair in self._env()) + f" opencode {args}"
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
-        argv = ["env", *self._env(model), "opencode", "run", "--standalone", "--format", "json", "--auto"]
+        argv = ["env", *self._env(model, browser=browser), "opencode", "run", "--standalone", "--format", "json", "--auto"]
         if model:
             argv += ["-m", f"{self.opencode_provider.opencode}/{model.partition(':')[2] or model}"]
-        return argv
+        if not browser:
+            return argv
+        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(BROWSER_MCP), *argv]
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["-s", opencode_session(session)]  # made the first time, continued after
@@ -528,16 +608,38 @@ class OpenCode:
             return out
         part = event.get("part") or {}
         match event.get("type"):
+            case "warning" if str(event.get("message", "")).strip():
+                out.steps.append(Step("error", _clip(str(event["message"]))))
             case "text" if str(part.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(part["text"])))
                 out.summary = str(part["text"])[:20_000]  # the last one is its final message
             case "tool_use":
                 state = part.get("state") or {}
+                # OpenCode 2.3.0 records the actual MCP calls made by execute here. Use that
+                # evidence for browser steps rather than treating the whole script as one action.
+                nested = (state.get("metadata") or {}).get("metadata") or {}
+                browser_calls = [call for call in nested.get("toolCalls", [])
+                                 if str(call.get("tool", "")).startswith(f"{BROWSER_SERVER}.")]
+                if part.get("tool") == "execute" and browser_calls:
+                    for call in browser_calls:
+                        if call.get("status") == "error":
+                            out.steps.append(Step("error", _clip(f"The browser: {state.get('output') or 'action failed'}")))
+                        else:
+                            out.steps.append(Step("tool", _describe_browser(
+                                call["tool"].removeprefix(f"{BROWSER_SERVER}."), call.get("input") or {},
+                            )))
+                    if ((nested.get("error") or state.get("status") == "error")
+                            and not any(call.get("status") == "error" for call in browser_calls)):
+                        detail = state.get("error") or state.get("output") or "failed"
+                        out.steps.append(Step("error", _clip(f"The browser script: {detail}")))
+                    return out
                 said = _describe_opencode_tool(str(part.get("tool")), state.get("input") or {})
                 command = part.get("tool") in ("shell", "bash")
                 ref = str(part.get("callID") or part.get("id") or "") or None if command else None
-                if state.get("status") == "error" and not command:  # a failed command shows in the Terminal instead
-                    out.steps.append(Step("error", _clip(f"{said or part.get('tool')}: {state.get('error') or 'failed'}")))
+                script_error = part.get("tool") == "execute" and nested.get("error")
+                if (state.get("status") == "error" or script_error) and not command:  # commands show in the Terminal instead
+                    detail = state.get("error") or (state.get("output") if script_error else None) or "failed"
+                    out.steps.append(Step("error", _clip(f"{said or part.get('tool')}: {detail}")))
                 elif said:
                     out.steps.append(Step("tool", said, ref))
                 if command and state.get("status") in ("completed", "error") and (state.get("output") or state.get("error")):
@@ -575,6 +677,8 @@ FX_STOPS = {  # a turn that ended any other way than end_turn: what the person r
 
 
 def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None:
+    if name.startswith(f"mcp_{BROWSER_SERVER}_"):  # fx names an MCP server's tools mcp_<server>_<tool>
+        return _describe_browser(name.removeprefix(f"mcp_{BROWSER_SERVER}_"), args)
     path = _relative(str(args.get("path") or args.get("file_path") or ""))
     request = args.get("request") if isinstance(args.get("request"), dict) else {}
     match name:
@@ -589,8 +693,13 @@ def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None
             return f"Read {path}"
         case "glob_files" | "grep_files":
             return f"Searched for {_clip(str(args.get('pattern') or args.get('query') or ''), 80)}"
-        case "subagent":
-            return f"Asked a subagent to {_clip(str(args.get('description') or args.get('prompt') or ''), 120)}"
+        case "subagent":  # fx: {"action": "message", "agent": ..., "message": ...}, flat or under "request"
+            sent = request or args
+            if sent.get("action") not in (None, "message"):
+                return None  # wait, status, stop and close only read or end a worker
+            who = str(sent.get("agent") or "a worker")
+            task = sent.get("message") or args.get("description") or args.get("prompt") or ""
+            return f"Asked {_clip(who, 40)} to {_clip(str(task), 120)}"
         case "read_tool_result" | "skill" | "skill_search" | "capability_search":
             return None
         case _:
@@ -605,7 +714,7 @@ class Fx:
     agent = CodingAgent.FX
     name = "fx"
     resumes = True  # fx saves its sessions under ~/.fx; the driver continues ours with --resume
-    browser = False  # its own browser tools aren't passed in yet
+    browser = True  # Playwright MCP, as Claude Code has it, passed to fx by the driver (checked on fx 0.0.16, 2026-11-13)
 
     def __init__(self, provider: OpenCodeProvider, driver: str = "/opt/dotrix/fx-acp.mjs") -> None:
         self.fx_provider = provider
@@ -619,7 +728,8 @@ class Fx:
 
     def command(self, model: str | None, browser: bool = False) -> list[str]:
         name = (model or "").partition(":")[2] or (model or "")
-        return ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
+        argv = ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
+        return argv + (["--mcp-config", json.dumps(BROWSER_MCP)] if browser else [])
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["--session", session.hex, *(["--resume"] if resumed else [])]
@@ -655,10 +765,14 @@ class Fx:
                 out.steps.append(Step("step", f"{said} ({event.get('model') or 'default model'})"))
             case "text" if str(event.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(str(event["text"]))))
+            case "warning" if str(event.get("message", "")).strip():  # the turn goes on: the browser didn't start
+                out.steps.append(Step("error", _clip(str(event["message"]))))
             case "tool":
                 ref = str(event.get("id") or "") or None
                 name, args = str(event.get("name") or ""), event.get("input") if isinstance(event.get("input"), dict) else {}
                 said = _describe_fx_tool(name, str(event.get("title") or ""), args)
+                if said and event.get("agent"):  # one of Kai's workers (a subagent), named for the session
+                    said = f"{said} ({_clip(str(event['agent']), 40)})"
                 command = name == "shell" and said is not None
                 if ref:
                     usage._tools[ref] = said or name

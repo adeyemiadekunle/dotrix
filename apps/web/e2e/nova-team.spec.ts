@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("the fixed team is listed, and Juno opens in Chat without a side panel", async ({ page }) => {
   await page.goto("/w/dotrix");
+  await page.getByRole("button", { name: /^Agents/ }).click(); // the launcher at the bottom right
   const agents = page.getByRole("complementary", { name: "Agents" });
   await expect(agents.locator(".ap-row")).toHaveCount(7);
   await expect(agents.getByText("Kai", { exact: true })).toHaveCount(1);
@@ -15,8 +16,8 @@ test("Kai's instructions stay protected and additional guidance is editable", as
   await page.goto("/w/dotrix/settings/agents");
   await expect(page.getByText("7 built-in agents · Nova leads the team")).toBeVisible();
   await page.getByRole("button", { name: /Kai Coding/ }).click();
-  await expect(page.getByLabel("Built-in instructions")).toHaveAttribute("readonly", "");
-  await page.getByLabel("Additional instructions").fill("Explain the changes clearly.");
+  await expect(page.getByLabel("Built-in instructions", { exact: true })).toHaveAttribute("readonly", "");
+  await page.getByLabel("Additional instructions", { exact: true }).fill("Explain the changes clearly.");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Customised", { exact: true })).toBeVisible();
 });
