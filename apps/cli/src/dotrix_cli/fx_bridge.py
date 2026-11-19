@@ -32,6 +32,15 @@ def frame_read(sock):
     return json.loads(read(size))
 
 
+def require_kai_fx(binary):
+    """Refuse an fx without the Kai runtime's `project_config` off. Upstream fx 0.0.17 reports the same version
+    but has no such setting, so it would read the repository's .fx.json, skills, .mcp.json and AGENTS.md; here
+    the profile and FX_PROJECT_CONFIG=0 turn it off."""
+    setting = subprocess.run([binary, 'config', 'get', 'project_config'], capture_output=True, text=True, timeout=15)
+    if setting.returncode != 0 or setting.stdout.strip() != 'false':
+        raise ValueError("Native execution requires the Kai runtime's fx, which can ignore a repository's configuration")
+
+
 def main():
     channel = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     channel.connect(sys.argv[1])
@@ -139,6 +148,8 @@ def main():
     expected = '2.1.296' if claude else '0.0.17'
     if version.split()[0] != expected:
         raise ValueError('Native execution requires the tested coding runtime')
+    if not claude:
+        require_kai_fx(binary)
     print(json.dumps({'bridge_ready': True, 'port': server.server_port, 'version': expected}), flush=True)
     # Do not pass the relay descriptor to fx. Namespace PID 1 exiting kills leftover commands.
     raise SystemExit(subprocess.call([binary, *configured['argv']] if claude else [binary, 'acp'], close_fds=True))

@@ -280,7 +280,7 @@ setup. If you put a firewall or an egress proxy in front of the VPS, allow HTTPS
 | `your private SearXNG service`, and the pages research reads | Web research (optional) |
 
 Building the coding image (`coding-image`) also needs Docker Hub, `registry.npmjs.org`,
-`releases.fx.sh`, Debian's package mirrors and Playwright's browser download. The coding sandboxes
+`npm.pkg.github.com` (Kai's fx command, with `KAI_PACKAGES_TOKEN`), Debian's package mirrors and Playwright's browser download. The coding sandboxes
 themselves need nothing here: their egress proxy reaches only the model API of the run's tool.
 
 To check OSV from the worker:

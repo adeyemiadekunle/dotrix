@@ -64,7 +64,7 @@ services:
     restart: "no"
   coding-image:
     image: dotrix-coding:${DOTRIX_VERSION:-latest}
-    build: { context: ../infra/coding }
+    build: { context: ../infra/coding, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
 

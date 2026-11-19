@@ -128,6 +128,10 @@ def test_fx_turns_that_end_early_say_why() -> None:
 
 FAKE_FX = textwrap.dedent('''
     import json, os, sys
+    if sys.argv[1:] == ["config", "get", "project_config"]:  # the Kai runtime's fx knows the setting; upstream's doesn't
+        if os.environ.get("FAKE_FX_UPSTREAM"):
+            sys.stderr.write("fx config: unknown setting project_config\\n"); sys.exit(2)
+        print("false" if os.environ.get("FX_PROJECT_CONFIG") == "0" else "true"); sys.exit(0)
     log = open(os.environ["FAKE_FX_LOG"], "a")
     def send(message):
         sys.stdout.write(json.dumps(message) + "\\n"); sys.stdout.flush()
@@ -344,6 +348,14 @@ def test_the_driver_s_own_failures_never_name_fx(fake_fx) -> None:
     env = {**fake_fx, "DOTRIX_FX_BIN": "/nonexistent/fx"}
     events = _drive(env, "Fix it")
     assert events[-1]["type"] == "error" and "fx" not in events[-1]["message"].lower()
+
+
+def test_an_fx_without_project_config_never_runs_a_turn(fake_fx) -> None:
+    """Upstream fx 0.0.17 reports the Kai runtime's version but would read the repository's configuration."""
+    events = _drive({**fake_fx, "FAKE_FX_UPSTREAM": "1"}, "Fix it")
+    assert [event["type"] for event in events] == ["error"]
+    assert events[0]["message"] == "The coding engine isn't the version Kai was checked with"
+    assert not Path(fake_fx["FAKE_FX_LOG"]).exists()  # `fx acp` never started
 
 
 def test_behind_an_egress_proxy_fx_calls_a_local_forwarder_and_a_refusal_is_the_sandboxs(fake_fx) -> None:
