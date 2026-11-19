@@ -83,7 +83,9 @@ enforcement are removed; a person can still choose a limit for their project or 
 1. **Dokploy:** create a project, then a **Docker Compose** service from this repository, with the
    compose path `deploy/docker-compose.dokploy.yml`.
 2. **Environment:** paste `deploy/dokploy.env.example` into the service's Environment tab and fill
-   it in. The GitHub App's callback and webhook URLs use your `DOTRIX_APP_URL`.
+   it in. `KAI_PACKAGES_TOKEN` is a GitHub token with `read:packages` for the kunemi-group
+   organisation: the backend image's build installs Chat's fx host, the Kai runtime
+   (`@kunemi-group/kai`), from GitHub Packages with it, as a build secret kept out of the image. The GitHub App's callback and webhook URLs use your `DOTRIX_APP_URL`.
 3. **Domains:** add the app's domain (`app.dotrix.cc`, the same as `DOTRIX_APP_URL`) to the `web`
    service, the public site's (`dotrix.cc`, and `www.dotrix.cc` if you like) to the `site`
    service, and the admin console's (`admin.dotrix.cc`) to the `admin` service, each on port 80

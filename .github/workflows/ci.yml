@@ -96,6 +96,9 @@ jobs:
       - name: Install Python packages (run `uv lock` if this fails)
         run: uv sync --locked
       - name: Install the fx runtime's host
+        # The Kai runtime (@kunemi-group/kai) is on GitHub Packages: KAI_PACKAGES_TOKEN holds a token with read:packages.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.KAI_PACKAGES_TOKEN }}
         run: npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host
       - run: uv run ruff check apps packages
       - name: Test affected Python packages

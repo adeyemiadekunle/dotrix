@@ -37,21 +37,49 @@ _TOOL_ERROR_CHARS = 1_000
 # bound to an artifact missing from its reader's list fails closed rather than resume on it.
 LIBFX_ARTIFACTS: dict[str, tuple[str, ...]] = {
     "0.0.16": (),
+    "0.0.17-kai.1": ("0.0.16",),
 }
+# The package each version comes from. fx's own releases are `libfx` on npm; the Kai runtime's
+# (adeyemiadekunle/kai-runtime) are `@kunemi-group/kai` on GitHub Packages, versioned
+# <fx release>-kai.<n>, which a host installs under the name `libfx` with an npm alias.
+_KAI_PACKAGE = "@kunemi-group/kai"
+
+
+def libfx_package(version: str) -> str:
+    """The npm package a libfx version is published as."""
+    return _KAI_PACKAGE if re.fullmatch(r"\d+\.\d+\.\d+-kai\.\d+", version) else "libfx"
+
+
+def _declared(spec: str) -> str:
+    """The version a package.json dependency on libfx names, exactly: `X` or `npm:<package>@X`."""
+    if spec.startswith("npm:"):
+        package, _, version = spec[len("npm:"):].rpartition("@")
+        if package != libfx_package(version):
+            raise RuntimeError(f"libfx {version} is published as {libfx_package(version)}, not {package}")
+        return version
+    if libfx_package(spec) != "libfx":
+        raise RuntimeError(f"libfx {spec} must be installed as npm:{libfx_package(spec)}@{spec}")
+    return spec
 
 
 def libfx_version(host: Path | None = None) -> str:
     """The libfx version a host pins in its package.json, refused unless this module admits it."""
-    declared = json.loads(((host or _HOST) / "package.json").read_text())["dependencies"]["libfx"]
+    declared = _declared(json.loads(((host or _HOST) / "package.json").read_text())["dependencies"]["libfx"])
     if declared not in LIBFX_ARTIFACTS:
         raise RuntimeError(f"libfx {declared} is not an admitted fx host artifact")
     return declared
 
 
 def installed_libfx_version(host: Path | None = None) -> str | None:
-    """The libfx version installed in a host's node_modules, or None when it isn't installed."""
+    """The libfx version installed in a host's node_modules, or None when it isn't installed. A package
+    other than the one its version is published as (see libfx_package) is refused."""
     manifest = (host or _HOST) / "node_modules" / "libfx" / "package.json"
-    return json.loads(manifest.read_text())["version"] if manifest.is_file() else None
+    if not manifest.is_file():
+        return None
+    installed = json.loads(manifest.read_text())
+    if installed["name"] != libfx_package(installed["version"]):
+        raise RuntimeError(f"{installed['name']} {installed['version']} is not a libfx artifact this host admits")
+    return installed["version"]
 
 
 def _said(message: str) -> str:

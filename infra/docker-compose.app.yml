@@ -21,7 +21,7 @@
 # need http://localhost:3080 among the GitHub App's callback and setup URLs.
 
 x-backend: &backend
-  build: { context: ., dockerfile: deploy/backend.Dockerfile }
+  build: { context: ., dockerfile: deploy/backend.Dockerfile, secrets: [kai_packages_token] }
   image: dotrix-backend:dev
   restart: unless-stopped
   env_file: ${DOTRIX_BACKEND_ENV_FILE:-.env}
@@ -161,6 +161,11 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
+
+# Chat's fx host installs the Kai runtime from GitHub Packages: export KAI_PACKAGES_TOKEN (read:packages) first.
+secrets:
+  kai_packages_token:
+    environment: KAI_PACKAGES_TOKEN
 
 volumes:
   codecache:
