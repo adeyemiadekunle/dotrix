@@ -282,22 +282,30 @@ def _profile(text: str = CONTRACT) -> list[str]:
     return Fx(FX_PROVIDERS["openai"]).profile_args(text, None)
 
 
+def _digest(text: str = CONTRACT) -> str:
+    """The profile digest the driver computes: the contract and Kai's workers, as sent."""
+    from dotrix_backend.modules.coding.workers import WORKERS
+
+    return hashlib.sha256(json.dumps({"profile": text, "workers": list(WORKERS)}, separators=(",", ":"),
+                                     ensure_ascii=False).encode()).hexdigest()
+
+
 def test_a_new_session_starts_with_kai_s_profile_as_its_system_prompt(fake_fx) -> None:
     events = _drive(fake_fx, "Fix the tests", *_profile())
-    digest = hashlib.sha256(CONTRACT.encode()).hexdigest()
+    digest = _digest()
     assert events[0]["type"] == "started" and events[0]["profileDigest"] == digest
     new = next(c for c in _calls(fake_fx) if c["method"] == "session/new")
     assert new["params"]["systemPrompt"] == [{"type": "text", "text": CONTRACT}]
     prompt = next(c for c in _calls(fake_fx) if c["method"] == "session/prompt")
     assert prompt["params"]["prompt"] == [{"type": "text", "text": "Fix the tests"}]  # the task only
     saved = json.loads((Path(fake_fx["HOME"]) / ".fx" / "dotrix" / "s1.json").read_text())
-    assert saved == {"fxSession": "fx-session-1", "profileDigest": digest}
+    assert saved["fxSession"] == "fx-session-1" and saved["profileDigest"] == digest and saved["profile"] == CONTRACT
     assert Fx(FX_PROVIDERS["openai"]).parse(json.dumps(events[0]), Usage()).profile_digest == digest
 
 
 def test_a_resumed_session_keeps_its_profile_and_refuses_saved_state_with_another(fake_fx) -> None:
     _drive(fake_fx, "Fix the tests", *_profile())
-    digest = hashlib.sha256(CONTRACT.encode()).hexdigest()
+    digest = _digest()
     Path(fake_fx["FAKE_FX_LOG"]).unlink()
     tool = Fx(FX_PROVIDERS["openai"])
     # Dotrix's contract changed since: the session keeps the one it started with, sent to no one again.
@@ -310,7 +318,7 @@ def test_a_resumed_session_keeps_its_profile_and_refuses_saved_state_with_anothe
     assert events[-1] == {"type": "error", "message": (
         "This coding session's saved state doesn't match the profile it was started with; start a new session")}
     assert "fx" not in events[-1]["message"].lower()
-    assert not any(c["method"] == "session/prompt" for c in _calls(fake_fx))
+    assert not Path(fake_fx["FAKE_FX_LOG"]).exists()  # refused before the engine started
 
 
 def test_the_next_turn_continues_fx_s_session_without_replaying_it(fake_fx) -> None:
@@ -583,7 +591,7 @@ def test_the_real_engine_sends_kai_s_profile_to_the_model_and_keeps_it_on_resume
         first = drive("Fix the tests", *tool.profile_args(contract, None))
         assert first[-1]["type"] == "done", first
         digest = first[0]["profileDigest"]
-        assert digest == hashlib.sha256(contract.encode()).hexdigest()
+        assert digest == _digest(contract)
         assert marker in system_text(bodies[-1])
         assert "Fix the tests" not in system_text(bodies[-1])
 
@@ -594,3 +602,119 @@ def test_the_real_engine_sends_kai_s_profile_to_the_model_and_keeps_it_on_resume
         assert marker in system_text(bodies[-1]) and "CHANGED_CONTRACT_MARKER" not in json.dumps(bodies[-1])
     finally:
         server.shutdown()
+
+
+# -- Kai's workers (D4) --------------------------------------------------------------------------------------
+
+
+def test_a_new_session_gets_kai_s_workers_as_fx_profiles_and_a_resumed_one_keeps_them(fake_fx) -> None:
+    from dotrix_backend.modules.coding.workers import WORKERS
+
+    home = Path(fake_fx["HOME"])
+    stale = home / ".fx" / "agents" / "leftover"
+    stale.mkdir(parents=True)
+    (stale / "profile.json").write_text('{"description": "from somewhere else"}')
+    events = _drive(fake_fx, "Fix the tests", *_profile())
+    assert events[-1]["type"] == "done"
+    agents = home / ".fx" / "agents"
+    assert sorted(p.name for p in agents.iterdir()) == sorted(w["name"] for w in WORKERS)  # nothing else
+    for worker in WORKERS:
+        written = json.loads((agents / worker["name"] / "profile.json").read_text())
+        assert written["description"] == worker["description"] and written["tools"] == worker["tools"]
+        assert "subagent" not in written["tools"] and "edit_file" not in written["tools"]
+        assert "write_file" not in written["tools"] and "web_fetch" not in written["tools"]
+        assert written.get("mcp_servers") == worker.get("mcp_servers")
+        assert "permission_mode" not in written  # never more than Kai's own
+        assert (agents / worker["name"] / "prompt.md").read_text().strip() == worker["prompt"]
+
+    # Resumed: the workers it started with, whatever this turn sends.
+    other = [{"name": "builder", "description": "Writes code", "tools": ["*"], "prompt": "Build."}]
+    args = _profile()
+    args[args.index("--workers") + 1] = base64.b64encode(json.dumps(other).encode()).decode()
+    events = _drive(fake_fx, "Now the docs", "--resume", *args, "--profile-digest", _digest())
+    assert events[0]["resumed"] is True and events[-1]["type"] == "done"
+    assert sorted(p.name for p in agents.iterdir()) == sorted(w["name"] for w in WORKERS)
+
+
+def test_saved_workers_changed_since_the_session_started_never_run(fake_fx) -> None:
+    _drive(fake_fx, "Fix the tests", *_profile())
+    record = Path(fake_fx["HOME"]) / ".fx" / "dotrix" / "s1.json"
+    saved = json.loads(record.read_text())
+    saved["workers"][0]["tools"] = ["*"]  # widened in the saved state
+    record.write_text(json.dumps(saved))
+    Path(fake_fx["FAKE_FX_LOG"]).unlink()
+    events = _drive(fake_fx, "Now the docs", "--resume", *_profile())
+    assert events[-1]["type"] == "error" and "saved state doesn't match" in events[-1]["message"]
+    assert not Path(fake_fx["FAKE_FX_LOG"]).exists()
+
+
+@pytest.mark.parametrize("name", ["main", "agent", "Bad Name", "../escape"])
+def test_a_worker_that_would_replace_kai_or_leave_its_folder_is_refused(fake_fx, name) -> None:
+    bad = [{"name": name, "description": "x", "tools": ["read_file"], "prompt": "x"}]
+    args = _profile()
+    args[args.index("--workers") + 1] = base64.b64encode(json.dumps(bad).encode()).decode()
+    events = _drive(fake_fx, "Fix the tests", *args)
+    assert events == [{"type": "error", "message": "Kai's workers couldn't be set up"}]
+
+
+@pytest.mark.skipif(not os.environ.get("DOTRIX_TEST_FX"), reason="Set DOTRIX_TEST_FX to the Kai runtime's fx")
+def test_with_the_real_engine_kai_hears_of_its_workers_and_one_gets_only_its_tools(tmp_path: Path) -> None:
+    """The real fx, through the driver, with a scripted model: Kai's requests describe the workers, and when Kai
+    starts `explorer`, that worker's own request offers only its tools and carries its prompt."""
+    import http.server
+    import threading
+
+    from dotrix_backend.modules.coding.workers import WORKERS
+
+    bodies: list[dict] = []
+
+    def names(body: dict) -> list[str]:
+        return sorted((t.get("function") or {}).get("name") or t.get("name") for t in body.get("tools") or [])
+
+    class Model(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_: object) -> None:
+            pass
+
+        def do_POST(self) -> None:
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            bodies.append(body)
+            base = {"id": "r", "object": "chat.completion.chunk", "created": 1, "model": "m"}
+            if "subagent" in names(body) and not any(m.get("role") == "tool" for m in body["messages"]):
+                call = json.dumps({"action": "message", "agent": "finder", "message": "Where is VALUE?", "profile": "explorer"})
+                delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "c1", "type": "function",
+                                                               "function": {"name": "subagent", "arguments": call}}]}
+                chunks = [{**base, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                          {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}]
+            else:
+                text = "done" if "subagent" in names(body) else "VALUE is in a.py"
+                chunks = [{**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": None}]},
+                          {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]
+            payload = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(payload.encode())
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Model)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    home = tmp_path / "home"
+    (home / "repo").mkdir(parents=True)
+    (home / "repo" / "a.py").write_text("VALUE = 1\n")
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "DOTRIX_FX_BIN": os.environ["DOTRIX_TEST_FX"],
+           "OPENAI_API_KEY": "synthetic"}
+    argv = ["node", str(DRIVER), "--base-url", f"http://127.0.0.1:{server.server_port}/v1", "--key-env", "OPENAI_API_KEY",
+            "--model", "gpt-test", "--session", "s1", *Fx(FX_PROVIDERS["openai"]).profile_args("# How Kai works\n\nYou are Kai.", None)]
+    try:
+        done = subprocess.run(argv, input="Find VALUE", capture_output=True, text=True, env=env, timeout=120, cwd=home / "repo")
+    finally:
+        server.shutdown()
+    events = [json.loads(line) for line in done.stdout.splitlines() if line.strip()]
+    assert events[-1]["type"] == "done", events
+    kai = [b for b in bodies if "subagent" in names(b)]
+    worker = [b for b in bodies if "subagent" not in names(b)]
+    assert kai and worker
+    explorer = next(w for w in WORKERS if w["name"] == "explorer")
+    assert f"- explorer: {explorer['description']}" in json.dumps(kai[0])
+    assert names(worker[0]) == sorted(explorer["tools"])
+    worker_system = "\n".join(str(m.get("content")) for m in worker[0]["messages"] if m.get("role") in ("system", "developer"))
+    assert explorer["prompt"] in worker_system

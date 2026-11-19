@@ -28,7 +28,7 @@
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import { homedir } from "node:os";
@@ -51,6 +51,7 @@ const resume = args.includes("--resume");
 const mcpConfig = arg("--mcp-config");
 const profile = arg("--profile") ? Buffer.from(arg("--profile"), "base64").toString("utf8") : null;
 const pinnedDigest = arg("--profile-digest") ?? null;
+const workerArg = arg("--workers") ? JSON.parse(Buffer.from(arg("--workers"), "base64").toString("utf8")) : null;
 const fxBin = process.env.DOTRIX_FX_BIN || "fx";
 
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -205,6 +206,39 @@ const savedSession = () => {
     return null;
   }
 };
+
+// Kai's workers (fx agent profiles under ~/.fx/agents): a new session's from --workers, a resumed one's as saved
+// with it, so it keeps the workers it started with. The profile digest covers the contract and the workers.
+const kept = saved();
+const continuing = Boolean(resume && kept.fxSession);
+const workerProfiles = continuing ? (kept.workers ?? null) : workerArg;
+const digestOf = (text, set) =>
+  text && text.trim()
+    ? createHash("sha256")
+        .update(set ? JSON.stringify({ profile: text, workers: set }) : text, "utf8")
+        .digest("hex")
+    : null;
+if (continuing) {
+  // Dotrix's record of the session's profile, and the saved state itself, must agree.
+  const recomputed = "profile" in kept ? digestOf(kept.profile, kept.workers ?? null) : (kept.profileDigest ?? null);
+  if ((pinnedDigest && kept.profileDigest !== pinnedDigest) || recomputed !== (kept.profileDigest ?? null)) {
+    fail("This coding session's saved state doesn't match the profile it was started with; start a new session");
+  }
+}
+const agentsDir = join(fxHome, "agents");
+rmSync(agentsDir, { recursive: true, force: true });
+for (const worker of workerProfiles ?? []) {
+  const name = String(worker?.name ?? "");
+  if (!/^[a-z0-9_-]{1,64}$/.test(name) || name === "main" || name === "agent" || !Array.isArray(worker.tools)) {
+    fail("Kai's workers couldn't be set up");
+  }
+  const dir = join(agentsDir, name);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const settings = { description: String(worker.description), tools: worker.tools.map(String) };
+  if (Array.isArray(worker.mcp_servers)) settings.mcp_servers = worker.mcp_servers.map(String);
+  writeFileSync(join(dir, "profile.json"), JSON.stringify(settings), { mode: 0o600 });
+  writeFileSync(join(dir, "prompt.md"), `${String(worker.prompt ?? "")}\n`, { mode: 0o600 });
+}
 
 const fxEnv = { ...process.env, FX_AUTO_UPGRADE: "0", FX_PROJECT_CONFIG: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" };
 // Upstream fx 0.0.17 reports the same version as the Kai runtime's fx but has no project_config, so it would
@@ -376,11 +410,7 @@ async function open() {
   const cwd = process.cwd();
   const previous = resume ? savedSession() : null;
   if (previous) {
-    // The session keeps the profile it was started with (fx restores it); Dotrix's record of it must match.
-    const digest = saved().profileDigest ?? null;
-    if (pinnedDigest && digest !== pinnedDigest) {
-      fail("This coding session's saved state doesn't match the profile it was started with; start a new session");
-    }
+    // The session keeps the profile it was started with (fx restores it), checked above against Dotrix's record.
     replaying = true;
     try {
       try {
@@ -389,7 +419,7 @@ async function open() {
         if (error.code !== -32601) throw error;
         await call("session/load", { sessionId: previous, cwd, mcpServers, _meta: hooks });
       }
-      return { id: previous, resumed: true, profileDigest: saved().profileDigest ?? null };
+      return { id: previous, resumed: true, profileDigest: kept.profileDigest ?? null };
     } finally {
       replaying = false;
     }
@@ -397,8 +427,9 @@ async function open() {
   const systemPrompt = profile && profile.trim() ? [{ type: "text", text: profile }] : undefined;
   const created = await call("session/new", { cwd, mcpServers, ...(systemPrompt ? { systemPrompt } : {}), _meta: hooks });
   if (!created?.sessionId) throw new Error("session/new returned no session");
-  const profileDigest = systemPrompt ? createHash("sha256").update(profile, "utf8").digest("hex") : null;
-  if (sessionFile) writeFileSync(sessionFile, JSON.stringify({ fxSession: created.sessionId, profileDigest }), { mode: 0o600 });
+  const profileDigest = systemPrompt ? digestOf(profile, workerProfiles) : null;
+  const record = { fxSession: created.sessionId, profileDigest, ...(systemPrompt ? { profile, workers: workerProfiles } : {}) };
+  if (sessionFile) writeFileSync(sessionFile, JSON.stringify(record), { mode: 0o600 });
   return { id: created.sessionId, resumed: false, profileDigest };
 }
 
