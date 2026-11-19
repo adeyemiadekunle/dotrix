@@ -709,8 +709,13 @@ async def test_fx_replay_does_not_treat_a_truncated_or_refused_answer_as_complet
         second = await FxRuntime.create(config, model="test-model", base_url=url, api_key="test-key",
                                         journal=journal, engine_session="journal-session")
         try:
-            with pytest.raises(RuntimeError):
-                await second.prompt("journal-session", "Read the evidence", message_id="turn-1")
+            # libfx 0.0.16 fails such a retry; the Kai runtime reports how the turn ended
+            # (max_output_tokens). Either way it is not a completed answer, which fx_pilot refuses.
+            try:
+                retried = await second.prompt("journal-session", "Read the evidence", message_id="turn-1")
+            except RuntimeError:
+                retried = None
+            assert retried is None or retried.stop_reason != "end_turn"
             assert len(requests) == calls
         finally:
             await second.close()

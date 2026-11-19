@@ -205,7 +205,7 @@ async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *
     if anthropic:
         argv.append('claude')
     env = {'SHELL': '/bin/bash', 'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': str(profile), 'FX_HOME': str(profile / '.fx'),
-           'LANG': 'C.UTF-8', 'NO_COLOR': '1', 'FX_AUTO_UPGRADE': '0', 'FX_DISABLE_KEYCHAIN': '1',
+           'LANG': 'C.UTF-8', 'NO_COLOR': '1', 'FX_AUTO_UPGRADE': '0', 'FX_PROJECT_CONFIG': '0', 'FX_DISABLE_KEYCHAIN': '1',
            'FX_NO_OPEN_BROWSER': '1', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_CONFIG_GLOBAL': '/dev/null', 'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder'}
     process = None
     try:

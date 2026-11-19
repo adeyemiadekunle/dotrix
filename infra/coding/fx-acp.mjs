@@ -158,6 +158,11 @@ writeFileSync(
   join(fxHome, "settings.json"),
   JSON.stringify({
     provider: "dotrix",
+    // The repository is data, never configuration: none of its .fx.json, .fx/agents, skills,
+    // .mcp.json or AGENTS.md reaches Kai (fx's project_config; FX_PROJECT_CONFIG below too).
+    project_config: false,
+    // Kai's workers (subagents) working at once in one turn, the same bound as Dotrix's own parallel builds.
+    max_subagents: 2,
     auto_upgrade: false,
     cache_warming: false,
     session_titles: false,
@@ -187,7 +192,7 @@ const savedSession = () => {
 // The model is the provider's default in the settings above, not `--model` (that names an AI Gateway model).
 const fx = spawn(fxBin, ["acp"], {
   stdio: ["pipe", "pipe", "inherit"],
-  env: { ...process.env, FX_AUTO_UPGRADE: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" },
+  env: { ...process.env, FX_AUTO_UPGRADE: "0", FX_PROJECT_CONFIG: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" },
 });
 // The code only: the OS's message names the binary.
 fx.on("error", (error) => fail(`The coding engine didn't start (${error.code ?? "error"})`));
@@ -242,6 +247,7 @@ function onUpdate(update) {
       if (!tools.get(id) && (update.sessionUpdate === "tool_call" || update.name || update.rawInput)) {
         flush();
         tools.set(id, true);
+        if (update.name === "subagent") subagentCalls.set(id, update.rawInput?.request?.agent ?? update.rawInput?.agent ?? null);
         emit({ type: "tool", id, name: update.name ?? null, title: update.title ?? null, kind: update.kind ?? null, input: update.rawInput ?? {} });
       }
       if (update.status === "completed" || update.status === "failed") {
@@ -252,6 +258,53 @@ function onUpdate(update) {
     default:
       break; // plans, usage of the context, titles, commands: not what the session shows
   }
+}
+
+// Kai's own workers (fx's subagents) run in child sessions, whose tool calls ACP doesn't stream. fx's hook
+// events do (libfx/hook, asked for on each session below), so their commands and edits show in the session
+// too, named for the worker. The main session's tools come as session/update, so its hooks are skipped.
+const hooks = { fx: { hooks: { captureContent: true } } };
+const subagentCalls = new Map(); // the main session's subagent call id → the worker it names
+const workers = new Map(); // child session id → worker name
+const parseJson = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+function onHook(hook) {
+  if (replaying || !hook || typeof hook !== "object") return;
+  const data = hook.data ?? {};
+  if (hook.type === "delegation" && data.phase === "dispatched" && data.childSessionId) {
+    workers.set(data.childSessionId, subagentCalls.get(data.callId) ?? workers.get(hook.sessionId) ?? null);
+    return;
+  }
+  if (!hook.sessionId || hook.sessionId === hook.rootSessionId) return;
+  if (hook.type !== "tool.start" && hook.type !== "tool.end") return;
+  const callId = data.call?.callId;
+  if (!callId) return;
+  const id = `${hook.sessionId}:${callId}`;
+  if (hook.type === "tool.start") {
+    flush();
+    const args = parseJson(data.call.argumentsJson ?? "");
+    emit({
+      type: "tool",
+      id,
+      name: data.call.name ?? null,
+      title: null,
+      kind: null,
+      input: args && typeof args === "object" ? args : {},
+      agent: workers.get(hook.sessionId) ?? "a worker",
+    });
+    return;
+  }
+  // A command's result is JSON with what it printed; anything else is its text.
+  const result = parseJson(data.output ?? "");
+  const output =
+    typeof result?.output_delta === "string" ? result.output_delta : typeof result?.output === "string" ? result.output : String(data.output ?? "");
+  const failed = data.status !== "success" || (typeof result?.exit_code === "number" && result.exit_code !== 0);
+  emit({ type: "tool_result", id, status: failed ? "failed" : "completed", output: output.slice(-64_000) });
 }
 
 createInterface({ input: fx.stdout, crlfDelay: Infinity }).on("line", (line) => {
@@ -269,6 +322,7 @@ createInterface({ input: fx.stdout, crlfDelay: Infinity }).on("line", (line) => 
     return;
   }
   if (msg.method === "session/update") return onUpdate(msg.params?.update);
+  if (msg.method === "libfx/hook") return onHook(msg.params);
   if (msg.method === "session/request_permission" && msg.id !== undefined) {
     // full-access shouldn't ask; if it does, the sandbox is the boundary: allow this once.
     const options = msg.params?.options ?? [];
@@ -304,17 +358,17 @@ async function open() {
     replaying = true;
     try {
       try {
-        await call("session/resume", { sessionId: previous, cwd, mcpServers });
+        await call("session/resume", { sessionId: previous, cwd, mcpServers, _meta: hooks });
       } catch (error) {
         if (error.code !== -32601) throw error;
-        await call("session/load", { sessionId: previous, cwd, mcpServers });
+        await call("session/load", { sessionId: previous, cwd, mcpServers, _meta: hooks });
       }
       return { id: previous, resumed: true };
     } finally {
       replaying = false;
     }
   }
-  const created = await call("session/new", { cwd, mcpServers });
+  const created = await call("session/new", { cwd, mcpServers, _meta: hooks });
   if (!created?.sessionId) throw new Error("session/new returned no session");
   if (sessionFile) writeFileSync(sessionFile, JSON.stringify({ fxSession: created.sessionId }), { mode: 0o600 });
   return { id: created.sessionId, resumed: false };

@@ -236,3 +236,41 @@ async def _deliver(
     return await db_client.post("/v1/github/webhook", content=body, headers=headers)
 
 
+
+
+@pytest.fixture(autouse=True)
+def fx_artifact_across_restarts(monkeypatch):
+    """Opt-in: with DOTRIX_FX_RESTART_WRITER and DOTRIX_FX_RESTART_READER set to two fx host installs
+    (`runtimes/fx_host` copies, each with its libfx artifact), a test's first fx host runs the writer's
+    artifact and every later one the reader's. A test that kills or closes its host mid-turn and starts
+    another then checks that the reader resumes what the writer journaled: an approval decided after a
+    restart, a saved change result, steering, a delegation handoff. Unset, nothing changes."""
+    import json
+    import os
+    from pathlib import Path
+
+    writer, reader = os.environ.get("DOTRIX_FX_RESTART_WRITER"), os.environ.get("DOTRIX_FX_RESTART_READER")
+    if not (writer and reader):
+        return
+    from dotrix_engine.runtimes import FxRuntime
+    from dotrix_engine.runtimes import fx as fx_module
+
+    for host in (writer, reader):  # this switch is the evidence for an entry in LIBFX_ARTIFACTS
+        version = json.loads((Path(host) / "package.json").read_text())["dependencies"]["libfx"]
+        if version not in fx_module.LIBFX_ARTIFACTS:
+            monkeypatch.setitem(fx_module.LIBFX_ARTIFACTS, version, ())
+    # The digest a run pins names the writer's artifact throughout, as one binding would: moving
+    # bindings to a new pin is runtime_sessions' upgrade, tested on its own. The host still checks
+    # its installed artifact against its own pin.
+    real_version = fx_module.libfx_version
+    writer_version = real_version(Path(writer))
+    monkeypatch.setattr(fx_module, "libfx_version", lambda host=None: real_version(host) if host else writer_version)
+    created = FxRuntime.create.__func__
+    hosts = iter([Path(writer)])
+
+    async def create(cls, *args, **kwargs):
+        fx_module._HOST = next(hosts, Path(reader))
+        return await created(cls, *args, **kwargs)
+
+    monkeypatch.setattr(fx_module, "_HOST", fx_module._HOST)  # restored after the test
+    monkeypatch.setattr(FxRuntime, "create", classmethod(create))

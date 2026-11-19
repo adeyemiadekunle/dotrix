@@ -47,8 +47,9 @@ async function callStorage(op, payload = {}) {
 const encode = (data) => Buffer.from(data).toString("base64");
 const decode = (data) => new Uint8Array(Buffer.from(data, "base64"));
 
-// libfx 0.0.16's low-level engine deliberately omits output for an already
-// completed turn. Its v1 journal is the only durable source of that output.
+// libfx's low-level engine (0.0.16 and every version admitted since) deliberately
+// omits output for an already completed turn. Its v1 journal is the only durable
+// source of that output.
 // Keep this compatibility reader isolated and fail closed on a new format.
 function committedAnswers(records) {
   const turns = new Map();
@@ -118,6 +119,11 @@ async function storedTurn(session, messageId) {
 async function handle(command) {
   if (command.op === "init") {
     if (agent || engine) throw new Error("Already initialized");
+    // Python admits each libfx artifact and pins it per run; run only the one it expects.
+    const version = createRequire(import.meta.url)("./node_modules/libfx/package.json").version;
+    if (typeof command.libfxVersion !== "string" || version !== command.libfxVersion) {
+      throw new Error("Unsupported libfx journal version");
+    }
     handoffTools = new Set(["delegate_tasks", ...command.tools.filter((tool) => tool.handsOff).map((tool) => tool.name)]);
     const options = {
       name: command.name,
@@ -142,8 +148,6 @@ async function handle(command) {
       if (command.apiKey) options.credentials = async () => ({ apiKey: command.apiKey });
     } else if (command.apiKey) options.apiKey = command.apiKey;
     if (command.persistence || command.ephemeralEngine) {
-      const version = createRequire(import.meta.url)("./node_modules/libfx/package.json").version;
-      if (version !== "0.0.16") throw new Error("Unsupported libfx journal version");
       engineSession = command.sessionId;
       delete options.name;
       delete options.durability;

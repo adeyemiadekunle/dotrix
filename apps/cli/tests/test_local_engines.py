@@ -57,6 +57,8 @@ def test_fx_copies_only_its_connection_and_auth_not_saved_full_access(tmp_path):
     assert configured["provider"] == "custom" and configured["models"] == saved["models"]
     assert configured["permission_mode"] == "ask" and configured["permission"]["*"] == "deny"
     assert configured["permission"]["edit"] == "ask" and not configured["context"]
+    assert configured["project_config"] is False  # the repository is data, never configuration
+    assert configured["max_subagents"] == 2
     assert "workspaces" not in configured and (source / "settings.json").read_text() == original
     assert (profile / ".fx/auth.json").read_text() == '{"token":"synthetic-login"}'
     if os.name != "nt":

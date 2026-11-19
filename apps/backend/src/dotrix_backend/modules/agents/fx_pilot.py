@@ -37,6 +37,7 @@ from dotrix_engine.runtimes import (
     fx_configuration_digest,
 )
 from dotrix_engine.runtimes.contracts import EventHandler
+from dotrix_engine.runtimes.fx import LIBFX_ARTIFACTS, libfx_version
 from dotrix_engine.work_modes import guide as work_mode_guide
 
 from .board_tools import board_instructions
@@ -71,14 +72,27 @@ _FX_ENDPOINTS = {
     "anthropic": "https://api.anthropic.com/v1",
     **{name: provider.base_url for name, provider in PROVIDERS.items() if provider.base_url},
 }
-# A run bound to another libfx version fails closed instead of resuming on this one (runtime_sessions.py).
-# Since -3 every turn is journaled and may change the project through approvals.
-_VERSION = "libfx-0.0.16-chat-3"
-_DURABLE_VERSION = "libfx-0.0.16-delegation-3"
-# Earlier pilots' bindings, upgraded to these when their run works again: True where the journal was
-# written by libfx 0.0.15, which 0.0.16 can't read, so the turn starts again from its message.
-_EARLIER = {"libfx-0.0.15-pilot-1": True, "libfx-0.0.15-delegation-1": True,
-            "libfx-0.0.16-pilot-2": False, "libfx-0.0.16-delegation-2": False}
+# A run is bound to the libfx artifact the host pins (runtimes/fx.py LIBFX_ARTIFACTS); a run bound to
+# another one fails closed instead of resuming on this one (runtime_sessions.py), unless it is listed
+# below. Since -3 every turn is journaled and may change the project through approvals.
+_LIBFX = libfx_version()
+_VERSION = f"libfx-{_LIBFX}-chat-3"
+_DURABLE_VERSION = f"libfx-{_LIBFX}-delegation-3"
+
+
+def _earlier_bindings(current: str) -> dict[str, bool]:
+    """Bindings upgraded to this version when their run works again, each True when its journal is
+    dropped and the turn starts again from its message. 0.0.15's journals no host since 0.0.16 can
+    read; the others are only those whose artifact `current` was shown to resume."""
+    earlier = {"libfx-0.0.15-pilot-1": True, "libfx-0.0.15-delegation-1": True}
+    for version in (current, *LIBFX_ARTIFACTS[current]):
+        names = ["pilot-2", "delegation-2"] if version == "0.0.16" else []
+        names += [] if version == current else ["chat-3", "delegation-3"]
+        earlier |= {f"libfx-{version}-{name}": False for name in names}
+    return earlier
+
+
+_EARLIER = _earlier_bindings(_LIBFX)
 _HISTORY_TURNS = 16
 _HISTORY_CHARS = 30_000
 _GUIDE = """Answer the person using the project tools you are given.

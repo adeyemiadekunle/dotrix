@@ -139,6 +139,7 @@ FAKE_FX = textwrap.dedent('''
         log.write(json.dumps({"method": msg.get("method"), "params": msg.get("params")}) + "\\n"); log.flush()
         method, mid = msg.get("method"), msg.get("id")
         if method == "initialize":
+            log.write(json.dumps({"method": "environment", "params": {"FX_PROJECT_CONFIG": os.environ.get("FX_PROJECT_CONFIG")}}) + "\\n"); log.flush()
             send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1}})
         elif method == "session/new":
             send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "fx-session-1"}})
@@ -165,6 +166,21 @@ FAKE_FX = textwrap.dedent('''
                 except urllib.error.HTTPError as error:
                     reason = "refused" if error.code == 403 else "error"
                 send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": reason}})
+                continue
+            if "delegate" in msg["params"]["prompt"][0]["text"]:  # a worker (subagent) runs a command
+                def hook(session, kind, data):
+                    send({"jsonrpc": "2.0", "method": "libfx/hook", "params": {"version": 1, "sessionId": session,
+                          "rootSessionId": sid, "parentSessionId": None if session == sid else sid, "type": kind, "data": data}})
+                update(sid, {"sessionUpdate": "tool_call", "toolCallId": "send-1", "name": "subagent", "title": "tester",
+                             "kind": "other", "rawInput": {"action": "message", "agent": "tester", "message": "run the tests"}})
+                hook(sid, "delegation", {"callId": "send-1", "childSessionId": "child-1", "phase": "dispatched"})
+                call = {"callId": "c9", "name": "shell", "argumentsJson": json.dumps({"action": "run", "command": "pytest -q"})}
+                hook(sid, "tool.start", {"call": {**call, "callId": "main-only"}})  # the main session's: ACP streams those
+                hook("child-1", "tool.start", {"call": call, "rerun": False})
+                hook("child-1", "tool.end", {"call": call, "status": "success",
+                     "output": json.dumps({"state": "completed", "exit_code": 1, "output_delta": "1 failed\\n"})})
+                update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "send-1", "status": "completed"})
+                send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
                 continue
             if "wait" in msg["params"]["prompt"][0]["text"]:
                 waiting = mid
@@ -207,8 +223,12 @@ def _drive(env: dict[str, str], brief: str, *extra: str) -> list[dict]:
     return [json.loads(line) for line in done.stdout.splitlines() if line.strip()]
 
 
-def _calls(env: dict[str, str]) -> list[dict]:
+def _logged(env: dict[str, str]) -> list[dict]:
     return [json.loads(line) for line in Path(env["FAKE_FX_LOG"]).read_text().splitlines()]
+
+
+def _calls(env: dict[str, str]) -> list[dict]:
+    return [entry for entry in _logged(env) if entry["method"] != "environment"]
 
 
 def test_model_recovery_needing_input_cannot_finish_as_success(fake_fx) -> None:
@@ -230,6 +250,7 @@ def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_f
                          "final": "Done."}
     calls = _calls(fake_fx)
     assert [c["method"] for c in calls] == ["initialize", "session/new", "session/set_mode", "session/prompt"]
+    assert {"method": "environment", "params": {"FX_PROJECT_CONFIG": "0"}} in _logged(fake_fx)
     assert calls[2]["params"] == {"sessionId": "fx-session-1", "modeId": "full-access"}
     assert calls[3]["params"]["prompt"] == [{"type": "text", "text": "Fix the tests"}]
     home = Path(fake_fx["HOME"])
@@ -237,6 +258,8 @@ def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_f
     assert settings["providers"]["dotrix"]["auth"] == {"type": "bearer", "env": "OPENAI_API_KEY"}  # its name, not the key
     assert "the-key" not in (home / ".fx" / "settings.json").read_text()
     assert settings["models"] == {"dotrix": "gpt-6.1"} and settings["auto_upgrade"] is False
+    # The repository is data: fx takes none of its .fx.json, .fx/agents, skills, .mcp.json or AGENTS.md.
+    assert settings["project_config"] is False
     assert json.loads((home / ".fx" / "dotrix" / "s1.json").read_text()) == {"fxSession": "fx-session-1"}
 
     # The parsed lines, as Codes shows them.
@@ -253,6 +276,28 @@ def test_the_next_turn_continues_fx_s_session_without_replaying_it(fake_fx) -> N
     assert "old" not in [e.get("text") for e in events]  # the resumed history isn't this turn's
     methods = [c["method"] for c in _calls(fake_fx)]
     assert methods[4:] == ["initialize", "session/resume", "session/set_mode", "session/prompt"]
+
+
+def test_a_worker_s_commands_show_in_the_session_named_for_the_worker(fake_fx) -> None:
+    """Kai's workers (fx subagents) run in child sessions: their tool calls come from fx's hook events."""
+    events = _drive(fake_fx, "Please delegate the tests")
+    new = next(c for c in _calls(fake_fx) if c["method"] == "session/new")
+    assert new["params"]["_meta"] == {"fx": {"hooks": {"captureContent": True}}}
+    child = [e for e in events if str(e.get("id", "")).startswith("child-1:")]
+    assert child == [
+        {"type": "tool", "id": "child-1:c9", "name": "shell", "title": None, "kind": None,
+         "input": {"action": "run", "command": "pytest -q"}, "agent": "tester"},
+        {"type": "tool_result", "id": "child-1:c9", "status": "failed", "output": "1 failed\n"},
+    ]
+    assert not any(e.get("id") == "main-only" for e in events)  # the main session's tools come as ACP updates
+
+    tool, usage = Fx(FX_PROVIDERS["openai"]), Usage()
+    steps = [(s.kind, s.text) for e in events for s in tool.parse(json.dumps(e), usage).steps]
+    assert ("tool", "Asked tester to run the tests") in steps
+    assert ("tool", "Ran pytest -q (tester)") in steps
+    assert ("output-error", "1 failed") in steps
+    settings = json.loads((Path(fake_fx["HOME"]) / ".fx" / "settings.json").read_text())
+    assert settings["max_subagents"] == 2
 
 
 def test_sigint_cancels_the_turn_and_it_still_ends_with_done(fake_fx) -> None:
