@@ -693,8 +693,13 @@ def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None
             return f"Read {path}"
         case "glob_files" | "grep_files":
             return f"Searched for {_clip(str(args.get('pattern') or args.get('query') or ''), 80)}"
-        case "subagent":
-            return f"Asked a subagent to {_clip(str(args.get('description') or args.get('prompt') or ''), 120)}"
+        case "subagent":  # fx: {"action": "message", "agent": ..., "message": ...}, flat or under "request"
+            sent = request or args
+            if sent.get("action") not in (None, "message"):
+                return None  # wait, status, stop and close only read or end a worker
+            who = str(sent.get("agent") or "a worker")
+            task = sent.get("message") or args.get("description") or args.get("prompt") or ""
+            return f"Asked {_clip(who, 40)} to {_clip(str(task), 120)}"
         case "read_tool_result" | "skill" | "skill_search" | "capability_search":
             return None
         case _:
@@ -766,6 +771,8 @@ class Fx:
                 ref = str(event.get("id") or "") or None
                 name, args = str(event.get("name") or ""), event.get("input") if isinstance(event.get("input"), dict) else {}
                 said = _describe_fx_tool(name, str(event.get("title") or ""), args)
+                if said and event.get("agent"):  # one of Kai's workers (a subagent), named for the session
+                    said = f"{said} ({_clip(str(event['agent']), 40)})"
                 command = name == "shell" and said is not None
                 if ref:
                     usage._tools[ref] = said or name

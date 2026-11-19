@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Added
+
+- Codes shows what Kai's own workers (fx subagents) do: their commands, with output, and edits appear as steps named for the worker ("Ran pytest -q (tester)"), from fx's hook events. A turn's workers are limited to two at once (fx's `max_subagents`, in the Kai runtime build). The step for handing work to a worker now says who and what ("Asked tester to run the tests").
+
 ### Security
 
 - Kai's fx engine no longer takes configuration from the repository it codes on: the cloud driver and local profile set fx's `project_config` off (and `FX_PROJECT_CONFIG=0`), so a repository's `.fx.json`, `.fx/agents` profiles, skills, `.mcp.json` servers and `AGENTS.md` never reach the model. It takes effect with the Kai runtime build that has the setting; the published fx 0.0.17 binary ignores it.
