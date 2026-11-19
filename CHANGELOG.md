@@ -9,10 +9,6 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
-### Added
-
-- Codes shows what Kai's own workers (fx subagents) do: their commands, with output, and edits appear as steps named for the worker ("Ran pytest -q (tester)"), from fx's hook events. A turn's workers are limited to two at once (fx's `max_subagents`, in the Kai runtime build). The step for handing work to a worker now says who and what ("Asked tester to run the tests").
-
 ### Security
 
 - Kai's fx engine no longer takes configuration from the repository it codes on: the cloud driver and local profile set fx's `project_config` off (and `FX_PROJECT_CONFIG=0`), so a repository's `.fx.json`, `.fx/agents` profiles, skills, `.mcp.json` servers and `AGENTS.md` never reach the model. It takes effect with the Kai runtime build that has the setting; the published fx 0.0.17 binary ignores it.
@@ -21,9 +17,11 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - Applications retain one repository with enforced package boundaries, CI for affected apps, separate desktop/CLI release schedules, and app-specific development configuration.
 - The fx chat host admits libfx artifacts from one table (`LIBFX_ARTIFACTS`) instead of a hardcoded 0.0.16 check: it runs only the version its package pins, and a run bound to an earlier artifact resumes only where the new one was shown to read its journal. The pin stays at libfx 0.0.16; an opt-in cross-version test compares two host installs on the same journal.
+- Moving the fx chat host to the Kai runtime build is now a pin change only: the truncated-answer test accepts either refusal of a cut-off retry (0.0.16 fails it; the Kai runtime reports `max_output_tokens`), and the fx restart tests can write with one libfx artifact and resume on another (`DOTRIX_FX_RESTART_WRITER`, `DOTRIX_FX_RESTART_READER`). With 0.0.16 writing and the Kai runtime reading, approvals decided after a restart, a change cut off mid-way, steering before a crash and a delegation handoff all resume correctly.
 
 ### Added
 
+- Codes shows what Kai's own workers (fx subagents) do: their commands, with output, and edits appear as steps named for the worker ("Ran pytest -q (tester)"), from fx's hook events. A turn's workers are limited to two at once (fx's `max_subagents`, in the Kai runtime build). The step for handing work to a worker now says who and what ("Asked tester to run the tests").
 - Project cloud environment profiles with administrator-reviewed setup and read-only verification scripts, approval snapshots, cancellation/time limits and local-session isolation. Docker profiles can select operator-approved image digests and retain resolved content IDs across retries and follow-ups.
 - A private SearXNG service in the development and Dokploy Docker stacks, providing shared web search for models without built-in search.
 
