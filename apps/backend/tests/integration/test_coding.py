@@ -2753,3 +2753,37 @@ async def test_reverting_a_latin1_turn_restores_the_original_bytes(
     revert = await _approve(db_client, base, revert, ada.headers)
     assert revert["status"] == "pr_opened", revert
     assert _git_bytes(origin, "show", f"{branch}:src/legacy.properties") == LATIN1
+
+
+async def test_a_session_keeps_the_profile_digest_its_engine_reported_while_the_worker_holds_the_run(
+    db_client: AsyncClient, coding, github, claude: ScriptedClaude, agent_script
+) -> None:
+    """D2: the digest of the system profile an engine's session started with (fx reports it) is kept on the
+    session, for the next resumed turn to check, and never by a worker another attempt fenced off."""
+    from dotrix_backend.modules.coding.models import CodingSession
+
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Profile"}, headers=ada.headers)).json()
+    agent_script.say("Fine.")
+    claude.edits = {"src/profile.py": "VALUE = 1\n"}
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    run = await _approve(db_client, base, run, ada.headers)
+    assert run["status"] == "pr_opened"
+    worker, factory = app.state.jobs.ctx.coding, app.state.jobs.ctx.session_factory
+    run_id, session_id = uuid.UUID(run["id"]), uuid.UUID(run["session_id"])
+
+    async def digest() -> str | None:
+        async with factory() as session:
+            return (await session.get(CodingSession, session_id)).profile_digest
+
+    assert await digest() is None  # Claude Code takes no profile
+    fenced = _LEASE.set(-1)  # a worker whose lease a newer attempt replaced
+    try:
+        await worker._record_profile(run_id, "b" * 64)
+    finally:
+        _LEASE.reset(fenced)
+    assert await digest() is None
+    await worker._record_profile(run_id, "a" * 64)
+    assert await digest() == "a" * 64

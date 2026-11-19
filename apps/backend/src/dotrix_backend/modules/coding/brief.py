@@ -38,6 +38,9 @@ SUMMARY_CHARS = 3_000  # of each earlier turn's summary, in a follow-up's brief
 # Links from the issue that say what it builds on.
 DOCUMENT_LINKS = frozenset({"implements", "decided_by", "mentions", "relates_to"})
 
+# Where Kai's contract (`kai_contract`) starts, at the end of every brief.
+CONTRACT_HEADING = "# How Kai works"
+
 RULES = """\
 ## How to work
 
@@ -99,13 +102,31 @@ async def build_brief(
     kai = (await AgentDefinitionRepository(session).coding_configuration(project.workspace_id, project.id)).spec
     if user_id:
         kai = with_preferences([kai], await preferences_for(session, project.workspace_id, user_id), "the person")[0]
-    parts += ["", role_instructions(kai), "", RULES, "", DEFINITION_OF_DONE.strip()]
+    contract = kai_contract(role_instructions(kai))
     # What the work is about: the issue, the request, and for a follow-up the files earlier turns changed
     # (their "(changed: …)" line; not their prose, which repeats the definition of done's words).
     touched = [line for _, summary in earlier or [] for line in summary.splitlines() if line.startswith("(changed: ")]
     work = "\n".join((issue.title, issue.description, note or "", *touched))
     parts += await _standards(session, project, work, inline_skills=inline_skills)
+    # Kai's contract comes last, under its own heading: the engines that take a system profile get it there
+    # (`split_contract`), the rest read it here.
+    parts += ["", contract]
     return "\n".join(parts)
+
+
+def kai_contract(role: str) -> str:
+    """Kai's stable contract for a session: its role (with the workspace's, project's and person's layered
+    guidance), the platform's rules and the definition of done, under `CONTRACT_HEADING`."""
+    return "\n".join([CONTRACT_HEADING, "", role, "", RULES, "", DEFINITION_OF_DONE.strip()])
+
+
+def split_contract(brief: str) -> tuple[str, str | None]:
+    """A brief as the task (everything above Kai's contract) and the contract, or `(brief, None)` for a brief
+    made before the contract had a heading of its own."""
+    task, found, contract = brief.rpartition("\n" + CONTRACT_HEADING + "\n")
+    if not found:
+        return brief, None
+    return task.rstrip() + "\n", (CONTRACT_HEADING + "\n" + contract).strip()
 
 
 STANDARDS_CHARS = 16_000  # the skills and the team's coding rules, together
@@ -137,7 +158,7 @@ async def _standards(session: AsyncSession, project: Project, work: str, *, inli
     budget = STANDARDS_CHARS
     if rules:
         out += ["", "## This team's rules for code",
-                "Follow these where they don't contradict the platform's rules above (those win)."]
+                "Follow these where they don't contradict the platform's rules in how Kai works (those win)."]
         for rule in rules:
             out.append(rule[:budget])
             budget -= min(len(rule), budget)

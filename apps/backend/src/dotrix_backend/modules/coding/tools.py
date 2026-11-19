@@ -15,7 +15,9 @@ what the run page shows (steps) and what the run used (tokens).
 """
 from __future__ import annotations
 
+import base64
 import json
+import re
 import shlex
 import uuid
 from dataclasses import dataclass, field
@@ -119,6 +121,7 @@ class Parsed:
     steps: list[Step] = field(default_factory=list)
     summary: str | None = None  # the agent's final message, when this line carried it
     failed: str | None = None  # the tool reported it couldn't finish
+    profile_digest: str | None = None  # the session's system profile, when the tool reported one (fx)
 
 
 class CodingTool(Protocol):
@@ -734,6 +737,15 @@ class Fx:
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["--session", session.hex, *(["--resume"] if resumed else [])]
 
+    # Kai's contract goes to fx as the session's system profile, not in the prompt (`profile_args`).
+    takes_profile = True
+
+    def profile_args(self, contract: str, pinned: str | None) -> list[str]:
+        """The driver's arguments for Kai's profile: the contract, which a new session starts with, and the
+        digest Dotrix recorded for this session, which a resumed one must match."""
+        encoded = base64.b64encode(contract.encode()).decode()
+        return ["--profile", encoded, *(["--profile-digest", pinned] if pinned else [])]
+
     def save_state(self, session: uuid.UUID) -> str:  # its sessions and ours; the settings are written each turn
         return f'cd "$HOME" && [ -d {FX_DATA} ] && tar -cz --exclude={FX_DATA}/settings.json {FX_DATA} | base64 -w0'
 
@@ -763,6 +775,9 @@ class Fx:
                 if event.get("fresh"):
                     said = "Started a new conversation (the earlier one couldn't be restored)"
                 out.steps.append(Step("step", f"{said} ({event.get('model') or 'default model'})"))
+                digest = event.get("profileDigest")
+                if isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
+                    out.profile_digest = digest
             case "text" if str(event.get("text", "")).strip():
                 out.steps.append(Step("text", _clip(str(event["text"]))))
             case "warning" if str(event.get("message", "")).strip():  # the turn goes on: the browser didn't start

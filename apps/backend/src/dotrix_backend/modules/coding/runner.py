@@ -71,6 +71,7 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.skills import DEFINITION_OF_DONE, review_skills
 
 from . import guard
+from .brief import split_contract
 from .models import (
     CODING_AGENT_NAME,
     CodingLocation,
@@ -423,6 +424,7 @@ class CodingWorker:
             workspace_id, session_id = run.workspace_id, run.session_id
             sess = await _session_row(session, run)
             claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
+            profile_digest = sess.profile_digest
             sleeping, slept_at = (dict(sess.sandbox_handle) if sess.sandbox_handle else None), sess.sandbox_slept_at
             # The hosts its sandbox may reach besides the model API (owners and admins set them).
             allow = allowed_hosts(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id))
@@ -607,6 +609,8 @@ class CodingWorker:
                 resumed = False
                 claude_session = uuid.uuid4()
             extra = tool.session_args(claude_session, resumed)
+            brief, profile_args = _profile(tool, brief, resumed, profile_digest)
+            extra += profile_args
             started = datetime.now(UTC)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
                                                  cost_before if resumed else None, plan_mode=plan_mode)
@@ -893,6 +897,7 @@ class CodingWorker:
         brief += await materialize(box, skill_snapshot)
         usage, summary, failed = Usage(), None, None
         reported: list[float] = []
+        profile_digests: list[str] = []
         pending: list[dict[str, Any]] = []
         cancel = asyncio.Event()
         stop_reason: list[str] = []
@@ -927,6 +932,8 @@ class CodingWorker:
                            for s in parsed.steps)
             summary = parsed.summary or summary
             failed = parsed.failed or failed
+            if parsed.profile_digest:
+                profile_digests.append(parsed.profile_digest)
             if parsed.failed and not cancel.is_set():  # e.g. the key was refused: don't wait out retries
                 cancel.set()
             if time.monotonic() - last_flush >= FLUSH_SECONDS:
@@ -958,6 +965,8 @@ class CodingWorker:
         finally:
             watcher.cancel()
             await flush()
+        if profile_digests and not plan_mode and task_key is None:  # a plan turn's session is thrown away
+            await self._record_profile(run_id, profile_digests[-1])
         if result.timed_out:
             raise _Stopped(f"Stopped at the time limit ({self.settings.coding_timeout_minutes} minutes)")
         if result.cancelled and failed and not stop_reason:
@@ -968,6 +977,18 @@ class CodingWorker:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
             raise RunFailed(f"{CODING_AGENT_NAME} didn't finish: {detail[:500]}")
         return summary, (reported[-1] if reported else None)
+
+    async def _record_profile(self, run_id: uuid.UUID, digest: str) -> None:
+        """The profile digest the engine's session reported, kept on the session while this worker holds the
+        run: the next resumed turn passes it back, and saved state with another profile never runs."""
+        async with self.session_factory() as session:
+            run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id))
+            if run is None or not self._holds(run):
+                return
+            row = await session.get(CodingSession, run.session_id, with_for_update=True)
+            if row is not None and row.profile_digest != digest:
+                row.profile_digest = digest
+                await session.commit()
 
     async def _totals(
         self, box: SandboxSession, tool: CodingTool, tool_session: uuid.UUID, usage: Usage, reported: list[float],
@@ -1535,6 +1556,18 @@ async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everyth
             )
     await session.commit()
     return len(runs)
+
+
+def _profile(tool: CodingTool, brief: str, resumed: bool, pinned: str | None) -> tuple[str, list[str]]:
+    """For an engine that takes a system profile (fx): the brief without Kai's contract, and the arguments that
+    give the engine the contract. A new session starts with it; a resumed one keeps the profile it started with,
+    which must match `pinned`. A session started before profiles, resumed, keeps its brief whole."""
+    if not getattr(tool, "takes_profile", False):
+        return brief, []
+    task, contract = split_contract(brief)
+    if contract is None or (resumed and pinned is None):
+        return brief, []
+    return task, tool.profile_args(contract, pinned if resumed else None)
 
 
 async def _session_row(session: AsyncSession, run: CodingRun) -> CodingSession:

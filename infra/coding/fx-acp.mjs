@@ -1,7 +1,7 @@
 // Kai on fx (DOTRIX_CODING_FX): drives `fx acp` (the Agent Client Protocol over stdio) for one coding turn
 // in the sandbox, and prints what happens as JSON lines for modules/coding/tools.py (`Fx`):
 //
-//   {"type":"started","model":…,"resumed":bool}      the session is ready
+//   {"type":"started","model":…,"resumed":bool,"profileDigest":…}   the session is ready, with its profile's digest
 //   {"type":"text","text":…}                          a message of the agent's, whole
 //   {"type":"tool","id":…,"name":…,"title":…,"input":{…}}   a tool call starts
 //   {"type":"tool_result","id":…,"status":"completed"|"failed","output":…}
@@ -9,7 +9,13 @@
 //   {"type":"warning","message":…}                    something the turn goes on without (the browser didn't start)
 //   {"type":"error","message":…}                      it couldn't run (shown to people: never names fx)
 //
-//   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]] [--mcp-config JSON]  < brief
+//   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]] [--mcp-config JSON]
+//                   [--profile BASE64 [--profile-digest SHA256]]  < brief
+//
+// --profile is Kai's contract from Dotrix (base64 UTF-8 text): a new session gets it as its system profile
+// (ACP's systemPrompt) and fx saves it with the session, so a resumed one keeps the profile it started with.
+// Its SHA-256 is saved beside fx's session id and reported in `started`; --profile-digest is that digest as
+// Dotrix recorded it, and a resumed session whose saved profile differs never runs a turn.
 //
 // --mcp-config gives fx MCP servers for the turn, in Claude Code's format ({"mcpServers": {name: {command, args}}}):
 // the platform passes the browser (playwright-mcp) this way, as it does for Claude Code. They go to fx with each
@@ -21,6 +27,7 @@
 // session id is kept under ~/.fx/dotrix so the next turn (with --resume) continues the same conversation;
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { accessSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -42,6 +49,8 @@ const model = arg("--model");
 const dotrixSession = arg("--session");
 const resume = args.includes("--resume");
 const mcpConfig = arg("--mcp-config");
+const profile = arg("--profile") ? Buffer.from(arg("--profile"), "base64").toString("utf8") : null;
+const pinnedDigest = arg("--profile-digest") ?? null;
 const fxBin = process.env.DOTRIX_FX_BIN || "fx";
 
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -180,6 +189,14 @@ writeFileSync(
   { mode: 0o600 },
 );
 const sessionFile = dotrixSession ? join(ours, `${dotrixSession}.json`) : null;
+const saved = () => {
+  if (!sessionFile) return {};
+  try {
+    return JSON.parse(readFileSync(sessionFile, "utf8"));
+  } catch {
+    return {};
+  }
+};
 const savedSession = () => {
   if (!sessionFile) return null;
   try {
@@ -359,6 +376,11 @@ async function open() {
   const cwd = process.cwd();
   const previous = resume ? savedSession() : null;
   if (previous) {
+    // The session keeps the profile it was started with (fx restores it); Dotrix's record of it must match.
+    const digest = saved().profileDigest ?? null;
+    if (pinnedDigest && digest !== pinnedDigest) {
+      fail("This coding session's saved state doesn't match the profile it was started with; start a new session");
+    }
     replaying = true;
     try {
       try {
@@ -367,15 +389,17 @@ async function open() {
         if (error.code !== -32601) throw error;
         await call("session/load", { sessionId: previous, cwd, mcpServers, _meta: hooks });
       }
-      return { id: previous, resumed: true };
+      return { id: previous, resumed: true, profileDigest: saved().profileDigest ?? null };
     } finally {
       replaying = false;
     }
   }
-  const created = await call("session/new", { cwd, mcpServers, _meta: hooks });
+  const systemPrompt = profile && profile.trim() ? [{ type: "text", text: profile }] : undefined;
+  const created = await call("session/new", { cwd, mcpServers, ...(systemPrompt ? { systemPrompt } : {}), _meta: hooks });
   if (!created?.sessionId) throw new Error("session/new returned no session");
-  if (sessionFile) writeFileSync(sessionFile, JSON.stringify({ fxSession: created.sessionId }), { mode: 0o600 });
-  return { id: created.sessionId, resumed: false };
+  const profileDigest = systemPrompt ? createHash("sha256").update(profile, "utf8").digest("hex") : null;
+  if (sessionFile) writeFileSync(sessionFile, JSON.stringify({ fxSession: created.sessionId, profileDigest }), { mode: 0o600 });
+  return { id: created.sessionId, resumed: false, profileDigest };
 }
 
 try {
@@ -387,7 +411,13 @@ try {
   const session = await open();
   sessionId = session.id;
   await call("session/set_mode", { sessionId, modeId: "full-access" });
-  emit({ type: "started", model, resumed: session.resumed, ...(resume && !session.resumed ? { fresh: true } : {}) });
+  emit({
+    type: "started",
+    model,
+    resumed: session.resumed,
+    ...(session.profileDigest ? { profileDigest: session.profileDigest } : {}),
+    ...(resume && !session.resumed ? { fresh: true } : {}),
+  });
   if (cancelled) notify("session/cancel", { sessionId });
   const result = await call("session/prompt", { sessionId, prompt: [{ type: "text", text: brief }] });
   flush();
