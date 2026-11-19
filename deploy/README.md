@@ -24,7 +24,9 @@ What only you (whoever runs dotrix) can do; the code can't.
 **Before the first production deploy**
 
 - [ ] A domain with HTTPS for the web app, the admin console and the public site ([Set up](#set-up), step 3).
-- [ ] Every required value in Dokploy's Environment tab, from `deploy/dokploy.env.example`. Keep a copy of
+- [ ] Every value marked REQUIRED in Dokploy's Environment tab, from `deploy/dokploy.env.example`, including
+      `KAI_PACKAGES_TOKEN` (a classic token with `read:packages` only: the images install the Kai runtime from
+      GitHub Packages with it). Keep a copy of
       `DOTRIX_ENCRYPTION_KEY` somewhere safe: people's model keys, saved coding sessions and admins'
       two-factor secrets can't be read without it.
 - [ ] `DOTRIX_ADMIN_URL` (so admin invites are emailed) and `DOTRIX_ALERT_EMAILS` (who hears when something
