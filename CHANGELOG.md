@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Fixed
+
+- Dokploy: `DOTRIX_ALERT_INTERVAL_MINUTES`, `DOTRIX_WORKSPACE_STORAGE_MB`, `DOTRIX_AGENT_SCRIPTS` and `DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH` were listed in `deploy/dokploy.env.example` but never passed to the containers, so setting them did nothing; the compose file now passes them through (blank keeps the production default). The example is regrouped with every required value marked REQUIRED, and a test keeps it in step with the compose file.
+
 ### Security
 
 - Kai's fx engine runs only the Kai runtime's fx. Upstream fx 0.0.17 reports the same version but has no `project_config`, so a repository's `.fx.json`, skills, `.mcp.json` and `AGENTS.md` would reach the model through it. The cloud driver (`fx-acp.mjs`) and the local namespace bridge (`fx_bridge.py`) now check that `fx config get project_config` answers `false` before a turn starts, and refuse it otherwise ("The coding engine isn't the version Kai was checked with" in Codes; locally, "Native execution requires the Kai runtime's fx")
