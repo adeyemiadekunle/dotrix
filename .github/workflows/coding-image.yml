@@ -44,6 +44,9 @@ jobs:
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: infra/coding
+          # Kai's fx command comes from GitHub Packages (infra/coding/Dockerfile): KAI_PACKAGES_TOKEN has read:packages.
+          secrets: |
+            kai_packages_token=${{ secrets.KAI_PACKAGES_TOKEN }}
           platforms: linux/amd64
           push: ${{ inputs.publish }}
           tags: |

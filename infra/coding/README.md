@@ -226,9 +226,11 @@ checks all of this against a real container (it's skipped where the image isn't 
    The machine that runs agents also needs the `openshell` CLI, selected to that gateway, and
    an `ssh` client: uploads to a sandbox go over SSH.
 2. Build the image, which installs Claude Code, Codex, OpenCode, fx, and git, each at a pinned version
-   (`CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`, `FX_VERSION`; fx from releases.fx.sh,
-   checked against its SHA-256). Raise one with `--build-arg` only after checking its events and flags:
-   `docker build -t dotrix-coding:latest infra/coding`
+   (`CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`, `KAI_CLI_VERSION`; fx is the Kai runtime's
+   command, `@kunemi-group/kai-cli-linux-<cpu>` from GitHub Packages, checked against the SHA-256 the
+   Dockerfile pins). Raise one with `--build-arg` only after checking its events and flags. The fx install
+   needs a GitHub token with `read:packages` as a build secret:
+   `docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding`
 3. Import the provider profiles:
    ```shell
    openshell provider profile import -f infra/coding/dotrix-claude-code.yaml --global

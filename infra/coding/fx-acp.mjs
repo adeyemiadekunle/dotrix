@@ -20,7 +20,7 @@
 // the sandbox, not fx, is the boundary, and nobody is there to answer a permission prompt. fx's own
 // session id is kept under ~/.fx/dotrix so the next turn (with --resume) continues the same conversation;
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { accessSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -189,11 +189,15 @@ const savedSession = () => {
   }
 };
 
+const fxEnv = { ...process.env, FX_AUTO_UPGRADE: "0", FX_PROJECT_CONFIG: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" };
+// Upstream fx 0.0.17 reports the same version as the Kai runtime's fx but has no project_config, so it would
+// take the repository's configuration: run only an fx that knows the setting and has it off.
+const setting = spawnSync(fxBin, ["config", "get", "project_config"], { env: fxEnv, encoding: "utf8", timeout: 15_000 });
+if (setting.error) fail(`The coding engine didn't start (${setting.error.code ?? "error"})`);
+if (setting.status !== 0 || setting.stdout.trim() !== "false") fail("The coding engine isn't the version Kai was checked with");
+
 // The model is the provider's default in the settings above, not `--model` (that names an AI Gateway model).
-const fx = spawn(fxBin, ["acp"], {
-  stdio: ["pipe", "pipe", "inherit"],
-  env: { ...process.env, FX_AUTO_UPGRADE: "0", FX_PROJECT_CONFIG: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" },
-});
+const fx = spawn(fxBin, ["acp"], { stdio: ["pipe", "pipe", "inherit"], env: fxEnv });
 // The code only: the OS's message names the binary.
 fx.on("error", (error) => fail(`The coding engine didn't start (${error.code ?? "error"})`));
 

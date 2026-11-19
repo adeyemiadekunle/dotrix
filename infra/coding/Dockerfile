@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # The image coding runs use in OpenShell (DOTRIX_CODING_IMAGE): Claude Code, Codex, OpenCode, fx, git, and
 # common toolchains so the agent can run a project's tests. Add what your projects need.
 #
@@ -29,18 +30,28 @@ RUN npm install -g @opencode/cli@${OPENCODE_VERSION} && opencode --version
 # the sandbox refuses, and the failed download takes the rest of the turn down with it (seen with GPT-5.5).
 RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/* && rg --version
 
-# fx (DOTRIX_CODING_FX=true): Kai on an OpenAI-compatible provider, driven over ACP by fx-acp.mjs. Pinned,
-# because the driver reads its ACP messages and modes (checked on 0.0.17 with real CLI/provider transport, resume and cancellation tests); the release is
-# fx's own (releases.fx.sh, what `fx upgrade` fetches), checked against its published SHA-256. Its profiles
-# are dotrix-fx-*.yaml. Needs releases.fx.sh reachable where the image is built, never in the sandbox.
-ARG FX_VERSION=0.0.17
-RUN set -eu; \
-  case "$(uname -m)" in x86_64) arch=x86_64 ;; aarch64|arm64) arch=aarch64 ;; *) echo "fx: unsupported $(uname -m)"; exit 1 ;; esac; \
-  base="https://releases.fx.sh/v${FX_VERSION}/fx-linux-${arch}.tar.gz"; \
-  cd /tmp && curl -fsSL -o fx.tar.gz "$base" && curl -fsSL -o fx.tar.gz.sha256 "$base.sha256"; \
-  echo "$(cut -d' ' -f1 fx.tar.gz.sha256)  fx.tar.gz" | sha256sum -c -; \
-  mkdir fx && tar -xzf fx.tar.gz -C fx && install -m 0755 "$(find fx -type f -name fx | head -n1)" /usr/local/bin/fx; \
-  rm -rf fx fx.tar.gz fx.tar.gz.sha256; \
+# fx (DOTRIX_CODING_FX=true): Kai on an OpenAI-compatible provider, driven over ACP by fx-acp.mjs. It is the
+# Kai runtime's fx command (adeyemiadekunle/kai-runtime, fx 0.0.17 with its changes: `project_config` and
+# `max_subagents`, which the driver sets), published to GitHub Packages as @kunemi-group/kai-cli-linux-<cpu>,
+# and pinned by version and by its binary's SHA-256 (the package's fx.sha256). The install needs a GitHub token
+# with read:packages as the build secret kai_packages_token; it never reaches the image or the sandbox:
+#
+#   docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding
+#
+# Its profiles are dotrix-fx-*.yaml. Needs npm.pkg.github.com reachable where the image is built, never in the sandbox.
+ARG KAI_CLI_VERSION=0.0.17-kai.1
+ARG KAI_CLI_SHA256_X64=4d6e2dab0b089ac5f6412e0d3644549f85ed93cbc95089a5d52a22e0c7191631
+ARG KAI_CLI_SHA256_ARM64=9723427edd0935a322daf9906b2f2743776d395c14cda41610f57aa4a4286e34
+RUN --mount=type=secret,id=kai_packages_token,required=true set -eu; \
+  case "$(uname -m)" in x86_64) cpu=x64; sum="$KAI_CLI_SHA256_X64" ;; aarch64|arm64) cpu=arm64; sum="$KAI_CLI_SHA256_ARM64" ;; *) echo "fx: unsupported $(uname -m)"; exit 1 ;; esac; \
+  work=$(mktemp -d) && cd "$work"; \
+  printf '@kunemi-group:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' > .npmrc; \
+  NODE_AUTH_TOKEN="$(cat /run/secrets/kai_packages_token)" npm pack "@kunemi-group/kai-cli-linux-${cpu}@${KAI_CLI_VERSION}" --userconfig .npmrc --ignore-scripts --silent > archive; \
+  tar -xzf "$(cat archive)"; \
+  echo "${sum}  package/bin/fx" | sha256sum -c -; \
+  install -m 0755 package/bin/fx /usr/local/bin/fx; \
+  mkdir -p /usr/local/share/doc/kai-cli && cp package/LICENSE package/THIRD_PARTY_NOTICES.md /usr/local/share/doc/kai-cli/; \
+  cd / && rm -rf "$work"; \
   fx --version
 COPY fx-acp.mjs mcp-check.mjs /opt/dotrix/
 

@@ -97,7 +97,7 @@ services:
 
   coding-image:
     image: dotrix-coding:latest
-    build: { context: ./infra/coding }
+    build: { context: ./infra/coding, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
 

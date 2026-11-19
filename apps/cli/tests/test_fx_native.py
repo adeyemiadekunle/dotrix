@@ -94,3 +94,24 @@ def test_native_profile_refuses_ambiguous_model_connections(tmp_path, url):
         "p": {"protocol": "openai-chat-completions", "base_url": url, "auth": {"type": "bearer", "env": "KEY"}}}}))
     with pytest.raises(ValueError):
         connection(tmp_path, {"KEY": "secret"})
+
+
+@pytest.mark.parametrize(("answer", "allowed"), [
+    ("print('false')", True),
+    ("print('true')", False),  # the Kai runtime's fx, with the repository's configuration still on
+    ("import sys; sys.stderr.write('fx config: unknown setting project_config'); sys.exit(2)", False),  # upstream fx 0.0.17
+])
+def test_native_execution_runs_only_the_kai_runtime_s_fx_with_project_config_off(tmp_path: Path, answer, allowed):
+    import sys
+
+    from dotrix_cli.fx_bridge import require_kai_fx
+
+    binary = tmp_path / "fx"
+    binary.write_text(f"#!{sys.executable}\nimport sys\nassert sys.argv[1:] == ['config', 'get', 'project_config']\n{answer}\n")
+    binary.chmod(0o755)
+    if allowed:
+        require_kai_fx(str(binary))
+    else:
+        with pytest.raises(ValueError, match="Kai runtime's fx"):
+            require_kai_fx(str(binary))
+
