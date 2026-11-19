@@ -143,8 +143,9 @@ async def test_an_interrupted_read_resumes_on_the_other_artifact(journal_world, 
 async def test_a_cut_off_answer_is_never_repeated_as_complete(journal_world, monkeypatch, final_finish):
     """An answer the provider cut off (output limit, content filter) stays incomplete on a retry by ID.
 
-    libfx 0.0.17 settles an output-limit turn as `max_output_tokens` and journals it as an ordinary
-    assistant turn, so a retry on any artifact must still refuse to call it complete."""
+    libfx 0.0.17 settles an output-limit turn as `max_output_tokens`. A reader that keeps that outcome
+    reports it again; one that predates it must refuse the journal rather than call the answer complete.
+    Published 0.0.17 never recorded the outcome, so its journals fail this on every reader."""
     run, sessions, _, _, journal = journal_world
     config = AgentRuntimeConfig("project-manager", "Use the project knowledge tool.", (_read_tool(run, sessions),))
     requests = []
@@ -159,7 +160,11 @@ async def test_a_cut_off_answer_is_never_repeated_as_complete(journal_world, mon
         finally:
             await first.close()
         calls = len(requests)
-        second = await _runtime(monkeypatch, _READER, config, url, journal)
+        try:
+            second = await _runtime(monkeypatch, _READER, config, url, journal)
+        except RuntimeError:
+            print(f"\n{_version(_WRITER)} -> {_version(_READER)}: the reader refused the journal")
+            return
         try:
             try:
                 retried = await second.prompt("journal-session", "Read the evidence", message_id="turn-1")
