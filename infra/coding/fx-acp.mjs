@@ -420,6 +420,10 @@ async function open() {
         await call("session/load", { sessionId: previous, cwd, mcpServers, _meta: hooks });
       }
       return { id: previous, resumed: true, profileDigest: kept.profileDigest ?? null };
+    } catch (error) {
+      // Saved state this engine can't read (written by a version that can't be read back, or damaged): the
+      // turn starts a new conversation, with this turn's profile, and says so (`fresh` in `started`).
+      if (typeof error?.code !== "number") throw error; // the engine itself failed, not the saved state
     } finally {
       replaying = false;
     }

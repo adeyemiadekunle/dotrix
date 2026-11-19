@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Kai's fx engine: a coding session whose saved conversation the engine can't read (written by a version that can't be read back, or damaged) used to end its next turn with the engine's own error. Now the turn starts a new conversation with the session's current profile, and Codes says so ("Started a new conversation (the earlier one couldn't be restored)"). A saved profile that doesn't match Dotrix's record still refuses the turn. Checked across versions with the real binaries: a session saved by `0.0.17-kai.1`, packed and unpacked as the runner does, resumes on the next Kai runtime build with its earlier turn.
 - Releases: a first 0.2.0 publication that failed between its releases is finished by a rerun, rather than skipped. `release.py plan` treated any `v0.2.0` tag as the coordinated release from before separate component tags, so after `platform-v0.2.0` and `v0.2.0` it planned no `cli-v0.2.0`. It now checks the tag's commit: only a `v0.2.0` whose `release.py` predates the separate tags covers the platform and CLI.
 - Dokploy: `DOTRIX_ALERT_INTERVAL_MINUTES`, `DOTRIX_WORKSPACE_STORAGE_MB`, `DOTRIX_AGENT_SCRIPTS` and `DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH` were listed in `deploy/dokploy.env.example` but never passed to the containers, so setting them did nothing; the compose file now passes them through (blank keeps the production default). The example is regrouped with every required value marked REQUIRED, and a test keeps it in step with the compose file.
 

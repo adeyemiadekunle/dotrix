@@ -150,6 +150,9 @@ FAKE_FX = textwrap.dedent('''
         elif method == "session/new":
             send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "fx-session-1"}})
         elif method == "session/resume":
+            if os.environ.get("FAKE_FX_RESUME_FAILS"):  # saved state this version can't read
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": "fx: session could not be restored"}})
+                continue
             update(msg["params"]["sessionId"], {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "old"}})
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
         elif method == "session/set_mode":
@@ -718,3 +721,96 @@ def test_with_the_real_engine_kai_hears_of_its_workers_and_one_gets_only_its_too
     assert names(worker[0]) == sorted(explorer["tools"])
     worker_system = "\n".join(str(m.get("content")) for m in worker[0]["messages"] if m.get("role") in ("system", "developer"))
     assert explorer["prompt"] in worker_system
+
+
+# -- Saved sessions across versions (D7) ---------------------------------------------------------------------
+
+
+def test_saved_state_the_engine_cannot_read_starts_a_new_conversation_and_says_so(fake_fx) -> None:
+    _drive(fake_fx, "Fix the tests", *_profile())
+    Path(fake_fx["FAKE_FX_LOG"]).unlink()
+    events = _drive({**fake_fx, "FAKE_FX_RESUME_FAILS": "1"}, "Now the docs", "--resume", *_profile(), "--profile-digest", _digest())
+    assert events[0]["type"] == "started" and events[0]["resumed"] is False and events[0]["fresh"] is True
+    assert events[-1]["type"] == "done"
+    assert [c["method"] for c in _calls(fake_fx)][:3] == ["initialize", "session/resume", "session/new"]
+    new = next(c for c in _calls(fake_fx) if c["method"] == "session/new")
+    assert new["params"]["systemPrompt"] == [{"type": "text", "text": CONTRACT}]  # this turn's profile
+    steps = Fx(FX_PROVIDERS["openai"]).parse(json.dumps(events[0]), Usage()).steps
+    assert steps[0].text.startswith("Started a new conversation (the earlier one couldn't be restored)")
+    assert all("fx" not in json.dumps(e).lower() for e in events if e["type"] in ("started", "error"))
+
+
+@pytest.mark.skipif(not (os.environ.get("DOTRIX_TEST_FX") and os.environ.get("DOTRIX_TEST_FX_EARLIER")),
+                    reason="Set DOTRIX_TEST_FX and DOTRIX_TEST_FX_EARLIER to two Kai runtime builds")
+def test_a_session_saved_by_the_earlier_engine_resumes_on_the_current_one(tmp_path: Path) -> None:
+    """D7: a turn on the earlier binary, its saved state packed and unpacked into a fresh home as the runner
+    does (`save_state`, `restore_state`), and the next turn on the current binary, which continues the same
+    conversation. With the saved conversation gone, the next turn starts a new one and says so."""
+    import http.server
+    import threading
+
+    bodies: list[dict] = []
+
+    class Model(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_: object) -> None:
+            pass
+
+        def do_POST(self) -> None:
+            bodies.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            base = {"id": "r", "object": "chat.completion.chunk", "created": 1, "model": "m"}
+            chunks = [{**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": "done"}, "finish_reason": None}]},
+                      {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]
+            payload = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(payload.encode())
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Model)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    tool = Fx(FX_PROVIDERS["openai"])
+    session = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    contract = "# How Kai works\n\nYou are Kai."
+
+    def home(name: str) -> Path:
+        path = tmp_path / name
+        (path / "repo").mkdir(parents=True)
+        return path
+
+    def drive(where: Path, binary: str, brief: str, *extra: str) -> list[dict]:
+        env = {"PATH": os.environ["PATH"], "HOME": str(where), "DOTRIX_FX_BIN": binary, "OPENAI_API_KEY": "synthetic"}
+        argv = ["node", str(DRIVER), "--base-url", f"http://127.0.0.1:{server.server_port}/v1", "--key-env", "OPENAI_API_KEY",
+                "--model", "gpt-test", *tool.session_args(session, bool(extra) and extra[0] == "--resume"), *extra]
+        argv = [a for a in argv if a != "--resume"] + (["--resume"] if "--resume" in extra else [])
+        done = subprocess.run(argv, input=brief, capture_output=True, text=True, env=env, timeout=120, cwd=where / "repo")
+        return [json.loads(line) for line in done.stdout.splitlines() if line.strip()]
+
+    def move(source: Path, target: Path) -> None:
+        packed = subprocess.run(["sh", "-c", tool.save_state(session)], capture_output=True, text=True, check=True,
+                                env={"PATH": os.environ["PATH"], "HOME": str(source)})
+        subprocess.run(["sh", "-c", tool.restore_state(session)], input=packed.stdout, text=True, check=True,
+                       env={"PATH": os.environ["PATH"], "HOME": str(target)})
+
+    try:
+        first_home = home("first")
+        first = drive(first_home, os.environ["DOTRIX_TEST_FX_EARLIER"], "EARLIER_TURN_MARKER", *tool.profile_args(contract, None))
+        assert first[-1]["type"] == "done", first
+        digest = first[0]["profileDigest"]
+
+        second_home = home("second")
+        move(first_home, second_home)
+        second = drive(second_home, os.environ["DOTRIX_TEST_FX"], "Now the docs", "--resume", *tool.profile_args(contract, digest))
+        assert second[0]["resumed"] is True and second[-1]["type"] == "done", second
+        assert "EARLIER_TURN_MARKER" in json.dumps(bodies[-1])  # the earlier turn, carried over
+
+        third_home = home("third")
+        move(second_home, third_home)
+        for kept in (third_home / ".fx").iterdir():  # the saved conversation lost; Dotrix's own record kept
+            if kept.name not in ("dotrix",):
+                subprocess.run(["rm", "-rf", str(kept)], check=True)
+        third = drive(third_home, os.environ["DOTRIX_TEST_FX"], "And the tests", "--resume", *tool.profile_args(contract, digest))
+        assert third[0]["resumed"] is False and third[0].get("fresh") is True and third[-1]["type"] == "done", third
+        assert "EARLIER_TURN_MARKER" not in json.dumps(bodies[-1])
+    finally:
+        server.shutdown()
+
