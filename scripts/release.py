@@ -115,6 +115,18 @@ def bump(version: str, component: str = "platform", root: Path = ROOT) -> None:
     print(f'{component}: {old} -> {version}. Open a PR into stage; release after stage merges into main.')
 
 
+def _legacy_release(root: Path) -> bool:
+    """Whether v0.2.0 is the coordinated release from before separate component tags, which covered every
+    component. A v0.2.0 that this script published as the desktop's own release is not: its commit's
+    release.py already names the separate tags, and the platform and CLI releases it may have failed to
+    finish still need publishing."""
+    tag = 'refs/tags/v' + LEGACY_VERSION
+    if subprocess.run(['git', 'rev-parse', '--verify', '--quiet', tag], cwd=root, capture_output=True).returncode:
+        return False
+    script = subprocess.run(['git', 'show', tag + '^{commit}:scripts/release.py'], cwd=root, capture_output=True, text=True)
+    return script.returncode != 0 or GROUPS['cli']['prefix'] not in script.stdout
+
+
 def plan(root: Path = ROOT) -> list[dict]:
     result = []
     for component, group in GROUPS.items():
@@ -123,8 +135,7 @@ def plan(root: Path = ROOT) -> list[dict]:
         exists = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'refs/tags/' + tag], cwd=root,
                                 capture_output=True).returncode == 0
         if not exists and component != 'desktop' and version == LEGACY_VERSION:
-            exists = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'refs/tags/v' + LEGACY_VERSION],
-                                    cwd=root, capture_output=True).returncode == 0
+            exists = _legacy_release(root)
         if not exists:
             result.append({'component': component, 'version': version, 'tag': tag,
                            'latest': component == 'desktop', 'prerelease': '-' in version})
