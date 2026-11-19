@@ -90,3 +90,42 @@ def test_local_store_refuses_shared_directory(tmp_path):
     path.chmod(0o755)
     with pytest.raises(ValueError, match="private"):
         _prepare_local_dir(path, AgentRuntimeConfig("orion", "Instructions"), "model", None, None, 128_000)
+
+
+def _host(tmp_path, declared, installed=None):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"libfx": declared}}))
+    if installed is not None:
+        (tmp_path / "node_modules" / "libfx").mkdir(parents=True)
+        (tmp_path / "node_modules" / "libfx" / "package.json").write_text(json.dumps({"version": installed}))
+    return tmp_path
+
+
+def test_the_fx_host_runs_only_an_admitted_libfx_artifact(tmp_path):
+    from dotrix_engine.runtimes.fx import LIBFX_ARTIFACTS, installed_libfx_version, libfx_version
+
+    assert libfx_version() in LIBFX_ARTIFACTS  # the repository's own pin is admitted
+    assert libfx_version(_host(tmp_path / "pinned", "0.0.16")) == "0.0.16"
+    with pytest.raises(RuntimeError, match="not an admitted"):
+        libfx_version(_host(tmp_path / "unknown", "9.9.9"))
+    assert installed_libfx_version(_host(tmp_path / "absent", "0.0.16")) is None
+    assert installed_libfx_version(_host(tmp_path / "other", "0.0.16", installed="0.0.17")) == "0.0.17"
+
+
+async def test_the_fx_host_refuses_an_install_that_differs_from_its_pin(tmp_path, monkeypatch):
+    from dotrix_engine.runtimes import FxRuntime
+    from dotrix_engine.runtimes import fx as fx_module
+
+    monkeypatch.setattr(fx_module, "_HOST", _host(tmp_path, "0.0.16", installed="0.0.17"))
+    with pytest.raises(RuntimeError, match="0.0.17 is installed but this host pins 0.0.16"):
+        await FxRuntime.create(AgentRuntimeConfig("nova", "Answer.", ()), model="test-model")
+
+
+def test_the_configuration_digest_names_the_pinned_artifact(monkeypatch):
+    from dotrix_engine.runtimes import fx as fx_module
+
+    config = AgentRuntimeConfig("nova", "Answer.", ())
+    pinned = fx_configuration_digest(config, model="m")
+    monkeypatch.setitem(fx_module.LIBFX_ARTIFACTS, "0.0.17-test", ("0.0.16",))
+    monkeypatch.setattr(fx_module, "libfx_version", lambda host=None: "0.0.17-test")
+    assert fx_configuration_digest(config, model="m") != pinned

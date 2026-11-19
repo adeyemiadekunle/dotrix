@@ -12,6 +12,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Changed
 
 - Applications retain one repository with enforced package boundaries, CI for affected apps, separate desktop/CLI release schedules, and app-specific development configuration.
+- The fx chat host admits libfx artifacts from one table (`LIBFX_ARTIFACTS`) instead of a hardcoded 0.0.16 check: it runs only the version its package pins, and a run bound to an earlier artifact resumes only where the new one was shown to read its journal. The pin stays at libfx 0.0.16; an opt-in cross-version test compares two host installs on the same journal.
 
 ### Added
 

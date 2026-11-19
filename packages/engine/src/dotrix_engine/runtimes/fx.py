@@ -31,6 +31,27 @@ from .contracts import (
 
 _HOST = Path(__file__).with_name("fx_host")
 _TOOL_ERROR_CHARS = 1_000
+# Each libfx artifact this host may run, with the earlier artifacts whose saved journals it was shown
+# to resume through this host (tests/integration/test_fx_cross_version.py, with both installed). The
+# host runs only the version its package.json pins, and only when that version is listed here; a run
+# bound to an artifact missing from its reader's list fails closed rather than resume on it.
+LIBFX_ARTIFACTS: dict[str, tuple[str, ...]] = {
+    "0.0.16": (),
+}
+
+
+def libfx_version(host: Path | None = None) -> str:
+    """The libfx version a host pins in its package.json, refused unless this module admits it."""
+    declared = json.loads(((host or _HOST) / "package.json").read_text())["dependencies"]["libfx"]
+    if declared not in LIBFX_ARTIFACTS:
+        raise RuntimeError(f"libfx {declared} is not an admitted fx host artifact")
+    return declared
+
+
+def installed_libfx_version(host: Path | None = None) -> str | None:
+    """The libfx version installed in a host's node_modules, or None when it isn't installed."""
+    manifest = (host or _HOST) / "node_modules" / "libfx" / "package.json"
+    return json.loads(manifest.read_text())["version"] if manifest.is_file() else None
 
 
 def _said(message: str) -> str:
@@ -51,7 +72,7 @@ def fx_configuration_digest(
     Credentials are deliberately excluded.
     """
     identity = {
-        "version": "libfx-0.0.16", "name": config.name, "instructions": config.instructions,
+        "version": f"libfx-{libfx_version()}", "name": config.name, "instructions": config.instructions,
         "model": model, "base_url": base_url, "effort": effort, "context_window": context_window,
         "tools": [{"name": tool.name, "description": tool.description, "schema": tool.input_schema,
                    "idempotent": tool.idempotent, "writes": tool.writes,
@@ -135,8 +156,12 @@ class FxRuntime:
             raise ValueError("A host journal needs exactly one engine session and cannot use local storage")
         if engine_session is not None:
             validate_session(engine_session, "session")
-        if not (_HOST / "node_modules" / "libfx").exists():
+        expected = libfx_version(_HOST)
+        installed = installed_libfx_version(_HOST)
+        if installed is None:
             raise RuntimeError(f"libfx is not installed; run npm ci --prefix {_HOST}")
+        if installed != expected:
+            raise RuntimeError(f"libfx {installed} is installed but this host pins {expected}; run npm ci --prefix {_HOST}")
         if local_dir is not None:
             local_dir = Path(local_dir)
             await asyncio.to_thread(_prepare_local_dir, local_dir, config, model, base_url, effort, context_window)
@@ -147,7 +172,7 @@ class FxRuntime:
         runtime = cls(config, process, local=local_dir is not None, journal=journal, engine_session=engine_session)
         try:
             await runtime._request({
-                "op": "init", "name": config.name, "instructions": config.instructions, "model": model,
+                "op": "init", "libfxVersion": expected, "name": config.name, "instructions": config.instructions, "model": model,
                 "baseUrl": base_url, "apiKey": api_key, "effort": effort, "contextWindow": context_window,
                 "localDir": str(local_dir) if local_dir is not None else None,
                 "persistence": journal is not None, "ephemeralEngine": ephemeral_engine, "sessionId": engine_session,
