@@ -59,7 +59,7 @@ services:
   # The images, built on this host (so its Docker has the coding image the worker starts).
   backend-image:
     image: dotrix-backend:${DOTRIX_VERSION:-latest}
-    build: { context: .., dockerfile: deploy/backend.Dockerfile }
+    build: { context: .., dockerfile: deploy/backend.Dockerfile, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
   coding-image:
@@ -184,6 +184,11 @@ services:
       RUSTFS_VOLUMES: /data
       RUSTFS_ADDRESS: ":9000"
     volumes: [storagedata:/data]
+
+# Chat's fx host installs the Kai runtime from GitHub Packages while the backend image builds (deploy/README.md).
+secrets:
+  kai_packages_token:
+    environment: KAI_PACKAGES_TOKEN
 
 networks:
   docker-control:

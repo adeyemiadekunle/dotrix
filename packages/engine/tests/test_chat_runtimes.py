@@ -92,12 +92,13 @@ def test_local_store_refuses_shared_directory(tmp_path):
         _prepare_local_dir(path, AgentRuntimeConfig("orion", "Instructions"), "model", None, None, 128_000)
 
 
-def _host(tmp_path, declared, installed=None):
+def _host(tmp_path, declared, installed=None, name=None):
     tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"libfx": declared}}))
     if installed is not None:
         (tmp_path / "node_modules" / "libfx").mkdir(parents=True)
-        (tmp_path / "node_modules" / "libfx" / "package.json").write_text(json.dumps({"version": installed}))
+        manifest = {"name": name or ("@kunemi-group/kai" if "-kai." in installed else "libfx"), "version": installed}
+        (tmp_path / "node_modules" / "libfx" / "package.json").write_text(json.dumps(manifest))
     return tmp_path
 
 
@@ -110,6 +111,24 @@ def test_the_fx_host_runs_only_an_admitted_libfx_artifact(tmp_path):
         libfx_version(_host(tmp_path / "unknown", "9.9.9"))
     assert installed_libfx_version(_host(tmp_path / "absent", "0.0.16")) is None
     assert installed_libfx_version(_host(tmp_path / "other", "0.0.16", installed="0.0.17")) == "0.0.17"
+
+
+def test_the_kai_runtime_is_admitted_only_as_its_own_package(tmp_path):
+    """The Kai runtime's versions are @kunemi-group/kai on GitHub Packages, installed under the name libfx; fx's
+    releases are libfx on npm. A host naming either under the other's package is refused."""
+    from dotrix_engine.runtimes.fx import LIBFX_ARTIFACTS, installed_libfx_version, libfx_version
+
+    assert LIBFX_ARTIFACTS["0.0.17-kai.1"] == ("0.0.16",)
+    kai = "npm:@kunemi-group/kai@0.0.17-kai.1"
+    assert libfx_version(_host(tmp_path / "kai", kai)) == "0.0.17-kai.1"
+    assert installed_libfx_version(_host(tmp_path / "kai-installed", kai, installed="0.0.17-kai.1")) == "0.0.17-kai.1"
+    for refused in ("0.0.17-kai.1", "npm:@someone/kai@0.0.17-kai.1", "npm:@kunemi-group/kai@0.0.16"):
+        with pytest.raises(RuntimeError):
+            libfx_version(_host(tmp_path / refused.replace("/", "_").replace("@", "_"), refused))
+    # A package other than the one its version is published as, installed in its place.
+    for name, version in (("libfx", "0.0.17-kai.1"), ("@kunemi-group/kai", "0.0.16"), ("@someone/kai", "0.0.17-kai.1")):
+        with pytest.raises(RuntimeError, match="not a libfx artifact"):
+            installed_libfx_version(_host(tmp_path / f"{name}-{version}".replace("/", "_"), kai, installed=version, name=name))
 
 
 async def test_the_fx_host_refuses_an_install_that_differs_from_its_pin(tmp_path, monkeypatch):
