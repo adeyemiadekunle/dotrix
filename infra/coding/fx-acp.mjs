@@ -158,6 +158,9 @@ writeFileSync(
   join(fxHome, "settings.json"),
   JSON.stringify({
     provider: "dotrix",
+    // The repository is data, never configuration: none of its .fx.json, .fx/agents, skills,
+    // .mcp.json or AGENTS.md reaches Kai (fx's project_config; FX_PROJECT_CONFIG below too).
+    project_config: false,
     auto_upgrade: false,
     cache_warming: false,
     session_titles: false,
@@ -187,7 +190,7 @@ const savedSession = () => {
 // The model is the provider's default in the settings above, not `--model` (that names an AI Gateway model).
 const fx = spawn(fxBin, ["acp"], {
   stdio: ["pipe", "pipe", "inherit"],
-  env: { ...process.env, FX_AUTO_UPGRADE: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" },
+  env: { ...process.env, FX_AUTO_UPGRADE: "0", FX_PROJECT_CONFIG: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" },
 });
 // The code only: the OS's message names the binary.
 fx.on("error", (error) => fail(`The coding engine didn't start (${error.code ?? "error"})`));

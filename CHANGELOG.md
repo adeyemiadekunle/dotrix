@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Security
+
+- Kai's fx engine no longer takes configuration from the repository it codes on: the cloud driver and local profile set fx's `project_config` off (and `FX_PROJECT_CONFIG=0`), so a repository's `.fx.json`, `.fx/agents` profiles, skills, `.mcp.json` servers and `AGENTS.md` never reach the model. It takes effect with the Kai runtime build that has the setting; the published fx 0.0.17 binary ignores it.
+
 ### Changed
 
 - Applications retain one repository with enforced package boundaries, CI for affected apps, separate desktop/CLI release schedules, and app-specific development configuration.

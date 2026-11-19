@@ -139,6 +139,7 @@ FAKE_FX = textwrap.dedent('''
         log.write(json.dumps({"method": msg.get("method"), "params": msg.get("params")}) + "\\n"); log.flush()
         method, mid = msg.get("method"), msg.get("id")
         if method == "initialize":
+            log.write(json.dumps({"method": "environment", "params": {"FX_PROJECT_CONFIG": os.environ.get("FX_PROJECT_CONFIG")}}) + "\\n"); log.flush()
             send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1}})
         elif method == "session/new":
             send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "fx-session-1"}})
@@ -207,8 +208,12 @@ def _drive(env: dict[str, str], brief: str, *extra: str) -> list[dict]:
     return [json.loads(line) for line in done.stdout.splitlines() if line.strip()]
 
 
-def _calls(env: dict[str, str]) -> list[dict]:
+def _logged(env: dict[str, str]) -> list[dict]:
     return [json.loads(line) for line in Path(env["FAKE_FX_LOG"]).read_text().splitlines()]
+
+
+def _calls(env: dict[str, str]) -> list[dict]:
+    return [entry for entry in _logged(env) if entry["method"] != "environment"]
 
 
 def test_model_recovery_needing_input_cannot_finish_as_success(fake_fx) -> None:
@@ -230,6 +235,7 @@ def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_f
                          "final": "Done."}
     calls = _calls(fake_fx)
     assert [c["method"] for c in calls] == ["initialize", "session/new", "session/set_mode", "session/prompt"]
+    assert {"method": "environment", "params": {"FX_PROJECT_CONFIG": "0"}} in _logged(fake_fx)
     assert calls[2]["params"] == {"sessionId": "fx-session-1", "modeId": "full-access"}
     assert calls[3]["params"]["prompt"] == [{"type": "text", "text": "Fix the tests"}]
     home = Path(fake_fx["HOME"])
@@ -237,6 +243,8 @@ def test_the_driver_runs_a_turn_in_full_access_with_our_provider_settings(fake_f
     assert settings["providers"]["dotrix"]["auth"] == {"type": "bearer", "env": "OPENAI_API_KEY"}  # its name, not the key
     assert "the-key" not in (home / ".fx" / "settings.json").read_text()
     assert settings["models"] == {"dotrix": "gpt-6.1"} and settings["auto_upgrade"] is False
+    # The repository is data: fx takes none of its .fx.json, .fx/agents, skills, .mcp.json or AGENTS.md.
+    assert settings["project_config"] is False
     assert json.loads((home / ".fx" / "dotrix" / "s1.json").read_text()) == {"fxSession": "fx-session-1"}
 
     # The parsed lines, as Codes shows them.

@@ -59,7 +59,8 @@ def prepare_profile(root: Path, environ: dict[str, str], *, expected_model: str 
             raise ValueError("The local connection's model does not match this session; choose a matching model or start a new session")
     settings = {key: saved[key] for key in PROVIDER_SETTINGS if key in saved}
     settings.update({
-        "permission_mode": "ask", "auto_upgrade": False, "context": False, "session_titles": False,
+        # The repository is data, never configuration (fx's project_config; FX_PROJECT_CONFIG in fx_native too).
+        "permission_mode": "ask", "auto_upgrade": False, "context": False, "project_config": False, "session_titles": False,
         "permission": {"*": "deny", "bash": "ask", "toolbox": "allow", "subagent": "deny", "read": "ask", "glob": "ask", "grep": "ask", "edit": "ask",
                        "read_tool_result": "allow", "capability_search": "allow", "mcp_browser_*": "ask"},
     })
