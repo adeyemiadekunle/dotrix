@@ -39648,6 +39648,20 @@
             ],
             "title": "Worktree",
             "description": "The turn's worktree on this computer"
+          },
+          "steering_open": {
+            "type": "boolean",
+            "title": "Steering Open",
+            "description": "The turn's inbox takes a person's messages (a runner that steers)",
+            "default": false
+          },
+          "steering": {
+            "items": {
+              "$ref": "#/components/schemas/RunnerSteerReport"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Steering"
           }
         },
         "type": "object",
@@ -39662,6 +39676,14 @@
             "type": "boolean",
             "title": "Stop",
             "description": "Stop the agent and report `stopped`"
+          },
+          "steers": {
+            "items": {
+              "$ref": "#/components/schemas/RunnerSteer"
+            },
+            "type": "array",
+            "title": "Steers",
+            "description": "A person's messages for the working turn: put each in its inbox, and report its state on the next heartbeat"
           }
         },
         "type": "object",
@@ -39675,6 +39697,14 @@
           "lease_token": {
             "type": "integer",
             "title": "Lease Token"
+          },
+          "steering": {
+            "items": {
+              "$ref": "#/components/schemas/RunnerSteerReport"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Steering"
           },
           "outcome": {
             "type": "string",
@@ -39799,6 +39829,66 @@
           "outcome"
         ],
         "title": "RunnerResult"
+      },
+      "RunnerSteer": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "message"
+        ],
+        "title": "RunnerSteer"
+      },
+      "RunnerSteerReport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sent",
+              "accepted",
+              "delivered",
+              "cancelled",
+              "rejected"
+            ],
+            "title": "State",
+            "description": "`pending`: the runner couldn't put it in the turn's inbox (it goes to the next turn)"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "state"
+        ],
+        "title": "RunnerSteerReport",
+        "description": "What the local driver said about a person's message to the working turn."
       },
       "SandboxNetworkRead": {
         "properties": {

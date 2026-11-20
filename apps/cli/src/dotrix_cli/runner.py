@@ -284,6 +284,10 @@ class Outcome:
     root: Path | None = None  # the worktree: paths the tool names are shown relative to it
     commands: set[str] = field(default_factory=set)  # tool calls that ran a command (their result is its output)
     tools_seen: set[str] = field(default_factory=set)
+    # A person's messages to the working turn (fx's local driver): whether its inbox is open, and each one's state
+    # as the driver reported it (id, state, message), for the next heartbeat.
+    steering_open: bool = False
+    steering: list[dict[str, Any]] = field(default_factory=list)
 
 
 MAX_STEP = 160
@@ -365,6 +369,22 @@ def describe(tool: str, args: dict[str, Any], root: Path | None = None) -> str |
             return f"Used {tool}"
 
 
+STEER_STATES = frozenset({"sent", "accepted", "delivered", "cancelled", "rejected"})
+
+
+def drop_steer(inbox: Path, key: str, text: str) -> bool:
+    """A person's message into the turn's inbox, as the local driver reads it: a dot-file, then renamed. False when
+    the inbox is gone (the turn's prompt has ended): the platform sends it as the next turn instead."""
+    try:
+        uuid.UUID(key)
+        temporary = inbox / f".{key}"
+        temporary.write_text(text, encoding="utf-8")
+        temporary.rename(inbox / f"{key}.txt")
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def parse_line(line: str, out: Outcome) -> None:
     """One line of the tool's output as events: Claude Code's stream-json, OpenCode's JSON, or text."""
     line = line.strip()
@@ -413,6 +433,13 @@ def parse_line(line: str, out: Outcome) -> None:
         out.usage = {"input_tokens": usage.get("input_tokens"), "output_tokens": usage.get("output_tokens")}
     elif kind == "turn.failed":
         out.events.append({"kind": "error", "text": str((event.get("error") or {}).get("message") or "The local turn failed")[:4000]})
+    elif kind == "steering" and event.get("open") is True:  # fx's local ACP driver: its inbox takes steers now
+        out.steering_open = True
+    elif kind == "steer" and event.get("state") in STEER_STATES and isinstance(event.get("id"), str):
+        out.steering.append({"id": event["id"], "state": event["state"],
+                             **({"message": str(event["message"])[:200]} if event.get("message") else {})})
+        if event["state"] == "accepted":
+            out.events.append({"kind": "step", "text": "Took your message"})
     elif kind == "tool":  # fx's local ACP driver
         identity, name = str(event.get("id") or ""), str(event.get("name") or "")
         if said := describe(name, event.get("input") or {}, out.root):
@@ -700,9 +727,18 @@ class LocalRunner:
                 dropped += len(pending) - MAX_PENDING
                 del pending[:len(pending) - MAX_PENDING]
 
+        steering: dict[str, Any] = {"out": None, "inbox": None}  # the working tool's outcome and inbox, once it runs
+
         async def beat(extra: dict[str, Any] | None = None) -> bool:
             nonlocal failed_beats
             body = {"lease_token": token, "events": pending[:EVENTS_PER_BEAT], **(extra or {})}
+            working: Outcome | None = steering["out"]
+            reports: list[dict[str, Any]] = []
+            if working is not None:
+                reports = working.steering[:100]
+                body["steering_open"] = working.steering_open
+                if reports:
+                    body["steering"] = reports
             try:
                 answer = await self.api.post(f"{path}/heartbeat", body)
             except Exception as exc:
@@ -713,6 +749,12 @@ class LocalRunner:
                 return False  # the platform may be back before the lease runs out
             failed_beats = 0
             del pending[:EVENTS_PER_BEAT]
+            if working is not None:
+                del working.steering[:len(reports)]
+                for steer in answer.get("steers") or []:
+                    if not (working.steering_open and steering["inbox"] is not None
+                            and drop_steer(steering["inbox"], str(steer.get("id")), str(steer.get("message") or ""))):
+                        working.steering.append({"id": str(steer.get("id")), "state": "pending"})  # the next turn's
             return bool(answer.get("stop"))
 
         async def report(outcome: str, **fields: Any) -> None:
@@ -728,6 +770,9 @@ class LocalRunner:
             events = list(pending)
             if dropped:
                 events.append({"kind": "step", "text": f"{dropped} earlier steps couldn't be sent"})
+            working: Outcome | None = steering["out"]
+            if working is not None and working.steering:  # what the driver said last about a person's messages
+                fields["steering"] = working.steering[:100]
             try:
                 await self.api.post(f"{path}/result", {"lease_token": token, "outcome": outcome,
                                                        "events": events, **fields})
@@ -787,6 +832,14 @@ class LocalRunner:
                     await report("failed", base_sha=base_sha, error=f"Couldn't prepare the local model profile: {exc}")
                     return
             tool = Tool.named(name, isolated=isolated, browser=self._browser_config, profile=self._fx_profile, model=run.get("model"))
+            if name == "fx":
+                # The turn's inbox for a person's messages while it works (the driver opens it, the heartbeat fills it).
+                steer_root = Path(tempfile.gettempdir()) / f"dotrix-steer-{os.getuid() if hasattr(os, 'getuid') else 'user'}"
+                steer_root.mkdir(mode=0o700, exist_ok=True)
+                # One per lease attempt: a driver left over from an earlier attempt (a crashed runner) never reads
+                # or removes this attempt's inbox.
+                inbox = steer_root / f"{''.join(c for c in str(run['run_id']) if c.isalnum())[:64] or 'turn'}-{int(token)}"
+                tool = Tool(tool.name, [*tool.argv, "--steer-dir", str(inbox)])
         # A custom command stands in for the requested tool; its name is only a display label.
         environment_tool = run["tool"] if self.command else tool.name
         if self.sbx is not None:
@@ -827,6 +880,8 @@ class LocalRunner:
             if self._browser is not None:
                 pending.append({"kind": "step", "text": "With the Browser pane: it may open this computer's pages there"})
         out = Outcome(root=tree)
+        if "--steer-dir" in tool.argv:
+            steering.update(out=out, inbox=Path(tool.argv[tool.argv.index("--steer-dir") + 1]))
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, cwd=tree, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,

@@ -651,3 +651,59 @@ async def test_stop_ends_the_wait_between_retries(tmp_path: Path, monkeypatch) -
         await asyncio.sleep(0.01)
     stop.set()
     await asyncio.wait_for(task, 1)
+
+
+async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(tmp_path, monkeypatch):
+    """The heartbeat hands the runner a person's message once the driver's inbox is open; the runner drops it there,
+    and the driver's reports go back on the next heartbeat and with the result."""
+    import asyncio
+    import sys
+
+    key = "0196a1b2-0000-7000-8000-000000000001"
+    driver = (
+        "import json,os,sys,time\n"
+        "inbox=sys.argv[sys.argv.index('--steer-dir')+1]; os.makedirs(inbox)\n"
+        "print(json.dumps({'type':'steering','open':True}),flush=True)\n"
+        "path=os.path.join(inbox,'" + key + ".txt'); end=time.time()+20\n"
+        "while not os.path.exists(path) and time.time()<end: time.sleep(0.05)\n"
+        "text=open(path).read(); os.remove(path)\n"
+        "for state in ('sent','accepted','delivered'): print(json.dumps({'type':'steer','id':'" + key + "','state':state}),flush=True)\n"
+        "print(json.dumps({'type':'text','text':'Heard: '+text}),flush=True)\n"
+        "os.rmdir(inbox); print(json.dumps({'type':'done','final':'ok','stopReason':'end_turn'}),flush=True)\n"
+    )
+    beats, results = [], []
+
+    class Api:
+        async def post(self, path, body=None):
+            if path.endswith("/heartbeat"):
+                beats.append(body)
+                given = body.get("steering_open") and not any(b.get("steering_open") for b in beats[:-1])
+                return {"stop": False, "steers": [{"id": key, "message": "Use the refunds table"}] if given else []}
+            if path.endswith("/result"):
+                results.append(body)
+            return {"stop": False}
+
+    monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("fx", [sys.executable, "-c", driver]))
+    started: list[list[str]] = []
+    spawn = asyncio.create_subprocess_exec
+
+    async def recording(*argv, **kwargs):
+        started.append(list(argv))
+        return await spawn(*argv, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", recording)
+    monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
+    monkeypatch.setattr("dotrix_cli.fx_local.NATIVE_FX_POLICY_VALIDATED", True)
+    monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: True)
+    monkeypatch.setattr("dotrix_cli.fx_local.prepare_profile", lambda *args, **kwargs: None)
+    runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"a\n"}), workspace_id="w", project_id="p",
+                         runner_id="r1", tool="fx", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None,
+                         beat_seconds=0.1, events_seconds=0.1)
+    await runner.work({**_RUN, "tool": "fx"})
+    [result] = results
+    [argv] = [a for a in started if "--steer-dir" in a]
+    assert Path(argv[argv.index("--steer-dir") + 1]).name.endswith(f"-{_RUN['lease_token']}")  # one inbox per lease attempt
+    reported = [s["state"] for b in beats for s in b.get("steering") or []] + [s["state"] for s in result.get("steering") or []]
+    assert reported == ["sent", "accepted", "delivered"], (beats, result)
+    assert any(e["text"] == "Heard: Use the refunds table" for b in beats for e in b["events"]) or any(
+        e["text"] == "Heard: Use the refunds table" for e in result["events"])

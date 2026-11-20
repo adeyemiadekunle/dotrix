@@ -10986,6 +10986,14 @@ export interface components {
              * @description The turn's worktree on this computer
              */
             worktree?: string | null;
+            /**
+             * Steering Open
+             * @description The turn's inbox takes a person's messages (a runner that steers)
+             * @default false
+             */
+            steering_open: boolean;
+            /** Steering */
+            steering?: components["schemas"]["RunnerSteerReport"][];
         };
         /** RunnerHeartbeatRead */
         RunnerHeartbeatRead: {
@@ -10994,11 +11002,18 @@ export interface components {
              * @description Stop the agent and report `stopped`
              */
             stop: boolean;
+            /**
+             * Steers
+             * @description A person's messages for the working turn: put each in its inbox, and report its state on the next heartbeat
+             */
+            steers?: components["schemas"]["RunnerSteer"][];
         };
         /** RunnerResult */
         RunnerResult: {
             /** Lease Token */
             lease_token: number;
+            /** Steering */
+            steering?: components["schemas"]["RunnerSteerReport"][];
             /**
              * Outcome
              * @enum {string}
@@ -11028,6 +11043,35 @@ export interface components {
             output_tokens?: number | null;
             /** Cost Usd */
             cost_usd?: number | null;
+        };
+        /** RunnerSteer */
+        RunnerSteer: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * RunnerSteerReport
+         * @description What the local driver said about a person's message to the working turn.
+         */
+        RunnerSteerReport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * State
+             * @description `pending`: the runner couldn't put it in the turn's inbox (it goes to the next turn)
+             * @enum {string}
+             */
+            state: "pending" | "sent" | "accepted" | "delivered" | "cancelled" | "rejected";
+            /** Message */
+            message?: string | null;
         };
         /** SandboxNetworkRead */
         SandboxNetworkRead: {
