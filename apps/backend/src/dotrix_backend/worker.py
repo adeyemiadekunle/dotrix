@@ -42,6 +42,7 @@ from .modules.agents.queue import RunQueue
 from .modules.agents.runner import AgentRunner
 from .modules.agents.streams import RedisRunStreams
 from .modules.code.checkouts import build_checkouts
+from .modules.coding.inputs import deliver_for_job
 from .modules.coding.models import CodingRun
 from .modules.coding.recovery import recover_uncertain_runs
 from .modules.coding.runner import build_coding_worker, needs_worker
@@ -167,6 +168,8 @@ async def dispatch_runs(ctx: dict[str, Any]) -> None:
     queue = RunQueue(ctx["redis"])
     await expire_agent_leases(runner.session_factory, queue_name=queue.queue_name)
     await RunDispatcher(runner.session_factory, queue).sweep()
+    # Messages people sent coding sessions while Kai worked, whose turn ended (here or on another worker).
+    await deliver_for_job(ctx["jobs"])
 
 
 async def reconcile_coding_runs(ctx: dict[str, Any]) -> None:

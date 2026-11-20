@@ -122,6 +122,10 @@ class Parsed:
     summary: str | None = None  # the agent's final message, when this line carried it
     failed: str | None = None  # the tool reported it couldn't finish
     profile_digest: str | None = None  # the session's system profile, when the tool reported one (fx)
+    # A person's messages to the running turn (fx): (id, state, message) as the driver reports them, and
+    # whether the turn's inbox is open to take them.
+    steering: list[tuple[str, str, str | None]] = field(default_factory=list)
+    steering_open: bool = False
 
 
 class CodingTool(Protocol):
@@ -709,6 +713,9 @@ def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None
             return _clip(title, 160) if title else f"Used {name}"
 
 
+STEER_STATES = frozenset({"sent", "accepted", "delivered", "cancelled", "rejected"})
+
+
 class Fx:
     """fx on one OpenAI-compatible provider, through ACP (infra/coding/fx-acp.mjs prints its JSON lines). Checked
     with the real fx 0.0.16 against a fake model and on Claude Haiku 5.5 (a turn, resume, a restored session, Stop),
@@ -739,6 +746,12 @@ class Fx:
 
     # Kai's contract goes to fx as the session's system profile, not in the prompt (`profile_args`).
     takes_profile = True
+    # A person can steer a running turn: the driver's inbox (`steer_args`), each message sent to fx as a steering
+    # prompt that joins the turn at its next step.
+    steers = True
+
+    def steer_args(self, run: uuid.UUID) -> list[str]:
+        return ["--steer-dir", run.hex]
 
     def profile_args(self, contract: str, pinned: str | None) -> list[str]:
         """The driver's arguments for Kai's profile: the contract and Kai's workers (`workers.WORKERS`), which a
@@ -785,6 +798,13 @@ class Fx:
                 out.steps.append(Step("text", _clip(str(event["text"]))))
             case "warning" if str(event.get("message", "")).strip():  # the turn goes on: the browser didn't start
                 out.steps.append(Step("error", _clip(str(event["message"]))))
+            case "steering" if event.get("open") is True:
+                out.steering_open = True
+            case "steer" if event.get("state") in STEER_STATES and re.fullmatch(r"[0-9a-f-]{36}", str(event.get("id", ""))):
+                message = _clip(str(event["message"]), 200) if event.get("message") else None
+                out.steering.append((str(event["id"]), str(event["state"]), message))
+                if event["state"] == "accepted":
+                    out.steps.append(Step("step", "Took your message"))
             case "tool":
                 ref = str(event.get("id") or "") or None
                 name, args = str(event.get("name") or ""), event.get("input") if isinstance(event.get("input"), dict) else {}

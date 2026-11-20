@@ -23548,6 +23548,315 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "List Coding Inputs",
+        "description": "Your messages to one of your coding sessions while Kai worked: those still waiting first, then the latest.\nOnly whoever started the session.",
+        "operationId": "list_coding_inputs",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CodingInputRead"
+                  },
+                  "title": "Response List Coding Inputs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Send Coding Input",
+        "description": "A message to a session while Kai works, as in Claude Code: `steer` the working turn (it takes the message at\nits next step; only when the turn `accepts_steering`), or `queue` it as the next turn. A steer the turn doesn't\ntake before it ends goes to the next turn; queued messages become one follow-up once the session's last turn\nfinished, and are cancelled if it failed or was stopped. The same `client_id` again returns the same message.\n409 when Kai isn't working (send a follow-up), the turn can't be steered, or 20 messages already wait.",
+        "operationId": "send_coding_input",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodingInputCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingInputRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs/{input_id}": {
+      "delete": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Cancel Coding Input",
+        "description": "Take back a message Kai doesn't have yet (pending). 409 once it's been sent.",
+        "operationId": "cancel_coding_input",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "input_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Input Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingInputRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network": {
       "get": {
         "tags": [
@@ -30460,6 +30769,161 @@
         ],
         "title": "CodingFollowUp"
       },
+      "CodingInputCreate": {
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Id",
+            "description": "Your own id for this message: sending it again returns the same one"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CodingInputKind"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "work_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "plan",
+                  "build"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Mode",
+            "description": "A queued message's turn (default: the last turn's)"
+          },
+          "approval_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_id",
+          "kind",
+          "message"
+        ],
+        "title": "CodingInputCreate",
+        "description": "A message to a session while Kai works: `steer` the working turn (it takes it at its next step; only when\nthe turn's `accepts_steering`), or `queue` it for the next turn."
+      },
+      "CodingInputKind": {
+        "type": "string",
+        "enum": [
+          "steer",
+          "queue"
+        ],
+        "title": "CodingInputKind"
+      },
+      "CodingInputRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id",
+            "description": "The turn working when it was sent"
+          },
+          "delivered_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered Run Id",
+            "description": "The turn that took it"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CodingInputKind",
+            "description": "`steer` or `queue`; a steer the turn didn't take is queued instead"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CodingInputStatus",
+            "description": "pending, sending, accepted, delivered, cancelled or rejected"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note",
+            "description": "Why it was queued instead, cancelled or refused"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "run_id",
+          "delivered_run_id",
+          "kind",
+          "status",
+          "message",
+          "note",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CodingInputRead"
+      },
+      "CodingInputStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "sending",
+          "accepted",
+          "delivered",
+          "cancelled",
+          "rejected"
+        ],
+        "title": "CodingInputStatus"
+      },
       "CodingLocation": {
         "type": "string",
         "enum": [
@@ -31153,6 +31617,12 @@
             ],
             "title": "Worktree",
             "description": "A local turn: its worktree on that computer (only to whoever asked for it)"
+          },
+          "accepts_steering": {
+            "type": "boolean",
+            "title": "Accepts Steering",
+            "description": "Whether you may steer it now (POST .../sessions/{id}/inputs with `steer`): a cloud turn that's working, on an engine that takes a message mid-turn",
+            "default": false
           }
         },
         "type": "object",

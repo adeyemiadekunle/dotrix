@@ -40,6 +40,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission, can
 
 from . import guard
 from .brief import build_brief
+from .inputs import accepts_steering
 from .models import (
     ACTIVE,
     CODING_AGENT_NAME,
@@ -950,6 +951,8 @@ class CodingService:
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
+            accepts_steering=accepts_steering(run) and run.requested_by_id == access.member.user_id
+            and can(access.member, Permission.INSTRUCT_CODING_AGENT),
             work_mode=run.work_mode, plan_result=run.plan_result,
             capabilities=capabilities, skills=skills(run.skill_snapshot, capabilities),
             tasks=[{"key": key, "status": item.get("status", "queued"), "attempt": item.get("attempt", 0),

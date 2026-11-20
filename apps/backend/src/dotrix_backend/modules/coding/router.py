@@ -22,6 +22,7 @@ from dotrix_backend.modules.projects.deps import (
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
+from . import inputs
 from .environments import EnvironmentRead, EnvironmentUpdate, profile, require_approved_image
 from .files import TurnFiles
 from .local import LocalRunners
@@ -35,6 +36,8 @@ from .schemas import (
     CodingEventPage,
     CodingFile,
     CodingFollowUp,
+    CodingInputCreate,
+    CodingInputRead,
     CodingRecover,
     CodingRevert,
     CodingRunCreate,
@@ -292,6 +295,33 @@ async def follow_up_coding_session(
     (or opening one, if no turn has yet). It waits for approval like the first. People who may
     instruct the coding agent. 409 `coding_busy` while a turn waits or works."""
     return await coding.follow_up(access, session_id, data)
+
+
+@router.get("/sessions/{session_id}/inputs")
+async def list_coding_inputs(session_id: uuid.UUID, access: CodingInstructor, session: SessionDep) -> list[CodingInputRead]:
+    """Your messages to one of your coding sessions while Kai worked: those still waiting first, then the latest.
+    Only whoever started the session."""
+    return await inputs.session_inputs(session, access, session_id)
+
+
+@router.post("/sessions/{session_id}/inputs", status_code=status.HTTP_201_CREATED, responses=errors(409, 422))
+async def send_coding_input(
+    session_id: uuid.UUID, data: CodingInputCreate, access: CodingInstructor, session: SessionDep,
+) -> CodingInputRead:
+    """A message to a session while Kai works, as in Claude Code: `steer` the working turn (it takes the message at
+    its next step; only when the turn `accepts_steering`), or `queue` it as the next turn. A steer the turn doesn't
+    take before it ends goes to the next turn; queued messages become one follow-up once the session's last turn
+    finished, and are cancelled if it failed or was stopped. The same `client_id` again returns the same message.
+    409 when Kai isn't working (send a follow-up), the turn can't be steered, or 20 messages already wait."""
+    return await inputs.submit(session, access, session_id, data)
+
+
+@router.delete("/sessions/{session_id}/inputs/{input_id}", responses=errors(409))
+async def cancel_coding_input(
+    session_id: uuid.UUID, input_id: uuid.UUID, access: CodingInstructor, session: SessionDep,
+) -> CodingInputRead:
+    """Take back a message Kai doesn't have yet (pending). 409 once it's been sent."""
+    return await inputs.cancel(session, access, session_id, input_id)
 
 
 workspace_router = APIRouter(prefix="/workspaces/{workspace_id}/coding", tags=["coding"], responses=errors(401, 404))

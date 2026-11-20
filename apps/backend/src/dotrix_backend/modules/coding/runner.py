@@ -72,6 +72,7 @@ from dotrix_engine.skills import DEFINITION_OF_DONE, review_skills
 
 from . import guard
 from .brief import split_contract
+from .inputs import accepts_steering, steer_states, take_steers
 from .models import (
     CODING_AGENT_NAME,
     CodingLocation,
@@ -103,6 +104,13 @@ SHOTS_LIST = "ls -1t /tmp/playwright/*.png /tmp/playwright/*.jpg /tmp/playwright
 FLUSH_SECONDS = 2.0
 REAP_SECONDS = 30.0  # how often warm sandboxes are checked for the idle time and closed sessions
 STOP_POLL_SECONDS = 3.0
+STEER_POLL_SECONDS = 1.0  # how often a working turn that takes steers looks for new ones
+# Drop a steer in the turn's inbox ($1: the run, $2: the message's id; the text on stdin), as fx-acp.mjs reads it:
+# refused (exit 3) once the inbox is gone, which the driver removes when the turn's own prompt has ended.
+STEER_DROP = (
+    'd="$HOME/.fx/dotrix/steer/$1"; [ -d "$d" ] || exit 3; '
+    'cat > "$d/.$2" && mv "$d/.$2" "$d/$2.txt"'
+)
 FETCH_TIMEOUT = 300
 BOT_EMAIL = "dotrix-coding@users.noreply.github.com"
 REVIEW_DIFF_CHARS = 14_000
@@ -893,6 +901,10 @@ class CodingWorker:
                 raise _ReconciliationRequired()
             skill_snapshot = skill_run.skill_snapshot or {}
             tool_capabilities = describe(skill_run, self.settings)
+            # A person can steer this turn while it works (fx, in the cloud; not a parallel build's task).
+            steering = getattr(tool, "steers", False) and task_key is None and accepts_steering(skill_run)
+        if steering:
+            extra = [*extra, *tool.steer_args(run_id)]
         brief += instructions(tool_capabilities, skill_snapshot)
         brief += await materialize(box, skill_snapshot)
         usage, summary, failed = Usage(), None, None
@@ -902,6 +914,7 @@ class CodingWorker:
         cancel = asyncio.Event()
         stop_reason: list[str] = []
         last_flush = time.monotonic()
+        inbox_open = asyncio.Event()  # the driver's inbox takes steers from now on
 
         async def flush() -> None:
             nonlocal last_flush
@@ -934,6 +947,10 @@ class CodingWorker:
             failed = parsed.failed or failed
             if parsed.profile_digest:
                 profile_digests.append(parsed.profile_digest)
+            if parsed.steering_open and steering:
+                inbox_open.set()
+            if parsed.steering:
+                await steer_states(self.session_factory, run_id, parsed.steering)
             if parsed.failed and not cancel.is_set():  # e.g. the key was refused: don't wait out retries
                 cancel.set()
             if time.monotonic() - last_flush >= FLUSH_SECONDS:
@@ -950,9 +967,22 @@ class CodingWorker:
                     stop_reason.append("Stopped by a person")
                     cancel.set()
 
+        async def send_steers() -> None:
+            """A person's messages to this turn, into its inbox in the sandbox once the driver opened it: each
+            written to a dot-file and renamed, so the driver never reads half of one."""
+            await inbox_open.wait()
+            while not cancel.is_set():
+                for key, text in await take_steers(self.session_factory, run_id):
+                    drop = await box.exec(["sh", "-c", STEER_DROP, "sh", run_id.hex, str(key)], stdin=text.encode(),
+                                          timeout=30)
+                    if drop.code != 0:  # the inbox closed: the turn is ending, and the message goes to the next
+                        await steer_states(self.session_factory, run_id, [(str(key), "pending", None)])
+                await asyncio.sleep(STEER_POLL_SECONDS)
+
         # The browser comes with the coding image: the Docker and OpenShell sandboxes, not the local one.
         browser = not plan_mode and self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
         watcher = asyncio.create_task(watch_stop())
+        steerer = asyncio.create_task(send_steers()) if steering else None
         try:
             result = await box.exec(
                 readonly_command(tool.command(model, browser=False) + extra) if plan_mode
@@ -964,6 +994,8 @@ class CodingWorker:
             await self._totals(box, tool, tool_session, usage, reported, cost_before)
         finally:
             watcher.cancel()
+            if steerer is not None:
+                steerer.cancel()
             await flush()
         if profile_digests and not plan_mode and task_key is None:  # a plan turn's session is thrown away
             await self._record_profile(run_id, profile_digests[-1])

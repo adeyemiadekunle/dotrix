@@ -268,6 +268,10 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
         "POST",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns",
     ): {"message": "x"},
+    (
+        "POST",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs",
+    ): {"client_id": "01a0e000-0000-7000-8000-000000000021", "kind": "queue", "message": "x"},
     ("POST", "/v1/workspaces/{workspace_id}/coding/runners/{runner_id}/runs/{coding_run_id}/heartbeat"): {
         "lease_token": 1
     },

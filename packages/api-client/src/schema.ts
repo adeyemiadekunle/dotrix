@@ -4755,6 +4755,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Coding Inputs
+         * @description Your messages to one of your coding sessions while Kai worked: those still waiting first, then the latest.
+         *     Only whoever started the session.
+         */
+        get: operations["list_coding_inputs"];
+        put?: never;
+        /**
+         * Send Coding Input
+         * @description A message to a session while Kai works, as in Claude Code: `steer` the working turn (it takes the message at
+         *     its next step; only when the turn `accepts_steering`), or `queue` it as the next turn. A steer the turn doesn't
+         *     take before it ends goes to the next turn; queued messages become one follow-up once the session's last turn
+         *     finished, and are cancelled if it failed or was stopped. The same `client_id` again returns the same message.
+         *     409 when Kai isn't working (send a follow-up), the turn can't be steered, or 20 messages already wait.
+         */
+        post: operations["send_coding_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs/{input_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel Coding Input
+         * @description Take back a message Kai doesn't have yet (pending). 409 once it's been sent.
+         */
+        delete: operations["cancel_coding_input"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network": {
         parameters: {
             query?: never;
@@ -7130,6 +7179,84 @@ export interface components {
             location?: components["schemas"]["CodingLocation"] | null;
         };
         /**
+         * CodingInputCreate
+         * @description A message to a session while Kai works: `steer` the working turn (it takes it at its next step; only when
+         *     the turn's `accepts_steering`), or `queue` it for the next turn.
+         */
+        CodingInputCreate: {
+            /**
+             * Client Id
+             * Format: uuid
+             * @description Your own id for this message: sending it again returns the same one
+             */
+            client_id: string;
+            kind: components["schemas"]["CodingInputKind"];
+            /** Message */
+            message: string;
+            /**
+             * Work Mode
+             * @description A queued message's turn (default: the last turn's)
+             */
+            work_mode?: ("plan" | "build") | null;
+            /** @description `manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes */
+            approval_mode?: components["schemas"]["ApprovalMode"] | null;
+        };
+        /**
+         * CodingInputKind
+         * @enum {string}
+         */
+        CodingInputKind: "steer" | "queue";
+        /** CodingInputRead */
+        CodingInputRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The turn working when it was sent
+             */
+            run_id: string;
+            /**
+             * Delivered Run Id
+             * @description The turn that took it
+             */
+            delivered_run_id: string | null;
+            /** @description `steer` or `queue`; a steer the turn didn't take is queued instead */
+            kind: components["schemas"]["CodingInputKind"];
+            /** @description pending, sending, accepted, delivered, cancelled or rejected */
+            status: components["schemas"]["CodingInputStatus"];
+            /** Message */
+            message: string;
+            /**
+             * Note
+             * @description Why it was queued instead, cancelled or refused
+             */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * CodingInputStatus
+         * @enum {string}
+         */
+        CodingInputStatus: "pending" | "sending" | "accepted" | "delivered" | "cancelled" | "rejected";
+        /**
          * CodingLocation
          * @description Where a turn codes. Either way the platform keeps its record, approvals, and events, and
          *     pushes what's accepted with the GitHub App: a local turn hands back a patch, never pushes.
@@ -7409,6 +7536,12 @@ export interface components {
              * @description A local turn: its worktree on that computer (only to whoever asked for it)
              */
             worktree?: string | null;
+            /**
+             * Accepts Steering
+             * @description Whether you may steer it now (POST .../sessions/{id}/inputs with `steer`): a cloud turn that's working, on an engine that takes a message mid-turn
+             * @default false
+             */
+            accepts_steering: boolean;
         };
         /**
          * CodingRunStatus
@@ -27030,6 +27163,182 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_coding_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingInputRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    send_coding_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingInputRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    cancel_coding_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                input_id: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingInputRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

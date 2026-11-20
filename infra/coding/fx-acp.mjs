@@ -7,15 +7,25 @@
 //   {"type":"tool_result","id":…,"status":"completed"|"failed","output":…}
 //   {"type":"done","stopReason":…,"usage":{…},"final":…}    the turn ended
 //   {"type":"warning","message":…}                    something the turn goes on without (the browser didn't start)
+//   {"type":"steering","open":true}                   the turn's inbox (--steer-dir) takes messages from now on
+//   {"type":"steer","id":…,"state":"sent"|"accepted"|"delivered"|"cancelled"|"rejected"[,"message":…]}
+//                                                     a person's message to the running turn (--steer-dir), as it goes
 //   {"type":"error","message":…}                      it couldn't run (shown to people: never names fx)
 //
 //   node fx-acp.mjs --base-url URL --key-env NAME --model MODEL [--session ID [--resume]] [--mcp-config JSON]
-//                   [--profile BASE64 [--profile-digest SHA256]]  < brief
+//                   [--profile BASE64 [--profile-digest SHA256]] [--steer-dir NAME]  < brief
 //
 // --profile is Kai's contract from Dotrix (base64 UTF-8 text): a new session gets it as its system profile
 // (ACP's systemPrompt) and fx saves it with the session, so a resumed one keeps the profile it started with.
 // Its SHA-256 is saved beside fx's session id and reported in `started`; --profile-digest is that digest as
 // Dotrix recorded it, and a resumed session whose saved profile differs never runs a turn.
+//
+// --steer-dir names this turn's inbox, ~/.fx/dotrix/steer/NAME: while the turn works, the platform drops a
+// person's messages there as <id>.txt (written to a dot-file, then renamed), and each goes to fx as a steering
+// prompt (`_meta.fx.steer`), which joins the running turn at its next step. Its states are reported as
+// `steer` lines: sent; accepted once fx gives it to the model; delivered when the turn that took it ends,
+// cancelled when the turn is stopped first, rejected with fx's reason. The inbox closes when the turn's own
+// prompt ends, before `done`: anything left in it was never sent, and the platform keeps it for the next turn.
 //
 // --mcp-config gives fx MCP servers for the turn, in Claude Code's format ({"mcpServers": {name: {command, args}}}):
 // the platform passes the browser (playwright-mcp) this way, as it does for Claude Code. They go to fx with each
@@ -28,7 +38,7 @@
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import { homedir } from "node:os";
@@ -51,6 +61,7 @@ const resume = args.includes("--resume");
 const mcpConfig = arg("--mcp-config");
 const profile = arg("--profile") ? Buffer.from(arg("--profile"), "base64").toString("utf8") : null;
 const pinnedDigest = arg("--profile-digest") ?? null;
+const steerName = arg("--steer-dir");
 const workerArg = arg("--workers") ? JSON.parse(Buffer.from(arg("--workers"), "base64").toString("utf8")) : null;
 const fxBin = process.env.DOTRIX_FX_BIN || "fx";
 
@@ -264,9 +275,8 @@ fx.on("error", (error) => fail(`The coding engine didn't start (${error.code ?? 
 // JSON-RPC 2.0 over fx's stdio: our requests, its notifications, and the few requests it makes of us.
 let nextId = 1;
 const pending = new Map();
-const call = (method, params) =>
+const call = (method, params, id = nextId++) =>
   new Promise((resolve, reject) => {
-    const id = nextId++;
     pending.set(id, { resolve, reject, method });
     fx.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
   });
@@ -316,6 +326,15 @@ function onUpdate(update) {
       }
       if (update.status === "completed" || update.status === "failed") {
         emit({ type: "tool_result", id, status: update.status, output: contentText(update.content).slice(-64_000) });
+      }
+      break;
+    }
+    case "user_message_chunk": {
+      // fx replays a steering prompt as the person's message once it hands it to the model.
+      const steerId = steeringIds.get(update._meta?.fx?.steering?.requestId);
+      if (steerId && !accepted.has(steerId)) {
+        accepted.add(steerId);
+        emit({ type: "steer", id: steerId, state: "accepted" });
       }
       break;
     }
@@ -446,6 +465,70 @@ async function open() {
   return { id: created.sessionId, resumed: false, profileDigest };
 }
 
+// A person's messages to the running turn (--steer-dir), in the order they were written (ids sort by time).
+const steerDir = steerName && /^[0-9a-f]{32}$/.test(steerName) ? join(ours, "steer", steerName) : null;
+const steeringIds = new Map(); // the steering prompt's JSON-RPC id → the platform's id for the message
+const accepted = new Set();
+const steers = []; // each sent message's outcome
+const extraUsage = []; // a steer fx ran as a turn of its own (it came as the turn closed input): its usage
+let steerOpen = false;
+let steerTimer = null;
+const sendSteers = () => {
+  if (!steerOpen || !steerDir || !sessionId || cancelled) return;
+  let names = [];
+  try {
+    names = readdirSync(steerDir)
+      .filter((name) => /^[0-9a-f-]{36}\.txt$/.test(name))
+      .sort();
+  } catch {
+    return; // nothing yet
+  }
+  for (const name of names) {
+    const id = name.slice(0, -4);
+    let text;
+    try {
+      text = readFileSync(join(steerDir, name), "utf8");
+      unlinkSync(join(steerDir, name));
+    } catch {
+      continue;
+    }
+    if (!text.trim()) {
+      emit({ type: "steer", id, state: "rejected", message: "The message was empty" });
+      continue;
+    }
+    flush();
+    const requestId = nextId++;
+    steeringIds.set(requestId, id);
+    emit({ type: "steer", id, state: "sent" });
+    steers.push(
+      call("session/prompt", { sessionId, prompt: [{ type: "text", text }], _meta: { fx: { steer: true } } }, requestId).then(
+        (result) => {
+          const how = result?._meta?.fx?.steering;
+          if (!how && result?.usage) extraUsage.push(result.usage); // ran as its own turn: still this turn's
+          emit({ type: "steer", id, state: how === "dropped" || result?.stopReason === "cancelled" ? "cancelled" : "delivered" });
+        },
+        (error) => emit({ type: "steer", id, state: cancelled ? "cancelled" : "rejected", message: String(error?.message ?? error).slice(0, 200) }),
+      ),
+    );
+  }
+};
+const closeSteering = async () => {
+  if (!steerOpen) return;
+  steerOpen = false; // what's left in the inbox was never sent: the platform keeps it for the next turn
+  clearInterval(steerTimer);
+  // Closed for the platform too: a message it drops from now on is refused, and goes to the next turn.
+  rmSync(steerDir, { recursive: true, force: true });
+  await Promise.allSettled(steers);
+};
+const sumUsage = (base) => {
+  if (!extraUsage.length) return base;
+  const total = { ...(base ?? {}) };
+  for (const more of extraUsage) {
+    for (const [key, value] of Object.entries(more)) if (typeof value === "number") total[key] = (total[key] ?? 0) + value;
+  }
+  return total;
+};
+
 try {
   await call("initialize", {
     protocolVersion: 1,
@@ -463,7 +546,20 @@ try {
     ...(resume && !session.resumed ? { fresh: true } : {}),
   });
   if (cancelled) notify("session/cancel", { sessionId });
-  const result = await call("session/prompt", { sessionId, prompt: [{ type: "text", text: brief }] });
+  if (steerDir) {
+    try {
+      // Earlier turns' inboxes are gone with them; this one starts empty.
+      rmSync(join(ours, "steer"), { recursive: true, force: true });
+      mkdirSync(steerDir, { recursive: true, mode: 0o700 });
+      emit({ type: "steering", open: true });
+      steerOpen = true;
+      steerTimer = setInterval(sendSteers, 250);
+    } catch {
+      // Without an inbox the turn goes on; messages sent to it are queued for the next turn instead.
+    }
+  }
+  const prompt = call("session/prompt", { sessionId, prompt: [{ type: "text", text: brief }] });
+  const result = await prompt.finally(closeSteering);
   flush();
   if (egressRefused) {
     emit({ type: "error", message: "The sandbox doesn't allow this model provider (its egress proxy refused it)" });
@@ -472,7 +568,7 @@ try {
     emit({
       type: "done",
       stopReason: providerFailed ? "refused" : cancelled ? "cancelled" : (result?.stopReason ?? "end_turn"),
-      usage: result?.usage ?? null,
+      usage: sumUsage(result?.usage ?? null),
       final: lastMessage,
     });
     if (providerFailed) process.exitCode = 1;

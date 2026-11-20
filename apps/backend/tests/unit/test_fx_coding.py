@@ -820,3 +820,112 @@ def test_a_session_saved_by_the_earlier_engine_resumes_on_the_current_one(tmp_pa
     finally:
         server.shutdown()
 
+
+
+# -- Steering a running turn ----------------------------------------------------------------------------------
+
+
+def _steer(home: Path, inbox: str, text: str) -> str:
+    """Drop a person's message in the turn's inbox as the worker does: a dot-file, then renamed."""
+    from uuid_utils.compat import uuid7
+
+    key = str(uuid7())
+    folder = home / ".fx" / "dotrix" / "steer" / inbox
+    (folder / f".{key}").write_text(text)
+    (folder / f".{key}").rename(folder / f"{key}.txt")
+    return key
+
+
+@pytest.mark.skipif(not os.environ.get("DOTRIX_TEST_FX"), reason="Set DOTRIX_TEST_FX to the Kai runtime's fx")
+@pytest.mark.parametrize("stop", [False, True])
+def test_with_the_real_engine_a_message_steers_the_running_turn(tmp_path: Path, stop: bool) -> None:
+    """A person's message dropped in the turn's inbox reaches the running turn at its next step (the model's next
+    request carries it) and is reported sent, accepted and delivered; stopped first, it's cancelled. Once the turn's
+    prompt has ended the inbox is gone, so a message dropped then is refused (the worker queues it instead)."""
+    import http.server
+    import signal
+    import threading
+
+    bodies: list[dict] = []
+    sent, release = threading.Event(), threading.Event()
+
+    class Model(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_: object) -> None:
+            pass
+
+        def do_POST(self) -> None:
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            bodies.append(body)
+            base = {"id": "r", "object": "chat.completion.chunk", "created": 1, "model": "m"}
+            if len(bodies) == 1:  # Kai's first step: held until the message is in, then a read of a.py
+                sent.wait(30)
+                release.wait(30)
+                call = json.dumps({"path": "a.py"})
+                delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "c1", "type": "function",
+                                                               "function": {"name": "read_file", "arguments": call}}]}
+                chunks = [{**base, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                          {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}]
+            else:
+                chunks = [{**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Done the other way"},
+                                                "finish_reason": None}]},
+                          {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]
+            payload = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                self.wfile.write(payload.encode())
+            except OSError:
+                pass  # stopped while it waited
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Model)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    home = tmp_path / "home"
+    (home / "repo").mkdir(parents=True)
+    (home / "repo" / "a.py").write_text("VALUE = 1\n")
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "DOTRIX_FX_BIN": os.environ["DOTRIX_TEST_FX"],
+           "OPENAI_API_KEY": "synthetic"}
+    inbox = uuid.uuid4().hex
+    argv = ["node", str(DRIVER), "--base-url", f"http://127.0.0.1:{server.server_port}/v1", "--key-env", "OPENAI_API_KEY",
+            "--model", "gpt-test", "--session", "s1", "--steer-dir", inbox]
+    driver = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env, cwd=home / "repo")
+    events: list[dict] = []
+    key = None
+    try:
+        assert driver.stdin and driver.stdout
+        driver.stdin.write("Fix it")
+        driver.stdin.close()
+        for line in driver.stdout:
+            event = json.loads(line)
+            events.append(event)
+            if event["type"] == "steering":
+                key = _steer(home, inbox, "No, do it the other way")
+            elif event["type"] == "steer" and event["state"] == "sent":
+                sent.set()
+                if stop:
+                    driver.send_signal(signal.SIGINT)
+                release.set()
+            elif event["type"] == "done":
+                with pytest.raises(FileNotFoundError):  # the inbox is closed: the worker requeues what it drops
+                    _steer(home, inbox, "Too late for this turn")
+        driver.wait(60)
+    finally:
+        release.set()
+        sent.set()
+        server.shutdown()
+        if driver.poll() is None:
+            driver.kill()
+    states = [e["state"] for e in events if e["type"] == "steer" and e["id"] == key]
+    assert events[-1]["type"] == "done", events
+    if stop:
+        assert states[0] == "sent" and states[-1] == "cancelled", events
+        assert events[-1]["stopReason"] == "cancelled"
+    else:
+        assert states == ["sent", "accepted", "delivered"], events
+        assert events[-1]["stopReason"] == "end_turn"
+        assert "No, do it the other way" not in json.dumps(bodies[0])
+        assert "No, do it the other way" in json.dumps(bodies[-1])
+    assert not (home / ".fx" / "dotrix" / "steer" / inbox).exists()
+    # The adapter shows each steer as a step and passes its state on to the worker.
+    parsed = [Fx(FX_PROVIDERS["openai"]).parse(json.dumps(e), Usage()) for e in events if e["type"] == "steer"]
+    assert all(p.steering and p.steering[0][0] == key for p in parsed)

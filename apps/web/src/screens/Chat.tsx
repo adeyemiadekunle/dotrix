@@ -63,6 +63,9 @@ import {
   useCodingSessions,
   useDecideCoding,
   useFollowUp,
+  useCodingInputs,
+  useSendCodingInput,
+  useCancelCodingInput,
   useStartCoding,
   useRecoverCoding,
   useRevertCoding,
@@ -2138,6 +2141,12 @@ export function Session({ cs }: { cs: CodingSession }) {
   const recover = useRecoverCoding(scope, cs.issue_key);
   const revert = useRevertCoding(scope, cs.issue_key, defaultApproval());
   const follow = useFollowUp(scope, cs.session_id, cs.issue_key, defaultApproval());
+  // While Kai works, a message steers the turn (when it can take one) or waits as the next turn, as in Claude Code.
+  const codingInputs = useCodingInputs(scope, cs.session_id).data ?? [];
+  const sendInput = useSendCodingInput(scope, cs.session_id);
+  const cancelInput = useCancelCodingInput(scope, cs.session_id);
+  const [pickedKind, setPickedKind] = useState<"steer" | "queue" | null>(null);
+  const retryInput = useRef<{ signature: string; client_id: string } | null>(null);
   const search = useRoute().search;
   // The open panes: the address's (`panel=`, Files for a `file=` link), else the ones last open in this browser.
   const [lastPanes, setLastPanes] = useStoredText("dotrix.coding.panes", "");
@@ -2209,6 +2218,10 @@ export function Session({ cs }: { cs: CodingSession }) {
   const [label0, c] = STATUS[cs.status];
   const label = latest ? statusLabel(latest) : label0;
   const busy = BUSY.includes(cs.status) || cs.state === "closed";
+  // Kai is on a turn (or one waits): what you type goes to it, steering or queued, rather than as a follow-up.
+  const working = cs.state !== "closed" && Boolean(latest) && BUSY.includes(latest!.status);
+  const steerable = Boolean(latest?.accepts_steering);
+  const inputKind: "steer" | "queue" = steerable ? (pickedKind ?? "steer") : "queue";
   // The latest turn that reached the PR: CI runs on its commit.
   const pushed = [...turns].reverse().find((t) => t.commit_sha && t.pr_number);
   // A screenshot opened large over everything; Escape or a click closes it.
@@ -2240,8 +2253,29 @@ export function Session({ cs }: { cs: CodingSession }) {
     setDetailsPop(false);
   }, [cs.session_id]);
   const send = () => {
-    if (busy || !ask.trim()) return;
-    follow.mutate({ message: ask.trim(), work_mode: codingMode });
+    const message = ask.trim();
+    if (!message) return;
+    if (working) {
+      // The same message sent again (a retry) keeps its id, so it's sent once.
+      const signature = JSON.stringify([cs.session_id, message, inputKind, codingMode]);
+      const retry = retryInput.current;
+      const client_id = retry?.signature === signature ? retry.client_id : crypto.randomUUID();
+      retryInput.current = { signature, client_id };
+      sendInput.mutate(
+        { client_id, kind: inputKind, message, work_mode: codingMode, approval_mode: latest?.approval_mode ?? null },
+        {
+          onSuccess: (sent) => {
+            retryInput.current = null;
+            // The turn had just finished: this is a follow-up after all.
+            if (!sent) follow.mutate({ message, work_mode: codingMode });
+          },
+        },
+      );
+      setAsk("");
+      return;
+    }
+    if (busy) return;
+    follow.mutate({ message, work_mode: codingMode });
     setAsk("");
   };
   const box = useRef<HTMLTextAreaElement>(null);
@@ -2400,18 +2434,63 @@ export function Session({ cs }: { cs: CodingSession }) {
           density={S.prefs.density === "compact" ? "compact" : "balanced"}
           composer={
             <div className={`chat-input kt-input dotrix-composer-wrap ${optionsOpen ? "menu-open" : ""}`}>
+              {working && (
+                <div className="chat-delivery-row">
+                  <label htmlFor="coding-delivery-kind">Send as</label>
+                  <select
+                    id="coding-delivery-kind"
+                    aria-label="Delivery action"
+                    value={inputKind}
+                    onChange={(event) => setPickedKind(event.target.value as "steer" | "queue")}
+                  >
+                    {steerable && <option value="steer">Steer this turn</option>}
+                    <option value="queue">Queue for the next turn</option>
+                  </select>
+                </div>
+              )}
+              <Queue
+                entries={codingInputs
+                  .filter(
+                    (item) =>
+                      item.status === "pending" ||
+                      item.status === "sending" ||
+                      item.status === "rejected" ||
+                      (item.status === "accepted" && item.run_id === latest?.id),
+                  )
+                  .slice(0, 20)
+                  .reverse()
+                  .map((item) => ({
+                    id: item.id,
+                    kind: item.kind,
+                    message: item.message,
+                    status: item.status,
+                    error: item.note,
+                    said:
+                      item.status === "accepted"
+                        ? `${kai} has it`
+                        : item.status === "rejected"
+                          ? "Not delivered"
+                          : item.status === "sending"
+                            ? "Sending…"
+                            : item.kind === "steer"
+                              ? `Waiting for ${kai}'s next step`
+                              : "Waiting for this turn to end",
+                    onCancel: item.status === "pending" ? () => cancelInput.mutate(item.id) : undefined,
+                    cancelling: cancelInput.isPending,
+                  }))}
+              />
               <ChatComposer
                 className={`dotrix-composer compact-composer ${ask ? "has-draft" : ""}`}
                 value={ask}
-                isDisabled={busy}
-                isStopShown={Boolean(latest?.can_stop && (latest.status === "running" || latest.status === "queued"))}
+                isDisabled={busy && !working}
+                isStopShown={Boolean(latest?.can_stop && (latest.status === "running" || latest.status === "queued") && !ask.trim())}
                 onSubmit={send}
                 footerActions={
                   <CodingOptions
                     mode={codingMode}
                     setMode={setCodingMode}
                     local={latest?.location === "local"}
-                    disabled={busy}
+                    disabled={busy && !(working && inputKind === "queue")}
                     onOpenChange={setOptionsOpen}
                     focusInput={() => box.current?.focus()}
                   >
@@ -2427,14 +2506,14 @@ export function Session({ cs }: { cs: CodingSession }) {
                     placeholder={
                       cs.state === "closed"
                         ? "This session is closed"
-                        : cs.status === "recovery_required"
-                          ? "Recover the previous turn before continuing"
-                          : busy
-                            ? "A turn is waiting or working…"
+                        : working && inputKind === "steer"
+                          ? `Tell ${kai} something while it works`
+                          : working
+                            ? `Queue a message for ${kai}'s next turn`
                             : `Ask ${kai} for a follow-up on the same branch`
                     }
                     value={ask}
-                    disabled={busy}
+                    disabled={busy && !working}
                     onChange={(e) => setAsk(e.target.value)}
                     aria-label="Follow-up"
                     onKeyDown={(e) => {
@@ -2448,10 +2527,10 @@ export function Session({ cs }: { cs: CodingSession }) {
                 sendActions={<ComposerModel model={latest?.model} empty={cs.location === "local" ? "Model managed locally" : "Model not recorded"} />}
                 sendButton={
                   <>
-                    {latest?.can_stop && (latest.status === "running" || latest.status === "queued") ? (
+                    {latest?.can_stop && (latest.status === "running" || latest.status === "queued") && !ask.trim() ? (
                       <ChatSendButton isStopShown isDisabled={stop.isPending} onStop={() => stop.mutate(latest.id)} aria-label="Stop coding turn" />
                     ) : (
-                      <ChatSendButton isDisabled={busy || !ask.trim() || follow.isPending} onSend={send} />
+                      <ChatSendButton isDisabled={(busy && !working) || !ask.trim() || follow.isPending || sendInput.isPending} onSend={send} />
                     )}
                   </>
                 }
