@@ -273,3 +273,24 @@ async def test_a_local_fx_turn_is_steered_through_its_runners_heartbeat(db_clien
     assert done.status_code in (200, 204), done.text
     [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
     assert item["status"] == "delivered" and item["delivered_run_id"] == run["id"]
+
+
+async def test_a_queued_message_after_a_local_turn_is_the_next_turn_on_the_same_computer(db_client: AsyncClient, queued) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation, CodingRunner
+
+    ada, _, ws, _, _, _ = queued
+    base, run = await _asked(db_client, queued)  # Claude Code: queueing needs nothing of the engine
+    async with _ctx(db_client).session_factory() as session:  # the computer that coded the turn
+        runner = CodingRunner(id=uuid.uuid4(), workspace_id=uuid.UUID(ws.rsplit("/", 1)[-1]), user_id=uuid.UUID(ada.id),
+                              name="laptop", tools=["claude-code"], project_ids=[run["project_id"]],
+                              created_at=datetime.now(UTC), last_seen_at=datetime.now(UTC))
+        session.add(runner)
+        await session.commit()
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, location=CodingLocation.LOCAL, runner_id=runner.id)
+    res = await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then add a test")
+    assert res.status_code == 201, res.text
+    await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC))
+    made = await deliver_for_job(_ctx(db_client))
+    assert made == 1, await _inputs(db_client, base, run["session_id"], ada.headers)
+    turns = await _turns(db_client, base, run["session_id"], ada.headers)
+    assert turns[1]["location"] == "local" and "Then add a test" in turns[1]["brief"], turns[1]
