@@ -54,7 +54,7 @@ import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import { HOST_DIR, HOST_REFUSED, HOST_SOCKET, RELAY_PORT } from "./fx-host.mjs";
+import { HOST_DIR, HOST_FAILED, HOST_REFUSED, HOST_SOCKET, RELAY_PORT } from "./fx-host.mjs";
 import { answers, notStarted } from "./mcp-check.mjs";
 
 const args = process.argv.slice(2);
@@ -286,6 +286,7 @@ async function attach() {
 }
 async function startHost() {
   rmSync(HOST_SOCKET, { force: true });
+  rmSync(HOST_FAILED, { force: true });
   mkdirSync(HOST_DIR, { recursive: true, mode: 0o700 });
   // Detached from the turn at once (its shell exits), so stopping the turn's process tree doesn't stop it.
   const started = spawnSync(
@@ -306,6 +307,14 @@ async function startHost() {
   for (let waited = 0; waited < 30_000; waited += 100) {
     const found = await attach();
     if (found && !found.busy) return found;
+    // The host couldn't start fx: say why now, as the turn did when it ran fx itself.
+    let failed = null;
+    try {
+      failed = JSON.parse(readFileSync(HOST_FAILED, "utf8"));
+    } catch {
+      // not failed (yet)
+    }
+    if (failed) fail(`The coding engine didn't start: ${String(failed.message).slice(0, 500)}`);
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   fail("The coding engine didn't start (it didn't answer)");

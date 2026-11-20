@@ -146,6 +146,9 @@ FAKE_FX = textwrap.dedent('''
         msg = json.loads(line)
         log.write(json.dumps({"method": msg.get("method"), "params": msg.get("params")}) + "\\n"); log.flush()
         method, mid = msg.get("method"), msg.get("id")
+        if method == "initialize" and os.environ.get("FAKE_FX_INIT_FAILS"):  # its settings refused, say
+            send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32600, "message": "base_url uses https, or http only for localhost"}})
+            continue
         if method == "initialize":
             log.write(json.dumps({"method": "environment", "params": {"FX_PROJECT_CONFIG": os.environ.get("FX_PROJECT_CONFIG")}}) + "\\n"); log.flush()
             send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1}})
@@ -383,6 +386,15 @@ def test_in_a_warm_sandbox_the_next_turn_finds_fx_still_running_with_kai_s_comma
     # Between turns the host keeps a report of them for the platform.
     report = json.loads((Path(fake_fx["HOME"]) / ".dotrix-fx-host" / "shells.json").read_text())
     assert [shell["sessionId"] for shell in report["shells"]] == ["shell-7", "shell-8"]
+
+
+def test_an_engine_that_refuses_to_start_says_why_at_once(fake_fx) -> None:
+    """When fx refuses to start in its host (its settings, say), the turn says why straight away, as it did when it
+    ran fx itself, rather than waiting for a host that will never answer."""
+    started = time.monotonic()
+    events = _drive({**fake_fx, "FAKE_FX_INIT_FAILS": "1"}, "Fix it")
+    assert time.monotonic() - started < 10
+    assert events[-1] == {"type": "error", "message": "The coding engine didn't start: base_url uses https, or http only for localhost"}
 
 
 def test_another_model_gets_another_fx(fake_fx) -> None:

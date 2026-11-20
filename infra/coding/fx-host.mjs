@@ -34,6 +34,7 @@ export const HOST_DIR = join(homedir(), ".dotrix-fx-host");
 export const HOST_SOCKET = join(HOST_DIR, "host.sock");
 export const HOST_SHELLS = join(HOST_DIR, "shells.json");
 export const HOST_PID = join(HOST_DIR, "pid");
+export const HOST_FAILED = join(HOST_DIR, "failed.json"); // why the host couldn't start fx, for the driver to say
 export const HOST_REFUSED = join(HOST_DIR, "refused"); // when the egress proxy last refused the provider
 export const RELAY_PORT = 31821;
 const POLL_MS = Number(process.env.DOTRIX_FX_HOST_POLL_MS) || 5_000;
@@ -88,6 +89,7 @@ async function main() {
   const relayTarget = arg("--relay-target");
   const fxBin = process.env.DOTRIX_FX_BIN || "fx";
   mkdirSync(HOST_DIR, { recursive: true, mode: 0o700 });
+  rmSync(HOST_FAILED, { force: true });
   writeFileSync(HOST_PID, String(process.pid), { mode: 0o600 });
 
   const egress = process.env.HTTPS_PROXY || process.env.https_proxy;
@@ -156,7 +158,14 @@ async function main() {
     clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
     clientInfo: { name: "dotrix", version: "1" },
   });
-  if (initialized.error) process.exit(1);
+  if (initialized.error) {
+    // fx refused to start (its settings, say): the driver waiting for the socket says why, at once.
+    const message = String(initialized.error.message ?? "it refused to start").slice(0, 500);
+    process.stderr.write(`fx-host: ${message}\n`);
+    writeFileSync(HOST_FAILED, JSON.stringify({ message, at: Date.now() }), { mode: 0o600 });
+    fx.kill("SIGTERM");
+    process.exit(1);
+  }
 
   let reporting = true; // an fx without fx/shells (before kai.3) still keeps its commands; it just can't list them
   const poll = async () => {
