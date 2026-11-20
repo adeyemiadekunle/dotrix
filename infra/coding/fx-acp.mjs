@@ -236,6 +236,12 @@ for (const worker of workerProfiles ?? []) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const settings = { description: String(worker.description), tools: worker.tools.map(String) };
   if (Array.isArray(worker.mcp_servers)) settings.mcp_servers = worker.mcp_servers.map(String);
+  // The worker's own limits on a turn (the Kai runtime's profile keys): whole numbers, or none.
+  for (const key of ["max_steps", "max_tokens"]) {
+    if (worker[key] === undefined) continue;
+    if (!Number.isSafeInteger(worker[key]) || worker[key] < 1) fail("Kai's workers couldn't be set up");
+    settings[key] = worker[key];
+  }
   writeFileSync(join(dir, "profile.json"), JSON.stringify(settings), { mode: 0o600 });
   writeFileSync(join(dir, "prompt.md"), `${String(worker.prompt ?? "")}\n`, { mode: 0o600 });
 }

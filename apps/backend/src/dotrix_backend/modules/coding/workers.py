@@ -11,12 +11,18 @@ from __future__ import annotations
 
 READ = ["read_file", "glob_files", "grep_files", "read_tool_result"]
 
+# Each worker's own limits on a turn (the Kai runtime's `max_steps` and `max_tokens`, every request's input and
+# output together): a worker past one stops and reports, so a looping helper can't spend a person's key without
+# end. Starting values, to tune from real usage.
+READ_LIMITS = {"max_steps": 30, "max_tokens": 300_000}
+
 WORKERS: tuple[dict, ...] = (
     {
         "name": "explorer",
         "description": "Reads and searches the repository and reports where things are and how they work; changes nothing.",
         "tools": READ,
         "mcp_servers": [],
+        **READ_LIMITS,
         "prompt": "You are one of Kai's workers. Kai asked you a question about this repository. Find the answer by "
                   "reading and searching the code, then report it with the paths and lines it rests on. Say what "
                   "you couldn't find. Change nothing.",
@@ -26,6 +32,8 @@ WORKERS: tuple[dict, ...] = (
         "description": "Runs the project's tests, linters and builds and reports what passed and what failed, with the "
                        "output that matters; doesn't edit files.",
         "tools": ["shell", *READ],
+        "max_steps": 50,
+        "max_tokens": 500_000,
         "prompt": "You are one of Kai's workers. Run the checks Kai asked for (tests, linters, builds) the way this "
                   "project runs them, and report each command, whether it passed, and the output that explains any "
                   "failure. Don't edit, create or delete project files, don't install anything beyond what the "
@@ -37,6 +45,7 @@ WORKERS: tuple[dict, ...] = (
                        "changes nothing.",
         "tools": READ,
         "mcp_servers": [],
+        **READ_LIMITS,
         "prompt": "You are one of Kai's workers. Review the change Kai describes: read the files it touches and the "
                   "code that calls them, and check it against what the issue asks. Report each finding with its "
                   "path and line, how sure you are, and why it matters, most serious first. Say when you found "
