@@ -39,6 +39,7 @@ async def close_quietly(box: SandboxSession) -> None:
 
 
 Retire = Callable[[uuid.UUID, SandboxSession, str], Awaitable[None]]
+Released = Callable[[uuid.UUID], Awaitable[None]]
 
 
 class WarmPool:
@@ -46,6 +47,8 @@ class WarmPool:
         self.idle_seconds, self.per_workspace = idle_seconds, per_workspace
         self._boxes: dict[uuid.UUID, _Warm] = {}
         self.retire: Retire | None = None  # (session, sandbox, credential): sleep it, or close it
+        # A session's sandbox left the pool without a turn taking it (closed, slept, evicted): what ran in it ended.
+        self.released: Released | None = None
 
     async def take(self, session_id: uuid.UUID, credential: str = "") -> SandboxSession | None:
         """The session's warm sandbox, out of the pool for the turn (or None). One opened with
@@ -54,6 +57,7 @@ class WarmPool:
         found = self._boxes.pop(session_id, None)
         if found is not None and found.credential != credential:
             await close_quietly(found.box)
+            await self._released(session_id)
             return None
         return found.box if found else None
 
@@ -64,6 +68,7 @@ class WarmPool:
         within the workspace's limit (this one, when the limit is 0)."""
         if self.per_workspace <= 0:
             await self._let_go(session_id, box, credential)
+            await self._released(session_id)
             return [session_id]
         self._boxes[session_id] = _Warm(box, workspace_id, time.monotonic(), credential)
         mine = sorted((w.used, sid) for sid, w in self._boxes.items() if w.workspace_id == workspace_id)
@@ -83,7 +88,16 @@ class WarmPool:
             await self._let_go(session_id, found.box, found.credential)
         else:
             await close_quietly(found.box)
+        await self._released(session_id)
         return True
+
+    async def _released(self, session_id: uuid.UUID) -> None:
+        if self.released is None:
+            return
+        try:
+            await self.released(session_id)
+        except Exception:
+            logger.warning("couldn't record what ended with a coding sandbox", exc_info=True)
 
     async def _let_go(self, session_id: uuid.UUID, box: SandboxSession, credential: str) -> None:
         if self.retire is None:

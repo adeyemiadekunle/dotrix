@@ -491,3 +491,26 @@ async def test_commands_kai_left_running_are_followed_between_turns_and_keep_the
     turns = await _turns(db_client, base, str(session_id), ada.headers)
     assert [(e["kind"], e["text"]) for e in turns[-1]["events"] if e["kind"].startswith("background-")][-1] == (
         "background-ended", "npm run e2e")
+
+
+async def test_a_sandbox_evicted_for_the_workspace_limit_ends_its_commands_in_codes(db_client: AsyncClient, queued) -> None:  # noqa: F811
+    """A warm sandbox the pool lets go for the workspace's limit (or on any path but a turn taking it) ends what Kai
+    left running there, even before the reaper looked: Codes says so rather than showing it running for ever."""
+    ada, *_ = queued
+    base, run = await _fx_asked(db_client, queued)
+    async with _ctx(db_client).session_factory() as session:
+        row = await session.get(CodingRun, uuid.UUID(run["id"]))
+        row.status, row.finished_at = CodingRunStatus.NO_CHANGES, datetime.now(UTC)
+        session_id, workspace_id = row.session_id, row.workspace_id
+        add_events(row, session, events=[{"at": datetime.now(UTC).isoformat(), "kind": "background-running", "text": "make ci",
+                                          "ref": "command:shell-1"}])
+        await session.commit()
+    worker = _ctx(db_client).coding
+    worker.pool.per_workspace = 1
+    box, other = _KeptBox(), _KeptBox()
+    await worker.pool.put(session_id, workspace_id, box)
+    await worker.pool.put(uuid.uuid4(), workspace_id, other)  # one too many: the older one goes
+    assert box.closed
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    assert [(e["kind"], e["text"]) for e in turns[-1]["events"] if e["kind"].startswith("background-")] == [
+        ("background-running", "make ci"), ("background-ended", "make ci")]

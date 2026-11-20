@@ -205,6 +205,7 @@ class CodingWorker:
 
     def __post_init__(self) -> None:
         self.pool.retire = self._retire
+        self.pool.released = self._let_go_background
 
     @property
     def _sleeps(self) -> bool:
@@ -1156,7 +1157,6 @@ class CodingWorker:
         for session_id in self.pool.idle():
             if session_id in running:  # Kai's commands still run there: kept up, within the limit
                 continue
-            await self._let_go_background(session_id)
             await self.pool.close(session_id, keep=True)
             await self._session(session_id, state=CodingSessionState.IDLE)
         pooled = self.pool.sessions()
@@ -1241,17 +1241,32 @@ class CodingWorker:
                     await session.commit()
 
     async def _let_go_background(self, session_id: uuid.UUID) -> None:
-        """A sandbox let go (idle, or past the limit) ends the commands still running in it: said on the turn."""
-        known = self._kept.pop(session_id, None)
-        if known is None:
-            return
-        ended = [ref for ref, state in known[1].items() if state == "running"]
-        if not ended:
-            return
+        """A sandbox let go (idle or past the limit, evicted for the workspace's limit, its session closed, the worker
+        stopping) ends the commands still running in it: said on the turn. The pool calls it (`WarmPool.released`)."""
+        self._kept.pop(session_id, None)
         now = datetime.now(UTC).isoformat()
         async with self.session_factory() as session:
-            run = await session.get(CodingRun, known[0], with_for_update=True)
+            # The session's latest turn that kept commands, and their latest states as recorded (the reaper may not
+            # have looked yet). Only fx keeps any; a sandbox a turn takes isn't released, so its commands go on.
+            run_id = (await session.execute(
+                select(CodingRun.id).join(CodingRunEvent, CodingRunEvent.run_id == CodingRun.id)
+                .where(CodingRun.session_id == session_id, CodingRun.agent == CodingAgent.FX,
+                       CodingRunEvent.kind == "background-running", CodingRunEvent.ref.like("command:%"))
+                .order_by(CodingRun.turn.desc()).limit(1)
+            )).scalar_one_or_none()
+            run = await session.get(CodingRun, run_id, with_for_update=True) if run_id else None
             if run is None:
+                return
+            states: dict[str, str] = {}
+            for ref, kind in (await session.execute(
+                select(CodingRunEvent.ref, CodingRunEvent.kind).where(
+                    CodingRunEvent.run_id == run.id, CodingRunEvent.kind.like("background-%"),
+                    CodingRunEvent.kind != "background-output", CodingRunEvent.ref.like("command:%"),
+                ).order_by(CodingRunEvent.seq)
+            )).all():
+                states[ref] = kind
+            ended = [ref for ref, kind in states.items() if kind == "background-running"]
+            if not ended:
                 return
             labels = {ref: text for ref, text in (await session.execute(
                 select(CodingRunEvent.ref, CodingRunEvent.text).where(
