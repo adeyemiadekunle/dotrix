@@ -106,7 +106,9 @@ async def test_the_docker_sandbox_uses_the_machine_s_limits_and_runtime(tmp_path
 
     async def cli(self, *args: str, **_: object) -> str:
         calls.append(list(args))
-        return "runsc\n" if args[0] == "inspect" else ""
+        if args[0] == "inspect":
+            return "172.30.0.2\n" if "NetworkSettings" in args[2] else "runsc\n"
+        return ""
 
     sandbox = DockerSandbox(_settings(coding_memory="3g", coding_cpus=1.5, coding_docker_runtime="runsc"))
     monkeypatch.setattr(DockerSandbox, "cli", cli)
@@ -122,9 +124,10 @@ async def test_the_docker_sandbox_uses_the_machine_s_limits_and_runtime(tmp_path
     connected = next(i for i, c in enumerate(calls) if c[:2] == ["network", "connect"])
     started = next(i for i, c in enumerate(calls) if c[0] == "start")
     assert connected < started
-    inspections = [c for c in calls if c[0] == "inspect"]
-    assert len(inspections) == 2
-    assert calls.index(inspections[-1]) < next(i for i, c in enumerate(calls) if c[0] == "exec")
+    runtimes = [c for c in calls if c[0] == "inspect" and "{{.HostConfig.Runtime}}" in c]
+    assert len(runtimes) == 2  # each container's runtime, both before the repository goes in
+    copied = next(i for i, c in enumerate(calls) if c[0] == "exec" and "tar" in c)
+    assert calls.index(runtimes[-1]) < copied
     assert "sk-test" not in " ".join(agent)  # the key goes by name, never on argv
     plain = DockerSandbox(_settings())
     assert (plain.memory, plain.cpus, plain.runtime) == ("4g", 2.0, None)  # unchanged defaults

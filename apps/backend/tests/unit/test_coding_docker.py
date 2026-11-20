@@ -36,7 +36,9 @@ async def test_the_docker_daemon_does_not_inherit_the_agents_egress_proxy(tmp_pa
 
     async def cli(*args, **kwargs):
         calls.append((args, kwargs))
-        return "runsc\n" if args[0] == "inspect" else ""
+        if args[0] == "inspect":
+            return "172.30.0.2\n" if "NetworkSettings" in args[2] else "runsc\n"
+        return ""
 
     monkeypatch.setattr(sandbox, "cli", cli)
     repo = tmp_path / "repo"
@@ -72,6 +74,8 @@ async def test_unverified_isolation_never_receives_repository_files_or_falls_bac
         if args[0] in ("run", "start") and target in args and failure == "run-error":
             raise SandboxError("The requested isolation runtime could not start")
         if args[0] == "inspect":
+            if "NetworkSettings" in args[2]:  # the proxy's address on the run's network
+                return "172.30.0.2\n"
             if args[-1] == target:
                 if failure == "inspect-error":
                     raise SandboxError("Could not inspect sandbox")
@@ -82,12 +86,70 @@ async def test_unverified_isolation_never_receives_repository_files_or_falls_bac
     monkeypatch.setattr(sandbox, "cli", cli)
     with pytest.raises(SandboxError):
         await sandbox.open(run_id, tmp_path, Codex(), "selected-test-key")
-    assert not any(args[0] == "exec" for args in calls)
+    assert not any(args[0] == "exec" and name in args for args in calls)  # nothing reached the agent's container
     assert ("rm", "-f", "-v", name, f"{name}-egress") in calls
     assert ("network", "rm", name) in calls
     attempts = [args for args in calls if args[0] in ("create", "run")]
     assert all(args[args.index("--runtime") + 1] == "runsc" for args in attempts)
     assert len(attempts) == (1 if container == "egress" else 2)
+
+
+async def test_the_agent_reaches_its_proxy_by_address_and_no_address_stops_the_sandbox(tmp_path: Path, monkeypatch) -> None:
+    """Under gVisor a container can't use Docker's resolver, so the agent gets the proxy's address (`--add-host`).
+    No address, or something that isn't one, and the sandbox doesn't open: no repository goes in."""
+    for answer, opens in (("172.30.0.2\n", True), ("\n", False), ("<no value>\n", False)):
+        sandbox = DockerSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="x" * 40,
+                                        coding_docker_runtime="runsc"))
+        calls = []
+
+        async def cli(*args, answer=answer, calls=calls, **kwargs):
+            calls.append(args)
+            if args[0] == "inspect":
+                return answer if "NetworkSettings" in args[2] else "runsc\n"
+            return ""
+
+        monkeypatch.setattr(sandbox, "cli", cli)
+        if opens:
+            await sandbox.open(uuid.uuid4(), tmp_path, Codex(), "selected-test-key")
+            [run] = [args for args in calls if args[0] == "run"]
+            assert run[run.index("--add-host") + 1] == "egress:172.30.0.2"
+        else:
+            with pytest.raises(SandboxError, match="no address"):
+                await sandbox.open(uuid.uuid4(), tmp_path, Codex(), "selected-test-key")
+            assert not any(args[0] == "run" for args in calls)
+
+
+async def test_under_gvisor_the_egress_proxy_gets_named_resolvers_and_is_waited_for(tmp_path: Path, monkeypatch) -> None:
+    """Under a runtime the proxy can't reach Docker's resolver either: it's given named ones. The agent starts only
+    once the proxy listens; one that never does stops the sandbox."""
+    from dotrix_backend.modules.coding import sandbox as module
+
+    for runtime, ready in (("runsc", True), (None, True), ("runsc", False)):
+        settings = Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="x" * 40,  # type: ignore[arg-type]
+                            coding_docker_runtime=runtime)
+        sandbox = DockerSandbox(settings)
+        calls = []
+
+        async def cli(*args, calls=calls, ready=ready, **kwargs):
+            calls.append(args)
+            if args[0] == "inspect":
+                return "172.30.0.2\n" if "NetworkSettings" in args[2] else "runsc\n"
+            if args[0] == "exec" and "-e" in args and not ready:
+                raise SandboxError("connection refused")
+            return ""
+
+        monkeypatch.setattr(sandbox, "cli", cli)
+        monkeypatch.setattr(module, "EGRESS_READY_TRIES", 2)
+        if ready:
+            await sandbox.open(uuid.uuid4(), tmp_path, Codex(), "selected-test-key")
+        else:
+            with pytest.raises(SandboxError, match="didn't start"):
+                await sandbox.open(uuid.uuid4(), tmp_path, Codex(), "selected-test-key")
+        [create] = [args for args in calls if args[0] == "create"]
+        assert ("DOTRIX_EGRESS_DNS=1.1.1.1,8.8.8.8" in create) == (runtime is not None)
+        probes = [args for args in calls if args[0] == "exec" and "-e" in args]
+        assert probes and all(args[1].endswith("-egress") for args in probes)
+        assert any(args[0] == "run" for args in calls) == ready
 
 
 @pytest.mark.skipif(not _docker_ready(), reason=f"needs Docker and {IMAGE} (docker build -t {IMAGE} infra/coding)")

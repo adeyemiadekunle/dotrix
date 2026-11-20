@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -424,6 +425,7 @@ class OpenShellSandbox:
 DOCKER_HOME = "/sandbox"  # the image's sandbox user's home; the repo goes in its `repo`
 DOCKER_UID = "1500:1500"  # that user (infra/coding/Dockerfile)
 EGRESS_PORT = 3128
+EGRESS_READY_TRIES = 40  # half a second apart
 
 
 def egress_allow(tool: CodingTool) -> str:
@@ -478,6 +480,7 @@ class DockerSandbox:
         self.bin = settings.docker_bin
         self.image = settings.coding_image
         self.memory, self.cpus, self.runtime = settings.coding_memory, settings.coding_cpus, settings.coding_docker_runtime
+        self.egress_dns = settings.coding_egress_dns
 
     async def pin_image(self, reference: str) -> DockerSandbox:
         """Resolve once, use the content ID for both agent and egress containers; never mutate the shared factory."""
@@ -514,6 +517,30 @@ class DockerSandbox:
                 raise SandboxError("The coding sandbox did not use its configured isolation runtime; "
                                    "check the Docker host's runtime configuration")
 
+    async def _listening(self, container: str) -> None:
+        """Wait until the egress proxy accepts connections (Node starts slower under gVisor), so the agent's first
+        request isn't refused. One that never listens stops the sandbox."""
+        probe = (f"require('net').connect({EGRESS_PORT},'127.0.0.1').on('connect',function(){{this.destroy();process.exit(0)}})"
+                 ".on('error',()=>process.exit(1))")
+        for _ in range(EGRESS_READY_TRIES):
+            try:
+                await self.cli("exec", container, "node", "-e", probe)
+                return
+            except SandboxError:
+                await asyncio.sleep(0.5)
+        raise SandboxError("The coding sandbox's egress proxy didn't start")
+
+    async def _address_on(self, container: str, network: str) -> str:
+        """A container's IPv4 address on one network, checked to be one."""
+        found = (await self.cli("inspect", "--format", f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
+                                container)).strip()
+        try:
+            if ipaddress.ip_address(found).version == 4:
+                return found
+        except ValueError:
+            pass
+        raise SandboxError("The coding sandbox's egress proxy has no address on its network")
+
     async def open(
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
     ) -> SandboxSession:
@@ -536,10 +563,17 @@ class DockerSandbox:
                            "--memory-swap", "256m", "--cpus", "0.25", "--pids-limit", "128",
                            *(["--runtime", self.runtime] if self.runtime else []),
                            "-e", f"DOTRIX_EGRESS_ALLOW={egress_allow(tool)}",
+                           # Under a runtime (gVisor) Docker's resolver is out of reach: name the resolvers.
+                           *(["-e", f"DOTRIX_EGRESS_DNS={self.egress_dns}"] if self.runtime else []),
                            self.image, "node", "/opt/dotrix/egress-proxy.mjs")
             await self.cli("network", "connect", "--alias", "egress", name, f"{name}-egress")
             await self.cli("start", f"{name}-egress")
             await self._check_runtime(f"{name}-egress")
+            # The agent finds the proxy by its address, not Docker's DNS: under gVisor a container on an internal
+            # network can't reach Docker's resolver (127.0.0.11), so "egress" wouldn't resolve and no turn could
+            # reach its model. An address that can't be read stops the sandbox here.
+            egress_ip = await self._address_on(f"{name}-egress", name)
+            await self._listening(f"{name}-egress")
             # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
             proxy = f"http://egress:{EGRESS_PORT}"
             # localhost stays local: the agent's own dev server, opened by its browser.
@@ -549,6 +583,7 @@ class DockerSandbox:
                              "no_proxy": "localhost,127.0.0.1,::1", "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
             # --init: a reaper as PID 1, so what a stopped turn leaves behind doesn't linger as zombies.
             await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
+                           "--add-host", f"egress:{egress_ip}",
                            "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
                            "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
                            "--memory", self.memory, "--memory-swap", self.memory,

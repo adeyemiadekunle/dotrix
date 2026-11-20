@@ -11,6 +11,13 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Cloud coding under gVisor (`DOTRIX_CODING_DOCKER_RUNTIME=runsc`, required when deployed) could never reach the model. A gVisor container on the sandbox's internal network can't reach Docker's own resolver (127.0.0.11). So the agent couldn't find its egress proxy by name, and the proxy couldn't look up the model API's host. Three changes:
+  - The agent now gets the proxy's address (`--add-host egress:<ip>`).
+  - The proxy resolves the allowed hosts through named resolvers (`DOTRIX_CODING_EGRESS_DNS`, default `1.1.1.1,8.8.8.8`, only under a runtime).
+  - The sandbox waits for the proxy to listen before the agent starts.
+
+  Found by rebuilding the coding image with fx 0.0.17-kai.3 and running Dotrix's Docker sandbox tests under gVisor (release 20261102.0). All 14 now pass under both runtimes. An fx turn through `DockerSandbox` under gVisor reached `api.openai.com` through the host's relay and the egress proxy.
+- Kai on fx: when fx refuses to start in its host (its settings, say), the turn says why at once. Before, it waited 30 seconds and then reported that the engine didn't answer.
 - Codes: background task events (`background-running`, `background-stopped`) didn't fit `coding_events.kind`, which held 16 characters, so recording them would have failed. The column now holds 32 (migration `c3a91f02d7e4`).
 - Kai's fx engine: a coding session whose saved conversation the engine can't read (written by a version that can't be read back, or damaged) used to end its next turn with the engine's own error. Now the turn starts a new conversation with the session's current profile, and Codes says so ("Started a new conversation (the earlier one couldn't be restored)"). A saved profile that doesn't match Dotrix's record still refuses the turn. Checked across versions with the real binaries: a session saved by `0.0.17-kai.1`, packed and unpacked as the runner does, resumes on the next Kai runtime build with its earlier turn.
 - Releases: a first 0.2.0 publication that failed between its releases is finished by a rerun, rather than skipped. `release.py plan` treated any `v0.2.0` tag as the coordinated release from before separate component tags, so after `platform-v0.2.0` and `v0.2.0` it planned no `cli-v0.2.0`. It now checks the tag's commit: only a `v0.2.0` whose `release.py` predates the separate tags covers the platform and CLI.
