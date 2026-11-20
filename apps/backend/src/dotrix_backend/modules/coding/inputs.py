@@ -37,7 +37,6 @@ from .models import (
     CodingInput,
     CodingInputKind,
     CodingInputStatus,
-    CodingLocation,
     CodingRun,
     CodingRunStatus,
 )
@@ -62,10 +61,11 @@ def now() -> datetime:
 
 
 def accepts_steering(run: CodingRun) -> bool:
-    """Whether a message can steer this turn now: a cloud fx turn that's working (fx takes a steering prompt into
-    the running turn; the other engines don't), and not a parallel build, whose tasks run as separate turns."""
-    return (run.status is CodingRunStatus.RUNNING and run.agent is CodingAgent.FX
-            and run.location is CodingLocation.CLOUD and not run.execution_plan)
+    """Whether a message can steer this turn now: an fx turn that's working (fx takes a steering prompt into the
+    running turn; the other engines don't), in the cloud or on the person's computer (through the runner's
+    heartbeat), and not a parallel build, whose tasks run as separate turns. A runner from before steering never
+    opens an inbox: its steers go to the next turn, like any the turn didn't take."""
+    return run.status is CodingRunStatus.RUNNING and run.agent is CodingAgent.FX and not run.execution_plan
 
 
 def _audit(session: AsyncSession, item: CodingInput, action: str) -> None:
@@ -172,17 +172,25 @@ async def take_steers(sessions: SessionFactory, run_id: uuid.UUID) -> list[tuple
     the inbox; one it couldn't goes back with `steer_states(..., "pending")`)."""
     async with sessions() as session:
         run = await session.get(CodingRun, run_id)
-        if run is None or not accepts_steering(run):
+        if run is None:
             return []
-        rows = list(await session.scalars(select(CodingInput).where(
-            CodingInput.workspace_id == run.workspace_id, CodingInput.run_id == run_id,
-            CodingInput.owner_id == run.requested_by_id, CodingInput.kind == CodingInputKind.STEER,
-            CodingInput.status == CodingInputStatus.PENDING,
-        ).order_by(CodingInput.created_at, CodingInput.id).with_for_update(skip_locked=True)))
-        for item in rows:
-            item.status, item.updated_at = CodingInputStatus.SENDING, now()
+        taken = await take_steers_in(session, run)
         await session.commit()
-        return [(item.id, item.message) for item in rows]
+        return taken
+
+
+async def take_steers_in(session: AsyncSession, run: CodingRun) -> list[tuple[uuid.UUID, str]]:
+    """`take_steers` in the caller's transaction (a local runner's heartbeat); the caller commits."""
+    if not accepts_steering(run):
+        return []
+    rows = list(await session.scalars(select(CodingInput).where(
+        CodingInput.workspace_id == run.workspace_id, CodingInput.run_id == run.id,
+        CodingInput.owner_id == run.requested_by_id, CodingInput.kind == CodingInputKind.STEER,
+        CodingInput.status == CodingInputStatus.PENDING,
+    ).order_by(CodingInput.created_at, CodingInput.id).with_for_update(skip_locked=True)))
+    for item in rows:
+        item.status, item.updated_at = CodingInputStatus.SENDING, now()
+    return [(item.id, item.message) for item in rows]
 
 
 _REPORTED = {
@@ -205,28 +213,34 @@ async def steer_states(sessions: SessionFactory, run_id: uuid.UUID, reports: lis
         run = await session.get(CodingRun, run_id)
         if run is None:
             return
-        for key, state, message in reports:
-            try:
-                input_id = uuid.UUID(key)
-            except ValueError:
-                continue
-            item = await session.scalar(select(CodingInput).where(
-                CodingInput.workspace_id == run.workspace_id, CodingInput.run_id == run_id, CodingInput.id == input_id,
-                CodingInput.kind == CodingInputKind.STEER,
-            ).with_for_update())
-            target = _REPORTED.get(state)
-            if item is None or target is None or item.status not in _OPEN:
-                continue
-            if target in _ORDER and _ORDER.index(target) < _ORDER.index(item.status) and state != "pending":
-                continue
-            item.status, item.updated_at = target, now()
-            if target is CodingInputStatus.REJECTED:
-                item.note = (message or "Kai couldn't take the message")[:200]
-            if target in (CodingInputStatus.DELIVERED, CodingInputStatus.ACCEPTED):
-                item.delivered_run_id = run_id
-            if target in (CodingInputStatus.DELIVERED, CodingInputStatus.REJECTED, CodingInputStatus.ACCEPTED):
-                _audit(session, item, str(target))
+        await steer_states_in(session, run, reports)
         await session.commit()
+
+
+async def steer_states_in(session: AsyncSession, run: CodingRun, reports: list[tuple[str, str, str | None]]) -> None:
+    """`steer_states` in the caller's transaction; the caller commits."""
+    run_id = run.id
+    for key, state, message in reports:
+        try:
+            input_id = uuid.UUID(key)
+        except ValueError:
+            continue
+        item = await session.scalar(select(CodingInput).where(
+            CodingInput.workspace_id == run.workspace_id, CodingInput.run_id == run_id, CodingInput.id == input_id,
+            CodingInput.kind == CodingInputKind.STEER,
+        ).with_for_update())
+        target = _REPORTED.get(state)
+        if item is None or target is None or item.status not in _OPEN:
+            continue
+        if target in _ORDER and _ORDER.index(target) < _ORDER.index(item.status) and state != "pending":
+            continue
+        item.status, item.updated_at = target, now()
+        if target is CodingInputStatus.REJECTED:
+            item.note = (message or "Kai couldn't take the message")[:200]
+        if target in (CodingInputStatus.DELIVERED, CodingInputStatus.ACCEPTED):
+            item.delivered_run_id = run_id
+        if target in (CodingInputStatus.DELIVERED, CodingInputStatus.REJECTED, CodingInputStatus.ACCEPTED):
+            _audit(session, item, str(target))
 
 
 async def settle_steers(session: AsyncSession, run: CodingRun) -> None:

@@ -4,6 +4,7 @@
 
 ### Changed
 
+- `dotrix runner` passes a person's messages to a local fx turn while it works, as Codes steers a cloud turn. The heartbeat hands the runner each message once the turn's driver has opened its inbox. The runner drops it there, and the local fx driver (`fx_local.py`, `--steer-dir`) sends it to fx as a steering prompt. Each message's state goes back on the next heartbeat and with the result. A message dropped after the turn's prompt ended is refused and goes to the next turn instead. Checked with the real kai.2 `fx` in its namespace, against a scripted model.
 - Standalone CLI releases can be versioned and published independently of the desktop installer and server.
 
 ## [0.2.0]

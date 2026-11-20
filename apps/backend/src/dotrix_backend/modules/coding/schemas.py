@@ -333,19 +333,38 @@ class CodingClaimed(BaseModel):
 COMMIT_SHA = r"^[0-9a-f]{40}$"  # a full commit ID, as `git rev-parse` prints it
 
 
+class RunnerSteerReport(BaseModel):
+    """What the local driver said about a person's message to the working turn."""
+
+    id: uuid.UUID
+    state: Literal["pending", "sent", "accepted", "delivered", "cancelled", "rejected"] = Field(
+        description="`pending`: the runner couldn't put it in the turn's inbox (it goes to the next turn)")
+    message: str | None = Field(default=None, max_length=200)
+
+
+class RunnerSteer(BaseModel):
+    id: uuid.UUID
+    message: str
+
+
 class RunnerHeartbeat(BaseModel):
     lease_token: int
     events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
     base_sha: str | None = Field(default=None, pattern=COMMIT_SHA)
     worktree: str | None = Field(default=None, max_length=1024, description="The turn's worktree on this computer")
+    steering_open: bool = Field(default=False, description="The turn's inbox takes a person's messages (a runner that steers)")
+    steering: list[RunnerSteerReport] = Field(default_factory=list, max_length=100)
 
 
 class RunnerHeartbeatRead(BaseModel):
     stop: bool = Field(description="Stop the agent and report `stopped`")
+    steers: list[RunnerSteer] = Field(default_factory=list, description="A person's messages for the working turn: "
+                                      "put each in its inbox, and report its state on the next heartbeat")
 
 
 class RunnerResult(BaseModel):
     lease_token: int
+    steering: list[RunnerSteerReport] = Field(default_factory=list, max_length=100)
     outcome: Literal["changes", "no_changes", "failed", "stopped"]
     patch: str | None = Field(default=None, max_length=20_000_000, description="`git diff --cached --binary` against base_sha")
     patch_b64: str | None = Field(

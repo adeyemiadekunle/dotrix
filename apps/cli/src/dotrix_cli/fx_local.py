@@ -143,7 +143,7 @@ def emit(kind: str, **values: Any) -> None:
     print(json.dumps({"type": kind, **values}), flush=True)
 
 
-async def run(profile: Path, browser: Path | None = None) -> int:
+async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None = None) -> int:
     from .fx_native import available, launch
 
     if not NATIVE_FX_POLICY_VALIDATED or not available():
@@ -178,6 +178,12 @@ async def run(profile: Path, browser: Path | None = None) -> int:
     failure = None
     text: list[str] = []
     last = ""
+    # A person's messages to this turn (--steer-dir), as fx-acp.mjs does for a cloud turn: each <id>.txt dropped in
+    # the inbox goes to fx as a steering prompt, and its states are printed as `steer` lines.
+    steering_ids: dict[int, str] = {}
+    accepted: set[str] = set()
+    steers: list[asyncio.Task] = []
+    extra_usage: list[dict] = []
 
     def send(value):
         assert child.stdin
@@ -191,11 +197,12 @@ async def run(profile: Path, browser: Path | None = None) -> int:
             if last.strip():
                 emit("text", text=last)
 
-    async def request(method, params):
+    async def request(method, params, identity=None):
         nonlocal counter
-        counter += 1
+        if identity is None:
+            counter += 1
+            identity = counter
         future = asyncio.get_running_loop().create_future()
-        identity = counter
         pending[identity] = future
         send({"id": identity, "method": method, "params": params})
         try:
@@ -224,6 +231,10 @@ async def run(profile: Path, browser: Path | None = None) -> int:
                         emit("error", message=failure)
                         if session_id:
                             send({"method": "session/cancel", "params": {"sessionId": session_id}})
+                    steer_id = steering_ids.get((((update.get("_meta") or {}).get("fx") or {}).get("steering") or {}).get("requestId"))
+                    if kind == "user_message_chunk" and steer_id and steer_id not in accepted:
+                        accepted.add(steer_id)  # fx gave the person's message to the model
+                        emit("steer", id=steer_id, state="accepted")
                     if kind == "agent_message_chunk" and update.get("content", {}).get("type") == "text":
                         text.append(update["content"]["text"])
                     elif kind in ("tool_call", "tool_call_update"):
@@ -272,9 +283,64 @@ async def run(profile: Path, browser: Path | None = None) -> int:
         session = await request("session/new", {"cwd": str(root), "mcpServers": servers})
         session_id = session["sessionId"]
         await request("session/set_mode", {"sessionId": session_id, "modeId": "ask"})
-        result = await request("session/prompt", {"sessionId": session_id, "prompt": [{"type": "text", "text": brief}]})
+        inbox_open = False
+        if steer_dir is not None:
+            try:
+                shutil.rmtree(steer_dir, ignore_errors=True)
+                steer_dir.mkdir(mode=0o700, parents=True)
+                inbox_open = True
+                emit("steering", open=True)
+            except OSError:
+                pass  # without an inbox the turn goes on; messages sent to it go to the next turn
+
+        async def one_steer(key: str, message: str) -> None:
+            nonlocal counter
+            counter += 1
+            identity = counter
+            steering_ids[identity] = key
+            emit("steer", id=key, state="sent")
+            try:
+                answer = await request("session/prompt", {"sessionId": session_id, "prompt": [{"type": "text", "text": message}],
+                                                          "_meta": {"fx": {"steer": True}}}, identity)
+            except Exception as exc:
+                emit("steer", id=key, state="cancelled" if cancelled else "rejected", message=str(exc)[:200])
+                return
+            how = ((answer or {}).get("_meta") or {}).get("fx", {}).get("steering")
+            if not how and (answer or {}).get("usage"):
+                extra_usage.append(answer["usage"])  # it came as the turn closed input: fx ran it as a turn of its own
+            emit("steer", id=key, state="cancelled" if how == "dropped" or (answer or {}).get("stopReason") == "cancelled" else "delivered")
+
+        async def watch_inbox() -> None:
+            while True:
+                await asyncio.sleep(0.25)
+                if cancelled:
+                    continue
+                for item in sorted(steer_dir.glob("*.txt")) if steer_dir else []:
+                    key = item.name[:-4]
+                    try:
+                        message = item.read_text(encoding="utf-8")
+                        item.unlink()
+                    except OSError:
+                        continue
+                    if not message.strip():
+                        emit("steer", id=key, state="rejected", message="The message was empty")
+                        continue
+                    flush()
+                    steers.append(asyncio.create_task(one_steer(key, message)))
+
+        watcher = asyncio.create_task(watch_inbox()) if inbox_open else None
+        try:
+            result = await request("session/prompt", {"sessionId": session_id, "prompt": [{"type": "text", "text": brief}]})
+        finally:
+            if watcher is not None:
+                watcher.cancel()
+                shutil.rmtree(steer_dir, ignore_errors=True)  # closed: what's left was never sent, and goes to the next turn
+                await asyncio.gather(*steers, return_exceptions=True)
         flush()
-        emit("done", final=last, usage=result.get("usage"), stopReason="refused" if failure else "cancelled" if cancelled else result.get("stopReason"))
+        usage = result.get("usage")
+        for more in extra_usage:
+            usage = {**(usage or {}), **{k: (usage or {}).get(k, 0) + v for k, v in more.items() if isinstance(v, (int, float))}}
+        emit("done", final=last, usage=usage, stopReason="refused" if failure else "cancelled" if cancelled else result.get("stopReason"))
         return 0 if not failure and (cancelled or result.get("stopReason") == "end_turn") else 1
     except Exception as exc:
         emit("error", message=str(exc)[:2000])
@@ -296,8 +362,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--browser-config", type=Path)
+    parser.add_argument("--steer-dir", type=Path)
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(run(args.profile, args.browser_config)))
+    raise SystemExit(asyncio.run(run(args.profile, args.browser_config, args.steer_dir)))
 
 
 if __name__ == "__main__":

@@ -236,3 +236,40 @@ async def test_what_doesnt_fit_one_turn_waits_for_the_next(db_client: AsyncClien
     assert await deliver_for_job(_ctx(db_client)) == 0  # again while that turn waits: nothing rejected
     statuses = {i["message"][0]: i["status"] for i in await _inputs(db_client, base, session_id, ada.headers)}
     assert statuses == {"a": "delivered", "b": "pending"}
+
+
+async def test_a_local_fx_turn_is_steered_through_its_runners_heartbeat(db_client: AsyncClient, queued) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation, CodingRunner
+
+    ada, _, ws, _, _, _ = queued
+    base, run = await _fx_asked(db_client, queued)
+    sessions = _ctx(db_client).session_factory
+    async with sessions() as session:
+        runner = CodingRunner(id=uuid.uuid4(), workspace_id=uuid.UUID(ws.rsplit("/", 1)[-1]), user_id=uuid.UUID(ada.id),
+                              name="laptop", tools=["fx"], project_ids=[run["project_id"]],
+                              created_at=datetime.now(UTC), last_seen_at=datetime.now(UTC))
+        session.add(runner)
+        await session.commit()
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, location=CodingLocation.LOCAL,
+                   runner_id=runner.id, lease_token=7)
+    [turn] = await _turns(db_client, base, run["session_id"], ada.headers)
+    assert turn["accepts_steering"] is True  # an fx turn on this computer takes steers too
+    steer = (await _send(db_client, base, run["session_id"], ada.headers, "steer", "Use the refunds table")).json()
+    beat = f"{ws}/coding/runners/{runner.id}/runs/{run['id']}/heartbeat"
+    # Until the runner says its inbox is open (a runner from before steering never does), the steer waits.
+    closed = await db_client.post(beat, json={"lease_token": 7}, headers=ada.headers)
+    assert closed.status_code == 200 and closed.json()["steers"] == [], closed.text
+    opened = (await db_client.post(beat, json={"lease_token": 7, "steering_open": True}, headers=ada.headers)).json()
+    assert opened["steers"] == [{"id": steer["id"], "message": "Use the refunds table"}]
+    assert (await db_client.post(beat, json={"lease_token": 7, "steering_open": True},
+                                 headers=ada.headers)).json()["steers"] == []  # once
+    reports = [{"id": steer["id"], "state": "sent"}, {"id": steer["id"], "state": "accepted"}]
+    await db_client.post(beat, json={"lease_token": 7, "steering_open": True, "steering": reports}, headers=ada.headers)
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "accepted"
+    # The last word comes with the result.
+    done = await db_client.post(f"{ws}/coding/runners/{runner.id}/runs/{run['id']}/result", headers=ada.headers, json={
+        "lease_token": 7, "outcome": "no_changes", "steering": [{"id": steer["id"], "state": "delivered"}]})
+    assert done.status_code in (200, 204), done.text
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "delivered" and item["delivered_run_id"] == run["id"]
