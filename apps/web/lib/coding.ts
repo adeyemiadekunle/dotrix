@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "@dotrix/ui/lib/toast";
 
-import { api, ensureSession, errorMessage, unwrap } from "@/lib/api";
+import { ApiError, api, ensureSession, errorMessage, unwrap } from "@/lib/api";
 import { issueQueriesOf, type Scope } from "@/lib/issues";
 import { desktop } from "@/src/core/desktop";
 
@@ -287,6 +287,72 @@ export function useFollowUp(scope: Scope | undefined, sessionId: string, issueKe
 }
 
 const sessionPath = (s: Scope, sessionId: string) => ({ ...path(s), session_id: sessionId });
+
+const inputsKey = (scope: Scope | undefined, sessionId: string) => ["coding-inputs", scope?.projectId, sessionId];
+
+/** Your messages to a session while Kai worked (steered into the turn, or queued for the next), polled while any wait. */
+export function useCodingInputs(scope: Scope | undefined, sessionId: string, enabled = true) {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: inputsKey(scope, sessionId),
+    queryFn: () =>
+      unwrap(
+        api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs", {
+          params: { path: sessionPath(scope!, sessionId) },
+        }),
+      ),
+    enabled: Boolean(scope && sessionId && enabled),
+    refetchInterval: (q) => ((q.state.data ?? []).some((i) => ["pending", "sending", "accepted"].includes(i.status)) ? 1500 : false),
+  });
+  // A queued message that became a turn: the session has a new turn to show.
+  const delivered = (query.data ?? [])
+    .map((i) => (i.kind === "queue" ? i.delivered_run_id : null))
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (scope && delivered) void client.invalidateQueries({ queryKey: ["coding-session", scope.projectId, sessionId] });
+  }, [client, scope, sessionId, delivered]);
+  return query;
+}
+
+/** The server's answer when Kai's turn had finished before the message arrived (coding/inputs.py): send a follow-up instead. */
+const NOT_WORKING = "Kai isn't working in this session";
+
+/** Steer Kai's working turn, or queue a message for its next. Resolves to null when the turn had already finished
+ * (the page hadn't seen it end yet): send the message as a follow-up instead. */
+export function useSendCodingInput(scope: Scope | undefined, sessionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Schemas["CodingInputCreate"]) =>
+      unwrap(
+        api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs", {
+          params: { path: sessionPath(scope!, sessionId) },
+          body,
+        }),
+      ).catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 409 && e.problem?.detail?.startsWith(NOT_WORKING)) return null;
+        throw e;
+      }),
+    onError: (e) => toast.error(errorMessage(e)),
+    onSettled: () => void client.invalidateQueries({ queryKey: inputsKey(scope, sessionId) }),
+  });
+}
+
+/** Take back a message Kai doesn't have yet. */
+export function useCancelCodingInput(scope: Scope | undefined, sessionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (inputId: string) =>
+      unwrap(
+        api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/inputs/{input_id}", {
+          params: { path: { ...sessionPath(scope!, sessionId), input_id: inputId } },
+        }),
+      ),
+    onError: (e) => toast.error(errorMessage(e)),
+    onSettled: () => void client.invalidateQueries({ queryKey: inputsKey(scope, sessionId) }),
+  });
+}
 
 /** Rename, pin, or archive a session. */
 export function useUpdateSession(scope: Scope | undefined, sessionId: string, issueKey: string) {

@@ -23,6 +23,7 @@ from .modules.automations.service import AutomationService
 from .modules.code.service import CodeService
 from .modules.coding.github_reviews import post_review as post_coding_review
 from .modules.coding.github_reviews import triage_ci
+from .modules.coding.inputs import deliver_for_job
 from .modules.coding.models import CodingRun, CodingRunStatus
 from .modules.connectors.webhook import delete_stale_deliveries, enqueue_stale_pending
 from .modules.documents.service import DocumentService
@@ -152,10 +153,17 @@ async def run_coding(
                 run.finished_at = datetime.now(UTC)
                 await session.commit()
         return
-    if operation is None:
-        await ctx.coding.execute(uuid.UUID(run_id))
-    else:
-        await ctx.coding.execute(uuid.UUID(run_id), operation=operation)
+    try:
+        if operation is None:
+            await ctx.coding.execute(uuid.UUID(run_id))
+        else:
+            await ctx.coding.execute(uuid.UUID(run_id), operation=operation)
+    finally:
+        # What the person sent while Kai worked: steers the turn didn't take, and queued messages, as its next turn.
+        try:
+            await deliver_for_job(ctx, uuid.UUID(run_id))
+        except Exception:
+            logger.exception("coding run %s: messages sent while it worked weren't delivered", run_id)
 
 
 async def run_automations(ctx: JobContext) -> dict[str, int]:

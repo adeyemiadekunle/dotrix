@@ -4,12 +4,14 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 
 from .models import (
     CodingAgent,
+    CodingInputKind,
+    CodingInputStatus,
     CodingLocation,
     CodingOrigin,
     CodingRunStatus,
@@ -204,6 +206,34 @@ class CodingRunRead(BaseModel):
     runner_name: str | None = Field(default=None, description="A local turn: the computer that claimed it")
     runner_id: uuid.UUID | None = Field(default=None, description="A local turn: the runner that claimed it")
     worktree: str | None = Field(default=None, description="A local turn: its worktree on that computer (only to whoever asked for it)")
+    accepts_steering: bool = Field(default=False, description="Whether you may steer it now (POST .../sessions/{id}/inputs "
+                                   "with `steer`): a cloud turn that's working, on an engine that takes a message mid-turn")
+
+
+class CodingInputCreate(BaseModel):
+    """A message to a session while Kai works: `steer` the working turn (it takes it at its next step; only when
+    the turn's `accepts_steering`), or `queue` it for the next turn."""
+
+    client_id: uuid.UUID = Field(description="Your own id for this message: sending it again returns the same one")
+    kind: CodingInputKind
+    message: str = Field(min_length=1, max_length=5_000)
+    work_mode: Literal["plan", "build"] | None = Field(default=None, description="A queued message's turn (default: the last turn's)")
+    approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
+
+
+class CodingInputRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    session_id: uuid.UUID
+    run_id: uuid.UUID = Field(description="The turn working when it was sent")
+    delivered_run_id: uuid.UUID | None = Field(description="The turn that took it")
+    kind: CodingInputKind = Field(description="`steer` or `queue`; a steer the turn didn't take is queued instead")
+    status: CodingInputStatus = Field(description="pending, sending, accepted, delivered, cancelled or rejected")
+    message: str
+    note: str | None = Field(description="Why it was queued instead, cancelled or refused")
+    created_at: datetime
+    updated_at: datetime
 
 
 class CodingSessionUpdate(BaseModel):

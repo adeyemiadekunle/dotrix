@@ -510,3 +510,64 @@ for (const width of [390, 1440]) {
     await halted;
   });
 }
+
+test("while Kai works, a message steers the turn or waits for the next, and one not yet sent can be taken back", async ({ page, context, baseURL }) => {
+  const working = { ...turn(2), status: "running", summary: null, files_changed: [], review_run_id: null, can_stop: true, accepts_steering: true };
+  const sent: Record<string, unknown>[] = [];
+  const inputs: Record<string, unknown>[] = [];
+  const cancelled: string[] = [];
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), working] }));
+    await page.route("**/coding/sessions/session1/stream", (route) => route.fulfill({ status: 204, body: "" }));
+    await page.route("**/coding/sessions/session1/inputs", async (route) => {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        sent.push(body);
+        const item = {
+          id: `in${sent.length}`,
+          session_id: "session1",
+          run_id: "turn2",
+          delivered_run_id: null,
+          note: null,
+          kind: body.kind,
+          status: "pending",
+          message: body.message,
+          created_at: date,
+          updated_at: date,
+        };
+        inputs.unshift(item);
+        await route.fulfill({ status: 201, json: item });
+      } else await route.fulfill({ status: 200, json: inputs });
+    });
+    await page.route("**/coding/sessions/session1/inputs/in2", async (route) => {
+      cancelled.push(route.request().method());
+      inputs[0] = { ...inputs[0], status: "cancelled" };
+      await route.fulfill({ status: 200, json: inputs[0] });
+    });
+  });
+  const box = page.getByRole("textbox", { name: "Follow-up" });
+  await expect(box).toHaveAttribute("placeholder", "Tell Kai something while it works");
+  await box.fill("Use the refunds table");
+  await box.press("Enter");
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toMatchObject({ kind: "steer", message: "Use the refunds table" });
+  await expect(page.getByText("Waiting for Kai's next step")).toBeVisible();
+  await page.getByLabel("Delivery action").selectOption("queue");
+  await expect(box).toHaveAttribute("placeholder", "Queue a message for Kai's next turn");
+  await box.fill("Then update the changelog");
+  await box.press("Enter");
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]).toMatchObject({ kind: "queue", message: "Then update the changelog" });
+  await expect(page.getByText("Waiting for this turn to end")).toBeVisible();
+  // An empty box keeps Stop; a pending message can be taken back.
+  await expect(page.getByRole("button", { name: /stop/i }).first()).toBeVisible();
+  // Straight from typing: the message box keeps its focus, so the click lands.
+  await expect(box).toBeFocused();
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Then update the changelog" })
+    .getByRole("button", { name: /cancel/i })
+    .click();
+  await expect.poll(() => cancelled).toEqual(["DELETE"]);
+  await expect(page.getByText("Then update the changelog")).toBeHidden();
+});

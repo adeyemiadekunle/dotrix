@@ -660,7 +660,9 @@ export function Queue({ entries }: { entries: QueueEntry[] }) {
                     </TraceDescription>
                   </TraceLine>
                   {e.onCancel && (
-                    <ActionButton className="btn btn-xs btn-ghost" disabled={e.cancelling} onClick={e.onCancel}>
+                    // The message box keeps its focus: losing it shrinks the composer under this list, which would move
+                    // the button between the press and the release and lose the click.
+                    <ActionButton className="btn btn-xs btn-ghost" disabled={e.cancelling} onMouseDown={(ev) => ev.preventDefault()} onClick={e.onCancel}>
                       Cancel
                     </ActionButton>
                   )}
