@@ -30733,6 +30733,26 @@
             ],
             "title": "Source Plan Id"
           },
+          "step_by_step": {
+            "type": "boolean",
+            "title": "Step By Step",
+            "description": "With `source_plan_id`: build the plan one task a turn. This turn does the first task; each other is queued as a turn of its own, in dependency order",
+            "default": false
+          },
+          "plan_task": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 40.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Task",
+            "description": "With `source_plan_id`: build only this task (its number in the plan, from 1), with the whole plan as context"
+          },
           "message": {
             "type": "string",
             "maxLength": 5000,
@@ -31617,6 +31637,14 @@
             ],
             "title": "Worktree",
             "description": "A local turn: its worktree on that computer (only to whoever asked for it)"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Questions",
+            "description": "What Kai asked at the end of the turn (its final message's `questions` block); answer in the next turn. Queued messages wait until then"
           },
           "accepts_steering": {
             "type": "boolean",

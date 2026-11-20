@@ -294,3 +294,124 @@ async def test_a_queued_message_after_a_local_turn_is_the_next_turn_on_the_same_
     assert made == 1, await _inputs(db_client, base, run["session_id"], ada.headers)
     turns = await _turns(db_client, base, run["session_id"], ada.headers)
     assert turns[1]["location"] == "local" and "Then add a test" in turns[1]["brief"], turns[1]
+
+
+PLAN = {"title": "Refunds", "summary": "Refund payments.", "acceptance_criteria": ["Refunds work"], "open_questions": [],
+        "tasks": [{"title": "Add the refund call", "detail": "In payments.py", "depends_on": [3]},
+                  {"title": "Document refunds", "detail": "In README", "depends_on": [1]},
+                  {"title": "Add the refunds table", "detail": "A migration", "depends_on": []}]}
+
+
+async def _planned(db_client: AsyncClient, coding) -> tuple[str, dict]:  # noqa: F811
+    """A session whose finished turn saved a plan (as a Plan turn does), its tasks depending on each other."""
+    base, run = await _asked(db_client, coding)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC),
+                   work_mode="plan", plan_result=PLAN)
+    return base, run
+
+
+async def test_a_plan_built_step_by_step_is_one_turn_a_task_in_dependency_order(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    session_id = plan["session_id"]
+    res = await db_client.post(f"{base}/coding/sessions/{session_id}/turns", headers=ada.headers, json={
+        "message": "Build the plan step by step", "work_mode": "build", "source_plan_id": plan["id"], "step_by_step": True})
+    assert res.status_code == 201, res.text
+    first = res.json()
+    assert "## This turn: task 3 of 3" in first["brief"] and "Add the refunds table" in first["brief"]  # no dependencies
+    waiting = [i["message"] for i in reversed(await _inputs(db_client, base, session_id, ada.headers))]
+    assert waiting == ["Task 1 of 3: Add the refund call", "Task 2 of 3: Document refunds"]
+    for number in (1, 2):
+        turns = await _turns(db_client, base, session_id, ada.headers)
+        await _set_run(db_client, turns[-1]["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+        assert await deliver_for_job(_ctx(db_client)) == 1  # the next task only, never two at once
+        turns = await _turns(db_client, base, session_id, ada.headers)
+        assert f"## This turn: task {number} of 3" in turns[-1]["brief"], turns[-1]["brief"][-400:]
+        assert turns[-1]["work_mode"] == "build" and "## Selected coding plan" in turns[-1]["brief"]
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    await _set_run(db_client, turns[-1]["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 0 and len(turns) == 4  # the plan, then three tasks
+
+
+async def test_a_stopped_task_cancels_the_plans_remaining_tasks(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    first = (await db_client.post(f"{base}/coding/sessions/{plan['session_id']}/turns", headers=ada.headers, json={
+        "message": "Step by step", "work_mode": "build", "source_plan_id": plan["id"], "step_by_step": True})).json()
+    await _set_run(db_client, first["id"], status=CodingRunStatus.STOPPED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    assert {i["status"] for i in await _inputs(db_client, base, plan["session_id"], ada.headers)} == {"cancelled"}
+
+
+async def test_one_task_of_a_plan_can_be_built_on_its_own(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    url = f"{base}/coding/sessions/{plan['session_id']}/turns"
+    body = {"message": "Just the docs", "work_mode": "build", "source_plan_id": plan["id"]}
+    missing = await db_client.post(url, headers=ada.headers, json={**body, "plan_task": 9})
+    assert missing.status_code == 422
+    turn = (await db_client.post(url, headers=ada.headers, json={**body, "plan_task": 2})).json()
+    assert "## This turn: task 2 of 3" in turn["brief"]
+    assert await _inputs(db_client, base, plan["session_id"], ada.headers) == []  # nothing else queued
+
+
+ASKED = """I started on refunds but stopped: two things only you can decide.
+
+```questions
+- Should partial refunds be allowed?
+2. Which currency do refunds use when the order mixes several?
+```"""
+
+
+def test_kais_questions_are_read_from_its_final_message() -> None:
+    from dotrix_backend.modules.coding.planning import questions_in
+
+    assert questions_in(ASKED) == ["Should partial refunds be allowed?",
+                                   "Which currency do refunds use when the order mixes several?"]
+    assert questions_in("Done: added refunds; tests pass.") == []
+    assert questions_in("```questions\n" + "\n".join(f"- q{i}" for i in range(9)) + "\n```") == [f"q{i}" for i in range(5)]
+
+
+async def test_a_turn_that_asks_questions_holds_the_queue_until_the_person_answers(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    await _send(db_client, base, session_id, ada.headers, "queue", "Then add a changelog entry")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC), summary=ASKED)
+    [turn] = await _turns(db_client, base, session_id, ada.headers)
+    assert turn["questions"] == ["Should partial refunds be allowed?",
+                                 "Which currency do refunds use when the order mixes several?"]
+    assert await deliver_for_job(_ctx(db_client)) == 0  # waits for the answer
+    assert [i["status"] for i in await _inputs(db_client, base, session_id, ada.headers)] == ["pending"]
+    answer = await db_client.post(f"{base}/coding/sessions/{session_id}/turns", headers=ada.headers,
+                                  json={"message": "Yes to partial refunds; use the order's first currency"})
+    assert answer.status_code == 201, answer.text
+    await _set_run(db_client, answer.json()["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC),
+                   summary="Added partial refunds.")
+    assert await deliver_for_job(_ctx(db_client)) == 1  # answered: the queue goes on
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert turns[-1]["questions"] == [] and "Then add a changelog entry" in turns[-1]["brief"]
+
+
+async def test_a_plan_tasks_instructions_are_in_the_turns_task_not_kais_pinned_contract(db_client: AsyncClient, queued) -> None:
+    """fx takes Kai's contract as the session's pinned system profile; a task's instructions must stay in the turn's
+    own part of the brief, or a resumed session would never see them."""
+    from dotrix_backend.modules.coding.brief import CONTRACT_HEADING, split_contract
+
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    turn = (await db_client.post(f"{base}/coding/sessions/{plan['session_id']}/turns", headers=ada.headers, json={
+        "message": "Just the docs", "work_mode": "build", "source_plan_id": plan["id"], "plan_task": 2})).json()
+    task, contract = split_contract(turn["brief"])
+    assert "## This turn: task 2 of 3" in task and "## Selected coding plan" in task
+    assert contract is not None and contract.startswith(CONTRACT_HEADING) and "## This turn" not in contract
+
+
+async def test_a_stopped_turn_with_questions_still_cancels_its_queue(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.STOPPED, finished_at=datetime.now(UTC), summary=ASKED)
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "cancelled" and item["note"] == "The turn was stopped"

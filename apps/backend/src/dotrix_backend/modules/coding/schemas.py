@@ -67,6 +67,10 @@ class CodingRunCreate(BaseModel):
 class CodingFollowUp(BaseModel):
     work_mode: Literal["plan", "build"] = "build"
     source_plan_id: uuid.UUID | None = None
+    step_by_step: bool = Field(default=False, description="With `source_plan_id`: build the plan one task a turn. This "
+                               "turn does the first task; each other is queued as a turn of its own, in dependency order")
+    plan_task: int | None = Field(default=None, ge=1, le=40, description="With `source_plan_id`: build only this task "
+                                  "(its number in the plan, from 1), with the whole plan as context")
     message: str = Field(min_length=1, max_length=5_000, description="What to do in this turn")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation | None = Field(default=None, description=_LOCATION)
@@ -206,6 +210,8 @@ class CodingRunRead(BaseModel):
     runner_name: str | None = Field(default=None, description="A local turn: the computer that claimed it")
     runner_id: uuid.UUID | None = Field(default=None, description="A local turn: the runner that claimed it")
     worktree: str | None = Field(default=None, description="A local turn: its worktree on that computer (only to whoever asked for it)")
+    questions: list[str] = Field(default_factory=list, description="What Kai asked at the end of the turn (its final "
+                                 "message's `questions` block); answer in the next turn. Queued messages wait until then")
     accepts_steering: bool = Field(default=False, description="Whether you may steer it now (POST .../sessions/{id}/inputs "
                                    "with `steer`): a cloud turn that's working, on an engine that takes a message mid-turn")
 

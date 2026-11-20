@@ -2510,7 +2510,9 @@ export function Session({ cs }: { cs: CodingSession }) {
                           ? `Tell ${kai} something while it works`
                           : working
                             ? `Queue a message for ${kai}'s next turn`
-                            : `Ask ${kai} for a follow-up on the same branch`
+                            : (latest?.questions ?? []).length
+                              ? `Answer ${kai}'s questions`
+                              : `Ask ${kai} for a follow-up on the same branch`
                     }
                     value={ask}
                     disabled={busy && !working}
@@ -2571,6 +2573,28 @@ export function Session({ cs }: { cs: CodingSession }) {
                   <BackgroundTasks scope={scope} run={turn} />
                 </Fragment>
               ))}
+              {!busy && latest && (latest.questions ?? []).length > 0 && (
+                <div className="change" aria-label={`${kai}'s questions`}>
+                  <div className="change-h">
+                    <Ic n="question" s={14} />
+                    <b style={{ fontWeight: 500 }}>{kai} has questions</b>
+                  </div>
+                  <ol>
+                    {(latest.questions ?? []).map((question, index) => (
+                      <li key={index}>{question}</li>
+                    ))}
+                  </ol>
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      Answer below: your reply is the next turn. Anything queued waits until then.
+                    </span>
+                    <span className="sp" />
+                    <ActionButton className="btn btn-primary" onClick={() => box.current?.focus()}>
+                      Answer
+                    </ActionButton>
+                  </div>
+                </div>
+              )}
               {latest?.plan_result && (
                 <div className="change" aria-label="Kai's saved plan">
                   <h3>{String(latest.plan_result.title ?? "Implementation plan")}</h3>
@@ -2606,6 +2630,23 @@ export function Session({ cs }: { cs: CodingSession }) {
                   >
                     Build this plan
                   </ActionButton>
+                  {(Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks.length : 0) > 1 && (
+                    <ActionButton
+                      className="btn"
+                      disabled={busy || follow.isPending}
+                      title="A turn for each task, in order: the next starts when one finishes, and you can cancel what's left"
+                      onClick={() =>
+                        follow.mutate({
+                          message: "Build the selected plan, one task at a time",
+                          work_mode: "build",
+                          source_plan_id: latest.id,
+                          step_by_step: true,
+                        })
+                      }
+                    >
+                      Build step by step
+                    </ActionButton>
+                  )}
                 </div>
               )}
               {latest?.status === "awaiting_approval" && (

@@ -571,3 +571,41 @@ test("while Kai works, a message steers the turn or waits for the next, and one 
   await expect.poll(() => cancelled).toEqual(["DELETE"]);
   await expect(page.getByText("Then update the changelog")).toBeHidden();
 });
+
+test("a saved plan can be built one task a turn", async ({ page, context, baseURL }) => {
+  const plan = {
+    title: "Refunds",
+    summary: "Refund payments.",
+    acceptance_criteria: ["Refunds work"],
+    open_questions: [],
+    tasks: [
+      { title: "Add the refunds table", detail: "A migration", depends_on: [] },
+      { title: "Add the refund call", detail: "In payments.py", depends_on: [1] },
+    ],
+  };
+  const planned = { ...turn(2), status: "no_changes", work_mode: "plan", plan_result: plan, files_changed: [], review_run_id: null };
+  const asked: Record<string, unknown>[] = [];
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), planned] }));
+    await page.route("**/coding/sessions/session1/turns", async (route) => {
+      asked.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({ status: 201, json: { ...turn(3), status: "awaiting_approval" } });
+    });
+  });
+  await page.getByRole("button", { name: "Build step by step" }).click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toMatchObject({ work_mode: "build", source_plan_id: "turn2", step_by_step: true });
+});
+
+test("when Kai stops to ask, its questions show and the box asks for the answer", async ({ page, context, baseURL }) => {
+  const asking = { ...turn(2), status: "no_changes", files_changed: [], review_run_id: null, questions: ["Should partial refunds be allowed?"] };
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), asking] }));
+  });
+  const card = page.getByLabel("Kai's questions");
+  await expect(card.getByText("Should partial refunds be allowed?")).toBeVisible();
+  await card.getByRole("button", { name: "Answer" }).click();
+  const box = page.getByRole("textbox", { name: "Follow-up" });
+  await expect(box).toBeFocused();
+  await expect(box).toHaveAttribute("placeholder", "Answer Kai's questions");
+});

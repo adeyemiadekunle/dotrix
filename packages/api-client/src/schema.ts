@@ -7169,6 +7169,17 @@ export interface components {
             /** Source Plan Id */
             source_plan_id?: string | null;
             /**
+             * Step By Step
+             * @description With `source_plan_id`: build the plan one task a turn. This turn does the first task; each other is queued as a turn of its own, in dependency order
+             * @default false
+             */
+            step_by_step: boolean;
+            /**
+             * Plan Task
+             * @description With `source_plan_id`: build only this task (its number in the plan, from 1), with the whole plan as context
+             */
+            plan_task?: number | null;
+            /**
              * Message
              * @description What to do in this turn
              */
@@ -7536,6 +7547,11 @@ export interface components {
              * @description A local turn: its worktree on that computer (only to whoever asked for it)
              */
             worktree?: string | null;
+            /**
+             * Questions
+             * @description What Kai asked at the end of the turn (its final message's `questions` block); answer in the next turn. Queued messages wait until then
+             */
+            questions?: string[];
             /**
              * Accepts Steering
              * @description Whether you may steer it now (POST .../sessions/{id}/inputs with `steer`): a cloud turn that's working, on an engine that takes a message mid-turn
