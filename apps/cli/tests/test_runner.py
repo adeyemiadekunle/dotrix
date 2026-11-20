@@ -656,6 +656,7 @@ async def test_stop_ends_the_wait_between_retries(tmp_path: Path, monkeypatch) -
 async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(tmp_path, monkeypatch):
     """The heartbeat hands the runner a person's message once the driver's inbox is open; the runner drops it there,
     and the driver's reports go back on the next heartbeat and with the result."""
+    import asyncio
     import sys
 
     key = "0196a1b2-0000-7000-8000-000000000001"
@@ -683,6 +684,14 @@ async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(t
             return {"stop": False}
 
     monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("fx", [sys.executable, "-c", driver]))
+    started: list[list[str]] = []
+    spawn = asyncio.create_subprocess_exec
+
+    async def recording(*argv, **kwargs):
+        started.append(list(argv))
+        return await spawn(*argv, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", recording)
     monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
     monkeypatch.setattr("dotrix_cli.fx_local.NATIVE_FX_POLICY_VALIDATED", True)
     monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: True)
@@ -692,6 +701,8 @@ async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(t
                          beat_seconds=0.1, events_seconds=0.1)
     await runner.work({**_RUN, "tool": "fx"})
     [result] = results
+    [argv] = [a for a in started if "--steer-dir" in a]
+    assert Path(argv[argv.index("--steer-dir") + 1]).name.endswith(f"-{_RUN['lease_token']}")  # one inbox per lease attempt
     reported = [s["state"] for b in beats for s in b.get("steering") or []] + [s["state"] for s in result.get("steering") or []]
     assert reported == ["sent", "accepted", "delivered"], (beats, result)
     assert any(e["text"] == "Heard: Use the refunds table" for b in beats for e in b["events"]) or any(

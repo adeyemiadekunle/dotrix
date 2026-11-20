@@ -836,7 +836,9 @@ class LocalRunner:
                 # The turn's inbox for a person's messages while it works (the driver opens it, the heartbeat fills it).
                 steer_root = Path(tempfile.gettempdir()) / f"dotrix-steer-{os.getuid() if hasattr(os, 'getuid') else 'user'}"
                 steer_root.mkdir(mode=0o700, exist_ok=True)
-                inbox = steer_root / ("".join(c for c in str(run["run_id"]) if c.isalnum())[:64] or "turn")
+                # One per lease attempt: a driver left over from an earlier attempt (a crashed runner) never reads
+                # or removes this attempt's inbox.
+                inbox = steer_root / f"{''.join(c for c in str(run['run_id']) if c.isalnum())[:64] or 'turn'}-{int(token)}"
                 tool = Tool(tool.name, [*tool.argv, "--steer-dir", str(inbox)])
         # A custom command stands in for the requested tool; its name is only a display label.
         environment_tool = run["tool"] if self.command else tool.name
