@@ -40,6 +40,7 @@ from .models import (
     CodingRun,
     CodingRunStatus,
 )
+from .planning import questions_in
 from .schemas import CodingFollowUp, CodingInputCreate, CodingInputRead
 
 logger = logging.getLogger(__name__)
@@ -318,6 +319,9 @@ async def _deliver(sessions: SessionFactory, make_service: Callable[[AsyncSessio
         if not queued:
             await session.commit()
             return 0
+        if latest.work_mode != "plan" and questions_in(latest.summary):
+            await session.commit()
+            return 0  # Kai asked the person something: what's queued (a plan's next task too) waits for the answer
         reason = _ENDS_THE_QUEUE.get(latest.status)
         if reason is not None:
             for item in queued:
@@ -327,10 +331,11 @@ async def _deliver(sessions: SessionFactory, make_service: Callable[[AsyncSessio
             return 0
         # One turn takes the oldest messages that ask for the same work mode and approval mode, up to the size of a
         # follow-up: a later message with other settings waits for a turn of its own, so it keeps them.
-        def settings(item: CodingInput) -> tuple[str, str | None]:
+        # A plan's task (step by step) is always a turn of its own.
+        def settings(item: CodingInput) -> tuple[str, str | None, int | None]:
             payload = item.payload or {}
             return (payload.get("work_mode") or latest.work_mode or "build",
-                    payload.get("approval_mode") or latest.approval_mode)
+                    payload.get("approval_mode") or latest.approval_mode, payload.get("plan_task"))
 
         taking, size = [], 0
         for item in queued:
@@ -345,9 +350,12 @@ async def _deliver(sessions: SessionFactory, make_service: Callable[[AsyncSessio
             if (project is None or member is None or not can(member, Permission.INSTRUCT_CODING_AGENT)
                     or await ProjectRepository(session).visible(member, project.id) is None):
                 raise Forbidden("You can no longer instruct Kai in this project")
-            work_mode, approval_mode = settings(first)
+            work_mode, approval_mode, plan_task = settings(first)
             text = "\n\n".join(item.message for item in taking)[:_FOLLOW_UP_CHARS]
-            follow = CodingFollowUp(message=text, work_mode=work_mode, approval_mode=approval_mode)
+            plan_id = (first.payload or {}).get("plan_id") if plan_task else None
+            follow = CodingFollowUp(message=text, work_mode=work_mode, approval_mode=approval_mode,
+                                    source_plan_id=uuid.UUID(plan_id) if plan_id else None,
+                                    plan_task=plan_task if plan_id else None)
             service: CodingService = make_service(session)
             at = now()
             for item in taking:  # committed with the turn, by follow_up
@@ -397,3 +405,27 @@ async def deliver_for_job(ctx: Any, run_id: uuid.UUID | None = None) -> int:
         if session_id is None:
             return 0
     return await deliver_queued(ctx.session_factory, make, session_id=session_id)
+
+
+def queue_plan_tasks(session: AsyncSession, access: ProjectAccess, run: CodingRun, plan: CodingRun,
+                     tasks: list[int], approval_mode: Any) -> None:
+    """Step by step: a saved plan's other tasks, queued behind `run` (its first task) in order, each to become a turn
+    of its own once the one before it finished (`deliver_queued`). Shown and cancellable like any queued message;
+    a turn that fails or is stopped cancels the rest. Added to the caller's transaction."""
+    if run.id is None:
+        run.id = uuid7()
+    titles = plan.plan_result.get("tasks") or []
+    at = now()
+    for number in tasks:
+        title = str((titles[number - 1] or {}).get("title", "")) if number <= len(titles) else ""
+        item = CodingInput(
+            id=uuid7(), workspace_id=access.project.workspace_id, project_id=access.project.id,
+            session_id=run.session_id, owner_id=access.member.user_id, client_id=uuid7(), run_id=run.id,
+            kind=CodingInputKind.QUEUE, status=CodingInputStatus.PENDING,
+            message=f"Task {number} of {len(titles)}: {title}"[:5_000],
+            payload={"work_mode": "build", "plan_task": number, "plan_id": str(plan.id),
+                     **({"approval_mode": str(approval_mode)} if approval_mode else {})},
+            created_at=at, updated_at=at,
+        )
+        session.add(item)
+        _audit(session, item, "submitted")
