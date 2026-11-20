@@ -640,14 +640,17 @@ def test_a_new_session_gets_kai_s_workers_as_fx_profiles_and_a_resumed_one_keeps
     assert sorted(p.name for p in agents.iterdir()) == sorted(w["name"] for w in WORKERS)
 
 
-def test_saved_workers_changed_since_the_session_started_never_run(fake_fx) -> None:
+@pytest.mark.parametrize("drop_profile", [False, True])
+def test_saved_workers_changed_since_the_session_started_never_run(fake_fx, drop_profile) -> None:
     _drive(fake_fx, "Fix the tests", *_profile())
     record = Path(fake_fx["HOME"]) / ".fx" / "dotrix" / "s1.json"
     saved = json.loads(record.read_text())
     saved["workers"][0]["tools"] = ["*"]  # widened in the saved state
+    if drop_profile:  # and the profile removed, so the digest can't be recomputed
+        del saved["profile"]
     record.write_text(json.dumps(saved))
     Path(fake_fx["FAKE_FX_LOG"]).unlink()
-    events = _drive(fake_fx, "Now the docs", "--resume", *_profile())
+    events = _drive(fake_fx, "Now the docs", "--resume", *_profile(), "--profile-digest", _digest())
     assert events[-1]["type"] == "error" and "saved state doesn't match" in events[-1]["message"]
     assert not Path(fake_fx["FAKE_FX_LOG"]).exists()
 

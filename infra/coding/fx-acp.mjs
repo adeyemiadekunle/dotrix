@@ -220,8 +220,11 @@ const digestOf = (text, set) =>
     : null;
 if (continuing) {
   // Dotrix's record of the session's profile, and the saved state itself, must agree.
-  const recomputed = "profile" in kept ? digestOf(kept.profile, kept.workers ?? null) : (kept.profileDigest ?? null);
-  if ((pinnedDigest && kept.profileDigest !== pinnedDigest) || recomputed !== (kept.profileDigest ?? null)) {
+  // A record from before profiles were saved has neither profile nor workers and keeps its digest as it is; one
+  // with workers but no profile can't be checked, so its workers could have been changed: refuse it.
+  const legacy = !("profile" in kept) && kept.workers == null;
+  const recomputed = legacy ? (kept.profileDigest ?? null) : digestOf(kept.profile, kept.workers ?? null);
+  if ((!legacy && !("profile" in kept)) || (pinnedDigest && kept.profileDigest !== pinnedDigest) || recomputed !== (kept.profileDigest ?? null)) {
     fail("This coding session's saved state doesn't match the profile it was started with; start a new session");
   }
 }
