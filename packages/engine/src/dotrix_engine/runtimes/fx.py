@@ -38,6 +38,7 @@ _TOOL_ERROR_CHARS = 1_000
 LIBFX_ARTIFACTS: dict[str, tuple[str, ...]] = {
     "0.0.16": (),
     "0.0.17-kai.1": ("0.0.16",),
+    "0.0.17-kai.2": ("0.0.17-kai.1", "0.0.16"),
 }
 # The package each version comes from. fx's own releases are `libfx` on npm; the Kai runtime's
 # (adeyemiadekunle/kai-runtime) are `@kunemi-group/kai` on GitHub Packages, versioned
