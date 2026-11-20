@@ -741,10 +741,13 @@ class Fx:
     takes_profile = True
 
     def profile_args(self, contract: str, pinned: str | None) -> list[str]:
-        """The driver's arguments for Kai's profile: the contract, which a new session starts with, and the
-        digest Dotrix recorded for this session, which a resumed one must match."""
+        """The driver's arguments for Kai's profile: the contract and Kai's workers (`workers.WORKERS`), which a
+        new session starts with, and the digest Dotrix recorded for this session, which a resumed one must match."""
+        from .workers import WORKERS
+
         encoded = base64.b64encode(contract.encode()).decode()
-        return ["--profile", encoded, *(["--profile-digest", pinned] if pinned else [])]
+        workers = base64.b64encode(json.dumps(list(WORKERS)).encode()).decode()
+        return ["--profile", encoded, "--workers", workers, *(["--profile-digest", pinned] if pinned else [])]
 
     def save_state(self, session: uuid.UUID) -> str:  # its sessions and ours; the settings are written each turn
         return f'cd "$HOME" && [ -d {FX_DATA} ] && tar -cz --exclude={FX_DATA}/settings.json {FX_DATA} | base64 -w0'
