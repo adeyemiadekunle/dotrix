@@ -184,3 +184,67 @@ async def test_live_script_benchmark(
         print(f"Benchmark artifact: {report}")
     # Finish all pairs and retain failed answers' metrics before failing the quality check.
     assert all(trial["status"] == "completed" and trial["correct"] for trial in trials), report
+
+
+AREAS = ["login", "search", "invoices", "the sidebar", "notifications", "exports", "the API docs", "onboarding",
+         "billing emails", "the board", "file uploads", "dark mode", "the audit log", "webhooks", "settings"]
+REFUNDS = ["Refund lands in the wrong zone", "Partial refund drops the tax line", "Refund email says 'charged'",
+           "Refunds over 30 days are refused silently", "Refund button shows for free plans"]
+BOARD_QUESTION = ("Which issues on the board are about refunds (in their title or description)? Give me only their keys "
+                  "and titles, one per line.")
+
+
+async def _fill_board(fx) -> list[str]:
+    """150 issues with long descriptions, five of them about refunds: most of what a read returns is noise."""
+    base = f"/v1/workspaces/{fx.existing.workspace_id}/projects/{fx.existing.project_id}/issues"
+    filler = ("The behaviour differs between browsers and the steps below reproduce it most of the time. " * 6).strip()
+    refund_keys = []
+    for i in range(150):
+        refund = i % 30 == 7
+        title = REFUNDS[i // 30] if refund else f"Tidy up {AREAS[i % len(AREAS)]} ({i})"
+        made = await fx.client.post(base, headers=fx.headers, json={
+            "title": title, "type": "bug" if refund else "task",
+            "description": f"{'Customers asking for their money back hit this.' if refund else 'Small cleanup.'} {filler}",
+        })
+        assert made.status_code == 201, made.text
+        if refund:
+            refund_keys.append(made.json()["key"])
+    return refund_keys
+
+
+COUNT_QUESTION = ("Count the issues on the board exactly: how many are bugs and how many are tasks? Answer as "
+                  "'bugs: N, tasks: M'.")
+
+
+@pytest.mark.parametrize("question", [pytest.param(BOARD_QUESTION, id="find"), pytest.param(COUNT_QUESTION, id="count"),
+                                      pytest.param(COUNT_QUESTION + " Use run_script.", id="count-told")])
+@pytest.mark.parametrize(("runtime", "provider", "model"), CASES)
+async def test_live_nova_filters_a_large_board_with_and_without_scripts(
+    nova_pilot_world, db_client, agent_script, outbox, storage, checkouts, runtime, provider, model, question,  # noqa: F811
+):
+    """The case code mode is for: a read whose result is mostly thrown away (150 issues, 5 wanted)."""
+    chat, fx = await _live(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script, provider)
+    settings = fx.runner.settings
+    try:
+        wanted = await _fill_board(fx)
+        measured = {}
+        for scripts in (True, False):
+            fx.runner.settings = settings.model_copy(update={"agent_scripts": scripts})
+            run = (await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": question, "chat_runtime": runtime, "work_mode": "discuss", "model": model,
+            })).json()
+            assert run["status"] == "completed", (scripts, run["status"], run.get("error"))
+            events = (await fx.client.get(f"{fx.base}/runs/{run['id']}/events", headers=fx.headers)).json()["events"]
+            steps = [e["data"].get("label") for e in events if e["kind"] == "activity"]
+            tools = {t["tool"]: (t["calls"], t["result_tokens"]) for t in (run.get("breakdown") or {}).get("tools", [])}
+            counted = "bugs: 5" in run["reply"].lower() and "tasks: 145" in run["reply"].lower()
+            found = wanted if counted else [k for k in wanted if k in run["reply"]]
+            measured[scripts] = {"scripted": "Working through the project in one step" in steps,
+                                 "model_calls": run.get("model_calls"), "input": run.get("input_tokens"),
+                                 "output": run.get("output_tokens"), "cached": run.get("cached_input_tokens"),
+                                 "tools": tools, "found": f"{len(found)}/{len(wanted)}"}
+            print(f"LIVE BOARD {runtime}/{model} scripts={scripts}: {measured[scripts]}\n  steps={steps}\n  reply={run['reply']!r}")
+        assert all(m["found"] == f"{len(wanted)}/{len(wanted)}" for m in measured.values()), measured
+    finally:
+        fx.runner.settings = settings
+        await chat.__aexit__(None, None, None)

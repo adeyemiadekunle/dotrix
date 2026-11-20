@@ -216,10 +216,12 @@ SCRIPT_GUIDE = """
 
 ## Scripts
 
-When a task needs several reads (a search, then the documents it found; every open issue that mentions
-something; the same lookup for several names), use `run_script` to do them in one step: call the functions with
-`await`, run independent ones together with `asyncio.gather`, and return only the parts you need. Keep using the
-ordinary tools for a single read, and always for changes."""
+Use `run_script` whenever what you need is much smaller than what the reads return: counting, totalling, sorting
+or picking from a list of issues, documents or search results; or several reads (a search, then the documents it
+found; the same lookup for several names). A script calls the functions with `await`, runs independent ones together
+with `asyncio.gather`, and returns only the answer, so the full lists never reach you. For example, to count bugs:
+`len(await list_issues(type="bug"))`. Keep using the ordinary tools when you need a result in full, and always for
+changes."""
 
 
 class ScriptArgs(BaseModel):
