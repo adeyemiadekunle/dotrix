@@ -198,8 +198,19 @@ export function useCodingSession(scope: Scope | undefined, sessionId: string | n
       ),
     enabled: Boolean(scope && sessionId),
     refetchOnMount: "always",
-    refetchInterval: (query) => (live ? false : pace(query.state.data)),
+    // A command Kai left running goes on between turns: the session is looked at again until it finishes.
+    refetchInterval: (query) => (live ? false : pace(query.state.data) || (keepsRunning(query.state.data) ? 15_000 : false)),
   });
+}
+
+/** Whether the session's latest turn lists a command of Kai's still running (`background-running`, not since finished). */
+function keepsRunning(turns: CodingRun[] | undefined): boolean {
+  const latest = turns?.at(-1);
+  if (!latest) return false;
+  const states = new Map<string, string>();
+  for (const e of latest.events)
+    if (e.ref?.startsWith("command:") && e.kind.startsWith("background-") && e.kind !== "background-output") states.set(e.ref, e.kind);
+  return [...states.values()].includes("background-running");
 }
 
 /**

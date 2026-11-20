@@ -7,6 +7,11 @@
 //   {"type":"tool_result","id":…,"status":"completed"|"failed","output":…}
 //   {"type":"done","stopReason":…,"usage":{…},"final":…}    the turn ended
 //   {"type":"warning","message":…}                    something the turn goes on without (the browser didn't start)
+//   {"type":"background","task":"command"|"worker","id":…,"state":"running"|"done"|"failed"|"stopped"|"ended","label":…}
+//                                                     a command Kai left running, or one of its workers, as it goes;
+//                                                     "ended": a worker still at work when the turn ended. Commands
+//                                                     keep running after the turn (fx runs in fx-host.mjs, which
+//                                                     outlives it): a turn starts by listing those kept from earlier
 //   {"type":"steering","open":true}                   the turn's inbox (--steer-dir) takes messages from now on
 //   {"type":"steer","id":…,"state":"sent"|"accepted"|"delivered"|"cancelled"|"rejected"[,"message":…]}
 //                                                     a person's message to the running turn (--steer-dir), as it goes
@@ -36,16 +41,20 @@
 // the sandbox, not fx, is the boundary, and nobody is there to answer a permission prompt. fx's own
 // session id is kept under ~/.fx/dotrix so the next turn (with --resume) continues the same conversation;
 // the platform saves ~/.fx between turns. SIGINT cancels the turn, which still ends with "done".
-import { spawn, spawnSync } from "node:child_process";
+//
+// fx itself runs in fx-host.mjs, started by the first turn in a sandbox and kept running between turns, so the
+// commands Kai leaves running (a long test suite, a local CI run) keep running into the next turn, where the
+// session is still open and they're named to Kai. A fresh sandbox (a cold start, a woken one) starts a new host.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, constants, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import http from "node:http";
-import https from "node:https";
+import net from "node:net";
 import { homedir } from "node:os";
-import { delimiter, isAbsolute, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
-import tls from "node:tls";
+import { fileURLToPath } from "node:url";
 
+import { HOST_DIR, HOST_REFUSED, HOST_SOCKET, RELAY_PORT } from "./fx-host.mjs";
 import { answers, notStarted } from "./mcp-check.mjs";
 
 const args = process.argv.slice(2);
@@ -121,55 +130,24 @@ for (const server of mcpServersFrom(mcpConfig)) {
 const brief = readFileSync(0, "utf8");
 if (!brief.trim()) fail("The coding engine got an empty brief");
 
-// fx (0.0.16) makes its model requests directly and ignores HTTPS_PROXY, but in the Docker sandbox the egress proxy
-// is the only way out. So when a proxy is set, fx talks plain HTTP to a forwarder on 127.0.0.1 (fx allows http on
-// localhost), which sends each request on to the provider over HTTPS, tunnelled through that proxy. It forwards to
-// the configured provider only, so the egress proxy's allowlist stays the boundary. With no proxy, fx goes direct.
+// fx makes its model requests directly and ignores HTTPS_PROXY, but in the Docker sandbox the egress proxy is the
+// only way out. So when a proxy is set, fx talks plain HTTP to a relay on 127.0.0.1 (fx allows http on localhost),
+// which sends each request on to the provider over HTTPS, tunnelled through that proxy, and to that provider only,
+// so the egress proxy's allowlist stays the boundary. The relay runs in the host (fx-host.mjs), beside fx. With no
+// proxy, fx goes direct.
 const egress = process.env.HTTPS_PROXY || process.env.https_proxy;
 let egressRefused = false; // the egress proxy refused the provider: the turn's "refused" is the sandbox's, not the model's
-
-async function forwarder(target, proxy) {
-  const upstream = new URL(target);
-  const via = new URL(proxy);
-  if (upstream.protocol !== "https:") throw new Error("The provider must be HTTPS behind a proxy");
-  const agent = new https.Agent({ keepAlive: true });
-  agent.createConnection = (options, done) => {
-    const connect = http.request({ host: via.hostname, port: via.port || 80, method: "CONNECT", path: `${upstream.hostname}:${upstream.port || 443}` });
-    connect.once("connect", (res, socket) => {
-      if (res.statusCode !== 200) egressRefused = true;
-      if (res.statusCode !== 200) return done(Object.assign(new Error(`The egress proxy refused the provider (${res.statusCode})`), { refused: true }));
-      done(null, tls.connect({ socket, servername: upstream.hostname }));
-    });
-    connect.once("error", done);
-    connect.end();
-  };
-  const server = http.createServer((req, res) => {
-    const out = https.request(
-      { host: upstream.hostname, port: upstream.port || 443, method: req.method, path: req.url, agent, headers: { ...req.headers, host: upstream.host } },
-      (answer) => {
-        res.writeHead(answer.statusCode ?? 502, answer.headers);
-        answer.pipe(res);
-      },
-    );
-    // A refusal is final (403: fx doesn't retry it); anything else may pass (502: fx retries).
-    out.on("error", (error) => {
-      if (!res.headersSent) res.writeHead(error.refused ? 403 : 502, { "content-type": "text/plain" });
-      res.end(error.refused ? "The sandbox doesn't allow this provider" : "The provider couldn't be reached through the egress proxy");
-    });
-    req.pipe(out);
-  });
-  // fx 0.0.17 pins its connection when saving a session. A random port makes
-  // every resumed turn look like a different provider. Each sandbox has its own
-  // network namespace, so reserve one fixed local relay port and fail on collision.
-  await new Promise((resolve, reject) => {
-    server.once("error", () => reject(new Error("The model relay port is unavailable; start a fresh coding session")));
-    server.listen(31821, "127.0.0.1", resolve);
-  });
-  server.unref();
-  // The provider's path (e.g. /v1) stays; only the origin becomes the forwarder's.
-  return `http://127.0.0.1:${server.address().port}${upstream.pathname.replace(/\/$/, "")}`;
-}
-const providerUrl = egress ? await forwarder(baseUrl, egress) : baseUrl;
+const turnStarted = Date.now();
+const refusedSince = () => {
+  try {
+    return Number(readFileSync(HOST_REFUSED, "utf8")) >= turnStarted;
+  } catch {
+    return false;
+  }
+};
+if (egress && new URL(baseUrl).protocol !== "https:") fail("The provider must be HTTPS behind a proxy");
+// The provider's path (e.g. /v1) stays; only the origin becomes the relay's.
+const providerUrl = egress ? `http://127.0.0.1:${RELAY_PORT}${new URL(baseUrl).pathname.replace(/\/$/, "")}` : baseUrl;
 
 // fx's settings: the one provider this turn may use (configured_provider.zig's shape).
 const fxHome = join(homedir(), ".fx");
@@ -267,21 +245,96 @@ const setting = spawnSync(fxBin, ["config", "get", "project_config"], { env: fxE
 if (setting.error) fail(`The coding engine didn't start (${setting.error.code ?? "error"})`);
 if (setting.status !== 0 || setting.stdout.trim() !== "false") fail("The coding engine isn't the version Kai was checked with");
 
-// The model is the provider's default in the settings above, not `--model` (that names an AI Gateway model).
-const fx = spawn(fxBin, ["acp"], { stdio: ["pipe", "pipe", "inherit"], env: fxEnv });
-// The code only: the OS's message names the binary.
-fx.on("error", (error) => fail(`The coding engine didn't start (${error.code ?? "error"})`));
+// fx runs in the host (fx-host.mjs), which outlives the turn so the commands Kai leaves running keep running into
+// the next one; this driver attaches to it. The host is for one configuration (HOST_KEY): another model, provider,
+// MCP servers or workers stop it, with what it runs, and a new one starts. The model is the provider's default in the
+// settings above, not `--model` (that names an AI Gateway model).
+const HOST_KEY = createHash("sha256")
+  .update(JSON.stringify({ baseUrl, keyEnv, model, fxBin, mcpServers, workers: workerProfiles ?? null }))
+  .digest("hex");
+const here = dirname(fileURLToPath(import.meta.url));
 
-// JSON-RPC 2.0 over fx's stdio: our requests, its notifications, and the few requests it makes of us.
+function connect() {
+  return new Promise((resolve) => {
+    const socket = net.createConnection(HOST_SOCKET);
+    socket.once("connect", () => resolve(socket));
+    socket.once("error", () => resolve(null));
+  });
+}
+/** Attach to the host: its hello and the socket, or null when there's none (or it gave way to this configuration). */
+async function attach() {
+  const socket = await connect();
+  if (!socket) return null;
+  const lines = createInterface({ input: socket, crlfDelay: Infinity });
+  const hello = await new Promise((resolve) => {
+    lines.once("line", (line) => {
+      try {
+        resolve(JSON.parse(line)?.host?.hello ?? null);
+      } catch {
+        resolve(null);
+      }
+    });
+    socket.once("close", () => resolve(null));
+    socket.write(`${JSON.stringify({ host: { hello: { key: HOST_KEY } } })}\n`);
+  });
+  if (!hello?.ok) {
+    lines.close();
+    socket.destroy();
+    return hello?.busy ? { busy: true } : null;
+  }
+  return { socket, lines, hello };
+}
+async function startHost() {
+  rmSync(HOST_SOCKET, { force: true });
+  mkdirSync(HOST_DIR, { recursive: true, mode: 0o700 });
+  // Detached from the turn at once (its shell exits), so stopping the turn's process tree doesn't stop it.
+  const started = spawnSync(
+    "sh",
+    [
+      "-c",
+      'log="${DOTRIX_FX_HOST_LOG:-/dev/null}"; if command -v setsid >/dev/null 2>&1; then setsid "$@" </dev/null >>"$log" 2>&1 & else "$@" </dev/null >>"$log" 2>&1 & fi',
+      "sh",
+      process.execPath,
+      join(here, "fx-host.mjs"),
+      "--key",
+      HOST_KEY,
+      ...(egress ? ["--relay-target", baseUrl] : []),
+    ],
+    { env: fxEnv, stdio: "ignore", timeout: 15_000 },
+  );
+  if (started.error || started.status !== 0) fail(`The coding engine didn't start (${started.error?.code ?? "error"})`);
+  for (let waited = 0; waited < 30_000; waited += 100) {
+    const found = await attach();
+    if (found && !found.busy) return found;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  fail("The coding engine didn't start (it didn't answer)");
+}
+let host = await attach();
+if (host?.busy) fail("Another turn is still using this coding session's engine");
+const kept_host = Boolean(host);
+if (!host) {
+  // None, or one for another configuration, which is stopping: wait for it to go before starting this one's.
+  for (let waited = 0; waited < 5_000 && (await connect().then((s) => (s ? (s.destroy(), true) : false))); waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  host = await startHost();
+}
+const fx = host.socket;
+
+// JSON-RPC 2.0 with fx, through the host: our requests, its notifications, and the few requests it makes of us.
 let nextId = 1;
 const pending = new Map();
+const send = (msg) => {
+  if (!fx.destroyed) fx.write(`${JSON.stringify(msg)}\n`);
+};
 const call = (method, params, id = nextId++) =>
   new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject, method });
-    fx.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    send({ jsonrpc: "2.0", id, method, params });
   });
-const notify = (method, params) => fx.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
-const reply = (id, result, error) => fx.stdin.write(`${JSON.stringify(error ? { jsonrpc: "2.0", id, error } : { jsonrpc: "2.0", id, result })}\n`);
+const notify = (method, params) => send({ jsonrpc: "2.0", method, params });
+const reply = (id, result, error) => send(error ? { jsonrpc: "2.0", id, error } : { jsonrpc: "2.0", id, result });
 
 // What the agent says arrives in chunks: kept whole, and said when a tool call or the turn's end closes it.
 let replaying = false; // session/load replays the conversation so far: not this turn's
@@ -289,6 +342,29 @@ let message = "";
 let messageId = null;
 let lastMessage = "";
 const tools = new Map(); // toolCallId → whether its start was said
+// Kai's background tasks: commands it left running (fx's `_meta.fx.shell` on a shell call's update, by session id)
+// and its workers (subagent messages, by name), each with its label and whether it's still running.
+const toolInputs = new Map(); // toolCallId → its name and input, for the label of what a result reports
+const background = new Map(); // "command:<id>" | "worker:<name>" → { label, running }
+const backgroundState = (task, id, state, label) => {
+  const key = `${task}:${id}`;
+  const known = background.get(key);
+  const shown = label ?? known?.label ?? id;
+  if (known && !known.running && state === "running") return; // a finished one isn't started again by a late report
+  background.set(key, { label: shown, running: state === "running" });
+  emit({ type: "background", task, id, state, label: shown.slice(0, 300) });
+};
+/** fx/shells' report as the commands Codes lists: running, done (exit 0), failed, or stopped. */
+function shellsFrom(shells) {
+  return (Array.isArray(shells) ? shells : [])
+    .filter((shell) => typeof shell?.sessionId === "string" && typeof shell?.command === "string")
+    .map((shell) => {
+      const failed = shell.state === "lost" || (shell.state === "completed" && (shell.exitCode ?? (shell.signal ? 1 : 0)) !== 0);
+      const state = shell.state === "running" ? "running" : shell.state === "stopped" ? "stopped" : failed ? "failed" : "done";
+      const summary = shell.exitCode != null ? `exit ${shell.exitCode}` : shell.signal ? `signal ${shell.signal}` : shell.state;
+      return { id: shell.sessionId, command: shell.command, state, summary };
+    });
+}
 const flush = () => {
   if (message.trim()) {
     emit({ type: "text", text: message });
@@ -321,8 +397,34 @@ function onUpdate(update) {
       if (!tools.get(id) && (update.sessionUpdate === "tool_call" || update.name || update.rawInput)) {
         flush();
         tools.set(id, true);
+        toolInputs.set(id, { name: update.name ?? null, input: update.rawInput ?? {} });
+        const input = update.rawInput ?? {};
+        if (update.name === "subagent" && input.action === "message" && typeof input.agent === "string") {
+          backgroundState("worker", input.agent, "running", `${input.agent}: ${String(input.message ?? "").slice(0, 200)}`);
+        }
         if (update.name === "subagent") subagentCalls.set(id, update.rawInput?.request?.agent ?? update.rawInput?.agent ?? null);
         emit({ type: "tool", id, name: update.name ?? null, title: update.title ?? null, kind: update.kind ?? null, input: update.rawInput ?? {} });
+      }
+      const shell = update._meta?.fx?.shell;
+      if (shell && typeof shell.sessionId === "string" && (update.status === "completed" || update.status === "failed")) {
+        const call = toolInputs.get(id);
+        const command = call?.input?.action === "run" && typeof call.input.command === "string" ? call.input.command : null;
+        const state =
+          shell.state === "running"
+            ? "running"
+            : shell.state === "stopped"
+              ? "stopped"
+              : shell.state === "completed" && (shell.exitCode ?? 0) === 0
+                ? "done"
+                : "failed";
+        backgroundState("command", shell.sessionId, state, command);
+      }
+      const report = update.status === "completed" && toolInputs.get(id)?.name === "subagent" ? contentText(update.content) : "";
+      if (report.startsWith("Subagent report")) {
+        const found = parseJson(report.slice(report.indexOf("\n") + 1).trim());
+        if (found && typeof found.agent === "string") {
+          backgroundState("worker", found.agent, found.outcome === "completed" ? "done" : found.outcome === "stopped" ? "stopped" : "failed");
+        }
       }
       if (update.status === "completed" || update.status === "failed") {
         emit({ type: "tool_result", id, status: update.status, output: contentText(update.content).slice(-64_000) });
@@ -390,7 +492,7 @@ function onHook(hook) {
   emit({ type: "tool_result", id, status: failed ? "failed" : "completed", output: output.slice(-64_000) });
 }
 
-createInterface({ input: fx.stdout, crlfDelay: Infinity }).on("line", (line) => {
+host.lines.on("line", (line) => {
   let msg;
   try {
     msg = JSON.parse(line);
@@ -416,9 +518,9 @@ createInterface({ input: fx.stdout, crlfDelay: Infinity }).on("line", (line) => 
 });
 
 let exited = false;
-fx.on("exit", (code, signal) => {
+fx.on("close", () => {
   exited = true;
-  for (const { reject } of pending.values()) reject(new Error(`The coding engine stopped (${signal ?? code})`));
+  for (const { reject } of pending.values()) reject(new Error("The coding engine stopped"));
   pending.clear();
 });
 
@@ -429,7 +531,8 @@ const cancel = () => {
   if (cancelled) return;
   cancelled = true;
   if (sessionId && !exited) notify("session/cancel", { sessionId });
-  setTimeout(() => fx.kill("SIGTERM"), 4_000).unref(); // the runner's grace is 5 s
+  // The runner's grace is 5 s: past 4, let go of the engine (the host cancels the prompt of a driver that left).
+  setTimeout(() => fx.destroy(), 4_000).unref();
 };
 process.on("SIGINT", cancel);
 process.on("SIGTERM", cancel);
@@ -437,6 +540,10 @@ process.on("SIGTERM", cancel);
 async function open() {
   const cwd = process.cwd();
   const previous = resume ? savedSession() : null;
+  if (previous && host.hello.session === previous) {
+    // Still open in the host from the last turn, with its commands: the conversation goes on as it is.
+    return { id: previous, resumed: true, profileDigest: kept.profileDigest ?? null };
+  }
   if (previous) {
     // The session keeps the profile it was started with (fx restores it), checked above against Dotrix's record.
     replaying = true;
@@ -530,13 +637,10 @@ const sumUsage = (base) => {
 };
 
 try {
-  await call("initialize", {
-    protocolVersion: 1,
-    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-    clientInfo: { name: "dotrix", version: "1" },
-  });
+  // The host initialized fx when it started it.
   const session = await open();
   sessionId = session.id;
+  send({ host: { session: sessionId } });
   await call("session/set_mode", { sessionId, modeId: "full-access" });
   emit({
     type: "started",
@@ -558,9 +662,23 @@ try {
       // Without an inbox the turn goes on; messages sent to it are queued for the next turn instead.
     }
   }
-  const prompt = call("session/prompt", { sessionId, prompt: [{ type: "text", text: brief }] });
+  // The commands still kept from earlier turns (or finished since, and not yet read): listed in Codes as this
+  // turn's, and named to Kai, who reads one's output with the shell tool's `interact` and its session id.
+  const earlier = kept_host && session.resumed ? shellsFrom(host.hello.shells) : [];
+  for (const shell of earlier) backgroundState("command", shell.id, shell.state, shell.command);
+  const note = earlier.length
+    ? `Commands you left running in earlier turns (the shell tool's session ids):\n${earlier
+        .map((shell) => `- ${shell.id}: \`${shell.command.slice(0, 200)}\` ${shell.state === "running" ? "is still running" : `finished (${shell.summary})`}`)
+        .join("\n")}\nRead one's output with the shell tool's interact action and its session_id.\n\n`
+    : "";
+  const prompt = call("session/prompt", { sessionId, prompt: [{ type: "text", text: note + brief }] });
   const result = await prompt.finally(closeSteering);
   flush();
+  // Commands keep running in the host, into the next turn; a worker still at work when the turn ends ends with it.
+  for (const [key, task] of background) {
+    if (task.running && key.startsWith("worker:")) backgroundState("worker", key.slice("worker:".length), "ended");
+  }
+  egressRefused = refusedSince();
   if (egressRefused) {
     emit({ type: "error", message: "The sandbox doesn't allow this model provider (its egress proxy refused it)" });
     process.exitCode = 1;
@@ -579,18 +697,8 @@ try {
   else emit({ type: "error", message: String(error?.message ?? error).slice(0, 2000) });
   process.exitCode = cancelled && !providerFailed ? 0 : 1;
 } finally {
-  // fx ends when its input closes; wait for it, so no fx outlives the turn, and stop it if it doesn't.
-  if (!exited) {
-    fx.stdin.end();
-    await new Promise((resolve) => {
-      const stop = setTimeout(() => {
-        fx.kill("SIGTERM");
-        resolve();
-      }, 3_000);
-      fx.once("exit", () => {
-        clearTimeout(stop);
-        resolve();
-      });
-    });
-  }
+  // fx stays in the host for the next turn; this turn lets go of it.
+  host.lines.close();
+  fx.end();
+  fx.destroy();
 }

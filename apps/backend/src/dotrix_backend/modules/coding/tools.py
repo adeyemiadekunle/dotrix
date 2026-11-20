@@ -714,6 +714,9 @@ def _describe_fx_tool(name: str, title: str, args: dict[str, Any]) -> str | None
 
 
 STEER_STATES = frozenset({"sent", "accepted", "delivered", "cancelled", "rejected"})
+# A background task's states as the fx driver reports them. "ended": a worker still at work when the turn ended, or a
+# command still running when its sandbox was let go (the worker records that between turns, runner.watch_background).
+BACKGROUND_STATES = frozenset({"running", "done", "failed", "stopped", "ended"})
 
 
 class Fx:
@@ -798,6 +801,12 @@ class Fx:
                 out.steps.append(Step("text", _clip(str(event["text"]))))
             case "warning" if str(event.get("message", "")).strip():  # the turn goes on: the browser didn't start
                 out.steps.append(Step("error", _clip(str(event["message"]))))
+            case "background" if event.get("task") in ("command", "worker") and event.get("state") in BACKGROUND_STATES:
+                # A command Kai left running, or one of its workers: Codes lists each by `ref`, at its latest state.
+                key = _clip(str(event.get("id") or ""), 80)
+                if key:
+                    out.steps.append(Step(f"background-{event['state']}", _clip(str(event.get("label") or key), 300),
+                                          f"{event['task']}:{key}"))
             case "steering" if event.get("open") is True:
                 out.steering_open = True
             case "steer" if event.get("state") in STEER_STATES and re.fullmatch(r"[0-9a-f-]{36}", str(event.get("id", ""))):

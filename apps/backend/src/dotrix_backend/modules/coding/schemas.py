@@ -94,7 +94,9 @@ class CodingRecover(BaseModel):
 class CodingEvent(BaseModel):
     at: datetime
     kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `output` / "
-                      "`output-error` (a command's output, and whether it failed), `error`")
+                      "`output-error` (a command's output, and whether it failed), `error`, or `background-<state>` "
+                      "(a command Kai left running or one of its workers, `ref` naming it: running, done, failed, "
+                      "stopped, or ended with the turn)")
     text: str
     ref: str | None = Field(default=None, description="Pairs a command (`tool`) with its output: the tool call's id")
 
@@ -103,7 +105,9 @@ class CodingEventRead(BaseModel):
     seq: int = Field(description="Its place in the run, from 0")
     at: datetime
     kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `output` / "
-                      "`output-error` (a command's output, and whether it failed), `error`")
+                      "`output-error` (a command's output, and whether it failed), `error`, or `background-<state>` "
+                      "(a command Kai left running or one of its workers, `ref` naming it: running, done, failed, "
+                      "stopped, or ended with the turn)")
     text: str
     ref: str | None = Field(default=None, description="Pairs a command (`tool`) with its output: the tool call's id")
 

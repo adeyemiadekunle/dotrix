@@ -609,3 +609,46 @@ test("when Kai stops to ask, its questions show and the box asks for the answer"
   await expect(box).toBeFocused();
   await expect(box).toHaveAttribute("placeholder", "Answer Kai's questions");
 });
+
+test("Kai's background commands and workers are listed at their latest state", async ({ page, context, baseURL }) => {
+  const at = date;
+  const events = [
+    { kind: "tool", text: "Ran npm run dev", ref: "c0", at },
+    { kind: "background-running", text: "npm run dev", ref: "command:shell-1", at },
+    { kind: "background-running", text: "finder: Where is the router?", ref: "worker:finder", at },
+    { kind: "background-done", text: "finder: Where is the router?", ref: "worker:finder", at },
+  ];
+  const working = { ...turn(2), status: "running", summary: null, files_changed: [], review_run_id: null, events, can_stop: true };
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), working] }));
+    await page.route("**/coding/sessions/session1/stream", (route) => route.fulfill({ status: 204, body: "" }));
+  });
+  const list = page.getByLabel("Kai's background tasks");
+  await expect(list.getByText("1 running")).toBeVisible();
+  const rows = list.getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("npm run dev");
+  await expect(rows.nth(0)).toContainText("Command · Running");
+  await expect(rows.nth(1)).toContainText("Worker · Done");
+});
+
+test("a command Kai left running that finished between turns shows with what it printed", async ({ page, context, baseURL }) => {
+  const at = date;
+  const events = [
+    { kind: "background-running", text: "make ci", ref: "command:shell-1", at },
+    { kind: "background-done", text: "make ci", ref: "command:shell-1", at },
+    { kind: "background-output", text: "all 9 checks passed", ref: "command:shell-1", at },
+    { kind: "background-running", text: "npm run e2e", ref: "command:shell-2", at },
+    { kind: "background-ended", text: "npm run e2e", ref: "command:shell-2", at },
+  ];
+  const finished = { ...turn(2), status: "no_changes", files_changed: [], review_run_id: null, events };
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), finished] }));
+  });
+  const list = page.getByLabel("Kai's background tasks");
+  await expect(list.getByText("2 finished")).toBeVisible();
+  const rows = list.getByRole("listitem");
+  await expect(rows.nth(0)).toContainText("Command · Done");
+  await expect(rows.nth(0)).toContainText("all 9 checks passed");
+  await expect(rows.nth(1)).toContainText("Command · Ended");
+});

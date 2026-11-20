@@ -101,3 +101,70 @@ export function BackgroundTasks({ scope, run }: { scope: Scope | undefined; run:
     </section>
   );
 }
+
+type WorkState = "running" | "done" | "failed" | "stopped" | "ended";
+const WORK_STATES: Record<WorkState, string> = {
+  running: "Running",
+  done: "Done",
+  failed: "Failed",
+  stopped: "Stopped",
+  ended: "Ended",
+};
+
+/** Kai's background work in a turn, as Claude Code lists its background tasks: each command it left running and each
+ *  of its workers (events `background-<state>`, `ref` naming it), at its latest state, running ones first. */
+type Work = { ref: string; kind: "command" | "worker"; label: string; state: WorkState; output?: string };
+/** Also what a command printed once it finished (`background-output`, recorded between turns as well). */
+export function kaiBackground(events: CodingRun["events"]): Work[] {
+  const latest = new Map<string, Work>();
+  for (const e of events) {
+    if (e.kind === "background-output" && e.ref) {
+      const known = latest.get(e.ref);
+      if (known) known.output = e.text;
+      continue;
+    }
+    const state = e.kind.startsWith("background-") ? (e.kind.slice("background-".length) as WorkState) : null;
+    if (!state || !(state in WORK_STATES) || !e.ref) continue;
+    latest.set(e.ref, { ref: e.ref, kind: e.ref.startsWith("worker:") ? "worker" : "command", label: e.text, state, output: latest.get(e.ref)?.output });
+  }
+  return [...latest.values()].sort((a, b) => Number(b.state === "running") - Number(a.state === "running"));
+}
+
+export function KaiBackground({ run, kai }: { run: CodingRun; kai: string }) {
+  const [open, setOpen] = useState(true);
+  const work = kaiBackground(run.events);
+  if (!work.length) return null;
+  const running = work.filter((w) => w.state === "running").length;
+  return (
+    <section className="background-tasks" aria-label={`${kai}'s background tasks`}>
+      <button className="background-tasks-heading" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Ic n={open ? "chevron-down" : "chevron-right"} s={14} />
+        <Ic n={running ? "spinner-gap" : "flow-arrow"} cls={running ? "animate-spin" : undefined} s={16} />
+        <b>Background tasks</b>
+        <span className="faint">{running ? `${running} running` : `${work.length} finished`}</span>
+      </button>
+      {open && (
+        <div className="background-task-list" role="list">
+          {work.map((w) => (
+            <div className="background-task" role="listitem" key={w.ref}>
+              <span className="background-task-heading">
+                <Ic
+                  n={w.state === "running" ? "spinner-gap" : w.state === "done" ? "check-circle" : w.state === "failed" ? "warning-circle" : "stop-circle"}
+                  cls={w.state === "running" ? "animate-spin" : undefined}
+                  s={16}
+                />
+                <span className="background-task-title">
+                  {w.kind === "command" ? <InlineCode>{w.label}</InlineCode> : <b>{w.label}</b>}
+                  <span className="faint">
+                    {w.kind === "worker" ? "Worker" : "Command"} · {WORK_STATES[w.state]}
+                  </span>
+                </span>
+              </span>
+              {w.output && w.state !== "running" && <pre className="background-task-output">{w.output}</pre>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
