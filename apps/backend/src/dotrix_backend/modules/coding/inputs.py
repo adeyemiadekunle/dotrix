@@ -255,7 +255,7 @@ async def deliver_queued(sessions: SessionFactory, make_service: Callable[[Async
     """Each session whose queued messages can go now: its steers settled, then its queued messages as one
     follow-up turn (or cancelled, after a turn that failed, was stopped or rejected). Returns the turns made."""
     async with sessions() as session:
-        query = select(CodingInput.session_id, CodingInput.workspace_id).where(
+        query = select(CodingInput.session_id, CodingInput.workspace_id, CodingInput.project_id).where(
             CodingInput.status.in_(_OPEN),
             ~exists(select(CodingRun.id).where(  # a session still waiting or working takes nothing yet
                 CodingRun.workspace_id == CodingInput.workspace_id, CodingRun.session_id == CodingInput.session_id,
@@ -266,25 +266,28 @@ async def deliver_queued(sessions: SessionFactory, make_service: Callable[[Async
             query = query.where(CodingInput.session_id == session_id)
         candidates = list((await session.execute(query.limit(100))).all())
     made = 0
-    for candidate, workspace_id in candidates:
+    for candidate, workspace_id, project_id in candidates:
         try:
-            made += await _deliver(sessions, make_service, workspace_id, candidate)
+            made += await _deliver(sessions, make_service, workspace_id, project_id, candidate)
         except Exception:
             logger.exception("coding session %s: queued messages weren't delivered", candidate)
     return made
 
 
 async def _deliver(sessions: SessionFactory, make_service: Callable[[AsyncSession], Any], workspace_id: uuid.UUID,
-                   session_id: uuid.UUID) -> int:
-    from .service import CodingService
+                   project_id: uuid.UUID, session_id: uuid.UUID) -> int:
+    from .service import CodingBusy, CodingService
 
     async with sessions() as session:
+        # The project's lock first (the one a new turn takes), then the turns: a delivery running at the same time
+        # (a turn's job and the sweep) sees the turn the other made, never the list from before it.
+        project = await ProjectRepository(session).get(workspace_id, project_id, for_update=True)
         turns = list(await session.scalars(select(CodingRun).where(
             CodingRun.workspace_id == workspace_id, CodingRun.session_id == session_id,
         ).order_by(CodingRun.turn, CodingRun.created_at)))
         if not turns:
+            await session.commit()
             return 0
-        project = await ProjectRepository(session).get(workspace_id, turns[0].project_id, for_update=True)
         # Settle every finished turn's steers first: what it didn't take joins the queue (or is cancelled).
         for turn in turns:
             if turn.status is not CodingRunStatus.RUNNING:
@@ -308,9 +311,16 @@ async def _deliver(sessions: SessionFactory, make_service: Callable[[AsyncSessio
                 _audit(session, item, "cancelled")
             await session.commit()
             return 0
+        # One turn takes the oldest messages that ask for the same work mode and approval mode, up to the size of a
+        # follow-up: a later message with other settings waits for a turn of its own, so it keeps them.
+        def settings(item: CodingInput) -> tuple[str, str | None]:
+            payload = item.payload or {}
+            return (payload.get("work_mode") or latest.work_mode or "build",
+                    payload.get("approval_mode") or latest.approval_mode)
+
         taking, size = [], 0
         for item in queued:
-            if taking and size + len(item.message) + 2 > _FOLLOW_UP_CHARS:
+            if taking and (settings(item) != settings(taking[0]) or size + len(item.message) + 2 > _FOLLOW_UP_CHARS):
                 break
             taking.append(item)
             size += len(item.message) + 2
@@ -321,16 +331,18 @@ async def _deliver(sessions: SessionFactory, make_service: Callable[[AsyncSessio
             if (project is None or member is None or not can(member, Permission.INSTRUCT_CODING_AGENT)
                     or await ProjectRepository(session).visible(member, project.id) is None):
                 raise Forbidden("You can no longer instruct Kai in this project")
-            payload = first.payload or {}
+            work_mode, approval_mode = settings(first)
             text = "\n\n".join(item.message for item in taking)[:_FOLLOW_UP_CHARS]
-            follow = CodingFollowUp(message=text, work_mode=payload.get("work_mode") or latest.work_mode or "build",
-                                    approval_mode=payload.get("approval_mode") or latest.approval_mode)
+            follow = CodingFollowUp(message=text, work_mode=work_mode, approval_mode=approval_mode)
             service: CodingService = make_service(session)
             at = now()
             for item in taking:  # committed with the turn, by follow_up
                 item.status, item.updated_at = CodingInputStatus.DELIVERED, at
                 _audit(session, item, "delivered")
             turn = await service.follow_up(ProjectAccess(project, member), session_id, follow)
+        except CodingBusy:
+            await session.rollback()
+            return 0  # a turn started meanwhile: the messages wait for it to end
         except DomainError as exc:
             await session.rollback()
             async with sessions() as again:

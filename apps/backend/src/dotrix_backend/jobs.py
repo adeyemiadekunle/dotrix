@@ -45,6 +45,7 @@ FOLLOW_UP_GRACE = timedelta(minutes=1)  # a GitHub delivery's jobs unqueued this
 CLEANUP_INTERVAL_SECONDS = 3600
 INDEX_INTERVAL_SECONDS = 60
 AUTOMATIONS_INTERVAL_SECONDS = 60
+CODING_INPUTS_INTERVAL_SECONDS = 15  # as often as the worker's sweep
 EMAIL_INTERVAL_SECONDS = 60
 
 
@@ -166,6 +167,12 @@ async def run_coding(
             logger.exception("coding run %s: messages sent while it worked weren't delivered", run_id)
 
 
+async def deliver_coding_inputs(ctx: JobContext) -> int:
+    """Messages people sent coding sessions while Kai worked, whose turn has ended however it ended (a cloud turn's
+    job, a local runner's report, a rejected turn or discarded changes): local mode's sweep, as the worker's."""
+    return await deliver_for_job(ctx)
+
+
 async def run_automations(ctx: JobContext) -> dict[str, int]:
     """Start the automations whose events happened or whose schedule came round. Every minute
     (the worker's cron, or a loop in the API in local mode)."""
@@ -251,6 +258,7 @@ async def discard_coding_sandbox(ctx: JobContext, *, handle: dict) -> None:
         await sandbox.discard(handle)
 
 JOBS: dict[str, JobFunction] = {
+    "deliver_coding_inputs": deliver_coding_inputs,
     "discard_coding_sandbox": discard_coding_sandbox,
     "send_email": send_email,
     "send_password_reset": send_password_reset,

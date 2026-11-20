@@ -191,3 +191,48 @@ async def test_a_queued_message_whose_turn_is_refused_says_why(db_client: AsyncC
 async def _db_key_gone(db_client: AsyncClient, headers) -> None:
     res = await db_client.delete("/v1/me/model-keys/openai", headers=headers)
     assert res.status_code in (200, 204), res.text
+
+
+async def test_messages_asking_for_other_settings_get_turns_of_their_own(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    await _send(db_client, base, session_id, ada.headers, "queue", "Add partial refunds", work_mode="build")
+    await _send(db_client, base, session_id, ada.headers, "queue", "Then plan the docs", work_mode="plan")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert turns[1]["work_mode"] == "build" and "Add partial refunds" in turns[1]["brief"]
+    assert "Then plan the docs" not in turns[1]["brief"]  # it asked for Plan: it waits for a turn of its own
+    waiting = [i for i in await _inputs(db_client, base, session_id, ada.headers) if i["status"] == "pending"]
+    assert [i["message"] for i in waiting] == ["Then plan the docs"]
+    await _set_run(db_client, turns[1]["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert turns[2]["work_mode"] == "plan" and "Then plan the docs" in turns[2]["brief"]
+
+
+async def test_a_rejected_turn_cancels_its_queue_from_the_sweep_job(db_client: AsyncClient, queued) -> None:
+    from dotrix_backend.jobs import JOBS
+
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    res = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
+    assert res.status_code == 200, res.text
+    await JOBS["deliver_coding_inputs"](_ctx(db_client))  # local mode's sweep (the worker's runs the same)
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "cancelled" and "rejected" in item["note"]
+
+
+async def test_what_doesnt_fit_one_turn_waits_for_the_next(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    for letter in "ab":
+        await _send(db_client, base, session_id, ada.headers, "queue", letter * 3000)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    assert await deliver_for_job(_ctx(db_client)) == 0  # again while that turn waits: nothing rejected
+    statuses = {i["message"][0]: i["status"] for i in await _inputs(db_client, base, session_id, ada.headers)}
+    assert statuses == {"a": "delivered", "b": "pending"}

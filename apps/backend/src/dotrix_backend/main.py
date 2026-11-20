@@ -31,6 +31,7 @@ from .db.session import create_engine, create_sessionmaker
 from .jobs import (
     AUTOMATIONS_INTERVAL_SECONDS,
     CLEANUP_INTERVAL_SECONDS,
+    CODING_INPUTS_INTERVAL_SECONDS,
     EMAIL_INTERVAL_SECONDS,
     INDEX_INTERVAL_SECONDS,
     JOBS,
@@ -137,6 +138,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     asyncio.create_task(_every(local_jobs, "cleanup_expired", CLEANUP_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "index_knowledge", INDEX_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "run_automations", AUTOMATIONS_INTERVAL_SECONDS)),
+                    # What people sent coding sessions while Kai worked, once the turn ended (the worker sweeps too).
+                    asyncio.create_task(_every(local_jobs, "deliver_coding_inputs", CODING_INPUTS_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "email_notifications", EMAIL_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "check_operator_alerts", settings.alert_interval_minutes * 60)),
                 ]
