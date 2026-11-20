@@ -32,16 +32,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -
 
 # fx (DOTRIX_CODING_FX=true): Kai on an OpenAI-compatible provider, driven over ACP by fx-acp.mjs. It is the
 # Kai runtime's fx command (adeyemiadekunle/kai-runtime, fx 0.0.17 with its changes: `project_config` and
-# `max_subagents`, which the driver sets), published to GitHub Packages as @kunemi-group/kai-cli-linux-<cpu>,
+# `max_subagents`, which the driver sets, and Kai's workers' profiles listed over ACP with their `max_steps` and
+# `max_tokens`, from 0.0.17-kai.2), published to GitHub Packages as @kunemi-group/kai-cli-linux-<cpu>,
 # and pinned by version and by its binary's SHA-256 (the package's fx.sha256). The install needs a GitHub token
 # with read:packages as the build secret kai_packages_token; it never reaches the image or the sandbox:
 #
 #   docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding
 #
 # Its profiles are dotrix-fx-*.yaml. Needs npm.pkg.github.com reachable where the image is built, never in the sandbox.
-ARG KAI_CLI_VERSION=0.0.17-kai.1
-ARG KAI_CLI_SHA256_X64=4d6e2dab0b089ac5f6412e0d3644549f85ed93cbc95089a5d52a22e0c7191631
-ARG KAI_CLI_SHA256_ARM64=9723427edd0935a322daf9906b2f2743776d395c14cda41610f57aa4a4286e34
+ARG KAI_CLI_VERSION=0.0.17-kai.2
+ARG KAI_CLI_SHA256_X64=7f29da551ddf6ee40a7c377d8ca0460599bb1b10b82c6d4bef540252acf3e41d
+ARG KAI_CLI_SHA256_ARM64=a059c2da6becb4aae4eac864e60824992410c9242c8a60b942c5591a43d77a44
 RUN --mount=type=secret,id=kai_packages_token,required=true set -eu; \
   case "$(uname -m)" in x86_64) cpu=x64; sum="$KAI_CLI_SHA256_X64" ;; aarch64|arm64) cpu=arm64; sum="$KAI_CLI_SHA256_ARM64" ;; *) echo "fx: unsupported $(uname -m)"; exit 1 ;; esac; \
   work=$(mktemp -d) && cd "$work"; \
