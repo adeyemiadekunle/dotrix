@@ -319,16 +319,16 @@ async def _deliver(sessions: SessionFactory, make_service: Callable[[AsyncSessio
         if not queued:
             await session.commit()
             return 0
-        if latest.work_mode != "plan" and questions_in(latest.summary):
-            await session.commit()
-            return 0  # Kai asked the person something: what's queued (a plan's next task too) waits for the answer
         reason = _ENDS_THE_QUEUE.get(latest.status)
-        if reason is not None:
+        if reason is not None:  # first: a turn that failed, was stopped or rejected cancels, questions or not
             for item in queued:
                 item.status, item.note, item.updated_at = CodingInputStatus.CANCELLED, reason, now()
                 _audit(session, item, "cancelled")
             await session.commit()
             return 0
+        if latest.work_mode != "plan" and questions_in(latest.summary):
+            await session.commit()
+            return 0  # Kai asked the person something: what's queued (a plan's next task too) waits for the answer
         # One turn takes the oldest messages that ask for the same work mode and approval mode, up to the size of a
         # follow-up: a later message with other settings waits for a turn of its own, so it keeps them.
         # A plan's task (step by step) is always a turn of its own.

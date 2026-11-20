@@ -39,7 +39,7 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
 from . import guard
-from .brief import build_brief
+from .brief import build_brief, split_contract
 from .inputs import accepts_steering, queue_plan_tasks
 from .models import (
     ACTIVE,
@@ -103,6 +103,13 @@ def visible_runs(member: Membership) -> Any:
 def _sees(run: CodingRun, member: Membership) -> bool:
     return run.requested_by_id == member.user_id or (
         run.status in WAITING and can(member, Permission.APPROVE_ACTIONS))
+
+
+def _with_task(brief: str, section: str) -> str:
+    """`brief` with `section` added to what this turn is asked, above Kai's contract: an engine that takes the contract
+    as the session's pinned system profile (fx) gets this turn's part in the prompt, never frozen in the profile."""
+    task, contract = split_contract(brief)
+    return task.rstrip() + "\n\n" + section + ("\n\n" + contract if contract else "")
 
 
 def _earlier(turn: CodingRun) -> str:
@@ -355,7 +362,7 @@ class CodingService:
             if selected is None or data.work_mode != "build":
                 raise Unprocessable("Select a completed plan from this coding session to build")
             run.execution_plan = selected.plan_result if selected.plan_result.get("execution") else None
-            run.brief += "\n\n## Selected coding plan\n" + html.escape(json.dumps(selected.plan_result))
+            run.brief = _with_task(run.brief, "## Selected coding plan\n" + html.escape(json.dumps(selected.plan_result)))
             if data.step_by_step or data.plan_task:
                 tasks = list(selected.plan_result.get("tasks") or [])
                 order = task_order(tasks)
@@ -364,10 +371,11 @@ class CodingService:
                     raise Unprocessable("That task isn't in the plan")
                 task = tasks[index - 1]
                 run.execution_plan = None  # one task, on the session's branch: never the plan's parallel build
-                run.brief += (f"\n\n## This turn: task {index} of {len(tasks)}\n"
-                              f"Do only this task of the plan; the others have their own turns. Tasks it depends on "
-                              f"were done in this session's earlier turns.\n\n"
-                              f"{html.escape(str(task.get('title', '')))}\n\n{html.escape(str(task.get('detail', '')))}")
+                run.brief = _with_task(run.brief, (
+                    f"## This turn: task {index} of {len(tasks)}\n"
+                    f"Do only this task of the plan; the others have their own turns. Tasks it depends on "
+                    f"were done in this session's earlier turns.\n\n"
+                    f"{html.escape(str(task.get('title', '')))}\n\n{html.escape(str(task.get('detail', '')))}"))
                 if data.step_by_step:
                     later = [i for i in order if i != index]
         run.thread_id, run.plan_id = thread_id, turns[-1].plan_id

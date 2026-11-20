@@ -391,3 +391,27 @@ async def test_a_turn_that_asks_questions_holds_the_queue_until_the_person_answe
     assert await deliver_for_job(_ctx(db_client)) == 1  # answered: the queue goes on
     turns = await _turns(db_client, base, session_id, ada.headers)
     assert turns[-1]["questions"] == [] and "Then add a changelog entry" in turns[-1]["brief"]
+
+
+async def test_a_plan_tasks_instructions_are_in_the_turns_task_not_kais_pinned_contract(db_client: AsyncClient, queued) -> None:
+    """fx takes Kai's contract as the session's pinned system profile; a task's instructions must stay in the turn's
+    own part of the brief, or a resumed session would never see them."""
+    from dotrix_backend.modules.coding.brief import CONTRACT_HEADING, split_contract
+
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    turn = (await db_client.post(f"{base}/coding/sessions/{plan['session_id']}/turns", headers=ada.headers, json={
+        "message": "Just the docs", "work_mode": "build", "source_plan_id": plan["id"], "plan_task": 2})).json()
+    task, contract = split_contract(turn["brief"])
+    assert "## This turn: task 2 of 3" in task and "## Selected coding plan" in task
+    assert contract is not None and contract.startswith(CONTRACT_HEADING) and "## This turn" not in contract
+
+
+async def test_a_stopped_turn_with_questions_still_cancels_its_queue(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.STOPPED, finished_at=datetime.now(UTC), summary=ASKED)
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "cancelled" and item["note"] == "The turn was stopped"
