@@ -219,7 +219,7 @@ class CodingRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     seq: Mapped[int] = mapped_column(Integer)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    kind: Mapped[str] = mapped_column(String(16))  # step, text, tool, output, output-error, error
+    kind: Mapped[str] = mapped_column(String(32))  # step, text, tool, output, output-error, error, background-<state>
     text: Mapped[str] = mapped_column(Text)
     # Pairs a command (`tool`, "Ran …") with its output (`output`, `output-error`): the tool call's id.
     ref: Mapped[str | None] = mapped_column(String(64))

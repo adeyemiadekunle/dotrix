@@ -99,6 +99,16 @@ class WarmPool:
         now = time.monotonic()
         return [sid for sid, w in self._boxes.items() if now - w.used > self.idle_seconds]
 
+    def peek(self, session_id: uuid.UUID) -> SandboxSession | None:
+        """A pooled session's sandbox, left in the pool (no turn is using it while it's there)."""
+        found = self._boxes.get(session_id)
+        return found.box if found else None
+
+    def used(self, session_id: uuid.UUID) -> float | None:
+        """When the session's last turn ended (time.monotonic()), while its sandbox is pooled."""
+        found = self._boxes.get(session_id)
+        return found.used if found else None
+
     def sessions(self) -> list[uuid.UUID]:
         return list(self._boxes)
 

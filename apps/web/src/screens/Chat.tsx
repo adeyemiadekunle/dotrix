@@ -99,7 +99,7 @@ import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
 import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePanel";
-import { BackgroundTasks } from "../components/BackgroundTasks";
+import { BackgroundTasks, KaiBackground } from "../components/BackgroundTasks";
 import { SessionDetails, modeName } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
 import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
@@ -2005,7 +2005,8 @@ function KaiTurn({
   onShot: (src: string, name: string) => void;
   shotSrc: (runId: string, index: number) => string;
 }) {
-  const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output")); // output: under its command
+  // output: under its command; background tasks: listed on their own (KaiBackground)
+  const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output") && !e.kind.startsWith("background-"));
   const working = turn.status === "running";
   const asked = turn.note || `Work on ${turn.issue_key}${issueTitle ? `: ${issueTitle}` : ""}`;
   const mine = turn.requested_by_id === D().me;
@@ -2434,6 +2435,7 @@ export function Session({ cs }: { cs: CodingSession }) {
           density={S.prefs.density === "compact" ? "compact" : "balanced"}
           composer={
             <div className={`chat-input kt-input dotrix-composer-wrap ${optionsOpen ? "menu-open" : ""}`}>
+              {latest && <KaiBackground run={latest} kai={kai} />}
               {working && (
                 <div className="chat-delivery-row">
                   <label htmlFor="coding-delivery-kind">Send as</label>

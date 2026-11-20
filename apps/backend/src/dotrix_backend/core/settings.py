@@ -206,6 +206,9 @@ class Settings(DatabaseSettings):
     # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).
     coding_idle_minutes: int = Field(default=30, ge=1, le=24 * 60)
     coding_warm_max: int = Field(default=3, ge=0, le=50)
+    # A warm sandbox where Kai left commands running (fx: a long test suite, a local CI run) stays up past the
+    # idle time while one runs, until this long after its turn ended; then it's let go and they end with it.
+    coding_background_minutes: int = Field(default=6 * 60, ge=0, le=48 * 60)
     # Coding runs working at once in one worker; the rest wait for a free sandbox ("Waiting for a
     # free sandbox"). 0: no limit. Size it to the machine: each run may use the memory and CPUs below.
     coding_parallel: bool = False

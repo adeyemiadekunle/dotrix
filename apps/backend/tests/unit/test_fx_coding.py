@@ -1,6 +1,7 @@
 """fx as Kai's engine: when it's offered and chosen, the driver's command and saved state, its JSON lines read
 into steps and tokens, and the driver itself (infra/coding/fx-acp.mjs) against a fake `fx acp`."""
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -11,6 +12,7 @@ import sys
 import textwrap
 import time
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -204,6 +206,9 @@ FAKE_FX = textwrap.dedent('''
             update(sid, {"sessionUpdate": "usage_update", "used": 8, "size": 128000})
             update(sid, {"sessionUpdate": "agent_message_chunk", "messageId": "m2", "content": {"type": "text", "text": "Done."}})
             send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 4}}})
+        elif method == "fx/shells":  # the commands fx keeps (the Kai runtime from 0.0.17-kai.3)
+            shells = os.path.join(os.environ["HOME"], "fake-shells.json")
+            send({"jsonrpc": "2.0", "id": mid, "result": {"shells": json.load(open(shells)) if os.path.exists(shells) else []}})
         elif method == "session/cancel" and waiting is not None:
             send({"jsonrpc": "2.0", "id": waiting, "result": {"stopReason": "cancelled"}})
             waiting = None
@@ -211,7 +216,7 @@ FAKE_FX = textwrap.dedent('''
 
 
 @pytest.fixture
-def fake_fx(tmp_path: Path) -> dict[str, str]:
+def fake_fx(tmp_path: Path) -> Iterator[dict[str, str]]:
     if shutil.which("node") is None:
         pytest.skip("node is not installed")
     script = tmp_path / "fx"
@@ -220,15 +225,36 @@ def fake_fx(tmp_path: Path) -> dict[str, str]:
     home = tmp_path / "home"
     (home / "repo").mkdir(parents=True)
     proxies = {"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"}  # a test sets its own
-    return {**{k: v for k, v in os.environ.items() if k not in proxies}, "HOME": str(home), "DOTRIX_FX_BIN": str(script),
-            "FAKE_FX_LOG": str(tmp_path / "fx.log"), "OPENAI_API_KEY": "the-key"}
+    yield {**{k: v for k, v in os.environ.items() if k not in proxies}, "HOME": str(home), "DOTRIX_FX_BIN": str(script),
+           "FAKE_FX_LOG": str(tmp_path / "fx.log"), "OPENAI_API_KEY": "the-key", "DOTRIX_FX_HOST_POLL_MS": "200"}
+    _stop_host(home)
 
 
-def _drive(env: dict[str, str], brief: str, *extra: str) -> list[dict]:
+def _stop_host(home: Path) -> None:
+    """The fx host a test's turns started (fx-host.mjs outlives them, as it does in a sandbox), and its fx, stopped."""
+    pid = home / ".dotrix-fx-host" / "pid"
+    if not pid.exists():
+        return
+    with contextlib.suppress(ProcessLookupError, ValueError):
+        number = int(pid.read_text())
+        os.killpg(number, signal.SIGTERM)
+        for _ in range(100):  # gone, with its socket, before the next turn looks for it (a zombie is gone too)
+            status = Path(f"/proc/{number}/status")
+            if not status.exists() or "\nState:\tZ" in status.read_text():
+                break
+            time.sleep(0.05)
+    pid.unlink(missing_ok=True)
+
+
+def _drive(env: dict[str, str], brief: str, *extra: str, keep_host: bool = False) -> list[dict]:
+    """One turn through the driver. Afterwards its fx host is stopped, as a fresh sandbox has none (the next turn
+    resumes from saved state), unless `keep_host`: the next turn in the same warm sandbox, where it still runs."""
     argv = ["node", str(DRIVER), "--base-url", "https://api.openai.com/v1", "--key-env", "OPENAI_API_KEY",
             "--model", "gpt-6.1", "--session", "s1", *extra]
     done = subprocess.run(argv, input=brief, capture_output=True, text=True, env=env, timeout=30,
                           cwd=Path(env["HOME"]) / "repo")
+    if not keep_host:
+        _stop_host(Path(env["HOME"]))
     return [json.loads(line) for line in done.stdout.splitlines() if line.strip()]
 
 
@@ -237,7 +263,8 @@ def _logged(env: dict[str, str]) -> list[dict]:
 
 
 def _calls(env: dict[str, str]) -> list[dict]:
-    return [entry for entry in _logged(env) if entry["method"] != "environment"]
+    # The host's own polling for kept commands (fx/shells) isn't the turn's.
+    return [entry for entry in _logged(env) if entry["method"] not in ("environment", "fx/shells")]
 
 
 def test_model_recovery_needing_input_cannot_finish_as_success(fake_fx) -> None:
@@ -331,6 +358,64 @@ def test_the_next_turn_continues_fx_s_session_without_replaying_it(fake_fx) -> N
     assert "old" not in [e.get("text") for e in events]  # the resumed history isn't this turn's
     methods = [c["method"] for c in _calls(fake_fx)]
     assert methods[4:] == ["initialize", "session/resume", "session/set_mode", "session/prompt"]
+
+
+def test_in_a_warm_sandbox_the_next_turn_finds_fx_still_running_with_kai_s_commands(fake_fx) -> None:
+    """fx runs in its host (fx-host.mjs), which outlives the turn: the next turn in the same sandbox finds the
+    session still open (no resume), and the commands Kai left running, or that finished since, listed and named."""
+    _drive(fake_fx, "First", keep_host=True)
+    shells = [
+        {"sessionId": "shell-7", "command": "make ci", "state": "running", "output": "step 3/9", "startedMs": 1},
+        {"sessionId": "shell-8", "command": "npm test", "state": "completed", "exitCode": 1, "output": "1 failed", "startedMs": 2},
+    ]
+    (Path(fake_fx["HOME"]) / "fake-shells.json").write_text(json.dumps(shells))
+    events = _drive(fake_fx, "Second", "--resume", keep_host=True)
+    assert events[0] == {"type": "started", "model": "gpt-6.1", "resumed": True}
+    methods = [c["method"] for c in _calls(fake_fx)]
+    assert methods == ["initialize", "session/new", "session/set_mode", "session/prompt", "session/set_mode", "session/prompt"]
+    assert [e for e in events if e["type"] == "background"] == [
+        {"type": "background", "task": "command", "id": "shell-7", "state": "running", "label": "make ci"},
+        {"type": "background", "task": "command", "id": "shell-8", "state": "failed", "label": "npm test"},
+    ]
+    prompt = [c for c in _calls(fake_fx) if c["method"] == "session/prompt"][-1]["params"]["prompt"][0]["text"]
+    assert "shell-7: `make ci` is still running" in prompt and "shell-8: `npm test` finished (exit 1)" in prompt
+    assert prompt.endswith("Second")
+    # Between turns the host keeps a report of them for the platform.
+    report = json.loads((Path(fake_fx["HOME"]) / ".dotrix-fx-host" / "shells.json").read_text())
+    assert [shell["sessionId"] for shell in report["shells"]] == ["shell-7", "shell-8"]
+
+
+def test_another_model_gets_another_fx(fake_fx) -> None:
+    """The host is for one configuration: a turn on another model stops it (with what it ran) and starts its own."""
+    _drive(fake_fx, "First", keep_host=True)
+    argv = ["node", str(DRIVER), "--base-url", "https://api.openai.com/v1", "--key-env", "OPENAI_API_KEY",
+            "--model", "gpt-6.2", "--session", "s1", "--resume"]
+    done = subprocess.run(argv, input="Second", capture_output=True, text=True, env=fake_fx, timeout=30, cwd=Path(fake_fx["HOME"]) / "repo")
+    events = [json.loads(line) for line in done.stdout.splitlines() if line.strip()]
+    assert events[-1]["type"] == "done"
+    assert [c["method"] for c in _calls(fake_fx)].count("initialize") == 2
+    assert "session/resume" in [c["method"] for c in _calls(fake_fx)]
+
+
+def test_a_driver_killed_mid_turn_has_its_turn_cancelled_by_the_host(fake_fx) -> None:
+    """Stop's SIGKILL ends the turn's process tree, which the host isn't in: it cancels the prompt left working."""
+    argv = ["node", str(DRIVER), "--base-url", "https://api.openai.com/v1", "--key-env", "OPENAI_API_KEY",
+            "--model", "gpt-6.1", "--session", "s1"]
+    driver = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=fake_fx,
+                              cwd=Path(fake_fx["HOME"]) / "repo")
+    assert driver.stdin and driver.stdout
+    driver.stdin.write("Please wait")
+    driver.stdin.close()
+    assert json.loads(driver.stdout.readline())["type"] == "started"
+    time.sleep(0.5)
+    driver.kill()
+    driver.wait(10)
+    for _ in range(50):
+        if "session/cancel" in [c["method"] for c in _calls(fake_fx)]:
+            break
+        time.sleep(0.1)
+    assert [c["method"] for c in _calls(fake_fx)][-1] == "session/cancel"
+    assert (Path(fake_fx["HOME"]) / ".dotrix-fx-host" / "host.sock").exists()  # fx, and its commands, go on
 
 
 def test_a_worker_s_commands_show_in_the_session_named_for_the_worker(fake_fx) -> None:
@@ -929,3 +1014,98 @@ def test_with_the_real_engine_a_message_steers_the_running_turn(tmp_path: Path, 
     # The adapter shows each steer as a step and passes its state on to the worker.
     parsed = [Fx(FX_PROVIDERS["openai"]).parse(json.dumps(e), Usage()) for e in events if e["type"] == "steer"]
     assert all(p.steering and p.steering[0][0] == key for p in parsed)
+
+
+def test_kais_background_commands_and_workers_become_steps_named_by_ref() -> None:
+    fx = Fx(FX_PROVIDERS["openai"])
+    lines = [{"type": "background", "task": "command", "id": "shell-1", "state": "running", "label": "npm run dev"},
+             {"type": "background", "task": "worker", "id": "finder", "state": "done", "label": "finder: Where is VALUE?"},
+             {"type": "background", "task": "command", "id": "shell-1", "state": "ended", "label": "npm run dev"},
+             {"type": "background", "task": "nope", "id": "x", "state": "running"},
+             {"type": "background", "task": "command", "id": "shell-2", "state": "exploded"}]
+    steps = [s for line in lines for s in fx.parse(json.dumps(line), Usage()).steps]
+    assert [(s.kind, s.text, s.ref) for s in steps] == [
+        ("background-running", "npm run dev", "command:shell-1"),
+        ("background-done", "finder: Where is VALUE?", "worker:finder"),
+        ("background-ended", "npm run dev", "command:shell-1"),
+    ]
+
+
+@pytest.mark.skipif(not os.environ.get("DOTRIX_TEST_FX"), reason="Set DOTRIX_TEST_FX to the Kai runtime's fx")
+def test_with_the_real_engine_a_command_left_running_and_a_worker_show_as_background_tasks(tmp_path: Path) -> None:
+    """A command Kai starts in the background is reported running, then done when Kai reads it again; a worker is
+    reported running, then done with its report. One still running when the turn ends keeps running in fx's host:
+    the host reports it finished between turns, and the next turn lists it and tells Kai."""
+    import http.server
+    import threading
+
+    calls = [("shell", {"action": "run", "command": "sleep 1; echo READY", "yield_time_ms": 0}),
+             ("shell", {"action": "interact", "session_id": "shell-1", "yield_time_ms": 3000}),
+             ("shell", {"action": "run", "command": "sleep 3; echo LATE", "yield_time_ms": 0}),
+             ("subagent", {"action": "message", "agent": "finder", "message": "Where is VALUE?", "profile": "explorer"})]
+
+    class Model(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_: object) -> None:
+            pass
+
+        def do_POST(self) -> None:
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            kai = any(((t.get("function") or {}).get("name") or t.get("name")) == "subagent" for t in body.get("tools") or [])
+            step = sum(1 for m in body["messages"] if m.get("role") == "tool")
+            asked.append(next((m for m in reversed(body["messages"]) if m.get("role") == "user"), {}))
+            base = {"id": "r", "object": "chat.completion.chunk", "created": 1, "model": "m"}
+            if kai and step < len(calls):
+                name, args = calls[step]
+                delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": f"c{step}", "type": "function",
+                                                               "function": {"name": name, "arguments": json.dumps(args)}}]}
+                chunks = [{**base, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                          {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}]
+            else:
+                chunks = [{**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": "done"}, "finish_reason": None}]},
+                          {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(("".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n").encode())
+
+    asked: list[dict] = []
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Model)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    home = tmp_path / "home"
+    (home / "repo").mkdir(parents=True)
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "DOTRIX_FX_BIN": os.environ["DOTRIX_TEST_FX"], "OPENAI_API_KEY": "synthetic",
+           "DOTRIX_FX_HOST_POLL_MS": "300"}
+    argv = ["node", str(DRIVER), "--base-url", f"http://127.0.0.1:{server.server_port}/v1", "--key-env", "OPENAI_API_KEY",
+            "--model", "gpt-test", "--session", "s1", *Fx(FX_PROVIDERS["openai"]).profile_args("# How Kai works\n\nYou are Kai.", None)]
+    shells = home / ".dotrix-fx-host" / "shells.json"
+    try:
+        done = subprocess.run(argv, input="Go", capture_output=True, text=True, env=env, timeout=120, cwd=home / "repo")
+        seen = [(e["task"], e["id"], e["state"], e["label"]) for e in map(json.loads, done.stdout.splitlines()) if e["type"] == "background"]
+        assert seen == [
+            ("command", "shell-1", "running", "sleep 1; echo READY"),
+            ("command", "shell-1", "done", "sleep 1; echo READY"),
+            ("command", "shell-2", "running", "sleep 3; echo LATE"),
+            ("worker", "finder", "running", "finder: Where is VALUE?"),
+            ("worker", "finder", "done", "finder: Where is VALUE?"),
+        ], done.stdout
+        # Between turns: the command goes on in fx's host, which reports it finished, with what it printed.
+        for _ in range(100):
+            report = json.loads(shells.read_text()) if shells.exists() else {"shells": []}
+            late = [shell for shell in report["shells"] if shell["sessionId"] == "shell-2"]
+            if late and late[0]["state"] == "completed":
+                break
+            time.sleep(0.1)
+        assert late[0].get("exitCode") == 0 and "LATE" in late[0]["output"], (report, subprocess.run(["ps", "-eo", "pid,ppid,stat,etime,args"], capture_output=True, text=True).stdout)
+        # The next turn, in the same sandbox: the session is still open, and Kai hears of the finished command.
+        followed = subprocess.run([*argv, "--resume"], input="And then?", capture_output=True, text=True, env=env, timeout=120,
+                                  cwd=home / "repo")
+    finally:
+        server.shutdown()
+        _stop_host(home)
+    events = [json.loads(line) for line in followed.stdout.splitlines()]
+    assert events[0]["type"] == "started" and events[0]["resumed"] is True, followed.stdout
+    assert ("command", "shell-2", "done", "sleep 3; echo LATE") in [
+        (e["task"], e["id"], e["state"], e["label"]) for e in events if e["type"] == "background"]
+    assert events[-1]["type"] == "done", followed.stdout
+    told = json.dumps(asked[-1])
+    assert "shell-2: `sleep 3; echo LATE` finished (exit 0)" in told and "And then?" in told

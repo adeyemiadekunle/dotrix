@@ -75,6 +75,7 @@ from .brief import split_contract
 from .inputs import accepts_steering, steer_states, take_steers
 from .models import (
     CODING_AGENT_NAME,
+    CodingAgent,
     CodingLocation,
     CodingRun,
     CodingRunEvent,
@@ -199,6 +200,8 @@ class CodingWorker:
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
     slots: RunSlots = field(default_factory=lambda: RunSlots(2))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
+    # Kai's kept commands in each warm fx sandbox: the turn they're recorded on, and each one's state there.
+    _kept: dict[uuid.UUID, tuple[uuid.UUID, dict[str, str]]] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         self.pool.retire = self._retire
@@ -1149,7 +1152,11 @@ class CodingWorker:
         session was closed by hand or deleted, or whose sandbox was deleted by hand (the session isn't
         warm any more). A closed session keeps its transcript (a new turn resumes); deleting a
         session deletes it (the service does)."""
+        running = await self.watch_background()
         for session_id in self.pool.idle():
+            if session_id in running:  # Kai's commands still run there: kept up, within the limit
+                continue
+            await self._let_go_background(session_id)
             await self.pool.close(session_id, keep=True)
             await self._session(session_id, state=CodingSessionState.IDLE)
         pooled = self.pool.sessions()
@@ -1167,6 +1174,92 @@ class CodingWorker:
                 await self.pool.close(session_id)
             elif state is CodingSessionState.IDLE and at is not None and at < settled:  # its sandbox deleted by hand
                 await self.pool.close(session_id)
+
+    # -- Kai's commands kept running between turns (fx's host: infra/coding/fx-host.mjs) -----------------------
+
+    async def watch_background(self) -> set[uuid.UUID]:
+        """Read what fx's host reports of the commands Kai left running in each warm fx sandbox, and record each
+        change on the session's latest turn (`background-<state>`, and a finished one's `background-output`), as
+        Codes lists them. No turn starts on its own: Kai hears of them on the next one. Returns the sessions with
+        a command still running within `coding_background_minutes` of their last turn: they stay up."""
+        pooled = self.pool.sessions()
+        if not pooled:
+            return set()
+        async with self.session_factory() as session:
+            rows = (await session.execute(
+                select(CodingRun.session_id, CodingRun.id, CodingRun.agent)
+                .where(CodingRun.session_id.in_(pooled))
+                .order_by(CodingRun.session_id, CodingRun.turn.desc())
+            )).all()
+        latest: dict[uuid.UUID, tuple[uuid.UUID, CodingAgent]] = {}
+        for session_id, run_id, agent in rows:
+            latest.setdefault(session_id, (run_id, agent))
+        limit = self.settings.coding_background_minutes * 60
+        running: set[uuid.UUID] = set()
+        for session_id in pooled:
+            found, box = latest.get(session_id), self.pool.peek(session_id)
+            if found is None or found[1] is not CodingAgent.FX or box is None:
+                self._kept.pop(session_id, None)
+                continue
+            shells = await _kept_commands(box)
+            if shells is None:
+                continue
+            await self._record_background(session_id, found[0], shells)
+            used = self.pool.used(session_id)
+            if any(state == "running" for state, _, _ in shells.values()) and used is not None and time.monotonic() - used < limit:
+                running.add(session_id)
+        return running
+
+    async def _record_background(self, session_id: uuid.UUID, run_id: uuid.UUID, shells: dict[str, tuple[str, str, str]]) -> None:
+        known = self._kept.get(session_id)
+        if known is None or known[0] != run_id:
+            async with self.session_factory() as session:
+                recorded = (await session.execute(
+                    select(CodingRunEvent.ref, CodingRunEvent.kind).where(
+                        CodingRunEvent.run_id == run_id, CodingRunEvent.kind.like("background-%"),
+                        CodingRunEvent.kind != "background-output",
+                    ).order_by(CodingRunEvent.seq)
+                )).all()
+            known = (run_id, {ref: kind.removeprefix("background-") for ref, kind in recorded if ref})
+            self._kept[session_id] = known
+        states = known[1]
+        now = datetime.now(UTC).isoformat()
+        events: list[dict[str, Any]] = []
+        for shell_id, (state, command, output) in shells.items():
+            ref = f"command:{shell_id}"[:64]
+            if states.get(ref) == state or (ref not in states and state != "running" and not command):
+                continue
+            states[ref] = state
+            events.append({"at": now, "kind": f"background-{state}", "text": command[:300] or shell_id, "ref": ref})
+            if state != "running" and output.strip():
+                events.append({"at": now, "kind": "background-output", "text": output[-4000:], "ref": ref})
+        if events:
+            async with self.session_factory() as session:
+                run = await session.get(CodingRun, run_id, with_for_update=True)
+                if run is not None:
+                    add_events(run, session, events=events)
+                    await session.commit()
+
+    async def _let_go_background(self, session_id: uuid.UUID) -> None:
+        """A sandbox let go (idle, or past the limit) ends the commands still running in it: said on the turn."""
+        known = self._kept.pop(session_id, None)
+        if known is None:
+            return
+        ended = [ref for ref, state in known[1].items() if state == "running"]
+        if not ended:
+            return
+        now = datetime.now(UTC).isoformat()
+        async with self.session_factory() as session:
+            run = await session.get(CodingRun, known[0], with_for_update=True)
+            if run is None:
+                return
+            labels = {ref: text for ref, text in (await session.execute(
+                select(CodingRunEvent.ref, CodingRunEvent.text).where(
+                    CodingRunEvent.run_id == run.id, CodingRunEvent.ref.in_(ended), CodingRunEvent.kind == "background-running")
+            )).all()}
+            add_events(run, session, events=[{"at": now, "kind": "background-ended", "text": labels.get(ref, ref), "ref": ref}
+                                             for ref in ended])
+            await session.commit()
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
         """Stop asked for, or this worker no longer holds the run (recovery or another worker has it)."""
@@ -1332,6 +1425,40 @@ def needs_worker(run: CodingRun) -> bool:
     """Whether a queued run is the worker's: a cloud turn, or what's ready to push from either place
     (accepted changes, a revert). A local turn waiting to code is its runner's, claimed through the API."""
     return run.location is CodingLocation.CLOUD or run.accepted_at is not None or run.revert_of is not None
+
+
+KEPT_COMMANDS = 'cat "$HOME/.dotrix-fx-host/shells.json" 2>/dev/null || true'  # what fx-host.mjs writes
+
+
+async def _kept_commands(box: SandboxSession) -> dict[str, tuple[str, str, str]] | None:
+    """The commands fx's host keeps in a sandbox: id → (state as Codes says it, command, the end of its output).
+    None when it can't be read (the sandbox didn't answer)."""
+    try:
+        read = await box.exec(["sh", "-c", KEPT_COMMANDS], timeout=20)
+    except Exception:
+        logger.debug("couldn't read a sandbox's kept commands", exc_info=True)
+        return None
+    if read.code != 0:
+        return None
+    try:
+        report = json.loads(read.stdout or "{}")
+    except ValueError:
+        return {}
+    shells: dict[str, tuple[str, str, str]] = {}
+    for shell in report.get("shells") or []:
+        if not isinstance(shell, dict) or not isinstance(shell.get("sessionId"), str):
+            continue
+        fx_state, code = shell.get("state"), shell.get("exitCode")
+        if fx_state == "running":
+            state = "running"
+        elif fx_state == "stopped":
+            state = "stopped"
+        elif fx_state == "completed" and (code == 0 or (code is None and not shell.get("signal"))):
+            state = "done"
+        else:
+            state = "failed"
+        shells[shell["sessionId"][:48]] = (state, str(shell.get("command") or ""), str(shell.get("output") or ""))
+    return shells
 
 
 def add_events(run: CodingRun, session: AsyncSession, *, events: list[dict[str, Any]] | None = None,

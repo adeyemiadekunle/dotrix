@@ -1,5 +1,6 @@
 """Messages a person sends a coding session while Kai works: steer the running turn, or queue the next one."""
 import dataclasses
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -13,7 +14,14 @@ from dotrix_backend.modules.coding.inputs import (
     steer_states,
     take_steers,
 )
-from dotrix_backend.modules.coding.models import CodingInput, CodingRun, CodingRunStatus
+from dotrix_backend.modules.coding.models import (
+    CodingInput,
+    CodingRun,
+    CodingRunStatus,
+    CodingSession,
+    CodingSessionState,
+)
+from dotrix_backend.modules.coding.runner import add_events
 
 from .test_coding import (  # noqa: F401  (fixtures)
     _asked,
@@ -415,3 +423,71 @@ async def test_a_stopped_turn_with_questions_still_cancels_its_queue(db_client: 
     assert await deliver_for_job(_ctx(db_client)) == 0
     [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
     assert item["status"] == "cancelled" and item["note"] == "The turn was stopped"
+
+
+class _KeptBox:
+    """A warm fx sandbox as the worker sees it between turns: fx's host reports Kai's kept commands."""
+
+    def __init__(self) -> None:
+        self.report: dict = {"shells": []}
+        self.closed = False
+
+    async def exec(self, argv, **_):
+        from dotrix_backend.modules.coding.sandbox import ExecResult
+        assert argv[-1].startswith('cat "$HOME/.dotrix-fx-host/shells.json"')
+        return ExecResult(0, json.dumps(self.report), "")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_commands_kai_left_running_are_followed_between_turns_and_keep_the_sandbox_up(db_client: AsyncClient, queued) -> None:  # noqa: F811
+    """No turn starts on its own: the worker reads what fx's host says of Kai's kept commands and records each change
+    on the session's latest turn, as Codes lists them. A sandbox with one running stays up past the idle time,
+    within `coding_background_minutes`; once let go, the ones still running are said to have ended."""
+    ada, *_ = queued
+    base, run = await _fx_asked(db_client, queued)
+    run_id = uuid.UUID(run["id"])
+    async with _ctx(db_client).session_factory() as session:
+        row = await session.get(CodingRun, run_id)
+        row.status, row.finished_at = CodingRunStatus.NO_CHANGES, datetime.now(UTC)
+        session_id = row.session_id
+        add_events(row, session, events=[{"at": datetime.now(UTC).isoformat(), "kind": "background-running", "text": "make ci",
+                                          "ref": "command:shell-1"}])
+        now = datetime.now(UTC)
+        session.add(CodingSession(id=session_id, workspace_id=row.workspace_id, project_id=row.project_id, issue_id=row.issue_id,
+                                  agent=row.agent, state=CodingSessionState.WARM, claude_session=uuid.uuid4(), created_at=now,
+                                  last_active_at=now))
+        await session.commit()
+    worker = _ctx(db_client).coding
+    worker.pool.idle_seconds, worker.pool.per_workspace = 0, 3  # idle at once: only a running command keeps it
+    box = _KeptBox()
+    await worker.pool.put(session_id, row.workspace_id, box)
+
+    box.report = {"shells": [{"sessionId": "shell-1", "command": "make ci", "state": "running", "output": "step 3/9"}]}
+    await worker.reap()
+    assert worker.pool.sessions() == [session_id]  # kept up: make ci still runs
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    assert [e["kind"] for e in turns[-1]["events"] if e["kind"].startswith("background-")] == ["background-running"]
+
+    box.report = {"shells": [
+        {"sessionId": "shell-1", "command": "make ci", "state": "completed", "exitCode": 0, "output": "all 9 passed"},
+        {"sessionId": "shell-2", "command": "npm run e2e", "state": "running", "output": ""},
+    ]}
+    await worker.reap()
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    background = [(e["kind"], e["text"], e["ref"]) for e in turns[-1]["events"] if e["kind"].startswith("background-")]
+    assert background[1:] == [("background-done", "make ci", "command:shell-1"),
+                              ("background-output", "all 9 passed", "command:shell-1"),
+                              ("background-running", "npm run e2e", "command:shell-2")]
+    await worker.reap()  # nothing new: nothing recorded again
+    assert len([e for e in (await _turns(db_client, base, str(session_id), ada.headers))[-1]["events"]
+                if e["kind"].startswith("background-")]) == 4
+
+    # Past the limit (its last turn ended longer ago than it allows), the sandbox is let go, and e2e ends with it.
+    worker.settings.coding_background_minutes = 0
+    await worker.reap()
+    assert worker.pool.sessions() == [] and box.closed
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    assert [(e["kind"], e["text"]) for e in turns[-1]["events"] if e["kind"].startswith("background-")][-1] == (
+        "background-ended", "npm run e2e")

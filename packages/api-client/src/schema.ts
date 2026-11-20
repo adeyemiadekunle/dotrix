@@ -7085,7 +7085,7 @@ export interface components {
             at: string;
             /**
              * Kind
-             * @description `step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`
+             * @description `step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`, or `background-<state>` (a command Kai left running or one of its workers, `ref` naming it: running, done, failed, stopped, or ended with the turn)
              */
             kind: string;
             /** Text */
@@ -7120,7 +7120,7 @@ export interface components {
             at: string;
             /**
              * Kind
-             * @description `step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`
+             * @description `step`, `text` (the agent's words), `tool` (what it did), `output` / `output-error` (a command's output, and whether it failed), `error`, or `background-<state>` (a command Kai left running or one of its workers, `ref` naming it: running, done, failed, stopped, or ended with the turn)
              */
             kind: string;
             /** Text */
