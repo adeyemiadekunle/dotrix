@@ -2,6 +2,7 @@
 // files as the turn leaves it, and the commands it ran. Desktop turns show the live worktree on this computer.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@dotrix/ui/components/collapsible";
 import { languageOf, useHighlight, type HighlightToken } from "@dotrix/ui/hooks/use-highlight";
 
