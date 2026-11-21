@@ -210,7 +210,7 @@ async def test_live_kai_loads_a_pinned_skill_resource(
 
 @pytest.mark.parametrize(("agent", "model"), [case for case in _cases() if case.values[1].startswith("nvidia:")])
 async def test_live_nvidia_bug_and_browser(
-    db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
+    db_client: AsyncClient, coding, github, origin: Path, agent_script, storage, agent, model,  # noqa: F811
 ) -> None:
     """Real provider and gVisor containers; disposable git and simulated GitHub/reviewer only."""
     ada, _, ws, kun, _, _ = coding
@@ -221,7 +221,7 @@ async def test_live_nvidia_bug_and_browser(
     settings.coding_timeout_minutes = 5
     worker = app.state.jobs.ctx.coding
     app.state.jobs.ctx = dataclasses.replace(app.state.jobs.ctx,
-        coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+        coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings), storage=storage))
     await _save_key(db_client, ada.headers, "nvidia", os.environ[KEYS["nvidia"]])
     # The test starts after setup; no external repository or GitHub write is possible.
     (origin / ".gitignore").write_text("__pycache__/\n")
@@ -236,10 +236,13 @@ async def test_live_nvidia_bug_and_browser(
     task = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
         "type": "task", "title": "Fix add and verify the browser",
         "description": "Fix add.py so add returns a+b. Change only add.py. Run python3 -m unittest -v test_add "
-        "and verify all assertions pass. Then start python3 -m http.server 8080 in the background, "
-        "navigate with browser tools to http://localhost:8080/index.html, read browser_snapshot, "
-        "click Click me using its target, read a fresh snapshot and verify Clicked successfully. "
-        "Save a screenshot in /tmp/playwright and stop the web server. Report tests and browser evidence.",
+        "and verify all assertions pass. Start python3 -m http.server 8080. If your shell supports "
+        "managed sessions, run it with yield_time_ms=0 and keep the session ID for cleanup. Otherwise, "
+        "start it as a background process and keep its PID. Navigate with browser tools to "
+        "http://localhost:8080/index.html, read browser_snapshot and click Click me using its target. "
+        "Read a fresh snapshot and verify Clicked successfully. Call browser_take_screenshot with "
+        "filename=proof.png and type=png after clicking. Confirm /tmp/playwright/proof.png exists, then "
+        "stop the web server. Report tests and browser evidence.",
     })).json()
     asked = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=ada.headers,
         json={"agent": agent, "model": model})
