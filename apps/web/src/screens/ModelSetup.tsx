@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { api, authPost, unwrap } from "@/lib/api";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { go, useRoute } from "../core/nav";
 import { myKeySaved, myModels } from "../data/account";
 import { isLive, live } from "../data/live";
@@ -29,10 +30,10 @@ export function ModelGate({ children }: { children: ReactNode }) {
       <>
         {access.data?.ready === false && (
           <div className="alert info" role="status" style={{ margin: 16 }}>
-            <span>Connect your personal model to use Chat and Codes. Your projects remain available.</span>
-            <button className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+            <span>Connect your personal model to use Chat and Code. Your projects remain available.</span>
+            <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
               Connect a model
-            </button>
+            </ActionButton>
           </div>
         )}
         {children}

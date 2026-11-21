@@ -1130,7 +1130,7 @@ function Preview({ step, projectKey }: { step: Step; projectKey: string }) {
           ["home", "Home"],
           ["inbox", "Inbox"],
           ["chat", "Chat"],
-          ["code", "Codes"],
+          ["code", "Code"],
           ["folder", "Projects"],
         ] as const
       ).map(([icon, label]) => (

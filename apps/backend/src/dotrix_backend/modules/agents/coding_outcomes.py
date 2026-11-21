@@ -24,9 +24,9 @@ FINAL_CODING = (CodingRunStatus.PR_OPENED, CodingRunStatus.NO_CHANGES, CodingRun
 # sweep has already checked and couldn't settle. Reported too; its later outcome is reported again.
 DECISIONS = {
     CodingRunStatus.CHANGES_READY: "Kai's checked changes wait for the person to accept and push them, or discard "
-                                   "them, from Inbox or Codes. Nothing is pushed until then.",
+                                   "them, from Inbox or Code. Nothing is pushed until then.",
     CodingRunStatus.RECOVERY_REQUIRED: "Dotrix couldn't tell whether this turn's push or PR went through. The person "
-                                       "decides in Codes: Check and recover, or Discard. No later turn builds on it.",
+                                       "decides in Code: Check and recover, or Discard. No later turn builds on it.",
 }
 
 

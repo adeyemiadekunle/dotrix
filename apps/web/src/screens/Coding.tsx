@@ -58,7 +58,7 @@ export function Coding() {
           <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
             <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
             <div style={{ height: 44, padding: "0 16px" }} className="row">
-              <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Codes</h1>
+              <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Code</h1>
               <span className="sp" />
               <SessionListToggle />
             </div>

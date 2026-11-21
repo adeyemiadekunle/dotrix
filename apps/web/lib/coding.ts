@@ -98,14 +98,22 @@ export function useStartCoding(
   model: string | null = null,
   workMode: "plan" | "build" = "build",
 ) {
-  return useCodingMutation(scope, issueKey, (s, note: string | null) =>
-    unwrap(
-      api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs", {
-        params: { path: { ...path(s), key: issueKey } },
-        body: { note, approval_mode: approvalMode, location, agent, model, work_mode: workMode },
-      }),
-    ),
-  );
+  return useCodingMutation(scope, issueKey, (s, { note, baseBranch }: { note: string | null; baseBranch?: string }) => {
+    const body = { approval_mode: approvalMode, location, agent, model, work_mode: workMode };
+    return issueKey
+      ? unwrap(
+          api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/issues/{key}/runs", {
+            params: { path: { ...path(s), key: issueKey } },
+            body: { ...body, note },
+          }),
+        )
+      : unwrap(
+          api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions", {
+            params: { path: path(s) },
+            body: { ...body, note: note ?? "", base_branch: baseBranch || null },
+          }),
+        );
+  });
 }
 
 export function useDecideCoding(scope: Scope | undefined, issueKey: string) {

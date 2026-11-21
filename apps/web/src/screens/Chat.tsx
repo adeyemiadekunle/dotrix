@@ -292,7 +292,7 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
       <ActionButton
         className="ibtn ibtn-xs cs-more"
         onClick={(e) => openPop(e.currentTarget, "session", { id: cs.session_id, session: cs })}
-        aria-label={`More for ${cs.issue_key}`}
+        aria-label={`More for ${cs.issue_key || title}`}
         aria-haspopup="menu"
       >
         <Ic n="ellipsis" s={14} />
@@ -343,7 +343,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         {files.length > 0 && latest && (
           <span className="row" style={{ gap: 6 }}>
             {files.length} file{files.length === 1 ? "" : "s"} changed
-            <LineCounts files={files} onClick={() => openCoding(`session=${cs.session_id}&turn=${latest.id}&panel=changes`)} tip="Open the changes in Codes" />
+            <LineCounts files={files} onClick={() => openCoding(`session=${cs.session_id}&turn=${latest.id}&panel=changes`)} tip="Open the changes in Code" />
           </span>
         )}
       </div>
@@ -395,7 +395,7 @@ function SessionCard({ cs }: { cs: CodingSession }) {
         )}
         <span className="sp" />
         <ActionButton className="btn btn-sm btn-ghost" onClick={() => openCoding(`session=${cs.session_id}`)}>
-          Open in Codes
+          Open in Code
           <Ic n="arrow-right" s={12} />
         </ActionButton>
       </div>
@@ -1496,11 +1496,10 @@ function NewChat({
 
 export function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
-  const ps = new Set(
-    useProjects()
-      .items.filter((p) => canSee(p))
-      .map((p) => p.id),
-  );
+  const projects = useProjects().items.filter((p) => canSee(p));
+  const ps = new Set(projects.map((p) => p.id));
+  const [projectId, setProjectId] = useState("");
+  const [branch, setBranch] = useState("");
   const personal = D().ws.kind === "personal";
   const { tasks } = useAllTasks();
   const mine = tasks.filter((t) => ps.has(t.project) && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
@@ -1522,7 +1521,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   }, [note]);
   const t = mine.find((issue) => issue.id === tid) ?? task(tid);
   const ws = wsId();
-  const pid = t?.project;
+  const pid = t?.project ?? (isLive() ? projectId : "");
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const avail = useCodingAvailability(scope).data;
   const [chosenModel, setChosenModel] = useState<string | null>(null);
@@ -1571,9 +1570,8 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   }, [optionsOpen, menuOpen]);
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
   const go_ = () => {
-    if (!t) return;
-    if (!ready || start.isPending) return;
-    start.mutateAsync(note.trim() || null).then(
+    if (!pid || (!t && !note.trim()) || !ready || start.isPending) return;
+    start.mutateAsync({ note: note.trim() || null, baseBranch: branch.trim() }).then(
       (run) => openCoding(`session=${run.session_id}`),
       () => {},
     );
@@ -1610,6 +1608,35 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
       <div className="ns-mid">
         <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
         <h2 className="ns-title">Start a session</h2>
+        {!t && isLive() && (
+          <div className="ns-source">
+            <label>
+              Repository
+              <select
+                value={projectId}
+                onChange={(e) => {
+                  setProjectId(e.target.value);
+                  setBranch("");
+                }}
+              >
+                <option value="">Choose a repository</option>
+                {projects
+                  .filter((p) => p.repo)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.repo} · {p.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {!!projectId && (
+              <label>
+                Starting branch
+                <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Repository default" maxLength={200} />
+              </label>
+            )}
+          </div>
+        )}
         {avail && (
           <ChoiceCard
             label="Choose environment"
@@ -1679,7 +1706,13 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 rows={1}
                 value={note}
                 autoFocus
-                placeholder={t ? `What should Kai do on ${t.key}?` : `Type @ to pick ${personal ? "an issue" : "one of your issues"}`}
+                placeholder={
+                  t
+                    ? `What should Kai do on ${t.key}?`
+                    : pid
+                      ? "What should Kai do?"
+                      : `Choose a repository or type @ to pick ${personal ? "an issue" : "one of your issues"}`
+                }
                 onChange={(e) => onText(e.target)}
                 onKeyDown={(e) => {
                   if (menuOpen && found.length) {
@@ -1768,21 +1801,21 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 model={model}
                 models={models.map((m): [string, string] => [m, modelName(m)])}
                 onChange={setChosenModel}
-                empty={location === "local" ? "Model managed locally" : !t ? "Pick an issue first" : "No models connected"}
+                empty={location === "local" ? "Model managed locally" : !pid ? "Choose a repository or issue" : "No models connected"}
               />
             }
             sendButton={
               <>
                 <span
                   data-tip={
-                    !t
-                      ? "Pick an issue first"
+                    !pid
+                      ? "Choose a repository or issue"
                       : !ready
                         ? ((location === "local" ? avail?.local_reason : avail?.reason) ?? "Kai can't code here yet")
                         : "Start coding"
                   }
                 >
-                  <button className="kt-send" onClick={go_} disabled={!t || !ready || start.isPending} aria-label="Start coding">
+                  <button className="kt-send" onClick={go_} disabled={!pid || (!t && !note.trim()) || !ready || start.isPending} aria-label="Start coding">
                     <Ic n="arrow-up" s={15} />
                   </button>
                 </span>
@@ -1951,8 +1984,15 @@ function CiCard({ turn, scope, canFix, onFix }: { turn: CodingRun; scope: Scope 
   );
 }
 
+/** What a turn ended as when it used no tools: a refused or cut-off turn didn't work on anything. */
+const NO_STEPS: Partial<Record<CodingRun["status"], string>> = {
+  failed: "Failed before any steps",
+  stopped: "Stopped before any steps",
+  recovery_required: "Interrupted before any steps",
+};
+
 /** What a turn did, in a line, as Claude Code folds its tool calls: "Read 2 files, ran 2 commands, edited 3 files". */
-function stepsSummary(events: CodingRun["events"]): string {
+function stepsSummary(events: CodingRun["events"], status?: CodingRun["status"]): string {
   let read = 0,
     edited = 0,
     ran = 0,
@@ -1971,7 +2011,8 @@ function stepsSummary(events: CodingRun["events"]): string {
     other && `used ${other} other tool${other > 1 ? "s" : ""}`,
   ].filter(Boolean) as string[];
   const line = parts.join(", ");
-  return line ? line[0]!.toUpperCase() + line.slice(1) : "Worked on it";
+  if (line) return line[0]!.toUpperCase() + line.slice(1);
+  return (status && NO_STEPS[status]) ?? "Worked on it";
 }
 
 function copyText(text: string) {
@@ -2033,7 +2074,7 @@ function KaiTurn({
                 <TraceCollapsibleTrigger>
                   <TraceLine status={working ? "running" : undefined}>
                     <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
-                    <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events)}</TraceTitle>
+                    <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events, turn.status)}</TraceTitle>
                   </TraceLine>
                 </TraceCollapsibleTrigger>
                 <TraceCollapsibleContent>
@@ -2319,10 +2360,12 @@ export function Session({ cs }: { cs: CodingSession }) {
             </button>
             {menu === "title" && (
               <div className="pop cs-menu" role="menu" aria-label="Session">
-                <button role="menuitem" onClick={() => (setMenu(null), t && openTask(t.id))}>
-                  <Ic n="circle-dot" s={14} />
-                  Open {cs.issue_key}
-                </button>
+                {t && cs.issue_key && (
+                  <button role="menuitem" onClick={() => (setMenu(null), openTask(t.id))}>
+                    <Ic n="circle-dot" s={14} />
+                    Open {cs.issue_key}
+                  </button>
+                )}
                 {cs.thread_id && (
                   <button role="menuitem" onClick={() => (setMenu(null), open(`thread=${cs.thread_id}&project=${cs.project_key}`))}>
                     <Ic n="message-square" s={14} />

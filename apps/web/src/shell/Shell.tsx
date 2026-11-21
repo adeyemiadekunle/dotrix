@@ -40,7 +40,7 @@ export const ROUTE_NAMES: Record<string, string> = {
   settings: "Settings",
   archive: "Archive",
   chat: "Chat",
-  codes: "Codes",
+  codes: "Code",
 };
 
 /** A page's name. */
@@ -272,7 +272,7 @@ function Sidebar() {
         <SItem route="inbox" label="Inbox" icon="inbox" ct={unreadInbox || ""} dot />
         <SItem route="mytasks" label={tasksLabel()} icon="circle-check" ct={myOpen || ""} />
         <SItem route="chat" label="Chat" icon="message-square" />
-        <SItem route="codes" label="Codes" icon="code" />
+        <SItem route="codes" label="Code" icon="code" />
         <SItem route="projects" label="Projects" icon="folder-kanban" />
         <SItem route="activity" label="Activity" icon="activity" />
         <div className="sgroup" id="side-projects">

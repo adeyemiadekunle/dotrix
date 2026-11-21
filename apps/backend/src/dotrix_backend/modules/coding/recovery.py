@@ -79,6 +79,8 @@ async def recover(
             "The project's repository was disconnected, so GitHub can't be checked: look at the branch "
             "yourself, then discard this run"))
     repo, installation = found
+    if run.source_repo_id is not None and repo.github_repo_id != run.source_repo_id:
+        return await _settle(session, run, Recovered.UNCLEAR, by, error="The connected repository changed since this turn")
 
     # Where the run pushes (the repo, or the app's fork of it) and where its PR goes.
     fork_owner = settings.coding_fork_owner
@@ -107,9 +109,10 @@ async def recover(
         if (refused := await _refused(session, run)) is not None:
             return await _settle(session, run, Recovered.FAILED, by, error=refused + " The branch is on GitHub.")
         paths = [f["path"] for f in run.files_changed]
+        title = await issue_title(session, run)
         pr = await app.create_pull_request(
             installation.installation_id, repo.full_name, head=head_prefix + run.branch, base=run.base_branch,
-            title=f"{run.issue_key}: {await issue_title(session, run)}",
+            title=f"{run.issue_key}: {title}" if run.issue_key else title,
             body=pr_body(run.summary, run.issue_key, run.id, run.files_changed, guard.ci_sensitive(paths)),
             token=token,
         )
@@ -205,6 +208,8 @@ async def _settle(
         run.status, run.finished_at, run.error = CodingRunStatus.STOPPED, now, error
     elif outcome is Recovered.UNCLEAR:
         run.error = error
+    if outcome in (Recovered.ADOPTED_PR, Recovered.OPENED_PR, Recovered.STOPPED, Recovered.DISCARDED):
+        run.cloud_checkpoint = None
     turn_ended(session, run, by=by)
     said = {
         Recovered.ADOPTED_PR: f"Recovered: the push landed, PR #{run.pr_number}",

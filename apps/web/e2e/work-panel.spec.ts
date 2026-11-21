@@ -419,6 +419,52 @@ test("new Chat models remain selectable before the send action", async ({ page, 
   expect((await submitted).postDataJSON()).toMatchObject({ model: "anthropic:claude-sonnet-5-5", message: "Review this draft\nKeep this second line" });
 });
 
+test("Code starts from a repository and branch without picking an issue", async ({ page, context, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await mockWorkspace(
+    page,
+    context,
+    baseURL!,
+    "codes?new=1",
+    false,
+    () => true,
+    async () => {
+      await page.route("**/v1/workspaces/w1/projects", (route) =>
+        route.fulfill({
+          json: [
+            {
+              id: "p1",
+              key: "TEST",
+              name: "Test project",
+              repo_url: "https://github.com/example/project",
+              status: "active",
+              access: "open",
+              created_at: date,
+              updated_at: date,
+            },
+          ],
+        }),
+      );
+      await page.route("**/projects/p1/coding", (route) =>
+        route.fulfill({ json: { available: true, models: ["openai:gpt-5.4"], default_model: "openai:gpt-5.4" } }),
+      );
+      await page.route("**/projects/p1/coding/sessions", (route) => route.fulfill({ status: 201, json: { id: "turn1", session_id: "session1" } }));
+    },
+  );
+  const send = page.getByRole("button", { name: "Start coding", exact: true });
+  const repository = page.getByRole("combobox", { name: "Repository", exact: true });
+  await repository.selectOption("p1", { timeout: 10_000 });
+  const bounds = (await repository.boundingBox())!;
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await expect(send).toBeDisabled();
+  await page.getByLabel("Starting branch").fill("release");
+  await page.getByLabel("What should it do").fill("Fix navigation");
+  const submitted = page.waitForRequest((req) => req.method() === "POST" && req.url().endsWith("/projects/p1/coding/sessions"));
+  await send.click();
+  expect((await submitted).postDataJSON()).toMatchObject({ note: "Fix navigation", base_branch: "release", location: "cloud" });
+  await expect(page).toHaveURL(/\/codes\?session=session1$/);
+});
+
 for (const width of [390, 1440]) {
   test(`new Codes models remain selectable before Send at ${width}px`, async ({ page, context, baseURL }) => {
     await page.setViewportSize({ width, height: 900 });

@@ -69,3 +69,21 @@ async def test_resolving_an_image_does_not_mutate_the_shared_sandbox_factory():
     sandbox.cli = invalid
     with pytest.raises(SandboxError, match="immutable"):
         await sandbox.pin_image("dotrix-coding:latest")
+
+
+async def test_docker_command_failure_stays_a_command_failure_while_container_is_running(monkeypatch):
+    from dotrix_backend.core.settings import Settings
+    from dotrix_backend.modules.coding.sandbox import DockerSandbox, DockerSession
+
+    result = ExecResult(7, "", "No such container (text from the command)")
+
+    async def process(argv, **kwargs):
+        if argv[1] == "exec":
+            return result
+        assert argv[1:3] == ["container", "ls"]
+        return ExecResult(0, "dotrix-test\n", "")
+
+    monkeypatch.setattr("dotrix_backend.modules.coding.sandbox.run_process", process)
+    docker = DockerSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
+        jwt_secret="test-only-secret-long-enough-for-settings"))
+    assert await DockerSession(docker, "dotrix-test").exec(["false"], timeout=5) == result

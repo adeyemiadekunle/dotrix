@@ -1,6 +1,6 @@
 [project]
 name = "dotrix-engine"
-version = "0.3.0"
+version = "0.4.0"
 description = "UI-agnostic dotrix engine: PM + thinking agents, issues, approvals, jobs, ingestion."
 requires-python = ">=3.11"
 dependencies = [
