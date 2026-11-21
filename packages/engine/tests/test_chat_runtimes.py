@@ -171,7 +171,7 @@ def test_the_fx_chat_host_uses_the_environment_s_proxy(tmp_path):
         def log_message(self, *_):
             pass
 
-        def do_CONNECT(self):  # Node tunnels through the proxy, as it would to an HTTPS provider
+        def do_CONNECT(self):  # Node 24 tunnels even a plain http:// request, as it does to an HTTPS provider
             seen.append(self.path)
             self.send_response(200)
             self.end_headers()
@@ -179,6 +179,13 @@ def test_the_fx_chat_host_uses_the_environment_s_proxy(tmp_path):
                 pass
             self.wfile.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
             self.close_connection = True
+
+        def do_GET(self):  # Node 26 sends a plain http:// request to the proxy as an absolute-form GET
+            seen.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -189,4 +196,6 @@ def test_the_fx_chat_host_uses_the_environment_s_proxy(tmp_path):
         done = subprocess.run([node, "-e", script], env=env, capture_output=True, text=True, timeout=30)
     finally:
         server.shutdown()
-    assert done.stdout.strip() == "ok" and seen == ["provider.invalid:80"], done.stderr[-500:]
+    # Either way the request reached the proxy, not the provider: provider.invalid has no address.
+    assert done.stdout.strip() == "ok", done.stderr[-500:]
+    assert seen in (["provider.invalid:80"], ["http://provider.invalid/v1/models"]), seen
