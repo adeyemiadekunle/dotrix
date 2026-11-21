@@ -19,7 +19,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
-- Kai on fx kept building an old plan. fx takes Kai's contract as the session's system profile and keeps it for the session's life, but four per-turn parts of the brief were added after the contract, so they went into that profile and a resumed session never read them again: a newly selected saved plan (its tasks and acceptance criteria), the cloud environment, the pinned skill catalog and Nova's added handoff instructions. They now go above the contract into the turn's own prompt (`brief.with_task`), as Codes' step-by-step plan tasks already did. Reported in review on adeyemiadekunle/dotrix#298. The 0.3.0 tags were cut before this fix merged, so it ships here.
+- Kai on fx kept building an old plan. fx takes Kai's contract as the session's system profile and keeps it for the session's life, but four per-turn parts of the brief were added after the contract, so they went into that profile and a resumed session never read them again: a newly selected saved plan (its tasks and acceptance criteria), the cloud environment, the pinned skill catalog and Nova's added handoff instructions. They now go above the contract into the turn's own prompt (`brief.with_task`), as Code's step-by-step plan tasks already did. Reported in review on adeyemiadekunle/dotrix#298. The 0.3.0 tags were cut before this fix merged, so it ships here.
 - Cloud coding stops when a queued turn's connected repository changes. Follow-up turns keep the base branch of the pull request they continue.
 
 ## [0.3.0] - 2026-11-21
