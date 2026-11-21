@@ -136,6 +136,14 @@ def split_contract(brief: str) -> tuple[str, str | None]:
     return task.rstrip() + "\n", (CONTRACT_HEADING + "\n" + contract).strip()
 
 
+def with_task(brief: str, section: str) -> str:
+    """`brief` with `section` added to what this turn is asked, above Kai's contract. An engine that takes the contract
+    as the session's pinned system profile (fx) gets this turn's part in the prompt; a section appended after the
+    contract would land in the profile, which a resumed session never takes again, so the turn would never see it."""
+    task, contract = split_contract(brief)
+    return task.rstrip() + "\n\n" + section.strip("\n") + ("\n\n" + contract if contract else "")
+
+
 STANDARDS_CHARS = 16_000  # the skills and the team's coding rules, together
 
 

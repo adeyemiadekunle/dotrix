@@ -1353,6 +1353,13 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     assert run["status"] == "awaiting_approval" and run["thread_id"] == thread and run["plan_id"] == plan["id"]
     assert run["requested_by_id"] == ada.id and "Task 1 of the plan" in run["brief"]
     assert "Refund within a week." in run["brief"] and "New scope" not in run["brief"]
+    # The plan and the skills are this turn's: above Kai's contract, which fx pins as the session's profile and a
+    # resumed session never takes again, so a revised plan in a later turn must reach the prompt, not the profile.
+    from dotrix_backend.modules.coding.brief import split_contract
+
+    task, contract = split_contract(run["brief"])
+    assert contract and "## Selected implementation plan" in task and "## Pinned skills" in task
+    assert "Selected implementation plan" not in contract and "Pinned skills" not in contract
     audit = (await db_client.get(f"{ws}/audit", headers=ada.headers)).json()
     assert any(e["action"] == "coding.requested_in_conversation" for e in audit)
 
@@ -1375,6 +1382,8 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     follow_up = await db_session.get(CodingRun, uuid.UUID(turn.json()["id"]))
     assert follow_up.plan_id == uuid.UUID(plan["id"])
     assert "Refund within a week." in follow_up.brief
+    task, contract = split_contract(follow_up.brief)
+    assert contract and "## Selected implementation plan" in task and "Selected implementation plan" not in contract
     assert follow_up.execution_plan is None
 
     model = agent_script.say(tool_call("coding_evidence"), "Turn 2 waits for an approval.")

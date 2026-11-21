@@ -44,7 +44,13 @@ BROWSER_MCP = {
     "mcpServers": {
         BROWSER_SERVER: {
             "command": "sh",
-            "args": ["-c", f"mkdir -p {BROWSER_OUTPUT} && cd {BROWSER_OUTPUT} && exec playwright-mcp {' '.join(_BROWSER_ARGS)}"],
+            "args": [
+                "-c",
+                f"mkdir -p {BROWSER_OUTPUT} && cd {BROWSER_OUTPUT} && "
+                # Some MCP clients start with a filtered environment.
+                'export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/ms-playwright}" && '
+                f"exec playwright-mcp {' '.join(_BROWSER_ARGS)}",
+            ],
         }
     }
 }
@@ -53,14 +59,17 @@ BROWSER_MCP = {
 MCP_CHECK = "/opt/dotrix/mcp-check.mjs"
 BROWSER_RULE = """\
 - You have a headless browser (the `browser` tools). When the change shows in a web page, start
-  the app's dev server in the background on localhost and note its process id (for example
+  the app's dev server on localhost. Use a managed shell session if available and keep its session
+  ID. Otherwise, start the server in the background and note its process ID (for example
   `python3 -m http.server 8080 >/tmp/server.log 2>&1 & echo $! >/tmp/server.pid` for static files,
   or the project's dev script), open it, check the change works, and take a screenshot of it: the
   browser saves screenshots in /tmp/playwright, never in the repository, and the person sees them.
   Read `browser_snapshot` for current element targets before clicking or typing; navigation may
-  return a snapshot file link rather than the element list.
-  When you're done, stop the server with `kill $(cat /tmp/server.pid)`. Pages outside this machine
-  can't be reached, and that's expected.
+  return a snapshot file link rather than the element list. Read relative snapshot paths under
+  /tmp/playwright. For a screenshot, call `browser_take_screenshot` with a PNG filename such as
+  `proof.png`. In Code Mode, call `await tools.browser.browser_take_screenshot({filename: "proof.png", type: "png"})`.
+  When you're done, stop the managed shell session or kill the background process by its PID.
+  The browser is for pages served inside the sandbox.
 - If the browser tools are in your Code Mode catalog, call them through `execute`, for example
   `await tools.browser.browser_navigate({url: "http://localhost:8080"})`. Keep the results you need.
 """
