@@ -219,7 +219,7 @@ class CodingRunEvent(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     seq: Mapped[int] = mapped_column(Integer)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    kind: Mapped[str] = mapped_column(String(16))  # step, text, tool, output, output-error, error
+    kind: Mapped[str] = mapped_column(String(32))  # step, text, tool, output, output-error, error, background-<state>
     text: Mapped[str] = mapped_column(Text)
     # Pairs a command (`tool`, "Ran …") with its output (`output`, `output-error`): the tool call's id.
     ref: Mapped[str | None] = mapped_column(String(64))
@@ -238,6 +238,9 @@ class CodingSession(WorkspaceScopedMixin, Base):
     agent: Mapped[CodingAgent] = mapped_column(str_enum(CodingAgent, 16))
     state: Mapped[CodingSessionState] = mapped_column(str_enum(CodingSessionState, 16), default=CodingSessionState.IDLE)
     claude_session: Mapped[uuid.UUID] = mapped_column(Uuid)  # Claude Code's --session-id / --resume
+    # SHA-256 of the system profile (Kai's contract) the engine's session started with, for engines that take one
+    # (fx): a resumed turn must find the same profile in its saved state.
+    profile_digest: Mapped[str | None] = mapped_column(String(64))
     transcript_key: Mapped[str | None] = mapped_column(String(300))  # in storage, encrypted
     cost_reported: Mapped[float | None] = mapped_column(Numeric(10, 4, asdecimal=False))  # Claude's running total
     title: Mapped[str | None] = mapped_column(String(200))  # renamed; else its issue's title
@@ -250,6 +253,47 @@ class CodingSession(WorkspaceScopedMixin, Base):
     # it is, its key's secret and placeholder, and which key and network it was opened with (a digest).
     sandbox_handle: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     sandbox_slept_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CodingInputKind(enum.StrEnum):
+    STEER = "steer"  # into the turn that's working now, at its next step (fx)
+    QUEUE = "queue"  # the session's next turn, once nothing in it is waiting or working
+
+
+class CodingInputStatus(enum.StrEnum):
+    PENDING = "pending"  # not yet handed to the engine (a steer) or not yet a turn (queued)
+    SENDING = "sending"  # a steer in the turn's inbox, or sent to the engine, not yet taken
+    ACCEPTED = "accepted"  # the engine gave a steer to the model
+    DELIVERED = "delivered"  # a steer's turn ended with it taken, or a queued message became a turn
+    CANCELLED = "cancelled"  # cancelled by the person, or by Stop
+    REJECTED = "rejected"  # refused: by the engine, or because the session couldn't take it
+
+
+class CodingInput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A message a person sends a coding session while Kai works: steering the running turn, or queued for the
+    next one, as in Claude Code. Private to whoever started the session. A steer the turn didn't take before it
+    ended is queued instead, so nothing a person sent is lost; queued messages become one follow-up turn."""
+
+    __tablename__ = "coding_inputs"
+    __table_args__ = (UniqueConstraint("workspace_id", "owner_id", "client_id"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    # The session (its first turn's id; its `coding_sessions` row comes once a turn starts). Deleting a session's
+    # turns deletes its messages (`run_id`).
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    client_id: Mapped[uuid.UUID] = mapped_column(Uuid)  # the sender's own id: a retry returns the same message
+    # The turn working when it was sent, which a steer goes to; then the turn that took it.
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("coding_runs.id", ondelete="CASCADE"), index=True)
+    delivered_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("coding_runs.id", ondelete="SET NULL"))
+    kind: Mapped[CodingInputKind] = mapped_column(str_enum(CodingInputKind, 16))
+    status: Mapped[CodingInputStatus] = mapped_column(str_enum(CodingInputStatus, 16), default=CodingInputStatus.PENDING)
+    message: Mapped[str] = mapped_column(Text)
+    # A queued message's turn: its work mode and approval mode as the person chose them (else the last turn's).
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    note: Mapped[str | None] = mapped_column(String(200))  # why it was queued instead, cancelled or refused
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class CodingRunner(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):

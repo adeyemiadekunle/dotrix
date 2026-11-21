@@ -510,3 +510,145 @@ for (const width of [390, 1440]) {
     await halted;
   });
 }
+
+test("while Kai works, a message steers the turn or waits for the next, and one not yet sent can be taken back", async ({ page, context, baseURL }) => {
+  const working = { ...turn(2), status: "running", summary: null, files_changed: [], review_run_id: null, can_stop: true, accepts_steering: true };
+  const sent: Record<string, unknown>[] = [];
+  const inputs: Record<string, unknown>[] = [];
+  const cancelled: string[] = [];
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), working] }));
+    await page.route("**/coding/sessions/session1/stream", (route) => route.fulfill({ status: 204, body: "" }));
+    await page.route("**/coding/sessions/session1/inputs", async (route) => {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        sent.push(body);
+        const item = {
+          id: `in${sent.length}`,
+          session_id: "session1",
+          run_id: "turn2",
+          delivered_run_id: null,
+          note: null,
+          kind: body.kind,
+          status: "pending",
+          message: body.message,
+          created_at: date,
+          updated_at: date,
+        };
+        inputs.unshift(item);
+        await route.fulfill({ status: 201, json: item });
+      } else await route.fulfill({ status: 200, json: inputs });
+    });
+    await page.route("**/coding/sessions/session1/inputs/in2", async (route) => {
+      cancelled.push(route.request().method());
+      inputs[0] = { ...inputs[0], status: "cancelled" };
+      await route.fulfill({ status: 200, json: inputs[0] });
+    });
+  });
+  const box = page.getByRole("textbox", { name: "Follow-up" });
+  await expect(box).toHaveAttribute("placeholder", "Tell Kai something while it works");
+  await box.fill("Use the refunds table");
+  await box.press("Enter");
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toMatchObject({ kind: "steer", message: "Use the refunds table" });
+  await expect(page.getByText("Waiting for Kai's next step")).toBeVisible();
+  await page.getByLabel("Delivery action").selectOption("queue");
+  await expect(box).toHaveAttribute("placeholder", "Queue a message for Kai's next turn");
+  await box.fill("Then update the changelog");
+  await box.press("Enter");
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]).toMatchObject({ kind: "queue", message: "Then update the changelog" });
+  await expect(page.getByText("Waiting for this turn to end")).toBeVisible();
+  // An empty box keeps Stop; a pending message can be taken back.
+  await expect(page.getByRole("button", { name: /stop/i }).first()).toBeVisible();
+  // Straight from typing: the message box keeps its focus, so the click lands.
+  await expect(box).toBeFocused();
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "Then update the changelog" })
+    .getByRole("button", { name: /cancel/i })
+    .click();
+  await expect.poll(() => cancelled).toEqual(["DELETE"]);
+  await expect(page.getByText("Then update the changelog")).toBeHidden();
+});
+
+test("a saved plan can be built one task a turn", async ({ page, context, baseURL }) => {
+  const plan = {
+    title: "Refunds",
+    summary: "Refund payments.",
+    acceptance_criteria: ["Refunds work"],
+    open_questions: [],
+    tasks: [
+      { title: "Add the refunds table", detail: "A migration", depends_on: [] },
+      { title: "Add the refund call", detail: "In payments.py", depends_on: [1] },
+    ],
+  };
+  const planned = { ...turn(2), status: "no_changes", work_mode: "plan", plan_result: plan, files_changed: [], review_run_id: null };
+  const asked: Record<string, unknown>[] = [];
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), planned] }));
+    await page.route("**/coding/sessions/session1/turns", async (route) => {
+      asked.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({ status: 201, json: { ...turn(3), status: "awaiting_approval" } });
+    });
+  });
+  await page.getByRole("button", { name: "Build step by step" }).click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toMatchObject({ work_mode: "build", source_plan_id: "turn2", step_by_step: true });
+});
+
+test("when Kai stops to ask, its questions show and the box asks for the answer", async ({ page, context, baseURL }) => {
+  const asking = { ...turn(2), status: "no_changes", files_changed: [], review_run_id: null, questions: ["Should partial refunds be allowed?"] };
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), asking] }));
+  });
+  const card = page.getByLabel("Kai's questions");
+  await expect(card.getByText("Should partial refunds be allowed?")).toBeVisible();
+  await card.getByRole("button", { name: "Answer" }).click();
+  const box = page.getByRole("textbox", { name: "Follow-up" });
+  await expect(box).toBeFocused();
+  await expect(box).toHaveAttribute("placeholder", "Answer Kai's questions");
+});
+
+test("Kai's background commands and workers are listed at their latest state", async ({ page, context, baseURL }) => {
+  const at = date;
+  const events = [
+    { kind: "tool", text: "Ran npm run dev", ref: "c0", at },
+    { kind: "background-running", text: "npm run dev", ref: "command:shell-1", at },
+    { kind: "background-running", text: "finder: Where is the router?", ref: "worker:finder", at },
+    { kind: "background-done", text: "finder: Where is the router?", ref: "worker:finder", at },
+  ];
+  const working = { ...turn(2), status: "running", summary: null, files_changed: [], review_run_id: null, events, can_stop: true };
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), working] }));
+    await page.route("**/coding/sessions/session1/stream", (route) => route.fulfill({ status: 204, body: "" }));
+  });
+  const list = page.getByLabel("Kai's background tasks");
+  await expect(list.getByText("1 running")).toBeVisible();
+  const rows = list.getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("npm run dev");
+  await expect(rows.nth(0)).toContainText("Command · Running");
+  await expect(rows.nth(1)).toContainText("Worker · Done");
+});
+
+test("a command Kai left running that finished between turns shows with what it printed", async ({ page, context, baseURL }) => {
+  const at = date;
+  const events = [
+    { kind: "background-running", text: "make ci", ref: "command:shell-1", at },
+    { kind: "background-done", text: "make ci", ref: "command:shell-1", at },
+    { kind: "background-output", text: "all 9 checks passed", ref: "command:shell-1", at },
+    { kind: "background-running", text: "npm run e2e", ref: "command:shell-2", at },
+    { kind: "background-ended", text: "npm run e2e", ref: "command:shell-2", at },
+  ];
+  const finished = { ...turn(2), status: "no_changes", files_changed: [], review_run_id: null, events };
+  await mockWorkspace(page, context, baseURL!, "codes?session=session1", false, undefined, async () => {
+    await page.route("**/coding/sessions/session1", (route) => route.fulfill({ status: 200, json: [turn(1), finished] }));
+  });
+  const list = page.getByLabel("Kai's background tasks");
+  await expect(list.getByText("2 finished")).toBeVisible();
+  const rows = list.getByRole("listitem");
+  await expect(rows.nth(0)).toContainText("Command · Done");
+  await expect(rows.nth(0)).toContainText("all 9 checks passed");
+  await expect(rows.nth(1)).toContainText("Command · Ended");
+});

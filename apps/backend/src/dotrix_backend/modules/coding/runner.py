@@ -71,8 +71,11 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.skills import DEFINITION_OF_DONE, review_skills
 
 from . import guard
+from .brief import split_contract
+from .inputs import accepts_steering, steer_states, take_steers
 from .models import (
     CODING_AGENT_NAME,
+    CodingAgent,
     CodingLocation,
     CodingRun,
     CodingRunEvent,
@@ -102,6 +105,13 @@ SHOTS_LIST = "ls -1t /tmp/playwright/*.png /tmp/playwright/*.jpg /tmp/playwright
 FLUSH_SECONDS = 2.0
 REAP_SECONDS = 30.0  # how often warm sandboxes are checked for the idle time and closed sessions
 STOP_POLL_SECONDS = 3.0
+STEER_POLL_SECONDS = 1.0  # how often a working turn that takes steers looks for new ones
+# Drop a steer in the turn's inbox ($1: the run, $2: the message's id; the text on stdin), as fx-acp.mjs reads it:
+# refused (exit 3) once the inbox is gone, which the driver removes when the turn's own prompt has ended.
+STEER_DROP = (
+    'd="$HOME/.fx/dotrix/steer/$1"; [ -d "$d" ] || exit 3; '
+    'cat > "$d/.$2" && mv "$d/.$2" "$d/$2.txt"'
+)
 FETCH_TIMEOUT = 300
 BOT_EMAIL = "dotrix-coding@users.noreply.github.com"
 REVIEW_DIFF_CHARS = 14_000
@@ -190,9 +200,12 @@ class CodingWorker:
     pool: WarmPool = field(default_factory=lambda: WarmPool(30 * 60, 3))  # sessions' sandboxes between turns
     slots: RunSlots = field(default_factory=lambda: RunSlots(2))  # coding runs working at once (0: no limit)
     _reaper: asyncio.Task[None] | None = field(default=None, repr=False)
+    # Kai's kept commands in each warm fx sandbox: the turn they're recorded on, and each one's state there.
+    _kept: dict[uuid.UUID, tuple[uuid.UUID, dict[str, str]]] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         self.pool.retire = self._retire
+        self.pool.released = self._let_go_background
 
     @property
     def _sleeps(self) -> bool:
@@ -423,6 +436,7 @@ class CodingWorker:
             workspace_id, session_id = run.workspace_id, run.session_id
             sess = await _session_row(session, run)
             claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
+            profile_digest = sess.profile_digest
             sleeping, slept_at = (dict(sess.sandbox_handle) if sess.sandbox_handle else None), sess.sandbox_slept_at
             # The hosts its sandbox may reach besides the model API (owners and admins set them).
             allow = allowed_hosts(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id))
@@ -607,6 +621,8 @@ class CodingWorker:
                 resumed = False
                 claude_session = uuid.uuid4()
             extra = tool.session_args(claude_session, resumed)
+            brief, profile_args = _profile(tool, brief, resumed, profile_digest)
+            extra += profile_args
             started = datetime.now(UTC)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
                                                  cost_before if resumed else None, plan_mode=plan_mode)
@@ -889,14 +905,20 @@ class CodingWorker:
                 raise _ReconciliationRequired()
             skill_snapshot = skill_run.skill_snapshot or {}
             tool_capabilities = describe(skill_run, self.settings)
+            # A person can steer this turn while it works (fx, in the cloud; not a parallel build's task).
+            steering = getattr(tool, "steers", False) and task_key is None and accepts_steering(skill_run)
+        if steering:
+            extra = [*extra, *tool.steer_args(run_id)]
         brief += instructions(tool_capabilities, skill_snapshot)
         brief += await materialize(box, skill_snapshot)
         usage, summary, failed = Usage(), None, None
         reported: list[float] = []
+        profile_digests: list[str] = []
         pending: list[dict[str, Any]] = []
         cancel = asyncio.Event()
         stop_reason: list[str] = []
         last_flush = time.monotonic()
+        inbox_open = asyncio.Event()  # the driver's inbox takes steers from now on
 
         async def flush() -> None:
             nonlocal last_flush
@@ -927,6 +949,12 @@ class CodingWorker:
                            for s in parsed.steps)
             summary = parsed.summary or summary
             failed = parsed.failed or failed
+            if parsed.profile_digest:
+                profile_digests.append(parsed.profile_digest)
+            if parsed.steering_open and steering:
+                inbox_open.set()
+            if parsed.steering:
+                await steer_states(self.session_factory, run_id, parsed.steering)
             if parsed.failed and not cancel.is_set():  # e.g. the key was refused: don't wait out retries
                 cancel.set()
             if time.monotonic() - last_flush >= FLUSH_SECONDS:
@@ -943,9 +971,22 @@ class CodingWorker:
                     stop_reason.append("Stopped by a person")
                     cancel.set()
 
+        async def send_steers() -> None:
+            """A person's messages to this turn, into its inbox in the sandbox once the driver opened it: each
+            written to a dot-file and renamed, so the driver never reads half of one."""
+            await inbox_open.wait()
+            while not cancel.is_set():
+                for key, text in await take_steers(self.session_factory, run_id):
+                    drop = await box.exec(["sh", "-c", STEER_DROP, "sh", run_id.hex, str(key)], stdin=text.encode(),
+                                          timeout=30)
+                    if drop.code != 0:  # the inbox closed: the turn is ending, and the message goes to the next
+                        await steer_states(self.session_factory, run_id, [(str(key), "pending", None)])
+                await asyncio.sleep(STEER_POLL_SECONDS)
+
         # The browser comes with the coding image: the Docker and OpenShell sandboxes, not the local one.
         browser = not plan_mode and self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
         watcher = asyncio.create_task(watch_stop())
+        steerer = asyncio.create_task(send_steers()) if steering else None
         try:
             result = await box.exec(
                 readonly_command(tool.command(model, browser=False) + extra) if plan_mode
@@ -957,7 +998,11 @@ class CodingWorker:
             await self._totals(box, tool, tool_session, usage, reported, cost_before)
         finally:
             watcher.cancel()
+            if steerer is not None:
+                steerer.cancel()
             await flush()
+        if profile_digests and not plan_mode and task_key is None:  # a plan turn's session is thrown away
+            await self._record_profile(run_id, profile_digests[-1])
         if result.timed_out:
             raise _Stopped(f"Stopped at the time limit ({self.settings.coding_timeout_minutes} minutes)")
         if result.cancelled and failed and not stop_reason:
@@ -968,6 +1013,18 @@ class CodingWorker:
             detail = failed or (result.stderr.strip().splitlines() or [f"exit code {result.code}"])[-1]
             raise RunFailed(f"{CODING_AGENT_NAME} didn't finish: {detail[:500]}")
         return summary, (reported[-1] if reported else None)
+
+    async def _record_profile(self, run_id: uuid.UUID, digest: str) -> None:
+        """The profile digest the engine's session reported, kept on the session while this worker holds the
+        run: the next resumed turn passes it back, and saved state with another profile never runs."""
+        async with self.session_factory() as session:
+            run = await session.scalar(select(CodingRun).where(CodingRun.id == run_id))
+            if run is None or not self._holds(run):
+                return
+            row = await session.get(CodingSession, run.session_id, with_for_update=True)
+            if row is not None and row.profile_digest != digest:
+                row.profile_digest = digest
+                await session.commit()
 
     async def _totals(
         self, box: SandboxSession, tool: CodingTool, tool_session: uuid.UUID, usage: Usage, reported: list[float],
@@ -1096,7 +1153,10 @@ class CodingWorker:
         session was closed by hand or deleted, or whose sandbox was deleted by hand (the session isn't
         warm any more). A closed session keeps its transcript (a new turn resumes); deleting a
         session deletes it (the service does)."""
+        running = await self.watch_background()
         for session_id in self.pool.idle():
+            if session_id in running:  # Kai's commands still run there: kept up, within the limit
+                continue
             await self.pool.close(session_id, keep=True)
             await self._session(session_id, state=CodingSessionState.IDLE)
         pooled = self.pool.sessions()
@@ -1114,6 +1174,107 @@ class CodingWorker:
                 await self.pool.close(session_id)
             elif state is CodingSessionState.IDLE and at is not None and at < settled:  # its sandbox deleted by hand
                 await self.pool.close(session_id)
+
+    # -- Kai's commands kept running between turns (fx's host: infra/coding/fx-host.mjs) -----------------------
+
+    async def watch_background(self) -> set[uuid.UUID]:
+        """Read what fx's host reports of the commands Kai left running in each warm fx sandbox, and record each
+        change on the session's latest turn (`background-<state>`, and a finished one's `background-output`), as
+        Codes lists them. No turn starts on its own: Kai hears of them on the next one. Returns the sessions with
+        a command still running within `coding_background_minutes` of their last turn: they stay up."""
+        pooled = self.pool.sessions()
+        if not pooled:
+            return set()
+        async with self.session_factory() as session:
+            rows = (await session.execute(
+                select(CodingRun.session_id, CodingRun.id, CodingRun.agent)
+                .where(CodingRun.session_id.in_(pooled))
+                .order_by(CodingRun.session_id, CodingRun.turn.desc())
+            )).all()
+        latest: dict[uuid.UUID, tuple[uuid.UUID, CodingAgent]] = {}
+        for session_id, run_id, agent in rows:
+            latest.setdefault(session_id, (run_id, agent))
+        limit = self.settings.coding_background_minutes * 60
+        running: set[uuid.UUID] = set()
+        for session_id in pooled:
+            found, box = latest.get(session_id), self.pool.peek(session_id)
+            if found is None or found[1] is not CodingAgent.FX or box is None:
+                self._kept.pop(session_id, None)
+                continue
+            shells = await _kept_commands(box)
+            if shells is None:
+                continue
+            await self._record_background(session_id, found[0], shells)
+            used = self.pool.used(session_id)
+            if any(state == "running" for state, _, _ in shells.values()) and used is not None and time.monotonic() - used < limit:
+                running.add(session_id)
+        return running
+
+    async def _record_background(self, session_id: uuid.UUID, run_id: uuid.UUID, shells: dict[str, tuple[str, str, str]]) -> None:
+        known = self._kept.get(session_id)
+        if known is None or known[0] != run_id:
+            async with self.session_factory() as session:
+                recorded = (await session.execute(
+                    select(CodingRunEvent.ref, CodingRunEvent.kind).where(
+                        CodingRunEvent.run_id == run_id, CodingRunEvent.kind.like("background-%"),
+                        CodingRunEvent.kind != "background-output",
+                    ).order_by(CodingRunEvent.seq)
+                )).all()
+            known = (run_id, {ref: kind.removeprefix("background-") for ref, kind in recorded if ref})
+            self._kept[session_id] = known
+        states = known[1]
+        now = datetime.now(UTC).isoformat()
+        events: list[dict[str, Any]] = []
+        for shell_id, (state, command, output) in shells.items():
+            ref = f"command:{shell_id}"[:64]
+            if states.get(ref) == state or (ref not in states and state != "running" and not command):
+                continue
+            states[ref] = state
+            events.append({"at": now, "kind": f"background-{state}", "text": command[:300] or shell_id, "ref": ref})
+            if state != "running" and output.strip():
+                events.append({"at": now, "kind": "background-output", "text": output[-4000:], "ref": ref})
+        if events:
+            async with self.session_factory() as session:
+                run = await session.get(CodingRun, run_id, with_for_update=True)
+                if run is not None:
+                    add_events(run, session, events=events)
+                    await session.commit()
+
+    async def _let_go_background(self, session_id: uuid.UUID) -> None:
+        """A sandbox let go (idle or past the limit, evicted for the workspace's limit, its session closed, the worker
+        stopping) ends the commands still running in it: said on the turn. The pool calls it (`WarmPool.released`)."""
+        self._kept.pop(session_id, None)
+        now = datetime.now(UTC).isoformat()
+        async with self.session_factory() as session:
+            # The session's latest turn that kept commands, and their latest states as recorded (the reaper may not
+            # have looked yet). Only fx keeps any; a sandbox a turn takes isn't released, so its commands go on.
+            run_id = (await session.execute(
+                select(CodingRun.id).join(CodingRunEvent, CodingRunEvent.run_id == CodingRun.id)
+                .where(CodingRun.session_id == session_id, CodingRun.agent == CodingAgent.FX,
+                       CodingRunEvent.kind == "background-running", CodingRunEvent.ref.like("command:%"))
+                .order_by(CodingRun.turn.desc()).limit(1)
+            )).scalar_one_or_none()
+            run = await session.get(CodingRun, run_id, with_for_update=True) if run_id else None
+            if run is None:
+                return
+            states: dict[str, str] = {}
+            for ref, kind in (await session.execute(
+                select(CodingRunEvent.ref, CodingRunEvent.kind).where(
+                    CodingRunEvent.run_id == run.id, CodingRunEvent.kind.like("background-%"),
+                    CodingRunEvent.kind != "background-output", CodingRunEvent.ref.like("command:%"),
+                ).order_by(CodingRunEvent.seq)
+            )).all():
+                states[ref] = kind
+            ended = [ref for ref, kind in states.items() if kind == "background-running"]
+            if not ended:
+                return
+            labels = {ref: text for ref, text in (await session.execute(
+                select(CodingRunEvent.ref, CodingRunEvent.text).where(
+                    CodingRunEvent.run_id == run.id, CodingRunEvent.ref.in_(ended), CodingRunEvent.kind == "background-running")
+            )).all()}
+            add_events(run, session, events=[{"at": now, "kind": "background-ended", "text": labels.get(ref, ref), "ref": ref}
+                                             for ref in ended])
+            await session.commit()
 
     async def stop_requested(self, run_id: uuid.UUID) -> bool:
         """Stop asked for, or this worker no longer holds the run (recovery or another worker has it)."""
@@ -1279,6 +1440,40 @@ def needs_worker(run: CodingRun) -> bool:
     """Whether a queued run is the worker's: a cloud turn, or what's ready to push from either place
     (accepted changes, a revert). A local turn waiting to code is its runner's, claimed through the API."""
     return run.location is CodingLocation.CLOUD or run.accepted_at is not None or run.revert_of is not None
+
+
+KEPT_COMMANDS = 'cat "$HOME/.dotrix-fx-host/shells.json" 2>/dev/null || true'  # what fx-host.mjs writes
+
+
+async def _kept_commands(box: SandboxSession) -> dict[str, tuple[str, str, str]] | None:
+    """The commands fx's host keeps in a sandbox: id → (state as Codes says it, command, the end of its output).
+    None when it can't be read (the sandbox didn't answer)."""
+    try:
+        read = await box.exec(["sh", "-c", KEPT_COMMANDS], timeout=20)
+    except Exception:
+        logger.debug("couldn't read a sandbox's kept commands", exc_info=True)
+        return None
+    if read.code != 0:
+        return None
+    try:
+        report = json.loads(read.stdout or "{}")
+    except ValueError:
+        return {}
+    shells: dict[str, tuple[str, str, str]] = {}
+    for shell in report.get("shells") or []:
+        if not isinstance(shell, dict) or not isinstance(shell.get("sessionId"), str):
+            continue
+        fx_state, code = shell.get("state"), shell.get("exitCode")
+        if fx_state == "running":
+            state = "running"
+        elif fx_state == "stopped":
+            state = "stopped"
+        elif fx_state == "completed" and (code == 0 or (code is None and not shell.get("signal"))):
+            state = "done"
+        else:
+            state = "failed"
+        shells[shell["sessionId"][:48]] = (state, str(shell.get("command") or ""), str(shell.get("output") or ""))
+    return shells
 
 
 def add_events(run: CodingRun, session: AsyncSession, *, events: list[dict[str, Any]] | None = None,
@@ -1535,6 +1730,18 @@ async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everyth
             )
     await session.commit()
     return len(runs)
+
+
+def _profile(tool: CodingTool, brief: str, resumed: bool, pinned: str | None) -> tuple[str, list[str]]:
+    """For an engine that takes a system profile (fx): the brief without Kai's contract, and the arguments that
+    give the engine the contract. A new session starts with it; a resumed one keeps the profile it started with,
+    which must match `pinned`. A session started before profiles, resumed, keeps its brief whole."""
+    if not getattr(tool, "takes_profile", False):
+        return brief, []
+    task, contract = split_contract(brief)
+    if contract is None or (resumed and pinned is None):
+        return brief, []
+    return task, tool.profile_args(contract, pinned if resumed else None)
 
 
 async def _session_row(session: AsyncSession, run: CodingRun) -> CodingSession:

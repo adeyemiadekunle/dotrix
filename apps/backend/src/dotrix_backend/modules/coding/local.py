@@ -36,6 +36,7 @@ from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
+from .inputs import steer_states_in, take_steers_in
 from .models import (
     CODING_AGENT_NAME,
     CodingAgent,
@@ -54,6 +55,7 @@ from .schemas import (
     RunnerHeartbeat,
     RunnerHeartbeatRead,
     RunnerResult,
+    RunnerSteer,
 )
 from .service import CodingService
 
@@ -173,8 +175,11 @@ class LocalRunners:
             run.worktree = data.worktree
         add_events(run, self.session, events=_events(data.events))
         stop = run.stop_requested
+        # A person's messages to the turn: what the driver said about those it has, and new ones once its inbox is open.
+        await steer_states_in(self.session, run, [(str(r.id), r.state, r.message) for r in data.steering])
+        steers = await take_steers_in(self.session, run) if data.steering_open and not stop else []
         await self.session.commit()
-        return RunnerHeartbeatRead(stop=stop)
+        return RunnerHeartbeatRead(stop=stop, steers=[RunnerSteer(id=key, message=text) for key, text in steers])
 
     async def result(self, member: Membership, runner_id: uuid.UUID, run_id: uuid.UUID, data: RunnerResult) -> None:
         """The turn's outcome. Changes go through the guard here (and again before the push): in
@@ -183,6 +188,7 @@ class LocalRunners:
         runner.last_seen_at = datetime.now(UTC)
         run.lease_expires_at = None
         add_events(run, self.session, events=_events(data.events))
+        await steer_states_in(self.session, run, [(str(r.id), r.state, r.message) for r in data.steering])
         if data.input_tokens is not None:
             run.input_tokens, run.output_tokens = data.input_tokens, data.output_tokens or 0
             # No cost from the tool (Codex, fx): priced from the tokens, without the cache split the runner doesn't send.

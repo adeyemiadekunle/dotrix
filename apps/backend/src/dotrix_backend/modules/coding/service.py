@@ -39,7 +39,8 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
 from . import guard
-from .brief import build_brief
+from .brief import build_brief, split_contract
+from .inputs import accepts_steering, queue_plan_tasks
 from .models import (
     ACTIVE,
     CODING_AGENT_NAME,
@@ -55,6 +56,7 @@ from .models import (
     CodingSessionState,
     PrState,
 )
+from .planning import questions_in, task_order
 from .recovery import Recovered, discard, lease_live, recover
 from .runner import needs_worker
 from .schemas import (
@@ -101,6 +103,13 @@ def visible_runs(member: Membership) -> Any:
 def _sees(run: CodingRun, member: Membership) -> bool:
     return run.requested_by_id == member.user_id or (
         run.status in WAITING and can(member, Permission.APPROVE_ACTIONS))
+
+
+def _with_task(brief: str, section: str) -> str:
+    """`brief` with `section` added to what this turn is asked, above Kai's contract: an engine that takes the contract
+    as the session's pinned system profile (fx) gets this turn's part in the prompt, never frozen in the profile."""
+    task, contract = split_contract(brief)
+    return task.rstrip() + "\n\n" + section + ("\n\n" + contract if contract else "")
 
 
 def _earlier(turn: CodingRun) -> str:
@@ -331,6 +340,12 @@ class CodingService:
                 CodingRun.workspace_id == access.member.workspace_id, CodingRun.thread_id == thread_id,
                 CodingRun.status.in_(ACTIVE)).limit(1)):
                 raise CodingBusy("Kai already has an active turn in this conversation")
+        if data.source_plan_id and (data.step_by_step or data.plan_task):  # checked before anything is made
+            chosen = next((t for t in turns if t.id == data.source_plan_id and t.plan_result), None)
+            if chosen is None or data.work_mode != "build":
+                raise Unprocessable("Select a completed plan from this coding session to build")
+            if data.plan_task and data.plan_task not in task_order(list(chosen.plan_result.get("tasks") or [])):
+                raise Unprocessable("That task isn't in the plan")
         previous = next(t for t in reversed(turns) if t.revert_of is None)
         selection = await self._selection(access.project, access.member.user_id, location,
                                           agent=previous.agent, model=previous.model, fixed=True)
@@ -341,12 +356,28 @@ class CodingService:
             session_environment=self._session_environment(turns),
         )
         run.work_mode = data.work_mode
+        later: list[int] = []  # step by step: the plan's other tasks, queued as turns of their own
         if data.source_plan_id:
             selected = next((t for t in turns if t.id == data.source_plan_id and t.plan_result), None)
             if selected is None or data.work_mode != "build":
                 raise Unprocessable("Select a completed plan from this coding session to build")
             run.execution_plan = selected.plan_result if selected.plan_result.get("execution") else None
-            run.brief += "\n\n## Selected coding plan\n" + html.escape(json.dumps(selected.plan_result))
+            run.brief = _with_task(run.brief, "## Selected coding plan\n" + html.escape(json.dumps(selected.plan_result)))
+            if data.step_by_step or data.plan_task:
+                tasks = list(selected.plan_result.get("tasks") or [])
+                order = task_order(tasks)
+                index = data.plan_task or (order[0] if order else 1)
+                if index not in order:
+                    raise Unprocessable("That task isn't in the plan")
+                task = tasks[index - 1]
+                run.execution_plan = None  # one task, on the session's branch: never the plan's parallel build
+                run.brief = _with_task(run.brief, (
+                    f"## This turn: task {index} of {len(tasks)}\n"
+                    f"Do only this task of the plan; the others have their own turns. Tasks it depends on "
+                    f"were done in this session's earlier turns.\n\n"
+                    f"{html.escape(str(task.get('title', '')))}\n\n{html.escape(str(task.get('detail', '')))}"))
+                if data.step_by_step:
+                    later = [i for i in order if i != index]
         run.thread_id, run.plan_id = thread_id, turns[-1].plan_id
         run.origin_run_id = origin_run_id or turns[-1].origin_run_id
         if data.source_plan_id is None:
@@ -355,6 +386,8 @@ class CodingService:
                 run.execution_plan = None  # Prior plans inform ordinary follow-ups without replaying their base.
         else:
             run.plan_id = None  # This turn builds the explicitly selected Codes plan.
+        if later:
+            queue_plan_tasks(self.session, access, run, selected, later, data.approval_mode)
         return await self._settle(access, run)
 
     async def revert(self, access: ProjectAccess, run_id: uuid.UUID, data: CodingRevert) -> CodingRunRead:
@@ -950,6 +983,9 @@ class CodingService:
             can_stop=run.status in ACTIVE and run.status is not CodingRunStatus.RECOVERY_REQUIRED
             and self._can_stop(run, access),
             can_recover=run.status is CodingRunStatus.RECOVERY_REQUIRED and self._can_stop(run, access),
+            questions=questions_in(run.summary) if run.status not in ACTIVE and run.work_mode != "plan" else [],
+            accepts_steering=accepts_steering(run) and run.requested_by_id == access.member.user_id
+            and can(access.member, Permission.INSTRUCT_CODING_AGENT),
             work_mode=run.work_mode, plan_result=run.plan_result,
             capabilities=capabilities, skills=skills(run.skill_snapshot, capabilities),
             tasks=[{"key": key, "status": item.get("status", "queued"), "attempt": item.get("attempt", 0),

@@ -4,12 +4,14 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 
 from .models import (
     CodingAgent,
+    CodingInputKind,
+    CodingInputStatus,
     CodingLocation,
     CodingOrigin,
     CodingRunStatus,
@@ -65,6 +67,10 @@ class CodingRunCreate(BaseModel):
 class CodingFollowUp(BaseModel):
     work_mode: Literal["plan", "build"] = "build"
     source_plan_id: uuid.UUID | None = None
+    step_by_step: bool = Field(default=False, description="With `source_plan_id`: build the plan one task a turn. This "
+                               "turn does the first task; each other is queued as a turn of its own, in dependency order")
+    plan_task: int | None = Field(default=None, ge=1, le=40, description="With `source_plan_id`: build only this task "
+                                  "(its number in the plan, from 1), with the whole plan as context")
     message: str = Field(min_length=1, max_length=5_000, description="What to do in this turn")
     approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
     location: CodingLocation | None = Field(default=None, description=_LOCATION)
@@ -88,7 +94,9 @@ class CodingRecover(BaseModel):
 class CodingEvent(BaseModel):
     at: datetime
     kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `output` / "
-                      "`output-error` (a command's output, and whether it failed), `error`")
+                      "`output-error` (a command's output, and whether it failed), `error`, or `background-<state>` "
+                      "(a command Kai left running or one of its workers, `ref` naming it: running, done, failed, "
+                      "stopped, or ended with the turn)")
     text: str
     ref: str | None = Field(default=None, description="Pairs a command (`tool`) with its output: the tool call's id")
 
@@ -97,7 +105,9 @@ class CodingEventRead(BaseModel):
     seq: int = Field(description="Its place in the run, from 0")
     at: datetime
     kind: str = Field(description="`step`, `text` (the agent's words), `tool` (what it did), `output` / "
-                      "`output-error` (a command's output, and whether it failed), `error`")
+                      "`output-error` (a command's output, and whether it failed), `error`, or `background-<state>` "
+                      "(a command Kai left running or one of its workers, `ref` naming it: running, done, failed, "
+                      "stopped, or ended with the turn)")
     text: str
     ref: str | None = Field(default=None, description="Pairs a command (`tool`) with its output: the tool call's id")
 
@@ -204,6 +214,36 @@ class CodingRunRead(BaseModel):
     runner_name: str | None = Field(default=None, description="A local turn: the computer that claimed it")
     runner_id: uuid.UUID | None = Field(default=None, description="A local turn: the runner that claimed it")
     worktree: str | None = Field(default=None, description="A local turn: its worktree on that computer (only to whoever asked for it)")
+    questions: list[str] = Field(default_factory=list, description="What Kai asked at the end of the turn (its final "
+                                 "message's `questions` block); answer in the next turn. Queued messages wait until then")
+    accepts_steering: bool = Field(default=False, description="Whether you may steer it now (POST .../sessions/{id}/inputs "
+                                   "with `steer`): a cloud turn that's working, on an engine that takes a message mid-turn")
+
+
+class CodingInputCreate(BaseModel):
+    """A message to a session while Kai works: `steer` the working turn (it takes it at its next step; only when
+    the turn's `accepts_steering`), or `queue` it for the next turn."""
+
+    client_id: uuid.UUID = Field(description="Your own id for this message: sending it again returns the same one")
+    kind: CodingInputKind
+    message: str = Field(min_length=1, max_length=5_000)
+    work_mode: Literal["plan", "build"] | None = Field(default=None, description="A queued message's turn (default: the last turn's)")
+    approval_mode: ApprovalMode | None = Field(default=None, description=_APPROVAL)
+
+
+class CodingInputRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    session_id: uuid.UUID
+    run_id: uuid.UUID = Field(description="The turn working when it was sent")
+    delivered_run_id: uuid.UUID | None = Field(description="The turn that took it")
+    kind: CodingInputKind = Field(description="`steer` or `queue`; a steer the turn didn't take is queued instead")
+    status: CodingInputStatus = Field(description="pending, sending, accepted, delivered, cancelled or rejected")
+    message: str
+    note: str | None = Field(description="Why it was queued instead, cancelled or refused")
+    created_at: datetime
+    updated_at: datetime
 
 
 class CodingSessionUpdate(BaseModel):
@@ -303,19 +343,38 @@ class CodingClaimed(BaseModel):
 COMMIT_SHA = r"^[0-9a-f]{40}$"  # a full commit ID, as `git rev-parse` prints it
 
 
+class RunnerSteerReport(BaseModel):
+    """What the local driver said about a person's message to the working turn."""
+
+    id: uuid.UUID
+    state: Literal["pending", "sent", "accepted", "delivered", "cancelled", "rejected"] = Field(
+        description="`pending`: the runner couldn't put it in the turn's inbox (it goes to the next turn)")
+    message: str | None = Field(default=None, max_length=200)
+
+
+class RunnerSteer(BaseModel):
+    id: uuid.UUID
+    message: str
+
+
 class RunnerHeartbeat(BaseModel):
     lease_token: int
     events: list[RunnerEvent] = Field(default_factory=list, max_length=200)
     base_sha: str | None = Field(default=None, pattern=COMMIT_SHA)
     worktree: str | None = Field(default=None, max_length=1024, description="The turn's worktree on this computer")
+    steering_open: bool = Field(default=False, description="The turn's inbox takes a person's messages (a runner that steers)")
+    steering: list[RunnerSteerReport] = Field(default_factory=list, max_length=100)
 
 
 class RunnerHeartbeatRead(BaseModel):
     stop: bool = Field(description="Stop the agent and report `stopped`")
+    steers: list[RunnerSteer] = Field(default_factory=list, description="A person's messages for the working turn: "
+                                      "put each in its inbox, and report its state on the next heartbeat")
 
 
 class RunnerResult(BaseModel):
     lease_token: int
+    steering: list[RunnerSteerReport] = Field(default_factory=list, max_length=100)
     outcome: Literal["changes", "no_changes", "failed", "stopped"]
     patch: str | None = Field(default=None, max_length=20_000_000, description="`git diff --cached --binary` against base_sha")
     patch_b64: str | None = Field(

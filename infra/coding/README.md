@@ -200,7 +200,10 @@ Each run gets:
 - **A network with no route out** (`docker network create --internal`), and on it the agent's
   container and an **egress proxy** (`egress-proxy.mjs`, from the same image, also on the default
   network). The agent's `HTTPS_PROXY` points at it; it tunnels to the tool's model API only
-  (above) and refuses everything else.
+  (above) and refuses everything else. Under gVisor neither container can reach Docker's own
+  resolver (127.0.0.11) on the internal network. So the agent is given the proxy's address
+  (`--add-host egress:<ip>`), and the proxy looks the model API's host up through
+  `DOTRIX_CODING_EGRESS_DNS` (default `1.1.1.1,8.8.8.8`). The agent starts only once the proxy listens.
 - **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
   capabilities dropped, `no-new-privileges`, the `sandbox` user, `DOTRIX_CODING_MEMORY` and
   `DOTRIX_CODING_CPUS`, 512 processes, with swap disabled. The egress container is limited to

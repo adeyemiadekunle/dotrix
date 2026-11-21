@@ -551,3 +551,104 @@ async def test_real_cloud_driver_protocol_and_resume_inside_namespace(tmp_path, 
                 if not resumed:
                     assert {e.get("name") for e in events if e["type"] == "tool"} >= {"write_file", "shell"}
                     assert (repo / "fixed.py").read_text() == "def add(a,b): return a+b\n"
+
+
+@pytest.mark.skipif(not FX, reason="Set DOTRIX_TEST_FX to the pinned CLI")
+@pytest.mark.skipif(not native_fx_available(), reason="Linux user/network namespaces unavailable")
+@pytest.mark.parametrize("stop", [False, True])
+def test_real_fx_local_turn_takes_a_steer_from_its_inbox(tmp_path, stop):
+    """A local fx turn steered as a cloud one is: the runner drops a person's message in the turn's inbox once the
+    driver opens it, the model's next request carries it, and the runner hears it sent, accepted and delivered (or
+    cancelled, when the turn is stopped first). After the turn's prompt the inbox is gone, so a late drop fails and
+    the platform queues it instead."""
+    import signal
+    import uuid as uuid_module
+
+    from dotrix_cli.runner import drop_steer
+
+    sent, release = threading.Event(), threading.Event()
+
+    def choose(_, index):
+        if index == 0:  # Kai's first step: held until the message is in, then a read
+            sent.wait(30)
+            release.wait(30)
+            return ("read_file", {"path": "readable.txt"})
+        return None
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "readable.txt").write_text("WORKTREE_READ_PROOF")
+    inbox = tmp_path / "steer" / uuid_module.uuid4().hex
+    with model_server("chat", choose) as (model_url, requests, _):
+        original = tmp_path / "original" / ".fx"
+        original.mkdir(parents=True)
+        (original / "settings.json").write_text(json.dumps({"provider": "custom", "models": {"custom": "test"}, "providers": {"custom": {
+            "protocol": "openai-chat-completions", "base_url": model_url, "auth": {"type": "bearer", "env": "LOCAL_TEST_KEY"},
+            "model_metadata": {"test": {"supports_tool_use": True}}}}}))
+        env = tool_environment("fx", {"HOME": str(original.parent), "PATH": str(Path(FX).parent) + os.pathsep + os.environ["PATH"],
+                                      "LOCAL_TEST_KEY": "test-not-real"})
+        profile = tmp_path / "isolated"
+        prepare_profile(profile, env)
+        argv = [*Tool.named("fx", profile=profile).argv, "--steer-dir", str(inbox)]
+        driver = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=repo, env=env)
+        out, key, late_dropped = Outcome(root=repo), None, None
+        try:
+            assert driver.stdin and driver.stdout
+            driver.stdin.write("Check this task.")
+            driver.stdin.close()
+            for line in driver.stdout:
+                parse_line(line, out)
+                event = json.loads(line)
+                if event["type"] == "steering":
+                    key = str(uuid_module.uuid4())
+                    assert drop_steer(inbox, key, "Read readable.txt and say what it holds")
+                elif event["type"] == "steer" and event["state"] == "sent":
+                    sent.set()
+                    if stop:
+                        driver.send_signal(signal.SIGINT)
+                    release.set()
+                elif event["type"] == "done":
+                    late_dropped = drop_steer(inbox, str(uuid_module.uuid4()), "Too late for this turn")
+            driver.wait(60)
+        finally:
+            sent.set()
+            release.set()
+            if driver.poll() is None:
+                driver.kill()
+    states = [s["state"] for s in out.steering if s["id"] == key]
+    assert out.steering_open and late_dropped is False and not inbox.exists()
+    if stop:
+        assert states[0] == "sent" and states[-1] == "cancelled", out.steering
+    else:
+        assert states == ["sent", "accepted", "delivered"], out.steering
+        assert "Read readable.txt and say what it holds" not in json.dumps(requests[0])
+        assert "Read readable.txt and say what it holds" in json.dumps(requests[-1])
+        assert any(e["text"] == "Took your message" for e in out.events)
+
+
+@pytest.mark.skipif(not FX, reason="Set DOTRIX_TEST_FX to the pinned CLI")
+@pytest.mark.skipif(not native_fx_available(), reason="Linux user/network namespaces unavailable")
+def test_real_fx_local_turn_gets_kai_s_contract_as_its_system_profile(tmp_path):
+    """As on a cloud turn, Kai's contract reaches the model as the session's system profile, not as words in the
+    conversation: the first request's system message carries it, and the person's turn carries only the task."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with model_server("chat", lambda _, index: None) as (model_url, requests, _):
+        original = tmp_path / "original" / ".fx"
+        original.mkdir(parents=True)
+        (original / "settings.json").write_text(json.dumps({"provider": "custom", "models": {"custom": "test"}, "providers": {"custom": {
+            "protocol": "openai-chat-completions", "base_url": model_url, "auth": {"type": "bearer", "env": "LOCAL_TEST_KEY"},
+            "model_metadata": {"test": {"supports_tool_use": True}}}}}))
+        env = tool_environment("fx", {"HOME": str(original.parent), "PATH": str(Path(FX).parent) + os.pathsep + os.environ["PATH"],
+                                      "LOCAL_TEST_KEY": "test-not-real"})
+        profile = tmp_path / "isolated"
+        prepare_profile(profile, env)
+        brief = "Fix the LOCAL_TASK_MARK bug.\n\n# How Kai works\n\nYou are Kai. KAI_CONTRACT_MARK\n"
+        done = subprocess.run(Tool.named("fx", profile=profile).argv, input=brief, capture_output=True, text=True,
+                              cwd=repo, env=env, timeout=120)
+    assert '"done"' in done.stdout, (done.stdout, done.stderr)
+    messages = requests[0]["messages"]
+    system = json.dumps([m for m in messages if m.get("role") == "system"])
+    users = json.dumps([m for m in messages if m.get("role") == "user"])
+    assert "KAI_CONTRACT_MARK" in system and "KAI_CONTRACT_MARK" not in users
+    assert "LOCAL_TASK_MARK" in users

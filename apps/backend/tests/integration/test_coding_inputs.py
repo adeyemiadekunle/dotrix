@@ -1,0 +1,516 @@
+"""Messages a person sends a coding session while Kai works: steer the running turn, or queue the next one."""
+import dataclasses
+import json
+import uuid
+from datetime import UTC, datetime
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from dotrix_backend.modules.coding.inputs import (
+    deliver_for_job,
+    settle_steers,
+    steer_states,
+    take_steers,
+)
+from dotrix_backend.modules.coding.models import (
+    CodingInput,
+    CodingRun,
+    CodingRunStatus,
+    CodingSession,
+    CodingSessionState,
+)
+from dotrix_backend.modules.coding.runner import add_events
+
+from .test_coding import (  # noqa: F401  (fixtures)
+    _asked,
+    _save_key,
+    _set_run,
+    claude,
+    coding,
+    origin,
+)
+
+
+@pytest.fixture
+def queued(db_client: AsyncClient, coding):  # noqa: F811
+    """The coding world, with jobs able to queue the turns queued messages become (as in local mode)."""
+    jobs = db_client._transport.app.state.jobs  # type: ignore[attr-defined]
+    jobs.ctx = dataclasses.replace(jobs.ctx, jobs=jobs)
+    return coding
+
+
+async def _fx_asked(db_client: AsyncClient, coding) -> tuple[str, dict]:  # noqa: F811
+    """A session on fx (OpenAI), its first turn waiting for approval."""
+    ada, _, ws, kun, _, _ = coding
+    await _save_key(db_client, ada.headers, "openai", "test-openai-personal-provider-key")
+    db_client._transport.app.state.settings.coding_fx_model = "openai:gpt-6.1"  # type: ignore[attr-defined]
+    base = f"{ws}/projects/{kun['id']}"
+    issue = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refunds"})).json()
+    run = await db_client.post(f"{base}/coding/issues/{issue['key']}/runs", json={"agent": "fx"}, headers=ada.headers)
+    assert run.status_code == 201 and run.json()["agent"] == "fx", run.text
+    return base, run.json()
+
+
+def _ctx(db_client: AsyncClient):
+    return db_client._transport.app.state.jobs.ctx  # type: ignore[attr-defined]
+
+
+async def _send(db_client: AsyncClient, base: str, session_id: str, headers, kind: str, message: str, **extra):
+    return await db_client.post(f"{base}/coding/sessions/{session_id}/inputs", headers=headers,
+                                json={"client_id": str(uuid.uuid4()), "kind": kind, "message": message, **extra})
+
+
+async def _inputs(db_client: AsyncClient, base: str, session_id: str, headers) -> list[dict]:
+    res = await db_client.get(f"{base}/coding/sessions/{session_id}/inputs", headers=headers)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+async def _turns(db_client: AsyncClient, base: str, session_id: str, headers) -> list[dict]:
+    return (await db_client.get(f"{base}/coding/sessions/{session_id}", headers=headers)).json()
+
+
+async def test_queued_messages_become_one_next_turn_once_the_turn_finishes(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    for text in ("Also handle partial refunds", "And add a changelog entry"):
+        res = await _send(db_client, base, session_id, ada.headers, "queue", text)
+        assert res.status_code == 201, res.text
+        assert res.json()["status"] == "pending"
+    # Waiting for approval: nothing moves, and only a cloud fx turn that's working can be steered.
+    assert run["accepts_steering"] is False
+    refused = await _send(db_client, base, session_id, ada.headers, "steer", "Mid-turn")
+    assert refused.status_code == 409, refused.text
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert len(turns) == 2 and turns[1]["origin"] == "follow_up" and turns[1]["status"] == "awaiting_approval"
+    assert "Also handle partial refunds\n\nAnd add a changelog entry" in turns[1]["brief"]
+    items = await _inputs(db_client, base, session_id, ada.headers)
+    assert {i["status"] for i in items} == {"delivered"} and {i["delivered_run_id"] for i in items} == {turns[1]["id"]}
+    assert await deliver_for_job(_ctx(db_client)) == 0  # once
+
+
+async def test_a_turn_that_was_stopped_or_failed_cancels_what_was_queued(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.STOPPED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "cancelled" and item["note"] == "The turn was stopped"
+    assert len(await _turns(db_client, base, run["session_id"], ada.headers)) == 1
+
+
+async def test_a_message_is_private_to_whoever_started_the_session_and_can_be_taken_back(db_client: AsyncClient, queued) -> None:
+    ada, cat, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    # Cat may not instruct Kai here (403); someone who may gets 404 for a session that isn't theirs.
+    assert (await _send(db_client, base, session_id, cat.headers, "queue", "Mine now")).status_code in (403, 404)
+    assert (await db_client.get(f"{base}/coding/sessions/{session_id}/inputs", headers=cat.headers)).status_code in (403, 404)
+    client_id = str(uuid.uuid4())
+    body = {"client_id": client_id, "kind": "queue", "message": "Then the docs"}
+    first = await db_client.post(f"{base}/coding/sessions/{session_id}/inputs", json=body, headers=ada.headers)
+    again = await db_client.post(f"{base}/coding/sessions/{session_id}/inputs", json=body, headers=ada.headers)
+    assert first.status_code == again.status_code == 201 and first.json()["id"] == again.json()["id"]
+    other = await db_client.post(f"{base}/coding/sessions/{session_id}/inputs", headers=ada.headers,
+                                 json={**body, "message": "Something else"})
+    assert other.status_code == 409
+    item = first.json()
+    assert (await db_client.delete(f"{base}/coding/sessions/{session_id}/inputs/{item['id']}",
+                                   headers=cat.headers)).status_code in (403, 404)
+    taken = await db_client.delete(f"{base}/coding/sessions/{session_id}/inputs/{item['id']}", headers=ada.headers)
+    assert taken.status_code == 200 and taken.json()["status"] == "cancelled"
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 0  # nothing left to send
+
+
+async def test_nothing_is_sent_to_a_session_kai_isnt_working_in(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    res = await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    assert res.status_code == 409 and "follow-up" in res.json()["detail"]
+
+
+async def test_a_working_fx_turn_takes_steers_and_one_it_didnt_take_goes_to_the_next_turn(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _fx_asked(db_client, queued)
+    session_id, run_id = run["session_id"], uuid.UUID(run["id"])
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING)
+    [turn] = await _turns(db_client, base, session_id, ada.headers)
+    assert turn["accepts_steering"] is True
+    taken = (await _send(db_client, base, session_id, ada.headers, "steer", "Use the refunds table")).json()
+    missed = (await _send(db_client, base, session_id, ada.headers, "steer", "And log each refund")).json()
+    sessions = _ctx(db_client).session_factory
+    # The worker drops both in the turn's inbox; the driver reports the first taken, the second never sent.
+    assert [str(k) for k, _ in await take_steers(sessions, run_id)] == [taken["id"], missed["id"]]
+    assert await take_steers(sessions, run_id) == []  # each once
+    await steer_states(sessions, run_id, [(taken["id"], "sent", None), (taken["id"], "accepted", None),
+                                          (taken["id"], "sent", None)])  # a late report never goes back
+    states = {i["id"]: i for i in await _inputs(db_client, base, session_id, ada.headers)}
+    assert states[taken["id"]]["status"] == "accepted" and states[missed["id"]]["status"] == "sending"
+    # Taking it back is too late once Kai has it.
+    late = await db_client.delete(f"{base}/coding/sessions/{session_id}/inputs/{taken['id']}", headers=ada.headers)
+    assert late.status_code == 409
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    states = {i["id"]: i for i in await _inputs(db_client, base, session_id, ada.headers)}
+    assert states[taken["id"]]["status"] == "delivered" and states[taken["id"]]["delivered_run_id"] == run["id"]
+    assert states[missed["id"]]["kind"] == "queue" and states[missed["id"]]["status"] == "delivered"
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert states[missed["id"]]["delivered_run_id"] == turns[1]["id"]
+    assert "And log each refund" in turns[1]["brief"] and "Use the refunds table" not in turns[1]["brief"]
+
+
+async def test_a_stopped_turn_cancels_the_steers_it_never_took(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _fx_asked(db_client, queued)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING)
+    await _send(db_client, base, run["session_id"], ada.headers, "steer", "Use the refunds table")
+    sessions = _ctx(db_client).session_factory
+    async with sessions() as session:
+        stopped = await session.get(CodingRun, uuid.UUID(run["id"]), with_for_update=True)
+        stopped.status = CodingRunStatus.STOPPED
+        await settle_steers(session, stopped)
+        await session.commit()
+        [item] = list(await session.scalars(select(CodingInput).where(CodingInput.session_id == stopped.session_id)))
+    assert item.status == "cancelled" and item.note == "The turn was stopped"
+
+
+async def test_a_queued_message_whose_turn_is_refused_says_why(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _fx_asked(db_client, queued)
+    await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    db_client._transport.app.state.settings.coding_fx_model = None  # type: ignore[attr-defined]
+    await _db_key_gone(db_client, ada.headers)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "rejected" and "provider key" in item["note"], item
+    assert len(await _turns(db_client, base, run["session_id"], ada.headers)) == 1
+
+
+async def _db_key_gone(db_client: AsyncClient, headers) -> None:
+    res = await db_client.delete("/v1/me/model-keys/openai", headers=headers)
+    assert res.status_code in (200, 204), res.text
+
+
+async def test_messages_asking_for_other_settings_get_turns_of_their_own(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    await _send(db_client, base, session_id, ada.headers, "queue", "Add partial refunds", work_mode="build")
+    await _send(db_client, base, session_id, ada.headers, "queue", "Then plan the docs", work_mode="plan")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert turns[1]["work_mode"] == "build" and "Add partial refunds" in turns[1]["brief"]
+    assert "Then plan the docs" not in turns[1]["brief"]  # it asked for Plan: it waits for a turn of its own
+    waiting = [i for i in await _inputs(db_client, base, session_id, ada.headers) if i["status"] == "pending"]
+    assert [i["message"] for i in waiting] == ["Then plan the docs"]
+    await _set_run(db_client, turns[1]["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert turns[2]["work_mode"] == "plan" and "Then plan the docs" in turns[2]["brief"]
+
+
+async def test_a_rejected_turn_cancels_its_queue_from_the_sweep_job(db_client: AsyncClient, queued) -> None:
+    from dotrix_backend.jobs import JOBS
+
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    res = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
+    assert res.status_code == 200, res.text
+    await JOBS["deliver_coding_inputs"](_ctx(db_client))  # local mode's sweep (the worker's runs the same)
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "cancelled" and "rejected" in item["note"]
+
+
+async def test_what_doesnt_fit_one_turn_waits_for_the_next(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    for letter in "ab":
+        await _send(db_client, base, session_id, ada.headers, "queue", letter * 3000)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 1
+    assert await deliver_for_job(_ctx(db_client)) == 0  # again while that turn waits: nothing rejected
+    statuses = {i["message"][0]: i["status"] for i in await _inputs(db_client, base, session_id, ada.headers)}
+    assert statuses == {"a": "delivered", "b": "pending"}
+
+
+async def test_a_local_fx_turn_is_steered_through_its_runners_heartbeat(db_client: AsyncClient, queued) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation, CodingRunner
+
+    ada, _, ws, _, _, _ = queued
+    base, run = await _fx_asked(db_client, queued)
+    sessions = _ctx(db_client).session_factory
+    async with sessions() as session:
+        runner = CodingRunner(id=uuid.uuid4(), workspace_id=uuid.UUID(ws.rsplit("/", 1)[-1]), user_id=uuid.UUID(ada.id),
+                              name="laptop", tools=["fx"], project_ids=[run["project_id"]],
+                              created_at=datetime.now(UTC), last_seen_at=datetime.now(UTC))
+        session.add(runner)
+        await session.commit()
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, location=CodingLocation.LOCAL,
+                   runner_id=runner.id, lease_token=7)
+    [turn] = await _turns(db_client, base, run["session_id"], ada.headers)
+    assert turn["accepts_steering"] is True  # an fx turn on this computer takes steers too
+    steer = (await _send(db_client, base, run["session_id"], ada.headers, "steer", "Use the refunds table")).json()
+    beat = f"{ws}/coding/runners/{runner.id}/runs/{run['id']}/heartbeat"
+    # Until the runner says its inbox is open (a runner from before steering never does), the steer waits.
+    closed = await db_client.post(beat, json={"lease_token": 7}, headers=ada.headers)
+    assert closed.status_code == 200 and closed.json()["steers"] == [], closed.text
+    opened = (await db_client.post(beat, json={"lease_token": 7, "steering_open": True}, headers=ada.headers)).json()
+    assert opened["steers"] == [{"id": steer["id"], "message": "Use the refunds table"}]
+    assert (await db_client.post(beat, json={"lease_token": 7, "steering_open": True},
+                                 headers=ada.headers)).json()["steers"] == []  # once
+    reports = [{"id": steer["id"], "state": "sent"}, {"id": steer["id"], "state": "accepted"}]
+    await db_client.post(beat, json={"lease_token": 7, "steering_open": True, "steering": reports}, headers=ada.headers)
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "accepted"
+    # The last word comes with the result.
+    done = await db_client.post(f"{ws}/coding/runners/{runner.id}/runs/{run['id']}/result", headers=ada.headers, json={
+        "lease_token": 7, "outcome": "no_changes", "steering": [{"id": steer["id"], "state": "delivered"}]})
+    assert done.status_code in (200, 204), done.text
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "delivered" and item["delivered_run_id"] == run["id"]
+
+
+async def test_a_queued_message_after_a_local_turn_is_the_next_turn_on_the_same_computer(db_client: AsyncClient, queued) -> None:
+    from dotrix_backend.modules.coding.models import CodingLocation, CodingRunner
+
+    ada, _, ws, _, _, _ = queued
+    base, run = await _asked(db_client, queued)  # Claude Code: queueing needs nothing of the engine
+    async with _ctx(db_client).session_factory() as session:  # the computer that coded the turn
+        runner = CodingRunner(id=uuid.uuid4(), workspace_id=uuid.UUID(ws.rsplit("/", 1)[-1]), user_id=uuid.UUID(ada.id),
+                              name="laptop", tools=["claude-code"], project_ids=[run["project_id"]],
+                              created_at=datetime.now(UTC), last_seen_at=datetime.now(UTC))
+        session.add(runner)
+        await session.commit()
+    await _set_run(db_client, run["id"], status=CodingRunStatus.RUNNING, location=CodingLocation.LOCAL, runner_id=runner.id)
+    res = await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then add a test")
+    assert res.status_code == 201, res.text
+    await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC))
+    made = await deliver_for_job(_ctx(db_client))
+    assert made == 1, await _inputs(db_client, base, run["session_id"], ada.headers)
+    turns = await _turns(db_client, base, run["session_id"], ada.headers)
+    assert turns[1]["location"] == "local" and "Then add a test" in turns[1]["brief"], turns[1]
+
+
+PLAN = {"title": "Refunds", "summary": "Refund payments.", "acceptance_criteria": ["Refunds work"], "open_questions": [],
+        "tasks": [{"title": "Add the refund call", "detail": "In payments.py", "depends_on": [3]},
+                  {"title": "Document refunds", "detail": "In README", "depends_on": [1]},
+                  {"title": "Add the refunds table", "detail": "A migration", "depends_on": []}]}
+
+
+async def _planned(db_client: AsyncClient, coding) -> tuple[str, dict]:  # noqa: F811
+    """A session whose finished turn saved a plan (as a Plan turn does), its tasks depending on each other."""
+    base, run = await _asked(db_client, coding)
+    await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC),
+                   work_mode="plan", plan_result=PLAN)
+    return base, run
+
+
+async def test_a_plan_built_step_by_step_is_one_turn_a_task_in_dependency_order(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    session_id = plan["session_id"]
+    res = await db_client.post(f"{base}/coding/sessions/{session_id}/turns", headers=ada.headers, json={
+        "message": "Build the plan step by step", "work_mode": "build", "source_plan_id": plan["id"], "step_by_step": True})
+    assert res.status_code == 201, res.text
+    first = res.json()
+    assert "## This turn: task 3 of 3" in first["brief"] and "Add the refunds table" in first["brief"]  # no dependencies
+    waiting = [i["message"] for i in reversed(await _inputs(db_client, base, session_id, ada.headers))]
+    assert waiting == ["Task 1 of 3: Add the refund call", "Task 2 of 3: Document refunds"]
+    for number in (1, 2):
+        turns = await _turns(db_client, base, session_id, ada.headers)
+        await _set_run(db_client, turns[-1]["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+        assert await deliver_for_job(_ctx(db_client)) == 1  # the next task only, never two at once
+        turns = await _turns(db_client, base, session_id, ada.headers)
+        assert f"## This turn: task {number} of 3" in turns[-1]["brief"], turns[-1]["brief"][-400:]
+        assert turns[-1]["work_mode"] == "build" and "## Selected coding plan" in turns[-1]["brief"]
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    await _set_run(db_client, turns[-1]["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 0 and len(turns) == 4  # the plan, then three tasks
+
+
+async def test_a_stopped_task_cancels_the_plans_remaining_tasks(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    first = (await db_client.post(f"{base}/coding/sessions/{plan['session_id']}/turns", headers=ada.headers, json={
+        "message": "Step by step", "work_mode": "build", "source_plan_id": plan["id"], "step_by_step": True})).json()
+    await _set_run(db_client, first["id"], status=CodingRunStatus.STOPPED, finished_at=datetime.now(UTC))
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    assert {i["status"] for i in await _inputs(db_client, base, plan["session_id"], ada.headers)} == {"cancelled"}
+
+
+async def test_one_task_of_a_plan_can_be_built_on_its_own(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    url = f"{base}/coding/sessions/{plan['session_id']}/turns"
+    body = {"message": "Just the docs", "work_mode": "build", "source_plan_id": plan["id"]}
+    missing = await db_client.post(url, headers=ada.headers, json={**body, "plan_task": 9})
+    assert missing.status_code == 422
+    turn = (await db_client.post(url, headers=ada.headers, json={**body, "plan_task": 2})).json()
+    assert "## This turn: task 2 of 3" in turn["brief"]
+    assert await _inputs(db_client, base, plan["session_id"], ada.headers) == []  # nothing else queued
+
+
+ASKED = """I started on refunds but stopped: two things only you can decide.
+
+```questions
+- Should partial refunds be allowed?
+2. Which currency do refunds use when the order mixes several?
+```"""
+
+
+def test_kais_questions_are_read_from_its_final_message() -> None:
+    from dotrix_backend.modules.coding.planning import questions_in
+
+    assert questions_in(ASKED) == ["Should partial refunds be allowed?",
+                                   "Which currency do refunds use when the order mixes several?"]
+    assert questions_in("Done: added refunds; tests pass.") == []
+    assert questions_in("```questions\n" + "\n".join(f"- q{i}" for i in range(9)) + "\n```") == [f"q{i}" for i in range(5)]
+
+
+async def test_a_turn_that_asks_questions_holds_the_queue_until_the_person_answers(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    session_id = run["session_id"]
+    await _send(db_client, base, session_id, ada.headers, "queue", "Then add a changelog entry")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.NO_CHANGES, finished_at=datetime.now(UTC), summary=ASKED)
+    [turn] = await _turns(db_client, base, session_id, ada.headers)
+    assert turn["questions"] == ["Should partial refunds be allowed?",
+                                 "Which currency do refunds use when the order mixes several?"]
+    assert await deliver_for_job(_ctx(db_client)) == 0  # waits for the answer
+    assert [i["status"] for i in await _inputs(db_client, base, session_id, ada.headers)] == ["pending"]
+    answer = await db_client.post(f"{base}/coding/sessions/{session_id}/turns", headers=ada.headers,
+                                  json={"message": "Yes to partial refunds; use the order's first currency"})
+    assert answer.status_code == 201, answer.text
+    await _set_run(db_client, answer.json()["id"], status=CodingRunStatus.PR_OPENED, finished_at=datetime.now(UTC),
+                   summary="Added partial refunds.")
+    assert await deliver_for_job(_ctx(db_client)) == 1  # answered: the queue goes on
+    turns = await _turns(db_client, base, session_id, ada.headers)
+    assert turns[-1]["questions"] == [] and "Then add a changelog entry" in turns[-1]["brief"]
+
+
+async def test_a_plan_tasks_instructions_are_in_the_turns_task_not_kais_pinned_contract(db_client: AsyncClient, queued) -> None:
+    """fx takes Kai's contract as the session's pinned system profile; a task's instructions must stay in the turn's
+    own part of the brief, or a resumed session would never see them."""
+    from dotrix_backend.modules.coding.brief import CONTRACT_HEADING, split_contract
+
+    ada, _, _, _, _, _ = queued
+    base, plan = await _planned(db_client, queued)
+    turn = (await db_client.post(f"{base}/coding/sessions/{plan['session_id']}/turns", headers=ada.headers, json={
+        "message": "Just the docs", "work_mode": "build", "source_plan_id": plan["id"], "plan_task": 2})).json()
+    task, contract = split_contract(turn["brief"])
+    assert "## This turn: task 2 of 3" in task and "## Selected coding plan" in task
+    assert contract is not None and contract.startswith(CONTRACT_HEADING) and "## This turn" not in contract
+
+
+async def test_a_stopped_turn_with_questions_still_cancels_its_queue(db_client: AsyncClient, queued) -> None:
+    ada, _, _, _, _, _ = queued
+    base, run = await _asked(db_client, queued)
+    await _send(db_client, base, run["session_id"], ada.headers, "queue", "Then the docs")
+    await _set_run(db_client, run["id"], status=CodingRunStatus.STOPPED, finished_at=datetime.now(UTC), summary=ASKED)
+    assert await deliver_for_job(_ctx(db_client)) == 0
+    [item] = await _inputs(db_client, base, run["session_id"], ada.headers)
+    assert item["status"] == "cancelled" and item["note"] == "The turn was stopped"
+
+
+class _KeptBox:
+    """A warm fx sandbox as the worker sees it between turns: fx's host reports Kai's kept commands."""
+
+    def __init__(self) -> None:
+        self.report: dict = {"shells": []}
+        self.closed = False
+
+    async def exec(self, argv, **_):
+        from dotrix_backend.modules.coding.sandbox import ExecResult
+        assert argv[-1].startswith('cat "$HOME/.dotrix-fx-host/shells.json"')
+        return ExecResult(0, json.dumps(self.report), "")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_commands_kai_left_running_are_followed_between_turns_and_keep_the_sandbox_up(db_client: AsyncClient, queued) -> None:  # noqa: F811
+    """No turn starts on its own: the worker reads what fx's host says of Kai's kept commands and records each change
+    on the session's latest turn, as Codes lists them. A sandbox with one running stays up past the idle time,
+    within `coding_background_minutes`; once let go, the ones still running are said to have ended."""
+    ada, *_ = queued
+    base, run = await _fx_asked(db_client, queued)
+    run_id = uuid.UUID(run["id"])
+    async with _ctx(db_client).session_factory() as session:
+        row = await session.get(CodingRun, run_id)
+        row.status, row.finished_at = CodingRunStatus.NO_CHANGES, datetime.now(UTC)
+        session_id = row.session_id
+        add_events(row, session, events=[{"at": datetime.now(UTC).isoformat(), "kind": "background-running", "text": "make ci",
+                                          "ref": "command:shell-1"}])
+        now = datetime.now(UTC)
+        session.add(CodingSession(id=session_id, workspace_id=row.workspace_id, project_id=row.project_id, issue_id=row.issue_id,
+                                  agent=row.agent, state=CodingSessionState.WARM, claude_session=uuid.uuid4(), created_at=now,
+                                  last_active_at=now))
+        await session.commit()
+    worker = _ctx(db_client).coding
+    worker.pool.idle_seconds, worker.pool.per_workspace = 0, 3  # idle at once: only a running command keeps it
+    box = _KeptBox()
+    await worker.pool.put(session_id, row.workspace_id, box)
+
+    box.report = {"shells": [{"sessionId": "shell-1", "command": "make ci", "state": "running", "output": "step 3/9"}]}
+    await worker.reap()
+    assert worker.pool.sessions() == [session_id]  # kept up: make ci still runs
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    assert [e["kind"] for e in turns[-1]["events"] if e["kind"].startswith("background-")] == ["background-running"]
+
+    box.report = {"shells": [
+        {"sessionId": "shell-1", "command": "make ci", "state": "completed", "exitCode": 0, "output": "all 9 passed"},
+        {"sessionId": "shell-2", "command": "npm run e2e", "state": "running", "output": ""},
+    ]}
+    await worker.reap()
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    background = [(e["kind"], e["text"], e["ref"]) for e in turns[-1]["events"] if e["kind"].startswith("background-")]
+    assert background[1:] == [("background-done", "make ci", "command:shell-1"),
+                              ("background-output", "all 9 passed", "command:shell-1"),
+                              ("background-running", "npm run e2e", "command:shell-2")]
+    await worker.reap()  # nothing new: nothing recorded again
+    assert len([e for e in (await _turns(db_client, base, str(session_id), ada.headers))[-1]["events"]
+                if e["kind"].startswith("background-")]) == 4
+
+    # Past the limit (its last turn ended longer ago than it allows), the sandbox is let go, and e2e ends with it.
+    worker.settings.coding_background_minutes = 0
+    await worker.reap()
+    assert worker.pool.sessions() == [] and box.closed
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    assert [(e["kind"], e["text"]) for e in turns[-1]["events"] if e["kind"].startswith("background-")][-1] == (
+        "background-ended", "npm run e2e")
+
+
+async def test_a_sandbox_evicted_for_the_workspace_limit_ends_its_commands_in_codes(db_client: AsyncClient, queued) -> None:  # noqa: F811
+    """A warm sandbox the pool lets go for the workspace's limit (or on any path but a turn taking it) ends what Kai
+    left running there, even before the reaper looked: Codes says so rather than showing it running for ever."""
+    ada, *_ = queued
+    base, run = await _fx_asked(db_client, queued)
+    async with _ctx(db_client).session_factory() as session:
+        row = await session.get(CodingRun, uuid.UUID(run["id"]))
+        row.status, row.finished_at = CodingRunStatus.NO_CHANGES, datetime.now(UTC)
+        session_id, workspace_id = row.session_id, row.workspace_id
+        add_events(row, session, events=[{"at": datetime.now(UTC).isoformat(), "kind": "background-running", "text": "make ci",
+                                          "ref": "command:shell-1"}])
+        await session.commit()
+    worker = _ctx(db_client).coding
+    worker.pool.per_workspace = 1
+    box, other = _KeptBox(), _KeptBox()
+    await worker.pool.put(session_id, workspace_id, box)
+    await worker.pool.put(uuid.uuid4(), workspace_id, other)  # one too many: the older one goes
+    assert box.closed
+    turns = await _turns(db_client, base, str(session_id), ada.headers)
+    assert [(e["kind"], e["text"]) for e in turns[-1]["events"] if e["kind"].startswith("background-")] == [
+        ("background-running", "make ci"), ("background-ended", "make ci")]

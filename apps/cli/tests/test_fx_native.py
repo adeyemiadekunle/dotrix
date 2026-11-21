@@ -115,3 +115,21 @@ def test_native_execution_runs_only_the_kai_runtime_s_fx_with_project_config_off
         with pytest.raises(ValueError, match="Kai runtime's fx"):
             require_kai_fx(str(binary))
 
+
+
+def test_kai_s_contract_splits_from_the_turn_s_task_and_the_browser_note_stays_in_the_task() -> None:
+    """A local fx turn gives fx Kai's contract as the session's system profile, as a cloud turn does: the brief splits
+    at its last contract heading (one quoted in an issue stays in the task), and the browser's note goes in the task."""
+    from dotrix_cli.fx_local import CONTRACT_HEADING, split_contract
+    from dotrix_cli.runner import with_note
+
+    brief = f"Fix the bug.\nThe issue says:\n{CONTRACT_HEADING}\n(quoted)\n\n{CONTRACT_HEADING}\n\nYou are Kai.\n- Rule one.\n"
+    task, contract = split_contract(brief)
+    assert task == f"Fix the bug.\nThe issue says:\n{CONTRACT_HEADING}\n(quoted)\n"
+    assert contract == f"{CONTRACT_HEADING}\n\nYou are Kai.\n- Rule one."
+    assert split_contract("Just the task.\n") == ("Just the task.\n", None)  # an older platform's brief goes whole
+
+    noted = with_note(brief, "\n\n## A browser on this computer\n\nUse it.")
+    task, contract = split_contract(noted)
+    assert "## A browser on this computer" in task and "browser" not in contract
+    assert with_note("Just the task.", "\nNOTE") == "Just the task.\nNOTE" and with_note(brief, "") == brief

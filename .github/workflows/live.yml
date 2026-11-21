@@ -1,0 +1,106 @@
+name: Live models
+# Paid checks on real models, run by hand (Actions → Live models → Run workflow), never on a push or PR:
+# Nova on DeepAgents and fx (apps/backend/tests/integration/test_live_chat.py) and Kai on every engine in the
+# Docker sandbox, from the issue to the PR (test_live_coding.py, which builds the coding image first).
+#
+# Each provider's key is a secret of the `live-models` environment, read only for the provider picked:
+# DOTRIX_LIVE_NVIDIA_API_KEY, DOTRIX_LIVE_ANTHROPIC_API_KEY, DOTRIX_LIVE_OPENAI_API_KEY. A test whose key
+# isn't set skips. KAI_PACKAGES_TOKEN (read:packages) installs the Kai runtime for fx, as in CI.
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Whose models to call
+        type: choice
+        options: [nvidia, anthropic, openai, all]
+        default: nvidia
+      suite:
+        description: What to run
+        type: choice
+        options: [chat, coding, both]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-models
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    environment: live-models
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17-trixie
+        env:
+          POSTGRES_USER: dotrix
+          POSTGRES_DB: dotrix
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dotrix"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DOTRIX_DATABASE_URL: postgresql+asyncpg://dotrix@localhost:5432/dotrix
+      DOTRIX_TEST_DATABASE_URL: postgresql+asyncpg://dotrix@localhost:5432/dotrix_test
+      DOTRIX_TEST_REDIS_URL: redis://localhost:6379/15
+      # Only the picked provider's key reaches the tests; the others stay unset, so their tests skip.
+      DOTRIX_LIVE_NVIDIA_API_KEY: ${{ (inputs.provider == 'nvidia' || inputs.provider == 'all') && secrets.DOTRIX_LIVE_NVIDIA_API_KEY || '' }}
+      DOTRIX_LIVE_ANTHROPIC_API_KEY: ${{ (inputs.provider == 'anthropic' || inputs.provider == 'all') && secrets.DOTRIX_LIVE_ANTHROPIC_API_KEY || '' }}
+      DOTRIX_LIVE_OPENAI_API_KEY: ${{ (inputs.provider == 'openai' || inputs.provider == 'all') && secrets.DOTRIX_LIVE_OPENAI_API_KEY || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: A key for the picked provider
+        env:
+          PROVIDER: ${{ inputs.provider }}
+        run: |
+          if [ -z "$DOTRIX_LIVE_NVIDIA_API_KEY$DOTRIX_LIVE_ANTHROPIC_API_KEY$DOTRIX_LIVE_OPENAI_API_KEY" ]; then
+            echo "::error::No key for $PROVIDER: add its DOTRIX_LIVE_…_API_KEY secret to the live-models environment"
+            exit 1
+          fi
+      - run: uv sync --locked
+      - name: Install the fx runtime's host
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.KAI_PACKAGES_TOKEN }}
+        run: npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host
+      - name: Build the coding image
+        if: inputs.suite != 'chat'
+        env:
+          KAI_PACKAGES_TOKEN: ${{ secrets.KAI_PACKAGES_TOKEN }}
+        run: DOCKER_BUILDKIT=1 docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding
+      - name: Install gVisor (runsc), as deployed coding requires
+        # test_live_nvidia_bug_and_browser runs its sandbox under runsc. Pinned to the release Dotrix's sandbox tests ran on.
+        if: inputs.suite != 'chat'
+        env:
+          GVISOR: https://storage.googleapis.com/gvisor/releases/release/20261102/x86_64
+        run: |
+          cd "$(mktemp -d)"
+          curl -fsSLO "$GVISOR/gvisor.tar.bz2" -O "$GVISOR/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          sudo tar xjf gvisor.tar.bz2 -C /usr/local/bin   # runsc, its containerd shim and the gvisor-bin helpers it runs
+          sudo /usr/local/bin/runsc install
+          sudo systemctl reload docker || sudo systemctl restart docker
+          docker run --rm --runtime runsc hello-world
+      - name: Nova on real models
+        if: inputs.suite != 'coding'
+        run: uv run pytest -v -rs apps/backend/tests/integration/test_live_chat.py
+      - name: Kai on real models
+        if: inputs.suite != 'chat' && !cancelled()
+        run: uv run pytest -v -rs apps/backend/tests/integration/test_live_coding.py

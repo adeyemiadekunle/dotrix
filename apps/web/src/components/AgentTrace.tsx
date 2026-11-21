@@ -422,7 +422,7 @@ export function ToolCalls({
       out.set(e.ref, { text: prev ? `${prev.text}\n${e.text}` : e.text, failed: (prev?.failed ?? false) || e.kind === "output-error" });
     }
   }
-  const calls = events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output"));
+  const calls = events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output") && !e.kind.startsWith("background-"));
   return (
     <Trace className="agent-trace" aria-label="Tool calls">
       {calls.map((e, i) => {
@@ -660,7 +660,9 @@ export function Queue({ entries }: { entries: QueueEntry[] }) {
                     </TraceDescription>
                   </TraceLine>
                   {e.onCancel && (
-                    <ActionButton className="btn btn-xs btn-ghost" disabled={e.cancelling} onClick={e.onCancel}>
+                    // The message box keeps its focus: losing it shrinks the composer under this list, which would move
+                    // the button between the press and the release and lose the click.
+                    <ActionButton className="btn btn-xs btn-ghost" disabled={e.cancelling} onMouseDown={(ev) => ev.preventDefault()} onClick={e.onCancel}>
                       Cancel
                     </ActionButton>
                   )}

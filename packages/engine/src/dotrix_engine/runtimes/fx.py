@@ -38,11 +38,19 @@ _TOOL_ERROR_CHARS = 1_000
 LIBFX_ARTIFACTS: dict[str, tuple[str, ...]] = {
     "0.0.16": (),
     "0.0.17-kai.1": ("0.0.16",),
+    "0.0.17-kai.2": ("0.0.17-kai.1", "0.0.16"),
 }
 # The package each version comes from. fx's own releases are `libfx` on npm; the Kai runtime's
 # (adeyemiadekunle/kai-runtime) are `@kunemi-group/kai` on GitHub Packages, versioned
 # <fx release>-kai.<n>, which a host installs under the name `libfx` with an npm alias.
 _KAI_PACKAGE = "@kunemi-group/kai"
+
+
+def host_env() -> dict[str, str]:
+    """The chat host's environment: this process's, with Node told to use HTTP(S)_PROXY and NO_PROXY.
+    libfx calls the provider with Node's own fetch, which ignores those variables unless asked, so behind a
+    proxy fx chat would go direct (and be refused) where DeepAgents goes through it. Nothing changes without one."""
+    return {**os.environ, "NODE_USE_ENV_PROXY": "1"}
 
 
 def libfx_package(version: str) -> str:
@@ -195,7 +203,7 @@ class FxRuntime:
             await asyncio.to_thread(_prepare_local_dir, local_dir, config, model, base_url, effort, context_window)
         process = await asyncio.create_subprocess_exec(
             node, str(_HOST / "worker.mjs"), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024,
+            stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024, env=host_env(),
         )
         runtime = cls(config, process, local=local_dir is not None, journal=journal, engine_session=engine_session)
         try:

@@ -66,13 +66,14 @@ app = typer.Typer(help="Multi-agent project management for any repo (init or con
 def local_fx(
     profile: Path = typer.Option(..., "--profile", exists=True, file_okay=False),
     browser_config: Path | None = typer.Option(None, "--browser-config", exists=True, dir_okay=False),
+    steer_dir: Path | None = typer.Option(None, "--steer-dir"),
 ) -> None:
     """Internal entry point also bundled by the standalone desktop CLI."""
     import asyncio
 
     from .fx_local import run
 
-    raise typer.Exit(asyncio.run(run(profile, browser_config)))
+    raise typer.Exit(asyncio.run(run(profile, browser_config, steer_dir)))
 
 
 @app.command("_local-claude", hidden=True)

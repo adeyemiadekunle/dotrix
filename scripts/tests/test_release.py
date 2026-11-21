@@ -61,6 +61,17 @@ class Releases(unittest.TestCase):
             release.bump('0.2.1', 'cli', self.root)
         self.assertEqual(release.plan(self.root), [{'component': 'cli', 'version': '0.2.1', 'tag': 'cli-v0.2.1', 'latest': False, 'prerelease': False}])
 
+    def test_a_partly_published_first_release_is_finished_not_taken_for_the_legacy_one(self):
+        # This script's own first 0.2.0 publication made platform-v0.2.0 and v0.2.0, then failed before the CLI's.
+        script = self.root / 'scripts' / 'release.py'
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text((Path(release.__file__)).read_text())
+        subprocess.run(['git', '-C', str(self.root), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.root), 'commit', '-m', 'separate tags'], capture_output=True, check=True)
+        for tag in ('platform-v0.2.0', 'v0.2.0'):
+            subprocess.run(['git', '-C', str(self.root), 'tag', tag], check=True)
+        self.assertEqual(release.plan(self.root), [{'component': 'cli', 'version': '0.2.0', 'tag': 'cli-v0.2.0', 'latest': False, 'prerelease': False}])
+
     def test_mismatched_platform_versions_and_missing_notes_are_rejected(self):
         (self.root / 'apps/web/package.json').write_text('{"version":"1.0.0"}')
         with self.assertRaises(ValueError):

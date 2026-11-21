@@ -7,6 +7,7 @@ Unsupported hosts refuse the turn before starting the runtime.
 from __future__ import annotations
 
 import json
+import re
 
 # Sent as Python source through argv, not a file the agent can replace before enforcement.
 READ_ONLY_EXEC = r'''
@@ -79,3 +80,30 @@ def parse_plan(summary: str | None) -> dict:
                 raise ValueError("Task dependencies contain a cycle")
             remaining -= ready
     return plan.model_dump(mode="json")
+
+
+def task_order(tasks: list[dict]) -> list[int]:
+    """A saved plan's tasks (numbers, from 1) in an order that does each after the ones it depends on, keeping the
+    plan's own order otherwise. Unknown dependencies are ignored; a cycle (which `parse_plan` refuses) ends the list."""
+    done: list[int] = []
+    left = list(range(1, len(tasks) + 1))
+    while left:
+        ready = next((i for i in left if all(d in done or d not in left for d in tasks[i - 1].get("depends_on") or [])), None)
+        if ready is None:
+            break
+        done.append(ready)
+        left.remove(ready)
+    return done
+
+
+_QUESTIONS = re.compile(r"```questions[ \t]*\n(.*?)```", re.DOTALL)
+
+
+def questions_in(summary: str | None) -> list[str]:
+    """The questions Kai ended its turn with (a fenced `questions` block in its final message, one a line, at most
+    five, each at most 500 characters), or none."""
+    found = _QUESTIONS.findall(summary or "")
+    if not found:
+        return []
+    lines = [line.strip().lstrip("-*0123456789.) ").strip() for line in found[-1].splitlines()]
+    return [line[:500] for line in lines if line][:5]

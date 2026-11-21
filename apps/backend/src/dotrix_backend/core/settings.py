@@ -206,6 +206,9 @@ class Settings(DatabaseSettings):
     # many per workspace (0: never kept; each turn starts fresh and resumes from the saved transcript).
     coding_idle_minutes: int = Field(default=30, ge=1, le=24 * 60)
     coding_warm_max: int = Field(default=3, ge=0, le=50)
+    # A warm sandbox where Kai left commands running (fx: a long test suite, a local CI run) stays up past the
+    # idle time while one runs, until this long after its turn ended; then it's let go and they end with it.
+    coding_background_minutes: int = Field(default=6 * 60, ge=0, le=48 * 60)
     # Coding runs working at once in one worker; the rest wait for a free sandbox ("Waiting for a
     # free sandbox"). 0: no limit. Size it to the machine: each run may use the memory and CPUs below.
     coding_parallel: bool = False
@@ -215,6 +218,9 @@ class Settings(DatabaseSettings):
     coding_memory: str = Field(default="4g", pattern=r"^[1-9][0-9]*[mg]$")
     coding_cpus: float = Field(default=2.0, gt=0, le=64)
     coding_docker_runtime: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,64}$")
+    # The resolvers the egress proxy looks the model API's host up with when a runtime is set: under gVisor a
+    # container on the sandbox's internal network can't reach Docker's own resolver. Comma-separated addresses.
+    coding_egress_dns: str = Field(default="1.1.1.1,8.8.8.8", pattern=r"^[0-9A-Fa-f.:]+(,[0-9A-Fa-f.:]+)*$")
     # The GitHub organisation coding branches are pushed to: the app forks each repo there (it needs
     # Administration and Contents write on it), so the PR's CI never gets the repo's secrets. Unset:
     # branches go to the repo itself (development only).
