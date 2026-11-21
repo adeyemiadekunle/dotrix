@@ -106,6 +106,8 @@ app.add_typer(issue_app, name="issue")
 architecture_app = typer.Typer(help="Project setup: the architecture overview (owners and admins).")
 app.add_typer(architecture_app, name="architecture")
 app.add_typer(codes_app, name="codes")
+worktree_app = typer.Typer(help="Snapshot and restore managed local Code worktrees.")
+app.add_typer(worktree_app, name="worktree")
 
 ProjectOpt = typer.Option(".", "--project", "-p", help="Registered project name or path.")
 AuthorOpt = typer.Option("human", "--author", "-a", help="Who is making this change (shown in the task log).")
@@ -629,6 +631,56 @@ def runner_command(
         say("Stopped; a turn in progress needs recovery once its lease lapses")
     except PlatformError as exc:
         _fail(str(exc))
+
+
+def _recovery_paths(project: str, session: uuid.UUID, root: Path | None) -> tuple[Path, Path]:
+    from .runner import managed_worktree_path
+
+    config = _resolve_project(project)
+    state = LinkState.load(config.dotrix_dir)
+    if state is None:
+        _fail("Link this checkout to a Dotrix project before recovering a worktree.")
+    return Path(config.root_dir), managed_worktree_path(
+        root or Path.home() / ".dotrix" / "worktrees", state.project_id, str(session),
+    )
+
+
+@worktree_app.command("snapshot")
+def worktree_snapshot(
+    session: uuid.UUID = typer.Argument(..., help="The full Code session ID."),
+    project: str = ProjectOpt,
+    worktrees: Path | None = typer.Option(None, "--worktrees", help="The root used by this project's runner."),
+) -> None:
+    """Save a snapshot in this checkout's Git object store."""
+    import asyncio
+
+    from .worktree_recovery import snapshot_worktree
+
+    repo, tree = _recovery_paths(project, session, worktrees)
+    try:
+        snapshot = asyncio.run(snapshot_worktree(repo, tree))
+    except (OSError, RuntimeError) as exc:
+        _fail(str(exc))
+    typer.echo(f"Saved local worktree snapshot {snapshot} for {session}.")
+
+
+@worktree_app.command("restore")
+def worktree_restore(
+    session: uuid.UUID = typer.Argument(..., help="The full Code session ID."),
+    project: str = ProjectOpt,
+    worktrees: Path | None = typer.Option(None, "--worktrees", help="The root used by this project's runner."),
+) -> None:
+    """Recreate a missing worktree and stage its saved changes."""
+    import asyncio
+
+    from .worktree_recovery import restore_worktree
+
+    repo, tree = _recovery_paths(project, session, worktrees)
+    try:
+        asyncio.run(restore_worktree(repo, tree))
+    except (OSError, RuntimeError) as exc:
+        _fail(str(exc))
+    typer.echo(f"Restored the worktree at {tree}. Saved changes are staged.")
 
 
 @app.command("code")

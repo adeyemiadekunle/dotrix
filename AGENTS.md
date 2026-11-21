@@ -12,7 +12,7 @@ For the first release, follow [the solo-first product direction](docs/product.md
 
 ## Chat and Coding direction
 
-- Follow [the coding workspace plan](plans/046-coding-workspaces.md) for repo-first Code sessions, durable cloud workspace state and managed local worktrees. Keep approvals and issue-linked entry points in the existing Kai flow. Code accepts a repository and prompt with an optional issue. Cloud execution and session continuation check the connected repository against the admitted source. New managed local sessions stay with their original runner and retain their worktree across follow-ups.
+- Follow [the coding workspace plan](plans/046-coding-workspaces.md) for repo-first Code sessions, durable cloud workspace state and managed local worktrees. Keep approvals and issue-linked entry points in the existing Kai flow. Code accepts a repository and prompt with an optional issue. Cloud execution and session continuation check the connected repository against the admitted source. New managed local sessions stay with their original runner and retain their worktree across follow-ups. Use the local worktree CLI to snapshot files or restore a missing checkout without replacing an existing folder.
 
 - Dotrix owns the built-in identities: Nova coordinates the thinking specialists, and Kai is the coding agent. Chat and coding sessions are separate, linked areas.
 - **Code** sits in the sidebar directly below **Chat** (`/w/{ws}/codes`). Each has its own session list; a chat links to a coding session it started (a card with "Open in Code") and receives its outcome. The side panel (Changes, Files, Terminal, Review, opened from the session header) is in Code only.

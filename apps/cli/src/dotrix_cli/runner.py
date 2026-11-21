@@ -510,10 +510,10 @@ def parse_line(line: str, out: Outcome) -> None:
         out.events.append({"kind": "error", "text": str(error.get("message") or event.get("message") or error)[:4000]})
 
 
-async def git_bytes(cwd: Path, *args: str, check: bool = True) -> bytes:
+async def git_bytes(cwd: Path, *args: str, check: bool = True, env: Mapping[str, str] | None = None) -> bytes:
     """git's output exactly as it wrote it (a patch can hold bytes that aren't UTF-8)."""
     process = await asyncio.create_subprocess_exec(
-        "git", "-c", "core.quotepath=off", "-c", "core.autocrlf=false", *args, cwd=cwd,
+        "git", "-c", "core.quotepath=off", "-c", "core.autocrlf=false", *args, cwd=cwd, env=env,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
     out, err = await process.communicate()
@@ -522,8 +522,23 @@ async def git_bytes(cwd: Path, *args: str, check: bool = True) -> bytes:
     return out
 
 
-async def git(cwd: Path, *args: str, check: bool = True) -> str:
-    return (await git_bytes(cwd, *args, check=check)).decode(errors="replace")
+async def git(cwd: Path, *args: str, check: bool = True, env: Mapping[str, str] | None = None) -> str:
+    return (await git_bytes(cwd, *args, check=check, env=env)).decode(errors="replace")
+
+
+def managed_worktree_path(root: Path, project_id: str, session_id: str) -> Path:
+    # Older runners only clean per-project directories beside .sessions.
+    return root.expanduser().resolve() / ".sessions" / project_id / str(uuid.UUID(session_id))
+
+
+async def require_worktree_owner(repo: Path, tree: Path) -> None:
+    if tree.is_symlink():
+        raise RuntimeError("The managed worktree path is a link")
+    root = (await git(tree, "rev-parse", "--show-toplevel")).strip()
+    common = (await git(tree, "rev-parse", "--path-format=absolute", "--git-common-dir")).strip()
+    expected = (await git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).strip()
+    if Path(root).resolve() != tree.resolve() or Path(common).resolve() != Path(expected).resolve():
+        raise RuntimeError("The session's worktree is not registered to this checkout")
 
 
 # Folders a person doesn't edit by hand: walking them would only slow the check down.
@@ -731,8 +746,7 @@ class LocalRunner:
         if not run.get("managed_worktree") or run["project_id"] != self.project_id:
             await self._work(run)
             return
-        # Older runners only clean the per-project directory beside .sessions.
-        tree = self.worktrees / ".sessions" / self.project_id / str(uuid.UUID(run["session_id"]))
+        tree = managed_worktree_path(self.worktrees, self.project_id, run["session_id"])
         tree.parent.mkdir(parents=True, exist_ok=True)
         active = tree.with_suffix(".active")
         try:
@@ -768,11 +782,7 @@ class LocalRunner:
                 raise RuntimeError("The session's worktree is missing. Restore its folder or start a new session")
             await git(self.repo, "-c", f"core.hooksPath={os.devnull}", "worktree", "add", "-q", "--detach", str(tree), sha)
             return
-        root = (await git(tree, "rev-parse", "--show-toplevel")).strip()
-        common = (await git(tree, "rev-parse", "--path-format=absolute", "--git-common-dir")).strip()
-        expected = (await git(self.repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).strip()
-        if Path(root).resolve() != tree.resolve() or Path(common).resolve() != Path(expected).resolve():
-            raise RuntimeError("The session's worktree is not registered to this checkout")
+        await require_worktree_owner(self.repo, tree)
         head = (await git(tree, "rev-parse", "HEAD")).strip()
         branch = await git(tree, "symbolic-ref", "-q", "HEAD", check=False)
         if branch or (await git(tree, "merge-base", head, sha, check=False)).strip() != head:
