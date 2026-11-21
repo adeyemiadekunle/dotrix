@@ -156,6 +156,7 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     commit_sha: Mapped[str | None] = mapped_column(String(40))
     # The turn's changes while they wait to be accepted (`changes_ready`), as a binary patch on the
     # session's branch; cleared once pushed or rejected. Who accepted them, and when.
+    cloud_checkpoint: Mapped[str | None] = mapped_column(Text, deferred=True)
     pending_patch: Mapped[str | None] = mapped_column(Text, deferred=True)
     # The same patch, byte for byte (files that aren't UTF-8 text survive). `pending_patch` (text) is
     # read only for turns that were already waiting before this column existed.

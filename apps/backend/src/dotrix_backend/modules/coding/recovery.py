@@ -208,6 +208,8 @@ async def _settle(
         run.status, run.finished_at, run.error = CodingRunStatus.STOPPED, now, error
     elif outcome is Recovered.UNCLEAR:
         run.error = error
+    if outcome in (Recovered.ADOPTED_PR, Recovered.OPENED_PR, Recovered.STOPPED, Recovered.DISCARDED):
+        run.cloud_checkpoint = None
     turn_ended(session, run, by=by)
     said = {
         Recovered.ADOPTED_PR: f"Recovered: the push landed, PR #{run.pr_number}",
