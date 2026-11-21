@@ -129,6 +129,8 @@ Project settings expose the project model and the optional shared specialist mod
 
 Shared coding outcomes (J05): a task's Coding section can show the latest published turn of each PR, its commit, GitHub PR state, checks for that exact commit and reviews already posted on GitHub. `coding/outcomes.py` selects a bounded allowlist of published-run metadata scoped by workspace/project/issue; it never serializes private briefs, summaries, errors, events, model usage or Chat/Juno run/thread IDs. Session links are included only for the requester. Unpublished follow-ups and stale-commit checks are excluded from the shared evidence. The existing webhook records merged/closed/reopened PR state; issue status remains independent and only a person closes the task. Existing private Nova/Juno outcome delivery on both runtimes remains unchanged. Combined integration tests cover shared scope → task → published PR/review evidence without opening private conversations.
 
+**Cloud checkout recovery.** Supported cloud Build turns periodically save a bounded encrypted Git patch while the agent runs. The checkpoint belongs to the same run, GitHub repository ID and base commit. A worker retry or a Recover action after sandbox loss can apply the last valid checkpoint in a fresh sandbox using the admitted environment. The worker checks the patch against the host checkout before restoring it, and the completed turn still goes through verification and the existing publication rules. The checkpoint skips ignored untracked files and checks the run's model key. Plan and parallel runs have no periodic checkout checkpoint.
+
 ## Repo map
 
 | Path | What | Stack |

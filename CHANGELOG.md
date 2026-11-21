@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Cloud Build turns can restore unpublished edits from an encrypted checkpoint when their sandbox is lost and the source commit still matches.
 - Start a Code session from a connected repository and prompt, with an optional issue and a choice of starting branch. The coding area is now called Code.
 - New managed local coding sessions stay with the original runner and reuse their worktree across follow-ups.
 
