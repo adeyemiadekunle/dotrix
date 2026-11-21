@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Open a local Code worktree in VS Code or VS Code Insiders, or switch an idle managed worktree to a new local branch from Files.
+
 - The desktop coding area is now called Code. Existing session links still open.
 
 ## [0.3.0] - 2026-11-21
