@@ -789,8 +789,8 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
     def git_at(cwd, *args):
         return subprocess.check_output(["git", "-C", str(cwd), *args])
 
-    def command(action):
-        return CliRunner().invoke(cli.app, ["worktree", action, session_id, "--worktrees", str(root)])
+    def command(action, *args):
+        return CliRunner().invoke(cli.app, ["worktree", action, session_id, "--worktrees", str(root), *args])
 
     git_at(repo, "worktree", "add", "-q", "--detach", str(tree), "HEAD")
     base = git_at(tree, "rev-parse", "HEAD")
@@ -829,3 +829,29 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
         b"A  added.txt", b"D  deleted.txt", b"M  file.bin", b"A  ignored-staged.txt",
     ]
     assert git_at(repo, "status", "--porcelain=v1") == b""
+
+    assert command("cleanup").exit_code != 0
+    assert (tree / "file.bin").read_bytes() == b"\0updated\xff"
+    git_at(tree, "reset", "--hard", "HEAD")
+    (tree / "ignored.txt").write_text("keep me")
+    refused = command("cleanup")
+    assert refused.exit_code != 0 and "ignored files" in refused.output
+    assert (tree / "ignored.txt").read_text() == "keep me"
+    (tree / "ignored.txt").unlink()
+    (tree / "untracked.txt").write_text("keep me")
+    assert command("cleanup").exit_code != 0
+    assert (tree / "untracked.txt").read_text() == "keep me"
+    (tree / "untracked.txt").unlink()
+    marker.write_text("running")
+    assert command("cleanup").exit_code != 0
+    marker.unlink()
+    cleaned = command("cleanup")
+    assert cleaned.exit_code == 0, cleaned.output
+    assert not tree.exists()
+    restored_clean = command("restore", "--cleanup")
+    assert restored_clean.exit_code == 0, restored_clean.output
+    assert git_at(tree, "status", "--porcelain=v1") == b""
+    assert git_at(tree, "rev-parse", "HEAD") == base
+    assert command("cleanup").exit_code == 0
+    assert command("restore").exit_code == 0
+    assert (tree / "file.bin").read_bytes() == b"\0updated\xff"

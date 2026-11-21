@@ -106,7 +106,7 @@ app.add_typer(issue_app, name="issue")
 architecture_app = typer.Typer(help="Project setup: the architecture overview (owners and admins).")
 app.add_typer(architecture_app, name="architecture")
 app.add_typer(codes_app, name="codes")
-worktree_app = typer.Typer(help="Snapshot and restore managed local Code worktrees.")
+worktree_app = typer.Typer(help="Snapshot, clean up, and restore managed local Code worktrees.")
 app.add_typer(worktree_app, name="worktree")
 
 ProjectOpt = typer.Option(".", "--project", "-p", help="Registered project name or path.")
@@ -664,11 +664,31 @@ def worktree_snapshot(
     typer.echo(f"Saved local worktree snapshot {snapshot} for {session}.")
 
 
+@worktree_app.command("cleanup")
+def worktree_cleanup(
+    session: uuid.UUID = typer.Argument(..., help="The full Code session ID."),
+    project: str = ProjectOpt,
+    worktrees: Path | None = typer.Option(None, "--worktrees", help="The root used by this project's runner."),
+) -> None:
+    """Save a recovery point and remove a clean managed worktree."""
+    import asyncio
+
+    from .worktree_recovery import cleanup_worktree
+
+    repo, tree = _recovery_paths(project, session, worktrees)
+    try:
+        asyncio.run(cleanup_worktree(repo, tree))
+    except (OSError, RuntimeError) as exc:
+        _fail(str(exc))
+    typer.echo(f"Removed the clean worktree at {tree}. Use worktree restore with --cleanup to recover it.")
+
+
 @worktree_app.command("restore")
 def worktree_restore(
     session: uuid.UUID = typer.Argument(..., help="The full Code session ID."),
     project: str = ProjectOpt,
     worktrees: Path | None = typer.Option(None, "--worktrees", help="The root used by this project's runner."),
+    cleanup: bool = typer.Option(False, "--cleanup", help="Restore the recovery point saved by cleanup."),
 ) -> None:
     """Recreate a missing worktree and stage its saved changes."""
     import asyncio
@@ -677,7 +697,7 @@ def worktree_restore(
 
     repo, tree = _recovery_paths(project, session, worktrees)
     try:
-        asyncio.run(restore_worktree(repo, tree))
+        asyncio.run(restore_worktree(repo, tree, cleanup=cleanup))
     except (OSError, RuntimeError) as exc:
         _fail(str(exc))
     typer.echo(f"Restored the worktree at {tree}. Saved changes are staged.")
