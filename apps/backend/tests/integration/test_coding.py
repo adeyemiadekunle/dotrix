@@ -2895,3 +2895,65 @@ async def test_repository_prompt_rejects_a_starting_branch_that_moved_before_app
     assert done["status"] == "failed", done
     assert "starting branch changed" in done["error"]
     assert not github.pulls and sandbox.opened == 0
+
+
+@pytest.mark.parametrize("branch_moved", [False, True])
+async def test_cloud_recovery_restores_only_a_checkpoint_from_the_same_base(
+    db_client: AsyncClient, coding, github, origin, monkeypatch, branch_moved, db_session,
+) -> None:
+    from dotrix_backend.modules.coding.sandbox import DockerSandbox, DockerSession
+
+    ada, _, _, _, _, sandbox = coding
+    monkeypatch.setattr(sandbox, "kind", "docker")
+    (origin / ".gitignore").write_text("ignored.txt\n")
+    _git(origin, "add", ".gitignore")
+    _git(origin, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Ignore scratch files")
+    original_code = CodingWorker._code
+    attempts = []
+
+    async def code(self, run_id, box, *args, checkpoint=None, **kwargs):
+        attempts.append(box)
+        if len(attempts) == 1:
+            (box.root / "repo" / "saved.bin").write_bytes(b"\0saved\xff")
+            (box.root / "repo" / "ignored.txt").write_text("scratch")
+            assert checkpoint is not None
+            await checkpoint()
+            async def docker_result(argv, **kwargs):
+                if argv[1] == "exec":
+                    return ExecResult(code=1, stdout="", stderr="Error response from daemon: No such container")
+                assert argv[1:3] == ["container", "ls"]
+                return ExecResult(code=0, stdout="", stderr="")
+
+            with monkeypatch.context() as docker:
+                docker.setattr("dotrix_backend.modules.coding.sandbox.run_process", docker_result)
+                await DockerSession(DockerSandbox(self.settings), "dotrix-test-lost").exec(["claude"], timeout=5)
+            pytest.fail("Docker sandbox loss did not trigger recovery")
+        assert (box.root / "repo" / "saved.bin").read_bytes() == b"\0saved\xff"
+        assert not (box.root / "repo" / "ignored.txt").exists()
+        return await original_code(self, run_id, box, *args, checkpoint=checkpoint, **kwargs)
+
+    monkeypatch.setattr(CodingWorker, "_code", code)
+    base, waiting = await _asked(db_client, coding)
+    interrupted = await _approve(db_client, base, waiting, ada.headers)
+    assert interrupted["status"] == "recovery_required", interrupted
+    run_id = uuid.UUID(waiting["id"])
+    stored = await db_session.scalar(select(CodingRun.cloud_checkpoint).where(CodingRun.id == run_id))
+    assert stored and "saved.bin" not in stored
+    jobs = db_client._transport.app.state.jobs
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(jobs.ctx.coding, pool=WarmPool(3600, 0)))
+    if branch_moved:
+        _git(origin, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+             "commit", "--allow-empty", "-qm", "Move the branch")
+    recovered = await db_client.post(f"{base}/coding/runs/{waiting['id']}/recover", headers=ada.headers, json={"action": "check"})
+    assert recovered.status_code == 200, recovered.text
+    run = (await db_client.get(f"{base}/coding/runs/{waiting['id']}", headers=ada.headers)).json()
+    assert not github.pulls
+    if branch_moved:
+        assert run["status"] == "failed" and "checkpoint could not be verified" in run["error"], run
+        assert len(attempts) == 1
+    else:
+        assert run["status"] == "changes_ready", run
+        assert len(attempts) == 2 and attempts[0].root != attempts[1].root
+        assert {file["path"] for file in run["files_changed"]} == {"saved.bin"}
+        assert any("Restored unpublished changes" in event["text"] for event in run["events"])
+        assert await db_session.scalar(select(CodingRun.cloud_checkpoint).where(CodingRun.id == run_id)) is None
