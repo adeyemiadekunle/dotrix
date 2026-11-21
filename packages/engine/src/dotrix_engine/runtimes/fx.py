@@ -46,6 +46,13 @@ LIBFX_ARTIFACTS: dict[str, tuple[str, ...]] = {
 _KAI_PACKAGE = "@kunemi-group/kai"
 
 
+def host_env() -> dict[str, str]:
+    """The chat host's environment: this process's, with Node told to use HTTP(S)_PROXY and NO_PROXY.
+    libfx calls the provider with Node's own fetch, which ignores those variables unless asked, so behind a
+    proxy fx chat would go direct (and be refused) where DeepAgents goes through it. Nothing changes without one."""
+    return {**os.environ, "NODE_USE_ENV_PROXY": "1"}
+
+
 def libfx_package(version: str) -> str:
     """The npm package a libfx version is published as."""
     return _KAI_PACKAGE if re.fullmatch(r"\d+\.\d+\.\d+-kai\.\d+", version) else "libfx"
@@ -196,7 +203,7 @@ class FxRuntime:
             await asyncio.to_thread(_prepare_local_dir, local_dir, config, model, base_url, effort, context_window)
         process = await asyncio.create_subprocess_exec(
             node, str(_HOST / "worker.mjs"), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024,
+            stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024, env=host_env(),
         )
         runtime = cls(config, process, local=local_dir is not None, journal=journal, engine_session=engine_session)
         try:

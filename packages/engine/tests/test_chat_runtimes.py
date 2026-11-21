@@ -149,3 +149,44 @@ def test_the_configuration_digest_names_the_pinned_artifact(monkeypatch):
     monkeypatch.setitem(fx_module.LIBFX_ARTIFACTS, "0.0.17-test", ("0.0.16",))
     monkeypatch.setattr(fx_module, "libfx_version", lambda host=None: "0.0.17-test")
     assert fx_configuration_digest(config, model="m") != pinned
+
+
+def test_the_fx_chat_host_uses_the_environment_s_proxy(tmp_path):
+    """libfx calls the provider with Node's fetch, which ignores HTTP(S)_PROXY unless NODE_USE_ENV_PROXY is
+    set: the host is started with it, so behind a proxy fx chat goes through it as DeepAgents does."""
+    import http.server
+    import shutil
+    import subprocess
+    import threading
+
+    from dotrix_engine.runtimes.fx import host_env
+
+    assert host_env()["NODE_USE_ENV_PROXY"] == "1" and host_env()["PATH"] == os.environ["PATH"]
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node isn't installed")
+    seen: list[str] = []
+
+    class Proxy(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_CONNECT(self):  # Node tunnels through the proxy, as it would to an HTTPS provider
+            seen.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            while self.rfile.readline() not in (b"\r\n", b""):  # the tunnelled request, answered here
+                pass
+            self.wfile.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            self.close_connection = True
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        proxy = f"http://127.0.0.1:{server.server_port}"
+        env = {**host_env(), "HTTP_PROXY": proxy, "http_proxy": proxy, "NO_PROXY": "", "no_proxy": ""}
+        script = "fetch('http://provider.invalid/v1/models').then(r => r.text()).then(t => console.log(t))"
+        done = subprocess.run([node, "-e", script], env=env, capture_output=True, text=True, timeout=30)
+    finally:
+        server.shutdown()
+    assert done.stdout.strip() == "ok" and seen == ["provider.invalid:80"], done.stderr[-500:]

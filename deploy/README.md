@@ -281,6 +281,10 @@ setup. If you put a firewall or an egress proxy in front of the VPS, allow HTTPS
 | `api.sendlyai.com` | Email |
 | `your private SearXNG service`, and the pages research reads | Web research (optional) |
 
+If the API and worker reach the internet only through a proxy (`HTTPS_PROXY`, `NO_PROXY`), fx chat follows it as
+DeepAgents does: Dotrix starts fx's chat host with `NODE_USE_ENV_PROXY=1`, since Node's own `fetch` ignores those
+variables otherwise. That needs Node 22.21 or newer in the backend image.
+
 Building the coding image (`coding-image`) also needs Docker Hub, `registry.npmjs.org`,
 `npm.pkg.github.com` (Kai's fx command, with `KAI_PACKAGES_TOKEN`), Debian's package mirrors and Playwright's browser download. The coding sandboxes
 themselves need nothing here: their egress proxy reaches only the model API of the run's tool.

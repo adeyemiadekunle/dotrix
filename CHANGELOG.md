@@ -9,8 +9,14 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Added
+
+- A manual **Live models** workflow (`.github/workflows/live.yml`, Actions → Live models → Run workflow): Nova on DeepAgents and fx, and Kai on every engine in the Docker sandbox from issue to PR, on the provider picked (NVIDIA, Anthropic, OpenAI or all). Keys are secrets of the `live-models` environment (`DOTRIX_LIVE_NVIDIA_API_KEY`, `DOTRIX_LIVE_ANTHROPIC_API_KEY`, `DOTRIX_LIVE_OPENAI_API_KEY`); only the picked provider's key reaches the tests. Never runs on a push or PR.
+
 ### Fixed
 
+- fx chat behind an outbound proxy: Nova on fx went straight to the provider and was refused where DeepAgents went through the proxy, because libfx calls the provider with Node's own `fetch`, which ignores `HTTPS_PROXY` unless asked. The chat host now starts with `NODE_USE_ENV_PROXY=1`. Found running Nova's live tests on NVIDIA behind a proxy; with the switch all 7 passed on DeepAgents and fx.
+- Kai's background commands: a command Kai started with `&` isn't one fx keeps, so Codes didn't list it and nobody could stop it (seen on a live NVIDIA turn). Kai's rules now say to leave a command running the shell tool's own way, never with `&`, `nohup` or `disown`. New sessions get the rule; open ones keep the profile they started with. Checked again live on NVIDIA (Nemotron 3 Ultra): Kai left the command to fx (`shell-3`), the host reported it finished between turns, and the next turn listed it and read its output by id.
 - Cloud coding under gVisor (`DOTRIX_CODING_DOCKER_RUNTIME=runsc`, required when deployed) could never reach the model. A gVisor container on the sandbox's internal network can't reach Docker's own resolver (127.0.0.11). So the agent couldn't find its egress proxy by name, and the proxy couldn't look up the model API's host. Three changes:
   - The agent now gets the proxy's address (`--add-host egress:<ip>`).
   - The proxy resolves the allowed hosts through named resolvers (`DOTRIX_CODING_EGRESS_DNS`, default `1.1.1.1,8.8.8.8`, only under a runtime).

@@ -1129,3 +1129,12 @@ def test_the_local_runner_splits_kai_s_contract_at_the_same_heading() -> None:
 
     local = Path(__file__).resolve().parents[3] / "cli" / "src" / "dotrix_cli" / "fx_local.py"
     assert f'CONTRACT_HEADING = "{CONTRACT_HEADING}"' in local.read_text()
+
+
+def test_kai_s_contract_asks_for_the_shell_s_own_background_mode():
+    """A command started with `&` isn't one fx keeps: it isn't listed in Codes and can't be stopped (seen on
+    a live NVIDIA turn). Kai's rules say to leave commands running the shell tool's way."""
+    from dotrix_backend.modules.coding.brief import kai_contract
+
+    contract = kai_contract("You are Kai.")
+    assert "never `&`, `nohup` or" in contract and "shell tool's own way" in contract
