@@ -25,7 +25,7 @@ export function localProfile(value: unknown): LocalProfile {
 
 export class LocalActions {
   private readonly profiles = new Map<string, LocalProfile>();
-  private readonly running = new Map<ChildProcess, Promise<void>>();
+  private readonly running = new Map<ChildProcess, () => Promise<boolean>>();
 
   constructor(private readonly file: string) {
     try {
@@ -81,22 +81,34 @@ export class LocalActions {
     child.on("error", (error) => output.push(`\n${error.message}\n`));
     const result = new Promise<number | null>((resolve) => child.once("close", resolve));
     const ended = result.then(() => undefined);
-    this.running.set(child, ended);
-    let timedOut = false;
-    let timeout: ReturnType<typeof setTimeout>;
-    const deadline = new Promise<null>((resolve) => {
-      timeout = setTimeout(() => {
-        timedOut = true;
-        void stopLocalProcess(child, ended).then(() => resolve(null));
-      }, 5 * 60_000);
+    let stopped!: (exitCode: null) => void;
+    const interrupted = new Promise<null>((resolve) => {
+      stopped = resolve;
     });
-    const finished = result.finally(() => {
+    let stopping: Promise<boolean> | undefined;
+    const stop = () =>
+      (stopping ??= stopLocalProcess(child, ended).then((confirmed) => {
+        stopped(null);
+        return confirmed;
+      }));
+    this.running.set(child, stop);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      void stop();
+    }, 5 * 60_000);
+    let confirmed = false;
+    try {
+      const exitCode = await Promise.race([result, interrupted]);
+      clearTimeout(timeout);
+      confirmed = await (stopping ?? (process.platform === "win32" ? true : stop()));
+      if (!confirmed) throw new Error("Could not confirm that the local command stopped. The worktree remains reserved.");
+      return { exitCode: timedOut ? null : exitCode, output: output.tail(), timedOut };
+    } finally {
       clearTimeout(timeout);
       this.running.delete(child);
-      release();
-    });
-    const exitCode = await Promise.race([finished, deadline]);
-    return { exitCode, output: output.tail(), timedOut };
+      release(!confirmed);
+    }
   }
 
   get active(): boolean {
@@ -104,6 +116,6 @@ export class LocalActions {
   }
 
   async stopAll(): Promise<void> {
-    await Promise.all([...this.running].map(([child, ended]) => stopLocalProcess(child, ended)));
+    await Promise.all([...this.running.values()].map((stop) => stop()));
   }
 }

@@ -158,11 +158,11 @@ function freePort(): Promise<number> {
   });
 }
 
-function end(running: Running): Promise<void> {
+async function end(running: Running): Promise<void> {
   const { child } = running;
   if (running.exited !== null || !child.pid) return Promise.resolve();
   const ended = new Promise<void>((resolve) => child.once("close", () => resolve()));
-  return stopLocalProcess(child, ended);
+  await stopLocalProcess(child, ended);
 }
 
 const APP_TOOLS: Tool[] = [

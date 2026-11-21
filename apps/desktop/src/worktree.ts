@@ -98,7 +98,7 @@ export async function worktreeFile(tree: string, file: unknown) {
 }
 
 /** Reserve a managed worktree for a user action and verify it belongs to the selected checkout. */
-export async function reserveLocalAction(folder: string, tree: string): Promise<() => void> {
+export async function reserveLocalAction(folder: string, tree: string): Promise<(keepMarker?: boolean) => void> {
   const layout = path.relative(fs.realpathSync(worktreesRoot()), tree).split(path.sep);
   if (layout.length !== 3 || layout[0] !== ".sessions" || ownWorktree(tree) !== tree) {
     throw new Error("Local actions require a managed session worktree");
@@ -111,9 +111,9 @@ export async function reserveLocalAction(folder: string, tree: string): Promise<
     if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("This worktree is active or its last operation was interrupted");
     throw error;
   }
-  const release = () => {
+  const release = (keepMarker = false) => {
     fs.closeSync(lock);
-    fs.unlinkSync(marker);
+    if (!keepMarker) fs.unlinkSync(marker);
   };
   try {
     const common = (cwd: string) => git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
