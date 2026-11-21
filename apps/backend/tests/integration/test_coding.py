@@ -34,6 +34,7 @@ from dotrix_backend.modules.coding.runner import (
 from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
 from dotrix_backend.modules.coding.warm import WarmPool
 from dotrix_backend.modules.connectors.github_app import get_github_app
+from dotrix_backend.modules.connectors.models import ConnectedRepo
 from dotrix_backend.modules.execution.service import expire_coding_leases
 from dotrix_engine.testing import tool_call
 
@@ -2346,6 +2347,26 @@ async def test_a_waiting_run_keeps_its_validated_base_when_a_later_session_refre
     done = await _approve(db_client, base, waiting, ada.headers)
     assert done["status"] == "pr_opened" and done["base_branch"] == "main", done
     assert github.pulls[0]["base"] == "main"
+
+    follow_up = await db_client.post(f"{base}/coding/sessions/{done['session_id']}/turns",
+                                     headers=ada.headers, json={"message": "Continue on the existing PR"})
+    assert follow_up.status_code == 201, follow_up.text
+    assert follow_up.json()["base_branch"] == "main"
+
+
+async def test_a_waiting_cloud_turn_cannot_execute_in_a_replacement_repository(
+    db_client: AsyncClient, coding, github, db_session, claude: ScriptedClaude,
+) -> None:
+    ada, _, _, project, _, sandbox = coding
+    base, waiting = await _asked(db_client, coding)
+    await db_session.execute(update(ConnectedRepo).where(ConnectedRepo.project_id == uuid.UUID(project["id"]))
+                             .values(full_name="kunemi/replacement"))
+    await db_session.commit()
+
+    run = await _approve(db_client, base, waiting, ada.headers)
+    assert run["status"] == "failed", run
+    assert "connected repository changed" in run["error"]
+    assert not claude.briefs and not github.pulls and sandbox.opened == 0
 
 
 async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(

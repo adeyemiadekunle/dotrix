@@ -12,6 +12,8 @@ For the first release, follow [the solo-first product direction](docs/product.md
 
 ## Chat and Coding direction
 
+- Follow [the coding workspace plan](plans/046-coding-workspaces.md) for repo-first Codes sessions, durable cloud workspace state and managed local worktrees. Keep approvals and issue-linked entry points in the existing Kai flow. Cloud execution and session continuation check the connected repository against the admitted source.
+
 - Dotrix owns the built-in identities: Nova coordinates the thinking specialists, and Kai is the coding agent. Chat and coding sessions are separate, linked areas.
 - **Codes** sits in the sidebar directly below **Chat** (`/w/{ws}/codes`). Each has its own session list; a chat links to a coding session it started (a card with "Open in Codes") and receives its outcome. The side panel (Changes, Files, Terminal, Review, opened from the session header) is in Codes only.
 - People only ever see Kai, never the engine: not in steps, failures, errors, commits or PR bodies. The engine is recorded on the run, in the audit log and in the worker's log. A new session picks a model; the engine follows it (the person's preferred engine in Settings where it can run the model, else the provider's own, else OpenCode).

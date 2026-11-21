@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Fixed
+
+- Cloud coding stops when a queued turn's connected repository changes. Follow-up turns keep the base branch of the pull request they continue.
+
 ## [0.3.0] - 2026-11-21
 
 ### Added

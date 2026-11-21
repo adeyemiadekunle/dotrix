@@ -428,6 +428,8 @@ class CodingWorker:
             if found is None:
                 raise RunFailed("The project's repository was disconnected")
             repo, installation = found
+            if repo.full_name.casefold() != run.repo_full_name.casefold():
+                raise RunFailed("The project's connected repository changed after this turn was requested")
             if installation.suspended_at is not None:
                 raise RunFailed(f"The GitHub App is suspended on {installation.account_login}")
             ref = RepoRef(run.workspace_id, run.project_id, installation.installation_id, repo.full_name,

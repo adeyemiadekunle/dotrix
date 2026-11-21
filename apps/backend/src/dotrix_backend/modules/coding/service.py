@@ -450,6 +450,9 @@ class CodingService:
             with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
         if with_branch is None:
             await self._require_base(access.project)
+        repo = await self._repo(access.project)
+        if repo is None or repo.full_name.casefold() != turns[0].repo_full_name.casefold():
+            raise CodingUnavailable("The project's connected repository changed; start a new coding session")
         earlier = [(t.turn, _earlier(t)) for t in turns
                    if t.status not in (CodingRunStatus.REJECTED, CodingRunStatus.STOPPED) or t.summary]
         return turns, issue, with_branch, earlier
@@ -565,6 +568,7 @@ class CodingService:
             run.brief += catalog_brief(pinned_skills)
         if carry is not None:  # the session's branch and PR: this turn builds on them
             run.branch, run.pr_number, run.pr_url, run.pr_state = carry.branch, carry.pr_number, carry.pr_url, carry.pr_state
+            run.base_branch = carry.base_branch
         self.session.add(run)
         await self.session.flush()
         AuditLog(self.session).record(
