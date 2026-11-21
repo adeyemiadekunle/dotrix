@@ -245,6 +245,8 @@ class CodingSession(WorkspaceScopedMixin, Base):
     # SHA-256 of the system profile (Kai's contract) the engine's session started with, for engines that take one
     # (fx): a resumed turn must find the same profile in its saved state.
     profile_digest: Mapped[str | None] = mapped_column(String(64))
+    # Retain the binding even if the runner is revoked, so a second checkout cannot take over.
+    local_worktree_runner_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     transcript_key: Mapped[str | None] = mapped_column(String(300))  # in storage, encrypted
     cost_reported: Mapped[float | None] = mapped_column(Numeric(10, 4, asdecimal=False))  # Claude's running total
     title: Mapped[str | None] = mapped_column(String(200))  # renamed; else its issue's title

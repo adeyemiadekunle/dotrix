@@ -417,12 +417,16 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     (edited / "a.txt").write_text("edited by hand\n")
     (trees / "other-project").mkdir()
     os.utime(trees / "other-project", (week_ago, week_ago))
+    managed = trees / ".sessions" / "p"
+    managed.mkdir(parents=True)
+    age(managed)
 
     runner = LocalRunner(api=None, repo=checkout, workspace_id="w", project_id="p", worktrees=trees, echo=lambda _: None)
     runner._coding_in = busy
     removed = await runner.clean_worktrees()
     assert sorted(removed) == sorted([old, stray])
     assert recent.is_dir() and busy.is_dir() and (trees / "other-project").is_dir()
+    assert managed.is_dir()
     assert (edited / "a.txt").read_text() == "edited by hand\n"
     listed = subprocess.run(["git", "-C", str(checkout), "worktree", "list"], capture_output=True, text=True).stdout
     assert str(old) not in listed and str(recent) in listed
@@ -707,3 +711,55 @@ async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(t
     assert reported == ["sent", "accepted", "delivered"], (beats, result)
     assert any(e["text"] == "Heard: Use the refunds table" for b in beats for e in b["events"]) or any(
         e["text"] == "Heard: Use the refunds table" for e in result["events"])
+
+
+async def test_managed_worktree_leaves_unpublished_and_interrupted_edits_in_place(tmp_path: Path) -> None:
+    from uuid import uuid4
+
+    checkout = _checkout(tmp_path, {"a.txt": b"original\n"})
+    calls = []
+
+    class Api:
+        async def post(self, path, body=None):
+            calls.append((path, body))
+            return {"stop": False}
+
+    runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
+                         command=_tool("raise AssertionError('must not run')"), isolation="none",
+                         worktrees=tmp_path / "trees", echo=lambda _: None)
+    session = str(uuid4())
+    tree = runner.worktrees / ".sessions" / "p" / session
+    tree.parent.mkdir(parents=True)
+    from dotrix_cli.runner import git
+
+    await git(checkout, "worktree", "add", "-q", "--detach", str(tree), "HEAD")
+    (tree / "a.txt").write_text("unpublished\n")
+    run = {**_RUN, "turn": 2, "session_id": session, "managed_worktree": True}
+
+    await runner.work(run)
+    path, body = calls.pop()
+    assert path.endswith("/result") and body["outcome"] == "failed"
+    assert "unpublished edits" in body["error"]
+    assert (tree / "a.txt").read_text() == "unpublished\n"
+    assert (checkout / "a.txt").read_text() == "original\n"
+    active = tree.with_suffix(".active")
+    assert not active.exists()
+
+    active.write_text("previous attempt\n")
+    await runner.work({**run, "lease_token": 2})
+    path, body = calls.pop()
+    assert path.endswith("/result") and body["outcome"] == "failed"
+    assert "last turn was interrupted" in body["error"]
+    assert active.read_text() == "previous attempt\n"
+    assert (tree / "a.txt").read_text() == "unpublished\n"
+
+    active.unlink()
+    await git(tree, "restore", "--", "a.txt")
+    origin = tmp_path / "origin"
+    (origin / "a.txt").write_text("upstream\n")
+    await git(origin, "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qam", "Change upstream")
+    runner.command = _tool("from pathlib import Path; assert Path('a.txt').read_text() == 'upstream\\n'")
+    await runner.work({**run, "lease_token": 3})
+    assert calls[-1][1]["outcome"] == "no_changes"
+    assert (tree / "a.txt").read_text() == "upstream\n"
+    assert (checkout / "a.txt").read_text() == "original\n"

@@ -7061,6 +7061,12 @@ export interface components {
              */
             source_sha?: string | null;
             /**
+             * Managed Worktree
+             * @description Reuse the worktree assigned to this session and runner
+             * @default false
+             */
+            managed_worktree: boolean;
+            /**
              * Branch
              * @description The session's branch to build on (a follow-up), else the base branch
              */
@@ -28047,7 +28053,9 @@ export interface operations {
     };
     claim_coding_run: {
         parameters: {
-            query?: never;
+            query?: {
+                managed_worktrees?: boolean;
+            };
             header?: never;
             path: {
                 runner_id: string;

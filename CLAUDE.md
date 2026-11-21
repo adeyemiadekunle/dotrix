@@ -25,7 +25,7 @@ Cloud coding executes on the server's supported Linux Docker/gVisor or OpenShell
 
 ### Local coding: CLI and desktop runner
 
-This table describes execution adapters, not installers. Every enabled local run uses a disposable worktree, the person's own local credentials and the platform's admission/approval/publication rules. Local Plan mode is refused. Local runs do not consume cloud environment setup/image profiles.
+This table describes execution adapters, not installers. Every enabled local run uses an isolated Git worktree, the person's own local credentials and the platform's admission/approval/publication rules. Local Plan mode is refused. Local runs do not consume cloud environment setup/image profiles.
 
 | Coding engine | Linux native (without `sbx`) | macOS native (without `sbx`) | Windows native (without `sbx`) | Local Docker Sandboxes (`sbx`) |
 | --- | --- | --- | --- | --- |
@@ -111,7 +111,9 @@ DeepAgents steering inserts a stable-ID human message before the next model call
 
 ## Chat, Coding, and the Nova–Kai handoff (current product direction)
 
-**Coding workspace roadmap (2026-11-21).** [Plan 046](plans/046-coding-workspaces.md) defines repo-first Code sessions with optional issue links, managed local worktrees, cloud workspace checkpoints and explicit handoff. Current Code starts still require an issue. Cloud execution checks the recorded repository name before obtaining a token or opening a sandbox. A follow-up checks the session's repository and keeps the base branch of an open PR it continues. The cloud sandbox checkout lives at `/sandbox/repo`. Keep the platform's existing approval, audit and publication rules across both locations.
+**Coding workspace roadmap (2026-11-21).** [Plan 046](plans/046-coding-workspaces.md) defines repo-first Code sessions with optional issue links, managed local worktrees, cloud workspace checkpoints and explicit handoff. Code can start with a connected repository and prompt, with an optional issue. Cloud execution checks the recorded repository name before obtaining a token or opening a sandbox. A follow-up checks the session's repository and keeps the base branch of an open PR it continues. The cloud sandbox checkout lives at `/sandbox/repo`. Keep the platform's existing approval, audit and publication rules across both locations.
+
+New local sessions claimed by a compatible runner use one worktree in `~/.dotrix/worktrees/.sessions/<project>/<session>`. The first claim binds the session to that runner. A follow-up reuses the checkout after restart if Git can advance it without replacing unpublished edits. The platform still publishes the reviewed patch. Managed worktrees are retained during age-based cleanup. An interrupted turn leaves a marker that prevents another process from starting in the same checkout. The current desktop worktree controls can open and reveal the folder. Snapshot restore, explicit cleanup, editor and branch actions, and local setup profiles remain planned.
 
 Dotrix owns the built-in agents, their policies, and the relationship between their work. Nova leads Chat with Lyra, Orion, Vega, Juno, and Echo. Kai leads Coding. Juno can independently review plans, architecture, research, coding changes, and PRs. Agents remain fixed product identities even when the runtime or model changes.
 
@@ -293,7 +295,7 @@ apps/cli/src/dotrix_cli/
 ├── board.py                     PlatformBoard: the issue board for the CLI and the MCP server
 ├── agent_client.py              PlatformAgent: start a run, poll it, settle approvals inline
 ├── repo.py                      local git facts: root, remote (credentials stripped), README, repo summary
-├── runner.py                    `dotrix runner`: this computer codes your local turns, a worktree each (removed once untouched for `WORKTREE_DAYS`, 3), in a Docker sandbox when `sbx` is installed (may run commands) or else the tool signed in here (Codex uses its native workspace sandbox; other tools use file/browser permissions), a patch back; `--json` for the desktop app
+├── runner.py                    `dotrix runner`: this computer codes your local turns, one managed worktree per new local session (older per-attempt worktrees retain `WORKTREE_DAYS` cleanup), in a Docker sandbox when `sbx` is installed (may run commands) or else the tool signed in here (Codex uses its native workspace sandbox; other tools use file/browser permissions), a patch back; `--json` for the desktop app
 ├── toolenv.py                   what the coding tool gets in its environment: its own provider's settings, no other credentials
 └── mcp_server.py                FastMCP server for Claude Code / Codex (platform board when linked, local otherwise)
 apps/desktop/src/

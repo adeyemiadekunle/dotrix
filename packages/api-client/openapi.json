@@ -24781,6 +24781,16 @@
               "format": "uuid",
               "title": "Workspace Id"
             }
+          },
+          {
+            "name": "managed_worktrees",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Managed Worktrees"
+            }
           }
         ],
         "responses": {
@@ -30542,6 +30552,12 @@
             ],
             "title": "Source Sha",
             "description": "Admitted starting commit for a standalone turn"
+          },
+          "managed_worktree": {
+            "type": "boolean",
+            "title": "Managed Worktree",
+            "description": "Reuse the worktree assigned to this session and runner",
+            "default": false
           },
           "branch": {
             "anyOf": [

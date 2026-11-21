@@ -1913,7 +1913,7 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     # Her checkout is as she left it; nothing reached GitHub; the worktree is kept, outside it.
     assert _git(checkout, "status", "--porcelain") == "?? notes.txt" and not (checkout / "src/refunds.py").exists()
     assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
-    [tree] = (tmp_path / "worktrees" / kun["id"]).iterdir()
+    tree = tmp_path / "worktrees" / ".sessions" / kun["id"] / run["session_id"]
     assert (tree / "src/refunds.py").read_text() == "def refund(a):\n    return a\n"
     # Where it is on her computer (the desktop app opens it): for her, no one else.
     assert ready["worktree"] == str(tree) and ready["runner_id"] == registered["id"]
@@ -1926,15 +1926,23 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     assert done["status"] == "pr_opened" and len(github.pulls) == 1 and sandbox.opened == 0, done
     assert _git(origin, "show", f"{done['branch']}:src/refunds.py") == "def refund(a):\n    return a"
 
-    # A follow-up stays on her computer, on the session's branch.
-    runner.command = _tool({"src/refunds.py": "def refund(a):\n    return -a\n"})
+    # A follow-up stays on her computer and reopens the same worktree after a runner restart.
+    next_command = _tool({"src/refunds.py": "def refund(a):\n    return -a\n"})
+    runner = _local_runner(db_client, coding, checkout, tmp_path, next_command)
+    assert (await runner.register())["id"] == registered["id"]
+    other = _local_runner(db_client, coding, checkout, tmp_path, next_command)
+    other.name = "another-computer"
+    await other.register()
     turn = (await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", json={"message": "Negative"},
                                  headers=ada.headers)).json()
     assert turn["location"] == "local"
     await db_client.post(f"{base}/coding/runs/{turn['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert await other.once() is False
+    assert await runner.api.post(f"{runner.base}/{runner.runner_id}/claim") == {"run": None}
     assert await runner.once() is True
     turn = await _approve(db_client, base, turn, ada.headers)
     assert turn["status"] == "pr_opened" and turn["base_sha"] == done["commit_sha"] and len(github.pulls) == 1
+    assert turn["worktree"] == str(tree)
     assert _git(origin, "rev-parse", f"{done['branch']}~1") == done["commit_sha"]
 
     # On a server that codes only locally (no cloud sandbox), a pushed local turn is still reverted (the

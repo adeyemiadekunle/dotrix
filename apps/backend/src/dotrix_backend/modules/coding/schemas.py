@@ -349,6 +349,7 @@ class CodingClaim(BaseModel):
     repo_full_name: str
     base_branch: str
     source_sha: str | None = Field(default=None, description="Admitted starting commit for a standalone turn")
+    managed_worktree: bool = Field(default=False, description="Reuse the worktree assigned to this session and runner")
     branch: str | None = Field(description="The session's branch to build on (a follow-up), else the base branch")
 
 
