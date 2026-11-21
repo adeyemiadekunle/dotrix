@@ -2,6 +2,7 @@ import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
 import { SelectionInput } from "@dotrix/ui/components/selection-input";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
 import { ActionButton } from "@dotrix/ui/components/action-button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
 // Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
 // GitHub, What members can do, Audit log; and Devices and tokens (the CLI) under Security.
@@ -128,7 +129,6 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["profile", "Profile", "user"],
       ["my-models", "Your models", "key-round"],
-      ["my-agents", "Your agents", "bot"],
       ["browser", "Browser", "globe"],
       ["preferences", "Preferences", "sliders-horizontal"],
     ],
@@ -943,10 +943,10 @@ function UnattendedPause() {
   );
 }
 
-const CAPS: [string, string][] = [
-  ["manual", "Manual: every change waits for a yes"],
-  ["accept_edits", "Accept edits: what people ask for goes through, and coding starts at once"],
-  ["auto", "Auto: the same, and checkpoints don't pause"],
+const CAPS: [string, string, string][] = [
+  ["manual", "Manual", "Every change waits for a yes."],
+  ["accept_edits", "Accept edits", "What people ask for goes through, and coding starts at once."],
+  ["auto", "Auto", "Accept edits, and checkpoints don't pause."],
 ];
 
 /** The highest approval mode people may work in (only those who may approve agent changes go above Manual). */
@@ -961,22 +961,21 @@ function ApprovalCap({ role }: { role: string | undefined }) {
       d={
         paused
           ? "Paused: everyone works in Manual until changes without approval are resumed."
-          : "How much people may let go through without waiting, in chat and coding. Only people who may approve agent changes go above Manual; closing issues, merging, and agent rules always need a person."
+          : `${CAPS[Math.max(at, 0)][2]} Only people who may approve agent changes go above Manual; closing issues, merging, and agent rules always need a person.`
       }
     >
-      <select
-        className="input"
-        value={cap}
-        aria-label="Highest approval mode"
-        disabled={paused}
-        onChange={(e) => (isLive() ? void approvalCap(e.target.value as "manual" | "accept_edits" | "auto") : setDemo(e.target.value))}
-      >
-        {CAPS.map(([v, l], i) => (
-          <option key={v} value={v} disabled={role !== "owner" && i > at}>
-            {l}
-          </option>
-        ))}
-      </select>
+      <Select value={cap} disabled={paused} onValueChange={(v) => (isLive() ? void approvalCap(v as "manual" | "accept_edits" | "auto") : setDemo(v))}>
+        <SelectTrigger aria-label="Highest approval mode">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CAPS.map(([v, l], i) => (
+            <SelectItem key={v} value={v} disabled={role !== "owner" && i > at}>
+              {l}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </SRow>
   );
 }
