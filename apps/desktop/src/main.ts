@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { Browser } from "./browser";
 import { KaiBrowser } from "./browserKai";
+import { LocalActions, localProfile } from "./localActions";
 import { DevServers, KaiApp } from "./devServer";
 import { McpServer, type ToolSet } from "./mcp";
 import { readChangelog } from "./changelog";
@@ -23,6 +24,7 @@ const API_URL = process.env.DOTRIX_API_URL ?? new URL(WEB_URL).origin;
 let browser: Browser; // the Browser pane's profile and rules (made once the app is ready)
 let kai: KaiBrowser; // Kai's use of the pane on a turn coding here
 let kaiTools: McpServer | null = null; // where that turn's coding tool reaches it
+let localActions: LocalActions;
 let devServers: DevServers; // the app Kai starts in its worktree, with the command a person saved
 // A runner hands its coding tool the pane's tools: where they are, and a token of its own folder's (dotrix_cli/runner.py).
 const runners = new Runners(
@@ -44,7 +46,7 @@ let stopped = false; // the runners were stopped for quitting (or restarting int
 // A turn coding here is stopped (the tool with it) before the app restarts into a new version.
 const updates = new Updates(async () => {
   stopped = true;
-  await Promise.all([runners.stopAll(), devServers?.stopAll()]);
+  await Promise.all([runners.stopAll(), devServers?.stopAll(), localActions?.stopAll()]);
 });
 
 function createWindow(): void {
@@ -140,6 +142,30 @@ function bridge(): void {
   handle("dotrix:browser:keep-cookies", (_e, keep: unknown) => browser.setKeepCookies(keep === true));
   handle("dotrix:browser:clear", () => browser.clear());
   handle("dotrix:browser:enabled", (_e, enabled: unknown) => browser.setEnabled(enabled === true));
+  const runnerFolder = (id: unknown) => {
+    const runner = typeof id === "string" && runners.list().find((entry) => entry.runnerId === id);
+    if (!runner) throw new Error("The local runner is unavailable on this computer");
+    return runner.folder;
+  };
+  handle("dotrix:local-actions:profile", (_e, id: unknown) => localActions.profile(runnerFolder(id)));
+  handle("dotrix:local-actions:save", async (event, id: unknown, value: unknown) => {
+    const folder = runnerFolder(id);
+    const profile = localProfile(value);
+    const window = parent(event);
+    if (!window) throw new Error("Open the desktop window to save these commands");
+    const { response } = await dialog.showMessageBox(window, {
+      message: "Save local worktree commands?",
+      detail: `${folder}\n\nSetup: ${profile.setup || "(none)"}\nTests: ${profile.tests || "(none)"}\n\nThese commands run on this computer when you start them.`,
+      buttons: ["Save commands", "Cancel"],
+      cancelId: 1,
+      defaultId: 1,
+    });
+    return response === 0 ? localActions.save(folder, profile) : null;
+  });
+  handle("dotrix:local-actions:run", (_e, id: unknown, tree: unknown, action: unknown) => {
+    if (action !== "setup" && action !== "tests") throw new Error("Choose setup or tests");
+    return localActions.run(runnerFolder(id), worktree(tree), action);
+  });
   handle("dotrix:dev-servers:list", () => devServers.commands);
   handle("dotrix:dev-servers:save", (_e, folder: unknown, given: unknown) => {
     // Only a folder this computer codes in (one of its runners').
@@ -161,6 +187,7 @@ app.whenReady().then(async () => {
   );
   browser.kais = (tab) => kai.owns(tab);
   devServers = new DevServers();
+  localActions = new LocalActions(path.join(app.getPath("userData"), "local-code-profiles.json"));
   const kaiApp = new KaiApp(devServers, worktreeOf, () => browser.settings.enabled && browser.settings.kaiAllowed);
   // The pane's tools, and the app's for a folder with a saved command.
   const tools: ToolSet = {
@@ -187,9 +214,9 @@ app.whenReady().then(async () => {
 // A turn in progress is stopped (the tool with it) before the app goes, not left coding unwatched; and an app
 // Kai started is stopped too (it runs in a process group of its own, so it would outlive this one).
 app.on("before-quit", (event) => {
-  if (stopped || (!runners.running && !devServers?.active)) return;
+  if (stopped || (!runners.running && !devServers?.active && !localActions?.active)) return;
   event.preventDefault();
-  void Promise.all([runners.stopAll(), devServers?.stopAll()]).finally(() => {
+  void Promise.all([runners.stopAll(), devServers?.stopAll(), localActions?.stopAll()]).finally(() => {
     stopped = true;
     app.quit();
   });

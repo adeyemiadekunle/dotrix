@@ -6,6 +6,8 @@
 
 - The desktop coding area is now called Code. Existing session links still open.
 
+- Save local setup and test commands from a Code session's Terminal pane, run them in the session worktree, and see the result and output.
+
 ## [0.3.0] - 2026-11-21
 
 ### Changed

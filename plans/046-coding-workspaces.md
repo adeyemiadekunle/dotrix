@@ -2,6 +2,8 @@
 
 A person should be able to open Code, choose where Kai works, review the changes and publish through the existing approval flow. A product workspace owns the project, access, and audit history. A coding workspace is the checkout and working state of one session.
 
+Desktop local setup profiles now save and run explicit setup and test commands per checkout in a managed worktree. They reuse the worktree reservation, and results stay on the computer. Manual app startup and packaged platform validation remain open.
+
 ## Baseline before phases 1–2
 
 - Code already opens issue-linked cloud and local sessions. Both the run and session currently require an issue. The web composer, CLI claim protocol, notices, and published issue outcomes depend on that relationship.
