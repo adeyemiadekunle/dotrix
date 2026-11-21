@@ -85,6 +85,19 @@ jobs:
         env:
           KAI_PACKAGES_TOKEN: ${{ secrets.KAI_PACKAGES_TOKEN }}
         run: DOCKER_BUILDKIT=1 docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding
+      - name: Install gVisor (runsc), as deployed coding requires
+        # test_live_nvidia_bug_and_browser runs its sandbox under runsc. Pinned to the release Dotrix's sandbox tests ran on.
+        if: inputs.suite != 'chat'
+        env:
+          GVISOR: https://storage.googleapis.com/gvisor/releases/release/20261102/x86_64
+        run: |
+          cd "$(mktemp -d)"
+          curl -fsSLO "$GVISOR/gvisor.tar.bz2" -O "$GVISOR/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          sudo tar xjf gvisor.tar.bz2 -C /usr/local/bin   # runsc, its containerd shim and the gvisor-bin helpers it runs
+          sudo /usr/local/bin/runsc install
+          sudo systemctl reload docker || sudo systemctl restart docker
+          docker run --rm --runtime runsc hello-world
       - name: Nova on real models
         if: inputs.suite != 'coding'
         run: uv run pytest -v -rs apps/backend/tests/integration/test_live_chat.py
