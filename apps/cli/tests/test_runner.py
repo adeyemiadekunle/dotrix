@@ -776,7 +776,7 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
     from dotrix_cli import cli
     from dotrix_cli.sync import LinkState
 
-    repo = _checkout(tmp_path, {"file.bin": b"\0original", ".gitignore": b"ignored.txt\n", "deleted.txt": b"old"})
+    repo = _checkout(tmp_path, {"file.bin": b"\0original", ".gitignore": b"ignored*.txt\n", "deleted.txt": b"old"})
     state_dir = tmp_path / "link"
     state_dir.mkdir()
     project_id, session_id = str(uuid4()), str(uuid4())
@@ -798,6 +798,9 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
     (tree / "deleted.txt").unlink()
     (tree / "added.txt").write_text("new")
     (tree / "ignored.txt").write_text("ignored local data")
+    (tree / "ignored-staged.txt").write_text("staged")
+    git_at(tree, "add", "-f", "--", "ignored-staged.txt")
+    (tree / "ignored-staged.txt").write_text("edited since staging")
     git_at(tree, "add", "--", "deleted.txt")
     before = git_at(tree, "status", "--porcelain=v1")
     marker = tree.with_suffix(".active")
@@ -821,5 +824,8 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
     assert (tree / "added.txt").read_text() == "new"
     assert not (tree / "deleted.txt").exists()
     assert not (tree / "ignored.txt").exists()
-    assert git_at(tree, "status", "--porcelain=v1").splitlines() == [b"A  added.txt", b"D  deleted.txt", b"M  file.bin"]
+    assert (tree / "ignored-staged.txt").read_text() == "edited since staging"
+    assert git_at(tree, "status", "--porcelain=v1").splitlines() == [
+        b"A  added.txt", b"D  deleted.txt", b"M  file.bin", b"A  ignored-staged.txt",
+    ]
     assert git_at(repo, "status", "--porcelain=v1") == b""

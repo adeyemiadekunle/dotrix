@@ -510,13 +510,16 @@ def parse_line(line: str, out: Outcome) -> None:
         out.events.append({"kind": "error", "text": str(error.get("message") or event.get("message") or error)[:4000]})
 
 
-async def git_bytes(cwd: Path, *args: str, check: bool = True, env: Mapping[str, str] | None = None) -> bytes:
+async def git_bytes(
+    cwd: Path, *args: str, check: bool = True, env: Mapping[str, str] | None = None, stdin: bytes | None = None,
+) -> bytes:
     """git's output exactly as it wrote it (a patch can hold bytes that aren't UTF-8)."""
     process = await asyncio.create_subprocess_exec(
         "git", "-c", "core.quotepath=off", "-c", "core.autocrlf=false", *args, cwd=cwd, env=env,
+        stdin=asyncio.subprocess.PIPE if stdin is not None else None,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
-    out, err = await process.communicate()
+    out, err = await process.communicate(stdin)
     if check and process.returncode != 0:
         raise RuntimeError(f"git {' '.join(args[:2])}: {err.decode(errors='replace').strip()[:500]}")
     return out

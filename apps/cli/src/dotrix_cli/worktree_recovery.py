@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from .runner import git, require_worktree_owner
+from .runner import git, git_bytes, require_worktree_owner
 
 
 @contextmanager
@@ -45,7 +45,9 @@ async def snapshot_worktree(repo: Path, tree: Path) -> str:
         base = (await git(tree, "rev-parse", "HEAD")).strip()
         with TemporaryDirectory(prefix="dotrix-worktree-index-") as directory:
             env = {**os.environ, "GIT_INDEX_FILE": str(Path(directory) / "index")}
-            await git(tree, "read-tree", base, env=env)
+            # Preserve staged additions, including files added despite an ignore rule.
+            entries = await git_bytes(tree, "ls-files", "--stage", "-z")
+            await git_bytes(tree, "update-index", "-z", "--index-info", env=env, stdin=entries)
             await git(tree, "add", "-A", env=env)
             content = (await git(tree, "write-tree", env=env)).strip()
         snapshot = (await git(
