@@ -147,6 +147,7 @@ async def _save_plan(ctx: ModeContext, plan: SavePlan) -> dict[str, Any]:
 
 
 async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
+    from dotrix_backend.modules.coding.brief import with_task
     from dotrix_backend.modules.coding.models import CodingRun, CodingSession, CodingSessionState
     from dotrix_backend.modules.coding.schemas import CodingFollowUp, CodingRunCreate
     from dotrix_backend.modules.coding.service import CodingService
@@ -189,7 +190,7 @@ async def _start_coding(ctx: ModeContext, ask: StartCoding) -> dict[str, Any]:
                     # Keep the admitted context and any earlier constraints; add this request exactly once.
                     # The row lock serializes this amendment with approval, which freezes the final brief.
                     previous.note = "\n\n".join(part for part in (previous.note, note) if part)
-                    previous.brief += f"\n\n## Additional handoff instructions\n{request}"
+                    previous.brief = with_task(previous.brief, f"## Additional handoff instructions\n{request}")
                     AuditLog(session).record(
                         workspace_id=ctx.workspace_id, project_id=ctx.project_id,
                         action="coding.handoff_updated", target=previous.issue_key,

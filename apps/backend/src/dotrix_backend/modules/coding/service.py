@@ -39,7 +39,7 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 
 from . import guard
-from .brief import build_brief, split_contract
+from .brief import build_brief, with_task
 from .inputs import accepts_steering, queue_plan_tasks
 from .models import (
     ACTIVE,
@@ -103,13 +103,6 @@ def visible_runs(member: Membership) -> Any:
 def _sees(run: CodingRun, member: Membership) -> bool:
     return run.requested_by_id == member.user_id or (
         run.status in WAITING and can(member, Permission.APPROVE_ACTIONS))
-
-
-def _with_task(brief: str, section: str) -> str:
-    """`brief` with `section` added to what this turn is asked, above Kai's contract: an engine that takes the contract
-    as the session's pinned system profile (fx) gets this turn's part in the prompt, never frozen in the profile."""
-    task, contract = split_contract(brief)
-    return task.rstrip() + "\n\n" + section + ("\n\n" + contract if contract else "")
 
 
 def _earlier(turn: CodingRun) -> str:
@@ -274,7 +267,7 @@ class CodingService:
                     "open_questions": plan.open_questions, "execution": plan.execution}
         run.execution_plan = {"execution": plan.execution, "tasks": plan.tasks} if plan.execution else None
         run.plan_id = plan.id
-        run.brief += "\n\n## Selected implementation plan\n" + html.escape(json.dumps(snapshot, ensure_ascii=False))
+        run.brief = with_task(run.brief, "## Selected implementation plan\n" + html.escape(json.dumps(snapshot, ensure_ascii=False)))
 
     async def start(
         self, access: ProjectAccess, key: str, data: CodingRunCreate, *,
@@ -362,7 +355,7 @@ class CodingService:
             if selected is None or data.work_mode != "build":
                 raise Unprocessable("Select a completed plan from this coding session to build")
             run.execution_plan = selected.plan_result if selected.plan_result.get("execution") else None
-            run.brief = _with_task(run.brief, "## Selected coding plan\n" + html.escape(json.dumps(selected.plan_result)))
+            run.brief = with_task(run.brief, "## Selected coding plan\n" + html.escape(json.dumps(selected.plan_result)))
             if data.step_by_step or data.plan_task:
                 tasks = list(selected.plan_result.get("tasks") or [])
                 order = task_order(tasks)
@@ -371,7 +364,7 @@ class CodingService:
                     raise Unprocessable("That task isn't in the plan")
                 task = tasks[index - 1]
                 run.execution_plan = None  # one task, on the session's branch: never the plan's parallel build
-                run.brief = _with_task(run.brief, (
+                run.brief = with_task(run.brief, (
                     f"## This turn: task {index} of {len(tasks)}\n"
                     f"Do only this task of the plan; the others have their own turns. Tasks it depends on "
                     f"were done in this session's earlier turns.\n\n"
@@ -547,22 +540,24 @@ class CodingService:
                 configured = profile(environment)
                 require_approved_image(configured.image, self.settings.coding_environment_images)
                 run.environment_image_id = image_id
-                run.brief += (f"\n\n## Cloud environment: {configured.name} (revision {configured.revision})\n"
+                run.brief = with_task(run.brief, (
+                    f"## Cloud environment: {configured.name} (revision {configured.revision})\n"
                     f"Image: {configured.image or self.settings.coding_image}\n"
                     "Administrator setup runs before Kai; verification must pass before changes can be published.\n"
                     + fence("Setup script (administrator configuration)", configured.setup_script)
-                    + fence("Verification script (administrator configuration)", configured.verify_script))
+                    + fence("Verification script (administrator configuration)", configured.verify_script)))
         if location is CodingLocation.LOCAL:
-            run.brief += "\n\n## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
-            run.brief += "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])
-                                         for name, item in pinned_skills.items())
+            catalog = ("## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
+                       + "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])
+                                     for name, item in pinned_skills.items()))
             for name, item in pinned_skills.items():
                 for path, resource in item.get("resources", {}).items():
-                    run.brief += "\n\n" + fence(f"skill resource {name}/{path} sha256:{resource['sha256']}", resource["content"])
+                    catalog += "\n\n" + fence(f"skill resource {name}/{path} sha256:{resource['sha256']}", resource["content"])
         else:
             from .skills import catalog_brief
 
-            run.brief += catalog_brief(pinned_skills)
+            catalog = catalog_brief(pinned_skills)
+        run.brief = with_task(run.brief, catalog)
         if carry is not None:  # the session's branch and PR: this turn builds on them
             run.branch, run.pr_number, run.pr_url, run.pr_state = carry.branch, carry.pr_number, carry.pr_url, carry.pr_state
         self.session.add(run)
