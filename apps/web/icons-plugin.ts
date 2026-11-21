@@ -57,7 +57,6 @@ const ALIASES: Record<string, string> = {
   "magnifying-glass": "search",
   "map-trifold": "map",
   note: "sticky-note",
-  password: "key-round",
   "pencil-simple": "pencil",
   "plus-minus": "diff",
   question: "circle-question-mark",
