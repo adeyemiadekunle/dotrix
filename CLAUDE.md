@@ -129,6 +129,8 @@ Project settings expose the project model and the optional shared specialist mod
 
 Shared coding outcomes (J05): a task's Coding section can show the latest published turn of each PR, its commit, GitHub PR state, checks for that exact commit and reviews already posted on GitHub. `coding/outcomes.py` selects a bounded allowlist of published-run metadata scoped by workspace/project/issue; it never serializes private briefs, summaries, errors, events, model usage or Chat/Juno run/thread IDs. Session links are included only for the requester. Unpublished follow-ups and stale-commit checks are excluded from the shared evidence. The existing webhook records merged/closed/reopened PR state; issue status remains independent and only a person closes the task. Existing private Nova/Juno outcome delivery on both runtimes remains unchanged. Combined integration tests cover shared scope → task → published PR/review evidence without opening private conversations.
 
+**Local setup and tests.** On a managed desktop worktree, Terminal → Local profile saves setup and test commands per checkout on this computer. The desktop confirms the exact commands when saving them. Run setup and Run tests execute only the saved command, in the worktree, with the runner reservation held. Output stays in the desktop pane. Commands are user-started and run on the host. Existing app startup is configured separately in Settings → Browser.
+
 ## Repo map
 
 | Path | What | Stack |
