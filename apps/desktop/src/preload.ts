@@ -69,5 +69,7 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
     file: (worktree: string, file: string) => ipcRenderer.invoke("dotrix:worktree:file", worktree, file),
     open: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:open", worktree),
     reveal: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:reveal", worktree),
+    openEditor: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:open-editor", worktree),
+    createBranch: (worktree: string, name: string) => ipcRenderer.invoke("dotrix:worktree:create-branch", worktree, name),
   },
 });

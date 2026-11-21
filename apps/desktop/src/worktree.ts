@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 /** Only what's inside dotrix's worktrees folder may be read or opened from the web app. */
 function worktreesRoot(): string {
@@ -37,6 +38,51 @@ function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile("git", args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve(String(stdout))));
   });
+}
+
+export function worktreeEditorUrl(tree: string, editor: "vscode" | "vscode-insiders"): string {
+  const folder = pathToFileURL(tree);
+  if (folder.host) throw new Error("The editor requires a local worktree path");
+  return `${editor}://file${folder.pathname}`;
+}
+
+export async function createWorktreeBranch(tree: string, name: unknown): Promise<void> {
+  const root = fs.realpathSync(worktreesRoot());
+  const layout = path.relative(root, tree).split(path.sep);
+  if (layout.length !== 3 || layout[0] !== ".sessions" || !ownWorktree(tree)) {
+    throw new Error("Branch creation requires a managed session worktree");
+  }
+  if (typeof name !== "string" || name.startsWith("-") || !name || name.length > 200) {
+    throw new Error("Enter a valid Git branch name");
+  }
+  try {
+    await git(tree, ["check-ref-format", `refs/heads/${name}`]);
+  } catch {
+    throw new Error("Enter a valid Git branch name");
+  }
+  const marker = `${tree}.active`;
+  let lock: number;
+  try {
+    lock = fs.openSync(marker, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("The worktree is active or its last operation was interrupted");
+    throw error;
+  }
+  try {
+    const top = (await git(tree, ["rev-parse", "--show-toplevel"])).trimEnd();
+    const directory = (await git(tree, ["rev-parse", "--absolute-git-dir"])).trimEnd();
+    const common = (await git(tree, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trimEnd();
+    if (fs.realpathSync(top) !== tree || fs.realpathSync(directory) === fs.realpathSync(common)) {
+      throw new Error("The folder is not a linked Git worktree");
+    }
+    if ((await git(tree, ["rev-parse", "--abbrev-ref", "HEAD"])).trim() !== "HEAD") {
+      throw new Error("The worktree already has a branch");
+    }
+    await git(tree, ["-c", `core.hooksPath=${os.devNull}`, "switch", "--no-overwrite-ignore", "-c", name]);
+  } finally {
+    fs.closeSync(lock);
+    fs.unlinkSync(marker);
+  }
 }
 
 /** Every file in the worktree as it is now, with how it differs from the commit the turn started on. */

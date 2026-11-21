@@ -278,7 +278,58 @@ function WorktreeButtons({ worktree }: { worktree: string }) {
       <ActionButton className="ibtn ibtn-sm" onClick={act(bridge.worktree.reveal)} aria-label="Show the worktree in its folder" data-tip="Show in folder">
         <Ic n="external-link" s={14} />
       </ActionButton>
+      {bridge.worktree.openEditor && (
+        <ActionButton className="btn btn-sm btn-ghost" onClick={act(bridge.worktree.openEditor)}>
+          Open in IDE
+        </ActionButton>
+      )}
     </>
+  );
+}
+
+function WorktreeBranch({ worktree }: { worktree: string }) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [created, setCreated] = useState(false);
+  const [name, setName] = useState("");
+  const create = desktop()?.worktree.createBranch;
+  if (!create || created || !/(?:^|[/\\])\.sessions[/\\][^/\\]+[/\\][^/\\]+$/.test(worktree)) return null;
+  if (!open) {
+    return (
+      <ActionButton className="btn btn-sm btn-ghost" onClick={() => setOpen(true)}>
+        Create branch
+      </ActionButton>
+    );
+  }
+  return (
+    <form
+      className="work-file-actions"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || !name.trim()) return;
+        setPending(true);
+        void create(worktree, name.trim())
+          .then(() => {
+            setCreated(true);
+            toast(`Created branch ${name.trim()}`);
+          })
+          .catch((error: unknown) => toast(error instanceof Error ? error.message : "The branch couldn't be created"))
+          .finally(() => setPending(false));
+      }}
+    >
+      <p className="faint">
+        Git switches this worktree to the new branch and keeps your edits ready to commit. Start a new Code session if you want Kai to continue coding.
+      </p>
+      <label>
+        Branch name <input className="input" value={name} onChange={(event) => setName(event.target.value)} maxLength={200} required disabled={pending} />
+      </label>
+      <ActionButton type="submit" className="btn btn-sm" disabled={pending || !name.trim()}>
+        Create branch
+      </ActionButton>
+      <ActionButton type="button" className="btn btn-sm btn-ghost" onClick={() => setOpen(false)} disabled={pending}>
+        Cancel
+      </ActionButton>
+    </form>
   );
 }
 
@@ -332,6 +383,7 @@ function Files({
           <WorktreeButtons worktree={worktree} />
         </div>
       )}
+      {worktree && run.status !== "running" && run.status !== "queued" && <WorktreeBranch key={worktree} worktree={worktree} />}
       <label className="row faint" style={{ gap: 6, fontSize: 12, marginBottom: 6 }}>
         <SelectionInput aria-label="Changed only ( )" type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         Changed only ({root.changed})
