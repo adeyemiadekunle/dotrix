@@ -131,11 +131,14 @@ export function CodingPanes({
 }) {
   const [width, setWidth] = useStoredSize("dotrix.coding.panes.width", 560, 320, 1100);
   const [expanded, setExpanded] = useState<CodingView | null>(null);
-  const shown = expanded && views.includes(expanded) ? [expanded] : views;
+  const [collapsed, setCollapsed] = useState(true);
+  const [fullWidth, setFullWidth] = useState(false);
   // Over the page on narrow screens: Escape closes the panes.
   const closeAll = useRef(onCloseAll);
   closeAll.current = onCloseAll;
   const column = useRef<HTMLElement>(null);
+  const fullWidthRef = useRef(fullWidth);
+  fullWidthRef.current = fullWidth;
   // Over the page on narrow screens: focus moves into the panes, and back to where it was when they close.
   useEffect(() => {
     if (!narrowPanel()) return;
@@ -147,46 +150,98 @@ export function CodingPanes({
   }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && narrowPanel()) closeAll.current();
+      if (event.key === "Escape") {
+        if (fullWidthRef.current) {
+          setFullWidth(false);
+        } else if (narrowPanel()) {
+          closeAll.current();
+        }
+      }
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
   }, []);
+  const activeView = collapsed ? null : (expanded ?? views[0] ?? null);
+  const panelWidth = collapsed ? 44 : fullWidth ? "100%" : width + 44; // 44px rail + content width
   return (
-    <aside ref={column} className="side-panel panes" style={{ width }} aria-label="Session panes">
-      <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setWidth((w) => w - delta)} />
-      {shown.map((view) =>
-        view === "browser" ? (
-          <BrowserPane
-            key={view}
-            sessionId={cs.session_id}
-            stacked
-            expanded={expanded === view}
-            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
-            onClose={() => {
-              if (expanded === view) setExpanded(null);
-              onClose(view);
+    <aside
+      ref={column}
+      className={`side-panel panes ${collapsed ? "collapsed" : ""} ${fullWidth ? "full-width" : ""}`}
+      style={{ width: panelWidth }}
+      aria-label="Session panes"
+    >
+      {!collapsed && !fullWidth && <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setWidth((w) => w - delta)} />}
+      {/* Icon rail — always visible */}
+      <div className="pane-rail">
+        <button
+          className="pane-rail-item"
+          onClick={() => setFullWidth(!fullWidth)}
+          aria-label={fullWidth ? "Restore width" : "Expand to full width"}
+          title={fullWidth ? "Restore width" : "Expand to full width"}
+        >
+          <Ic n={fullWidth ? "minimize-2" : "maximize-2"} s={18} />
+        </button>
+        {CODING_VIEWS.map((view) => (
+          <button
+            key={view.id}
+            className={`pane-rail-item ${activeView === view.id ? "on" : ""}`}
+            onClick={() => {
+              if (activeView === view.id) {
+                setCollapsed(true);
+              } else if (views.includes(view.id)) {
+                setCollapsed(false);
+                setExpanded(view.id);
+              } else {
+                onOpen(view.id);
+                setCollapsed(false);
+                setExpanded(view.id);
+              }
             }}
-          />
-        ) : (
-          <CodingPanel
-            key={view}
-            scope={scope}
-            cs={cs}
-            view={view}
-            onView={(next, extra) => onOpen(next, extra)}
-            onClose={() => {
-              if (expanded === view) setExpanded(null);
-              onClose(view);
-            }}
-            onAskFix={onAskFix}
-            onCloseAll={onCloseAll}
-            fixLabel={fixLabel}
-            stacked
-            expanded={expanded === view}
-            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
-          />
-        ),
+            aria-label={view.label}
+            title={view.label}
+          >
+            <Ic n={view.icon} s={18} />
+          </button>
+        ))}
+      </div>
+      {/* Open pane */}
+      {!collapsed && activeView && (
+        <div className="pane-content">
+          {activeView === "browser" ? (
+            <BrowserPane
+              key={activeView}
+              sessionId={cs.session_id}
+              stacked={true}
+              expanded={false}
+              onExpand={undefined}
+              onClose={() => {
+                setCollapsed(true);
+                onClose(activeView);
+              }}
+            />
+          ) : (
+            <CodingPanel
+              key={activeView}
+              scope={scope}
+              cs={cs}
+              view={activeView}
+              onView={(next, extra) => {
+                onOpen(next, extra);
+                setExpanded(next);
+              }}
+              onClose={() => {
+                setCollapsed(true);
+                onClose(activeView);
+              }}
+              onAskFix={onAskFix}
+              onCloseAll={onCloseAll}
+              fixLabel={fixLabel}
+              stacked={true}
+              expanded={false}
+              onExpand={undefined}
+            />
+          )}
+        </div>
       )}
     </aside>
   );

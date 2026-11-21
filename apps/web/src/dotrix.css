@@ -2256,6 +2256,70 @@ section.side-panel-body[hidden] {
 /* The panes beside a session: stacked in one resizable column, each with its own bar. */
 .side-panel.panes {
   padding: 0;
+  display: flex;
+  flex-direction: row;
+}
+.pane-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+  width: 44px;
+  flex-shrink: 0;
+  height: 100%;
+}
+.pane-rail-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.pane-rail-item:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.pane-rail-item.on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.pane-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.pane-content .pane,
+.pane-content .side-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  border: none;
+}
+.side-panel.panes.full-width {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  background: var(--surface);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+}
+.side-panel.panes.full-width .pane-content {
+  flex: 1 1 0;
 }
 .side-panel.panes > .pane {
   display: flex;
@@ -2619,6 +2683,20 @@ section.side-panel-body[hidden] {
   .side-panel.panes {
     top: var(--cs-head-h, 46px);
     border-top: 1px solid var(--border);
+    right: 0;
+    bottom: 0;
+    position: fixed;
+    z-index: 40;
+    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+  }
+  .side-panel.panes.collapsed {
+    width: 44px !important;
+  }
+  .side-panel.panes.full-width {
+    top: var(--cs-head-h, 46px);
+    left: 0;
+    right: 0;
+    bottom: 0;
   }
 }
 

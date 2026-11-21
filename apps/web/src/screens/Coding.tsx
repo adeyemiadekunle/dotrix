@@ -125,7 +125,8 @@ type DemoView = Exclude<CodingView, "browser">;
 
 function DemoSession({ id }: { id: string }) {
   const session = D().coding.find((item) => item.id === id);
-  const [views, setViews] = useState<DemoView[]>([]);
+  const [activeView, setActiveView] = useState<DemoView | null>(null);
+  const [collapsed, setCollapsed] = useState(true);
   const [paneW, setPaneW] = useStoredSize("dotrix.demo.panes.width", 460, 320, 1100);
   const [opened, setOpened] = useState<string | null>(null);
   const turn = session ? session.turns.length - 1 : 0;
@@ -145,6 +146,7 @@ function DemoSession({ id }: { id: string }) {
   const title = session.title ?? D().tasks.find((item) => item.id === session.task)?.title ?? "Coding session";
   const active = session.turns[turn];
   const labels: Record<DemoView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review" };
+  const panelWidth = collapsed ? 44 : paneW + 44;
   return (
     <div style={{ display: "flex", height: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
@@ -154,20 +156,6 @@ function DemoSession({ id }: { id: string }) {
           </ActionButton>
           <b className="trunc cs-demo-title">{title}</b>
           <span className="sp" />
-          <div className="cs-views" role="group" aria-label="Session panes">
-            {(Object.keys(labels) as DemoView[]).map((view) => (
-              <button
-                key={view}
-                className={`cs-view ${views.includes(view) ? "on" : ""}`}
-                aria-label={labels[view]}
-                title={labels[view]}
-                aria-pressed={views.includes(view)}
-                onClick={() => setViews((current) => (current.includes(view) ? current.filter((item) => item !== view) : [...current, view]))}
-              >
-                <Ic n={{ changes: "plus-minus", files: "folder-simple", terminal: "terminal", review: "shield-check" }[view]} s={16} />
-              </button>
-            ))}
-          </div>
         </SessionHeader>
         <ChatMessageList>
           <div className="chat-col">
@@ -186,21 +174,43 @@ function DemoSession({ id }: { id: string }) {
           </div>
         </ChatMessageList>
       </div>
-      {views.length > 0 && (
-        <aside className="side-panel panes" style={{ width: paneW }} aria-label="Session panes">
-          <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setPaneW((w) => w - delta)} />
-          {views.map((view) => (
-            <PanelFrame
+      <aside className={`side-panel panes ${collapsed ? "collapsed" : ""}`} style={{ width: panelWidth }} aria-label="Session panes">
+        {!collapsed && <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setPaneW((w) => w - delta)} />}
+        <div className="pane-rail">
+          {(Object.keys(labels) as DemoView[]).map((view) => (
+            <button
               key={view}
-              label={labels[view]}
-              title={<b>{labels[view]}</b>}
+              className={`pane-rail-item ${activeView === view ? "on" : ""}`}
+              onClick={() => {
+                if (activeView === view) {
+                  setCollapsed(true);
+                } else {
+                  setActiveView(view);
+                  setCollapsed(false);
+                }
+              }}
+              aria-label={labels[view]}
+              title={labels[view]}
+            >
+              <Ic n={{ changes: "plus-minus", files: "folder-simple", terminal: "terminal", review: "shield-check" }[view]} s={18} />
+            </button>
+          ))}
+        </div>
+        {!collapsed && activeView && (
+          <div className="pane-content">
+            <PanelFrame
+              label={labels[activeView]}
+              title={<b>{labels[activeView]}</b>}
               widthKey="dotrix.demo.panes.width"
-              stacked
-              onClose={() => setViews((current) => current.filter((item) => item !== view))}
+              stacked={true}
+              onClose={() => {
+                setCollapsed(true);
+                setActiveView(null);
+              }}
               tools={<span className="badge">Recorded excerpts</span>}
             >
-              {view === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
-              {view === "files" && (
+              {activeView === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
+              {activeView === "files" && (
                 <>
                   <p className="faint">
                     Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
@@ -222,7 +232,7 @@ function DemoSession({ id }: { id: string }) {
                   )}
                 </>
               )}
-              {view === "terminal" && (
+              {activeView === "terminal" && (
                 <>
                   <p className="faint">Recorded sample commands</p>
                   <CommandList
@@ -237,11 +247,11 @@ function DemoSession({ id }: { id: string }) {
                   />
                 </>
               )}
-              {view === "review" && <p className="muted">No saved Juno review for this sample session.</p>}
+              {activeView === "review" && <p className="muted">No saved Juno review for this sample session.</p>}
             </PanelFrame>
-          ))}
-        </aside>
-      )}
+          </div>
+        )}
+      </aside>
     </div>
   );
 }
