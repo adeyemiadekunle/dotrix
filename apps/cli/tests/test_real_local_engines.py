@@ -624,3 +624,31 @@ def test_real_fx_local_turn_takes_a_steer_from_its_inbox(tmp_path, stop):
         assert "Read readable.txt and say what it holds" not in json.dumps(requests[0])
         assert "Read readable.txt and say what it holds" in json.dumps(requests[-1])
         assert any(e["text"] == "Took your message" for e in out.events)
+
+
+@pytest.mark.skipif(not FX, reason="Set DOTRIX_TEST_FX to the pinned CLI")
+@pytest.mark.skipif(not native_fx_available(), reason="Linux user/network namespaces unavailable")
+def test_real_fx_local_turn_gets_kai_s_contract_as_its_system_profile(tmp_path):
+    """As on a cloud turn, Kai's contract reaches the model as the session's system profile, not as words in the
+    conversation: the first request's system message carries it, and the person's turn carries only the task."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    with model_server("chat", lambda _, index: None) as (model_url, requests, _):
+        original = tmp_path / "original" / ".fx"
+        original.mkdir(parents=True)
+        (original / "settings.json").write_text(json.dumps({"provider": "custom", "models": {"custom": "test"}, "providers": {"custom": {
+            "protocol": "openai-chat-completions", "base_url": model_url, "auth": {"type": "bearer", "env": "LOCAL_TEST_KEY"},
+            "model_metadata": {"test": {"supports_tool_use": True}}}}}))
+        env = tool_environment("fx", {"HOME": str(original.parent), "PATH": str(Path(FX).parent) + os.pathsep + os.environ["PATH"],
+                                      "LOCAL_TEST_KEY": "test-not-real"})
+        profile = tmp_path / "isolated"
+        prepare_profile(profile, env)
+        brief = "Fix the LOCAL_TASK_MARK bug.\n\n# How Kai works\n\nYou are Kai. KAI_CONTRACT_MARK\n"
+        done = subprocess.run(Tool.named("fx", profile=profile).argv, input=brief, capture_output=True, text=True,
+                              cwd=repo, env=env, timeout=120)
+    assert '"done"' in done.stdout, (done.stdout, done.stderr)
+    messages = requests[0]["messages"]
+    system = json.dumps([m for m in messages if m.get("role") == "system"])
+    users = json.dumps([m for m in messages if m.get("role") == "user"])
+    assert "KAI_CONTRACT_MARK" in system and "KAI_CONTRACT_MARK" not in users
+    assert "LOCAL_TASK_MARK" in users

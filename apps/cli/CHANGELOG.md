@@ -4,6 +4,7 @@
 
 ### Changed
 
+- A local fx turn gives fx Kai's contract (`# How Kai works`) as the session's system profile (ACP's `systemPrompt`), as a cloud turn does, rather than as words in the conversation. The person's turn carries only the task. The local driver (`fx_local.py`) splits the brief at the contract's last heading, so one quoted in an issue stays in the task, and the desktop Browser pane's note stays with the task. A brief without a contract, from an older platform, goes whole. Each local turn starts a session of its own, so there's no saved profile to check on resume. Checked with the real kai.3 `fx` in its namespace against a scripted model: the contract arrived in the system message, and the person's turn held only the task.
 - `dotrix runner` passes a person's messages to a local fx turn while it works, as Codes steers a cloud turn. The heartbeat hands the runner each message once the turn's driver has opened its inbox. The runner drops it there, and the local fx driver (`fx_local.py`, `--steer-dir`) sends it to fx as a steering prompt. Each message's state goes back on the next heartbeat and with the result. A message dropped after the turn's prompt ended is refused and goes to the next turn instead. Checked with the real kai.2 `fx` in its namespace, against a scripted model.
 - Standalone CLI releases can be versioned and published independently of the desktop installer and server.
 
