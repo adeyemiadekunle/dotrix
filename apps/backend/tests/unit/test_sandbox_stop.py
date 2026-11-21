@@ -33,8 +33,13 @@ def _alive(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    status = Path(f"/proc/{pid}/status")
-    return not (status.exists() and "State:\tZ" in status.read_text())  # a zombie is gone, just not reaped
+    if not Path("/proc/self").exists():  # no /proc (macOS): the signal check above is all there is
+        return True
+    try:
+        state = Path(f"/proc/{pid}/status").read_text()
+    except (FileNotFoundError, ProcessLookupError):  # it exited and was reaped after the signal check
+        return False
+    return "State:\tZ" not in state  # a zombie is gone, just not reaped
 
 
 async def test_stop_kills_the_turns_whole_process_tree(tmp_path, monkeypatch) -> None:
