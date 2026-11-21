@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The desktop coding area is now called Code. Existing session links still open.
+
 ## [0.3.0] - 2026-11-21
 
 ### Changed

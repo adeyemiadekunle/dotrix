@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -110,8 +111,11 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     __tablename__ = "coding_runs"
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    issue_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
     issue_key: Mapped[str] = mapped_column(String(24))
+    task_title: Mapped[str | None] = mapped_column(String(200))
+    source_repo_id: Mapped[int | None] = mapped_column(BigInteger)
+    source_sha: Mapped[str | None] = mapped_column(String(40))
     # A session is a run and its follow-ups (turns), on one branch and one PR: the first turn's id.
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     turn: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -234,13 +238,15 @@ class CodingSession(WorkspaceScopedMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    issue_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
     agent: Mapped[CodingAgent] = mapped_column(str_enum(CodingAgent, 16))
     state: Mapped[CodingSessionState] = mapped_column(str_enum(CodingSessionState, 16), default=CodingSessionState.IDLE)
     claude_session: Mapped[uuid.UUID] = mapped_column(Uuid)  # Claude Code's --session-id / --resume
     # SHA-256 of the system profile (Kai's contract) the engine's session started with, for engines that take one
     # (fx): a resumed turn must find the same profile in its saved state.
     profile_digest: Mapped[str | None] = mapped_column(String(64))
+    # Retain the binding even if the runner is revoked, so a second checkout cannot take over.
+    local_worktree_runner_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     transcript_key: Mapped[str | None] = mapped_column(String(300))  # in storage, encrypted
     cost_reported: Mapped[float | None] = mapped_column(Numeric(10, 4, asdecimal=False))  # Claude's running total
     title: Mapped[str | None] = mapped_column(String(200))  # renamed; else its issue's title

@@ -41,7 +41,7 @@ export const ROUTE_NAMES: Record<string, string> = {
   settings: "Settings",
   archive: "Archive",
   chat: "Chat",
-  codes: "Codes",
+  codes: "Code",
 };
 
 /** A page's name. */
@@ -215,7 +215,7 @@ function Sidebar() {
             ["inbox", "Inbox", "inbox"],
             ["mytasks", tasksLabel(), "circle-check"],
             ["chat", "Chat", "message-square"],
-            ["codes", "Codes", "code"],
+            ["codes", "Code", "code"],
             ["projects", "Projects", "folder-kanban"],
             ["activity", "Activity", "activity"],
           ] as [Route, string, string][]

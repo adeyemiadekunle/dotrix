@@ -6,7 +6,7 @@ workspace-write OS sandbox with command networking disabled. Native Claude Code
 and fx can use a Linux namespace and host-owned model/browser relay with API keys;
 unsupported native paths retain file tools and the app-owned browser connection.
 Repository hooks, plugins and unrelated MCP servers are excluded. Worktrees are
-kept for WORKTREE_DAYS after a turn, then removed by the runner.
+kept by their sessions. Older per-attempt worktrees retain their age-based cleanup.
 """
 from __future__ import annotations
 
@@ -223,11 +223,12 @@ class Sbx:
         """The tool in the sandbox, in the worktree, the brief on stdin."""
         return [self.binary, "exec", "-i", "--workdir", str(tree), name, "--", *argv]
 
-    async def remove(self, name: str) -> None:
+    async def remove(self, name: str) -> bool:
         try:
             await self._run("rm", "--force", name)
         except (RuntimeError, OSError):
-            pass  # already gone, or sbx itself is: nothing left to stop
+            return False
+        return True
 
 
 def browser_tools(environ: Mapping[str, str] | None = None) -> tuple[str, str] | None:
@@ -630,7 +631,7 @@ class LocalRunner:
         """Claim one turn and code it; False when none waits."""
         if self.runner_id is None:
             await self.register()
-        claimed = await self.api.post(f"{self.base}/{self.runner_id}/claim")
+        claimed = await self.api.post(f"{self.base}/{self.runner_id}/claim?managed_worktrees=true")
         if not claimed.get("run"):
             return False
         try:
@@ -727,6 +728,69 @@ class LocalRunner:
                 pass
 
     async def work(self, run: dict[str, Any]) -> None:
+        if not run.get("managed_worktree") or run["project_id"] != self.project_id:
+            await self._work(run)
+            return
+        # Older runners only clean the per-project directory beside .sessions.
+        tree = self.worktrees / ".sessions" / self.project_id / str(uuid.UUID(run["session_id"]))
+        tree.parent.mkdir(parents=True, exist_ok=True)
+        active = tree.with_suffix(".active")
+        try:
+            with active.open("x") as marker:
+                marker.write(f"{run['run_id']} {run['lease_token']}\n")
+        except FileExistsError:
+            path = f"{self.base}/{self.runner_id}/runs/{run['run_id']}/result"
+            try:
+                await self.api.post(path, {
+                    "lease_token": run["lease_token"], "outcome": "failed",
+                    "error": "This worktree is in use or its last turn was interrupted. Its files were kept.",
+                })
+            except PlatformError as exc:
+                if _lost(exc):
+                    raise LeaseLost() from exc
+                raise
+            return
+        # A crashed or cancelled runner may leave a child process alive. Keep the marker
+        # on interruptions so a reclaimed turn never starts another writer in that folder.
+        await self._work(run, tree)
+        if self._sandbox is not None and self.sbx is not None:
+            if not await asyncio.shield(self.sbx.remove(self._sandbox)):
+                self.echo(f"  Couldn't confirm the sandbox stopped. The worktree stays reserved at {tree}")
+                return
+            self._sandbox = None
+        active.unlink()
+
+    async def _managed_checkout(self, tree: Path, sha: str, *, first_turn: bool) -> None:
+        if tree.is_symlink():
+            raise RuntimeError("The managed worktree path is a link")
+        if not tree.exists():
+            if not first_turn:
+                raise RuntimeError("The session's worktree is missing. Restore its folder or start a new session")
+            await git(self.repo, "-c", f"core.hooksPath={os.devnull}", "worktree", "add", "-q", "--detach", str(tree), sha)
+            return
+        root = (await git(tree, "rev-parse", "--show-toplevel")).strip()
+        common = (await git(tree, "rev-parse", "--path-format=absolute", "--git-common-dir")).strip()
+        expected = (await git(self.repo, "rev-parse", "--path-format=absolute", "--git-common-dir")).strip()
+        if Path(root).resolve() != tree.resolve() or Path(common).resolve() != Path(expected).resolve():
+            raise RuntimeError("The session's worktree is not registered to this checkout")
+        head = (await git(tree, "rev-parse", "HEAD")).strip()
+        branch = await git(tree, "symbolic-ref", "-q", "HEAD", check=False)
+        if branch or (await git(tree, "merge-base", head, sha, check=False)).strip() != head:
+            raise RuntimeError("The worktree has a branch or commits of its own. Its files were kept")
+        if await git_bytes(tree, "diff", "--name-only", "-z") or await git_bytes(
+            tree, "ls-files", "--others", "--exclude-standard", "-z",
+        ):
+            raise RuntimeError("The worktree has unpublished edits. Its files were kept")
+        if not await git_bytes(tree, "diff", "--cached", "--name-only", "-z", sha, "--"):
+            if head != sha:
+                # The index already equals the new branch tip. Move only HEAD.
+                await git(tree, "reset", "--soft", sha)
+            return
+        if await git_bytes(tree, "diff", "--cached", "--name-only", "-z", "HEAD", "--"):
+            raise RuntimeError("The worktree has unpublished edits. Its files were kept")
+        await git(tree, "-c", f"core.hooksPath={os.devnull}", "switch", "-q", "--detach", "--no-overwrite-ignore", sha)
+
+    async def _work(self, run: dict[str, Any], managed: Path | None = None) -> None:
         path = f"{self.base}/{self.runner_id}/runs/{run['run_id']}"
         token = run["lease_token"]
         beat_every = self.beat_seconds if self.beat_seconds is not None else max(5.0, run["lease_seconds"] / 3)
@@ -800,16 +864,36 @@ class LocalRunner:
             return
         ref = run.get("branch") or run["base_branch"]
         self.echo(f"{run['issue_key']} turn {run['turn']}: {run['title']}")
+        fetch_ref = f"refs/dotrix/local/{run['run_id']}-{token}" if managed is not None else None
         try:
-            await git(self.repo, "fetch", "-q", "--no-tags", self.remote, f"refs/heads/{ref}")
+            if fetch_ref is None:
+                await git(self.repo, "fetch", "-q", "--no-tags", self.remote, f"refs/heads/{ref}")
+            else:
+                await git(self.repo, "fetch", "-q", "--no-tags", "--no-write-fetch-head", self.remote,
+                          f"+refs/heads/{ref}:{fetch_ref}")
+            fetched = (await git(self.repo, "rev-parse", fetch_ref or "FETCH_HEAD")).strip()
         except RuntimeError as exc:
             await report("failed", error=f"Couldn't fetch {ref} from {self.remote}: {exc}")
             return
-        # A worktree per attempt: a turn claimed again (after a crash) never reuses one that may hold work.
-        tree = self.worktrees / run["project_id"] / f"{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
-        tree.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if (source_sha := run.get("source_sha")) and fetched != source_sha:
+                await report("failed", error="The starting branch changed after this turn was requested")
+                return
+            if managed is not None:
+                tree = managed
+                await self._managed_checkout(tree, fetched, first_turn=run["turn"] == 1)
+            else:
+                # Legacy sessions preserve the existing per-attempt checkout layout.
+                tree = self.worktrees / run["project_id"] / f"{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
+                tree.parent.mkdir(parents=True, exist_ok=True)
+                await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), fetched)
+        except RuntimeError as exc:
+            await report("failed", error=str(exc))
+            return
+        finally:
+            if fetch_ref is not None:
+                await git(self.repo, "update-ref", "-d", fetch_ref, check=False)
         self._coding_in = tree
-        await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), "FETCH_HEAD")
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
         boundary = " (custom command, not isolated)" if self.command and self.sbx is None else ""
         pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}{boundary}"})

@@ -117,7 +117,7 @@ async def test_the_sandbox_is_removed_when_the_turn_ends(tmp_path: Path, fake_sb
 
     class Claiming(Api):
         async def post(self, path: str, body=None):
-            if path.endswith("/claim"):
+            if path.endswith("/claim?managed_worktrees=true"):
                 return {"run": RUN}
             return await super().post(path, body)
 

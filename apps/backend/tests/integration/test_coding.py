@@ -34,6 +34,7 @@ from dotrix_backend.modules.coding.runner import (
 from dotrix_backend.modules.coding.sandbox import ExecResult, LocalSandbox, LocalSession
 from dotrix_backend.modules.coding.warm import WarmPool
 from dotrix_backend.modules.connectors.github_app import get_github_app
+from dotrix_backend.modules.connectors.models import ConnectedRepo
 from dotrix_backend.modules.execution.service import expire_coding_leases
 from dotrix_engine.testing import tool_call
 
@@ -207,7 +208,7 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     assert connected.status_code == 200, connected.text
 
     async def repo_url(ref) -> str:
-        assert ref.full_name == "kunemi/api" and ref.default_branch == "main"
+        assert ref.full_name == "kunemi/api"
         return str(origin)
 
     sandbox = ScriptedSandbox(claude)
@@ -1912,7 +1913,7 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     # Her checkout is as she left it; nothing reached GitHub; the worktree is kept, outside it.
     assert _git(checkout, "status", "--porcelain") == "?? notes.txt" and not (checkout / "src/refunds.py").exists()
     assert github.pulls == [] and _git(origin, "branch", "--list", "dotrix/*") == ""
-    [tree] = (tmp_path / "worktrees" / kun["id"]).iterdir()
+    tree = tmp_path / "worktrees" / ".sessions" / kun["id"] / run["session_id"]
     assert (tree / "src/refunds.py").read_text() == "def refund(a):\n    return a\n"
     # Where it is on her computer (the desktop app opens it): for her, no one else.
     assert ready["worktree"] == str(tree) and ready["runner_id"] == registered["id"]
@@ -1925,15 +1926,23 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     assert done["status"] == "pr_opened" and len(github.pulls) == 1 and sandbox.opened == 0, done
     assert _git(origin, "show", f"{done['branch']}:src/refunds.py") == "def refund(a):\n    return a"
 
-    # A follow-up stays on her computer, on the session's branch.
-    runner.command = _tool({"src/refunds.py": "def refund(a):\n    return -a\n"})
+    # A follow-up stays on her computer and reopens the same worktree after a runner restart.
+    next_command = _tool({"src/refunds.py": "def refund(a):\n    return -a\n"})
+    runner = _local_runner(db_client, coding, checkout, tmp_path, next_command)
+    assert (await runner.register())["id"] == registered["id"]
+    other = _local_runner(db_client, coding, checkout, tmp_path, next_command)
+    other.name = "another-computer"
+    await other.register()
     turn = (await db_client.post(f"{base}/coding/sessions/{run['session_id']}/turns", json={"message": "Negative"},
                                  headers=ada.headers)).json()
     assert turn["location"] == "local"
     await db_client.post(f"{base}/coding/runs/{turn['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    assert await other.once() is False
+    assert await runner.api.post(f"{runner.base}/{runner.runner_id}/claim") == {"run": None}
     assert await runner.once() is True
     turn = await _approve(db_client, base, turn, ada.headers)
     assert turn["status"] == "pr_opened" and turn["base_sha"] == done["commit_sha"] and len(github.pulls) == 1
+    assert turn["worktree"] == str(tree)
     assert _git(origin, "rev-parse", f"{done['branch']}~1") == done["commit_sha"]
 
     # On a server that codes only locally (no cloud sandbox), a pushed local turn is still reverted (the
@@ -2356,6 +2365,26 @@ async def test_a_waiting_run_keeps_its_validated_base_when_a_later_session_refre
     assert done["status"] == "pr_opened" and done["base_branch"] == "main", done
     assert github.pulls[0]["base"] == "main"
 
+    follow_up = await db_client.post(f"{base}/coding/sessions/{done['session_id']}/turns",
+                                     headers=ada.headers, json={"message": "Continue on the existing PR"})
+    assert follow_up.status_code == 201, follow_up.text
+    assert follow_up.json()["base_branch"] == "main"
+
+
+async def test_a_waiting_cloud_turn_cannot_execute_in_a_replacement_repository(
+    db_client: AsyncClient, coding, github, db_session, claude: ScriptedClaude,
+) -> None:
+    ada, _, _, project, _, sandbox = coding
+    base, waiting = await _asked(db_client, coding)
+    await db_session.execute(update(ConnectedRepo).where(ConnectedRepo.project_id == uuid.UUID(project["id"]))
+                             .values(full_name="kunemi/replacement"))
+    await db_session.commit()
+
+    run = await _approve(db_client, base, waiting, ada.headers)
+    assert run["status"] == "failed", run
+    assert "connected repository changed" in run["error"]
+    assert not claude.briefs and not github.pulls and sandbox.opened == 0
+
 
 async def test_nova_assignment_notifies_once_and_inbox_approval_queues_kai(
     db_client: AsyncClient, coding, agent_script, monkeypatch,
@@ -2538,7 +2567,11 @@ async def race_world(engine, monkeypatch):
     async def available(self, project, user_id):  # not under test: keys, tools and sandboxes
         return SimpleNamespace(available=True, reason=None, agent=CodingAgent.CLAUDE_CODE)
 
+    async def repo(self, project, *, for_update=False):  # both workers see the same admitted repository
+        return SimpleNamespace(full_name="kunemi/api")
+
     monkeypatch.setattr(CodingService, "availability", available)
+    monkeypatch.setattr(CodingService, "_repo", repo)
     async with sessions() as session:
         session.add(User(id=user_id, email=f"{user_id}@example.com", display_name="Ada"))
         await session.flush()
@@ -2796,3 +2829,69 @@ async def test_a_session_keeps_the_profile_digest_its_engine_reported_while_the_
     assert await digest() is None
     await worker._record_profile(run_id, "a" * 64)
     assert await digest() == "a" * 64
+
+
+@pytest.mark.parametrize("location", ["cloud", "local"])
+async def test_repository_prompt_opens_a_reviewed_pr_without_an_issue(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session,
+    checkout: Path, tmp_path: Path, location: str,
+) -> None:
+    ada, _, ws, project, _, _ = coding
+    base = f"{ws}/projects/{project['id']}/coding"
+    _git(origin, "branch", "release")
+    edits = {"src/greeting.py": "GREETING = 'Hello'\n"}
+    runner = None
+    if location == "local":
+        runner = _local_runner(db_client, coding, checkout, tmp_path, _tool(edits))
+        await runner.register()
+    response = await db_client.post(f"{base}/sessions", headers=ada.headers, json={
+        "note": "Add a greeting", "base_branch": "release", "approval_mode": "manual", "location": location,
+    })
+    assert response.status_code == 201, response.text
+    waiting = response.json()
+    assert waiting["status"] == "awaiting_approval"
+    assert waiting["base_branch"] == "release"
+    run = await db_session.get(CodingRun, uuid.UUID(waiting["id"]))
+    assert run is not None and run.issue_id is None and run.source_sha == _git(origin, "rev-parse", "release")
+    claude.edits = edits
+    agent_script.say("Checked the change.")
+    approved = await db_client.post(f"{base}/runs/{waiting['id']}/decision", headers=ada.headers,
+                                    json={"decision": "approve"})
+    assert approved.status_code == 200, approved.text
+    if runner is not None:
+        assert approved.json()["status"] == "queued"
+        assert await runner.once()
+        approved = await db_client.get(f"{base}/runs/{waiting['id']}", headers=ada.headers)
+        assert _git(checkout, "status", "--porcelain") == "?? notes.txt"
+    assert approved.json()["status"] == "changes_ready", approved.text
+    assert not github.pulls
+    accepted = await db_client.post(f"{base}/runs/{waiting['id']}/decision", headers=ada.headers,
+                                    json={"decision": "approve"})
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["status"] == "pr_opened"
+    assert github.pulls[0]["base"] == "release"
+    assert github.pulls[0]["title"] == "Add a greeting"
+    listed = await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)
+    assert listed.status_code == 200, listed.text
+    assert any(row["session_id"] == waiting["session_id"] and row["title"] == "Add a greeting" for row in listed.json())
+    follow = await db_client.post(f"{base}/sessions/{waiting['session_id']}/turns", headers=ada.headers,
+                                  json={"message": "Update the greeting", "approval_mode": "manual"})
+    assert follow.status_code == 201, follow.text
+    assert follow.json()["base_branch"] == "release"
+
+
+async def test_repository_prompt_rejects_a_starting_branch_that_moved_before_approval(
+    db_client: AsyncClient, coding, github, origin: Path,
+) -> None:
+    ada, _, ws, project, _, sandbox = coding
+    base = f"{ws}/projects/{project['id']}/coding"
+    response = await db_client.post(f"{base}/sessions", headers=ada.headers, json={
+        "note": "Add a greeting", "approval_mode": "manual",
+    })
+    assert response.status_code == 201, response.text
+    _git(origin, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+         "commit", "--allow-empty", "-qm", "Move the base")
+    done = await _approve(db_client, base.removesuffix("/coding"), response.json(), ada.headers)
+    assert done["status"] == "failed", done
+    assert "starting branch changed" in done["error"]
+    assert not github.pulls and sandbox.opened == 0

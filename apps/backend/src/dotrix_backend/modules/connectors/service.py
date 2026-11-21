@@ -157,7 +157,7 @@ class ConnectorService:
 
     # -- a project's repo --------------------------------------------------------------
 
-    async def readiness(self, project: Project) -> RepositoryReadiness:
+    async def readiness(self, project: Project, *, branch: str | None = None) -> RepositoryReadiness:
         row = await self.session.scalar(select(ConnectedRepo).where(
             ConnectedRepo.workspace_id == project.workspace_id, ConnectedRepo.project_id == project.id,
         ))
@@ -169,11 +169,11 @@ class ConnectorService:
             return RepositoryReadiness(ready=False, reason="Restore the suspended GitHub App installation, then check the repository again.")
         repo = await self.app.repository(installation.installation_id, row.github_repo_id)
         token = await self.app.access_token(installation.installation_id, repository_id=row.github_repo_id)
-        sha = await self.app.branch_head(repo.full_name, repo.default_branch, token=token)
+        sha = await self.app.branch_head(repo.full_name, branch or repo.default_branch, token=token)
         return RepositoryReadiness(
             ready=bool(sha), full_name=repo.full_name, default_branch=repo.default_branch, commit_sha=sha,
-            reason=None if sha else f"Create an initial commit (for example, a README) on {repo.default_branch} in "
-            f"{repo.full_name}, or choose an existing default branch on GitHub, then check again before starting Kai.",
+            reason=None if sha else (f"Choose an existing branch with a commit in {repo.full_name}." if branch else f"Create an initial commit (for example, a README) on {repo.default_branch} in "
+            f"{repo.full_name}, or choose an existing default branch on GitHub, then check again before starting Kai."),
         )
 
     async def connected(self, access: ProjectAccess) -> ConnectedRepoRead | None:

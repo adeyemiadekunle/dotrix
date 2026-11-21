@@ -64,7 +64,7 @@ RULES = """\
 
 
 async def build_brief(
-    session: AsyncSession, project: Project, issue: IssueRead, note: str | None,
+    session: AsyncSession, project: Project, issue: IssueRead | None, note: str | None,
     earlier: list[tuple[int, str]] | None = None,
     *, user_id: uuid.UUID | None = None, inline_skills: bool = True,
 ) -> str:
@@ -76,10 +76,10 @@ async def build_brief(
         "",
         "## The issue",
         fence(f"issue {issue.key}", issue.description.strip() or "(no description)"),
-    ]
-    if issue.parent_key:
+    ] if issue else ["# Coding request", f"Project: {defuse(project.name)} ({project.key})."]
+    if issue and issue.parent_key:
         parts.append(f"\nIt's part of {issue.parent_key}.")
-    if issue.depends_on:
+    if issue and issue.depends_on:
         parts.append(f"It builds on {', '.join(issue.depends_on)}.")
     if earlier:
         parts += ["", "## Earlier in this session",
@@ -90,13 +90,14 @@ async def build_brief(
     if note and note.strip():
         heading = "## What to do in this turn" if earlier else "## From the person who asked"
         parts += ["", heading, fence("request", note.strip())]
-    documents = await _documents(session, project, issue.key)
+    documents = await _documents(session, project, issue.key) if issue else []
     if documents:
         parts += ["", "## Related documents (from the project's knowledge)"]
         for path, content in documents:
             clipped = content if len(content) <= DOCUMENT_CHARS else content[:DOCUMENT_CHARS] + "\n…(cut)"
             parts.append(fence(path, clipped.strip()))
-    wiki = await RepoKnowledgeService(session, None).relevant(project, f"{issue.title}\n{issue.description}")
+    topic = f"{issue.title}\n{issue.description}" if issue else note or ""
+    wiki = await RepoKnowledgeService(session, None).relevant(project, topic)
     if wiki:
         parts += ["", "## How this repository works (from its wiki)",
                   "Each claim cites its source as `path:line`; check the code when it matters, and where a "
@@ -112,7 +113,7 @@ async def build_brief(
     # What the work is about: the issue, the request, and for a follow-up the files earlier turns changed
     # (their "(changed: …)" line; not their prose, which repeats the definition of done's words).
     touched = [line for _, summary in earlier or [] for line in summary.splitlines() if line.startswith("(changed: ")]
-    work = "\n".join((issue.title, issue.description, note or "", *touched))
+    work = "\n".join((topic, note or "", *touched))
     parts += await _standards(session, project, work, inline_skills=inline_skills)
     # Kai's contract comes last, under its own heading: the engines that take a system profile get it there
     # (`split_contract`), the rest read it here.

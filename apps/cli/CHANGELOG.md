@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- New local Code sessions keep the same worktree after runner restart. Follow-ups preserve unpublished files and stop if they cannot safely reuse the checkout.
+
+- Local coding runners check the starting commit admitted for a repository-first Code session before creating its worktree.
+
 ## [0.3.0] - 2026-11-21
 
 ### Changed
