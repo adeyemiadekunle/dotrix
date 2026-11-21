@@ -58,7 +58,7 @@ the audit nor the other plans.
 | [043](043-codes-show-plans-tasks-and-skills.md) | dotrix codes show prints a turn's plan, its parallel tasks, and the skills it used | P3 | S | 042 (shares codes.py) | DONE |
 | [044](044-cli-chat-plans-and-building-a-version.md) | dotrix chat lists the conversation's saved plans and builds the version you pick | P2 | S | — | DONE |
 | [045](045-runner-survives-network-blips.md) | dotrix runner keeps running through a brief network or server outage | P1 | S | — | DONE |
-| [046](046-coding-workspaces.md) | Cloud and local coding workspaces | P1 | L | — | Repo-first sessions and managed local worktree reuse implemented |
+| [046](046-coding-workspaces.md) | Cloud and local coding workspaces | P1 | L | — | Repo-first sessions, local worktree reuse, snapshot restore and cleanup implemented |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
