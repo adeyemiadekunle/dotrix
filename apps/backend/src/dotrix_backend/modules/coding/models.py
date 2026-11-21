@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -110,8 +111,11 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     __tablename__ = "coding_runs"
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    issue_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
     issue_key: Mapped[str] = mapped_column(String(24))
+    task_title: Mapped[str | None] = mapped_column(String(200))
+    source_repo_id: Mapped[int | None] = mapped_column(BigInteger)
+    source_sha: Mapped[str | None] = mapped_column(String(40))
     # A session is a run and its follow-ups (turns), on one branch and one PR: the first turn's id.
     session_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     turn: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -234,7 +238,7 @@ class CodingSession(WorkspaceScopedMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    issue_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
     agent: Mapped[CodingAgent] = mapped_column(str_enum(CodingAgent, 16))
     state: Mapped[CodingSessionState] = mapped_column(str_enum(CodingSessionState, 16), default=CodingSessionState.IDLE)
     claude_session: Mapped[uuid.UUID] = mapped_column(Uuid)  # Claude Code's --session-id / --resume

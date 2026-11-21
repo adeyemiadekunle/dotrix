@@ -74,6 +74,7 @@ from .schemas import (
     CodingSessionRead,
     CodingSessionUpdate,
     CodingToolOption,
+    StandaloneCodingCreate,
 )
 from .tools import choose_agent, engine_for, kai_models, model_for, models_for, run_key, tool_for
 
@@ -138,19 +139,20 @@ class CodingService:
         self.secrets = secrets or Secrets.from_settings(settings)
         self.github = github or GitHubAppClient(settings)
 
-    async def _require_base(self, project: Project) -> None:
+    async def _require_base(self, project: Project, branch: str | None = None) -> str:
         try:
-            ready = await ConnectorService(self.session, self.github).readiness(project)
+            ready = await ConnectorService(self.session, self.github).readiness(project, branch=branch)
         except DomainError as exc:
             raise CodingUnavailable(f"Couldn't verify the repository's default branch: {exc.detail}. "
                                     "Check GitHub App access and try again before starting Kai.") from exc
         if not ready.ready:
             raise CodingUnavailable(ready.reason or "Check the connected repository before starting Kai")
         repo = await self._repo(project)
-        assert repo is not None and ready.full_name and ready.default_branch
+        assert repo is not None and ready.full_name and ready.default_branch and ready.commit_sha
         # Snapshot the current name and default branch into the new run, including a
         # default-branch change made since this repository was connected.
         repo.full_name, repo.default_branch = ready.full_name, ready.default_branch
+        return ready.commit_sha
 
     async def _keys(self, project: Project, user_id: uuid.UUID | None) -> dict[str, str]:
         keys = await run_keys(self.session, self.secrets, project.workspace_id, user_id)
@@ -305,6 +307,22 @@ class CodingService:
         await self._attach_plan(access, run, plan_id)
         return await self._settle(access, run)
 
+    async def start_standalone(self, access: ProjectAccess, data: StandaloneCodingCreate) -> CodingRunRead:
+        if data.work_mode == "plan" and data.location is CodingLocation.LOCAL:
+            raise Unprocessable("Plan mode requires a platform sandbox with read-only enforcement")
+        await ProjectRepository(self.session).get(access.project.workspace_id, access.project.id, for_update=True)
+        await self._require_location(access.project, access.member.user_id, data.location)
+        source_sha = await self._require_base(access.project, data.base_branch)
+        note = data.note.strip()
+        run = await self._create(
+            access.project, access.member, None, note, CodingOrigin.START,
+            approval=data.approval_mode, location=data.location, requested_agent=data.agent,
+            requested_model=data.model, task_title=" ".join(note.splitlines()[0].split())[:200],
+            base_branch=data.base_branch, source_sha=source_sha,
+        )
+        run.work_mode = data.work_mode
+        return await self._settle(access, run)
+
     async def start_for_assignment(self, access: ProjectAccess, key: str) -> CodingRunRead | None:
         """An issue was just assigned to a coding tool: start a session in the background (waiting for
         an approval as always), when coding is available and the person may instruct the coding agent.
@@ -331,7 +349,7 @@ class CodingService:
         )
         if data.work_mode == "plan" and location is CodingLocation.LOCAL:
             raise Unprocessable("Plan mode requires a platform sandbox with read-only enforcement")
-        turns, issue, with_branch, earlier = await self._next_turn(access, session_id, location=location)
+        turns, issue, with_branch, earlier, source_sha = await self._next_turn(access, session_id, location=location)
         thread_id = turns[-1].thread_id
         if thread_id:
             await self.session.scalar(select(Project).where(Project.workspace_id == access.member.workspace_id,
@@ -354,6 +372,8 @@ class CodingService:
             session_id=session_id, turn=turns[-1].turn + 1, earlier=earlier, carry=with_branch,
             approval=data.approval_mode, location=location, selection=selection,
             session_environment=self._session_environment(turns),
+            task_title=turns[0].task_title, base_branch=turns[0].base_branch if issue is None else None,
+            source_sha=source_sha,
         )
         run.work_mode = data.work_mode
         later: list[int] = []  # step by step: the plan's other tasks, queued as turns of their own
@@ -400,7 +420,7 @@ class CodingService:
         if target.pr_state in (PrState.MERGED, PrState.CLOSED):
             raise Conflict("Its PR is merged or closed: revert it on GitHub")
         # Wherever the session codes, a revert is a publish-only pass on the platform.
-        turns, issue, with_branch, earlier = await self._next_turn(access, target.session_id,
+        turns, issue, with_branch, earlier, _ = await self._next_turn(access, target.session_id,
                                                                    location=CodingLocation.CLOUD, publish_only=True)
         if any(t.revert_of == target.id and t.status is CodingRunStatus.PR_OPENED for t in turns):
             raise Conflict(f"Turn {target.turn} is already reverted")
@@ -410,7 +430,7 @@ class CodingService:
             access.project, access.member, issue, f"Revert turn {target.turn} ({target.commit_sha[:7]})",
             CodingOrigin.FOLLOW_UP, session_id=target.session_id, turn=turns[-1].turn + 1, earlier=earlier,
             carry=with_branch, approval=data.approval_mode, location=CodingLocation.CLOUD, agent=target.agent,
-            session_environment=self._session_environment(turns),
+            session_environment=self._session_environment(turns), task_title=turns[0].task_title,
         )
         run.revert_of = target.id
         return await self._settle(access, run)
@@ -433,7 +453,7 @@ class CodingService:
 
     async def _next_turn(
         self, access: ProjectAccess, session_id: uuid.UUID, *, location: CodingLocation, publish_only: bool = False,
-    ) -> tuple[list[CodingRun], IssueRead, CodingRun | None, list[tuple[int, str]]]:
+    ) -> tuple[list[CodingRun], IssueRead | None, CodingRun | None, list[tuple[int, str]], str | None]:
         """What a new turn in a session builds on: its turns, its issue, the branch and PR it carries
         on (None: a new one from the default branch), and what the earlier turns did."""
         # Same lock as a first start, so the turns read next are current and the new turn's number is free.
@@ -443,19 +463,28 @@ class CodingService:
             raise Forbidden("Only whoever started this session can continue it")
         if any(t.status in ACTIVE for t in turns):
             raise CodingBusy("This session has a turn waiting or working; follow up once it's done")
-        issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, location=location,
-                                    publish_only=publish_only)
+        issue = None
+        if turns[0].issue_id is not None:
+            issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, location=location,
+                                        publish_only=publish_only)
+        else:
+            await self._require_location(access.project, access.member.user_id, location, publish_only=publish_only)
         with_branch = next((t for t in reversed(turns) if t.branch and t.pr_number), None)
         if with_branch is not None and with_branch.pr_state in (PrState.MERGED, PrState.CLOSED):
             with_branch = None  # its PR is merged or closed: this turn starts a new branch and PR from the default branch
+        source_sha = None
         if with_branch is None:
-            await self._require_base(access.project)
+            checked_sha = await self._require_base(access.project, turns[0].base_branch if issue is None else None)
+            if issue is None:
+                source_sha = checked_sha
         repo = await self._repo(access.project)
-        if repo is None or repo.full_name.casefold() != turns[0].repo_full_name.casefold():
+        first = turns[0]
+        if repo is None or (repo.github_repo_id != first.source_repo_id if first.source_repo_id is not None
+                            else repo.full_name.casefold() != first.repo_full_name.casefold()):
             raise CodingUnavailable("The project's connected repository changed; start a new coding session")
         earlier = [(t.turn, _earlier(t)) for t in turns
                    if t.status not in (CodingRunStatus.REJECTED, CodingRunStatus.STOPPED) or t.summary]
-        return turns, issue, with_branch, earlier
+        return turns, issue, with_branch, earlier, source_sha
 
     async def _settle(self, access: ProjectAccess, run: CodingRun) -> CodingRunRead:
         """Commit a new turn: it waits for an approval, or starts at once under the person's mode."""
@@ -471,10 +500,9 @@ class CodingService:
         await self.session.refresh(run)
         return self._read(run, access)
 
-    async def _codable(
-        self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False,
-        location: CodingLocation = CodingLocation.CLOUD, publish_only: bool = False,
-    ) -> IssueRead:
+    async def _require_location(
+        self, project: Project, user_id: uuid.UUID, location: CodingLocation, *, publish_only: bool = False,
+    ) -> None:
         if publish_only:  # a revert: the platform pushes it, no coding tool runs anywhere
             if why := await self._publishable(project):
                 raise CodingUnavailable(why)
@@ -486,6 +514,11 @@ class CodingService:
             available = await self.availability(project, user_id)
             if not available.available or available.agent is None:
                 raise CodingUnavailable(available.reason or "Coding runs aren't available")
+    async def _codable(
+        self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False,
+        location: CodingLocation = CodingLocation.CLOUD, publish_only: bool = False,
+    ) -> IssueRead:
+        await self._require_location(project, user_id, location, publish_only=publish_only)
         # One start at a time per project: the busy check below and the insert that follows it
         # can't interleave with another request's.
         await ProjectRepository(self.session).get(project.workspace_id, project.id, for_update=True)
@@ -502,13 +535,14 @@ class CodingService:
         return issue
 
     async def _create(
-        self, project: Project, member: Membership, issue: IssueRead, note: str | None, origin: CodingOrigin, *,
+        self, project: Project, member: Membership, issue: IssueRead | None, note: str | None, origin: CodingOrigin, *,
         session_id: uuid.UUID | None = None, turn: int = 1, earlier: list[tuple[int, str]] | None = None,
         carry: CodingRun | None = None, approval: ApprovalMode | None = None,
         location: CodingLocation = CodingLocation.CLOUD, agent: CodingAgent | None = None,
         requested_agent: CodingAgent | None = None, requested_model: str | None = None,
         selection: tuple[CodingAgent, str | None] | None = None,
         session_environment: tuple[dict | None, str | None] | None = None,
+        task_title: str | None = None, base_branch: str | None = None, source_sha: str | None = None,
     ) -> CodingRun:
         model: str | None = None
         if agent is not None:  # a revert: the session's engine, on record only (nothing runs it)
@@ -528,12 +562,14 @@ class CodingService:
         run_id = uuid7()
         run = CodingRun(
             id=run_id, session_id=session_id or run_id,  # a new session is named after its first turn
-            workspace_id=project.workspace_id, project_id=project.id, issue_id=issue.id, issue_key=issue.key,
+            workspace_id=project.workspace_id, project_id=project.id,
+            issue_id=issue.id if issue else None, issue_key=issue.key if issue else "",
+            task_title=task_title, source_sha=source_sha, source_repo_id=repo.github_repo_id if issue is None else None,
             turn=turn, origin=origin, agent=agent, model=model, location=location,
             status=CodingRunStatus.AWAITING_APPROVAL,
             brief=await build_brief(self.session, project, issue, note, earlier, user_id=member.user_id,
                                     inline_skills=location is CodingLocation.LOCAL),
-            note=note, repo_full_name=repo.full_name, base_branch=repo.default_branch,
+            note=note, repo_full_name=repo.full_name, base_branch=base_branch or repo.default_branch,
             skill_snapshot=pinned_skills,
             requested_by_id=member.user_id, created_at=datetime.now(UTC),
             # The mode this turn was asked in, as far as the workspace and the person allow.
@@ -572,7 +608,7 @@ class CodingService:
         self.session.add(run)
         await self.session.flush()
         AuditLog(self.session).record(
-            workspace_id=project.workspace_id, project_id=project.id, action="coding.requested", target=run.issue_key,
+            workspace_id=project.workspace_id, project_id=project.id, action="coding.requested", target=run.issue_key or str(run.session_id),
             actor_type=AuthorType.USER, actor_user_id=member.user_id, instructed_by_id=member.user_id,
             details={"run_id": str(run.id), "session_id": str(run.session_id), "turn": turn,
                      "origin": origin.value, "agent": agent.value},
@@ -580,7 +616,8 @@ class CodingService:
         if goes_through(ApprovalMode(run.approval_mode)):
             return run  # it starts at once: nobody waits on it
         await Notifier(self.session).coding_waiting(
-            project, run.id, issue.id, f"Coding {issue.key}: {issue.title}", run.created_at, agent.value,
+            project, run.id, run.issue_id, f"Coding {issue.key}: {issue.title}" if issue else f"Coding: {task_title}",
+            run.created_at, agent.value,
             requester_id=member.user_id,
         )
         return run
@@ -595,9 +632,9 @@ class CodingService:
         run.decided_by_id, run.decided_at = access.member.user_id, datetime.now(UTC)
         run.decision_reason = data.reason
         if run.requested_by_id and run.requested_by_id != access.member.user_id:
-            title = await self.session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.issue_key
+            title = await self.session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.task_title or run.issue_key
             Notifier(self.session).decided(
-                access.project, run.requested_by_id, None, f"Coding {run.issue_key}: {title}", run.decided_at,
+                access.project, run.requested_by_id, None, f"Coding {run.issue_key}: {title}" if run.issue_key else f"Coding: {title}", run.decided_at,
                 approved=int(data.decision == "approve"), rejected=int(data.decision == "reject"), reason=data.reason,
                 actor_user_id=access.member.user_id, coding_run_id=run.id,
             )
@@ -617,9 +654,9 @@ class CodingService:
         reject them (discarded: nothing reached GitHub)."""
         now = datetime.now(UTC)
         if run.requested_by_id and run.requested_by_id != access.member.user_id:
-            title = await self.session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.issue_key
+            title = await self.session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.task_title or run.issue_key
             Notifier(self.session).decided(
-                access.project, run.requested_by_id, None, f"Changes for {run.issue_key}: {title}", now,
+                access.project, run.requested_by_id, None, f"Changes for {run.issue_key}: {title}" if run.issue_key else f"Changes for {title}", now,
                 approved=int(data.decision == "approve"), rejected=int(data.decision == "reject"), reason=data.reason,
                 actor_user_id=access.member.user_id, coding_run_id=run.id,
             )
@@ -657,15 +694,16 @@ class CodingService:
             await self._selection(access.project, run.requested_by_id, run.location,
                                   agent=run.agent, model=run.model, fixed=True)
         run.status = CodingRunStatus.QUEUED
-        # The issue is the coding tool's now (its own rules: it may move it to review, never done).
-        issue = await IssueService(self.session).get(access.project, run.issue_key)
-        change = IssueUpdate(assignee_agent=run.agent.assignee, assignee_user_id=None,
-                             note=f"Coding run approved: {CODING_AGENT_NAME} is working on it")
-        if issue.status is not IssueStatus.IN_PROGRESS:
-            change.status = IssueStatus.IN_PROGRESS
-        await IssueService(self.session).update(
-            access.project, run.issue_key, IssueActor(access.member, coding_instructed=True), change, commit=False,
-        )
+        if run.issue_id is not None:
+            # The issue is the coding tool's now (its own rules: it may move it to review, never done).
+            issue = await IssueService(self.session).get(access.project, run.issue_key)
+            change = IssueUpdate(assignee_agent=run.agent.assignee, assignee_user_id=None,
+                                 note=f"Coding run approved: {CODING_AGENT_NAME} is working on it")
+            if issue.status is not IssueStatus.IN_PROGRESS:
+                change.status = IssueStatus.IN_PROGRESS
+            await IssueService(self.session).update(
+                access.project, run.issue_key, IssueActor(access.member, coding_instructed=True), change, commit=False,
+            )
         self._audit(access.project, access, "coding.approved", run)
         return self._dispatch(self.session, run)
 
@@ -878,7 +916,7 @@ class CodingService:
         rows = (await self.session.execute(
             select(CodingRun, Project.key, Project.name, Issue.title)
             .join(Project, Project.id == CodingRun.project_id)
-            .join(Issue, Issue.id == CodingRun.issue_id)
+            .outerjoin(Issue, Issue.id == CodingRun.issue_id)
             .where(CodingRun.workspace_id == member.workspace_id, Project.workspace_id == member.workspace_id,
                    visible_to(member.user_id, member.role),
                    CodingRun.session_id.in_(select(CodingRun.session_id).where(
@@ -897,7 +935,7 @@ class CodingService:
             if found is None:
                 sessions[run.session_id] = CodingSessionRead(
                     session_id=run.session_id, project_id=run.project_id, project_key=project_key,
-                    project_name=project_name, issue_key=run.issue_key, issue_title=issue_title, agent=run.agent,
+                    project_name=project_name, issue_key=run.issue_key, issue_title=issue_title or run.task_title or run.issue_key, agent=run.agent,
                     status=run.status, turns=run.turn, branch=run.branch, pr_number=run.pr_number,
                     pr_url=run.pr_url, pr_state=run.pr_state, started_at=run.created_at, location=run.location,
                     updated_at=run.finished_at or run.started_at or run.created_at,
@@ -1001,7 +1039,7 @@ class CodingService:
 
     def _audit(self, project: Project, access: ProjectAccess, action: str, run: CodingRun) -> None:
         AuditLog(self.session).record(
-            workspace_id=project.workspace_id, project_id=project.id, action=action, target=run.issue_key,
+            workspace_id=project.workspace_id, project_id=project.id, action=action, target=run.issue_key or str(run.session_id),
             actor_type=AuthorType.USER, actor_user_id=access.member.user_id,
             instructed_by_id=run.requested_by_id, approved_by_id=run.decided_by_id,
             details={"run_id": str(run.id), "agent": run.agent.value, "reason": run.decision_reason,

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Local coding runners check the starting commit admitted for a repository-first Code session before creating its worktree.
+
 ## [0.3.0] - 2026-11-21
 
 ### Changed

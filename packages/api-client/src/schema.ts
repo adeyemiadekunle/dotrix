@@ -4403,6 +4403,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Standalone Coding
+         * @description Start a coding session on the project's connected repository from a prompt.
+         */
+        post: operations["start_standalone_coding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs": {
         parameters: {
             query?: never;
@@ -7035,6 +7055,11 @@ export interface components {
             repo_full_name: string;
             /** Base Branch */
             base_branch: string;
+            /**
+             * Source Sha
+             * @description Admitted starting commit for a standalone turn
+             */
+            source_sha?: string | null;
             /**
              * Branch
              * @description The session's branch to build on (a follow-up), else the base branch
@@ -11407,6 +11432,39 @@ export interface components {
              * @enum {string}
              */
             why: "changed" | "removed" | "unread";
+        };
+        /** StandaloneCodingCreate */
+        StandaloneCodingCreate: {
+            /**
+             * Work Mode
+             * @default build
+             * @enum {string}
+             */
+            work_mode: "plan" | "build";
+            /**
+             * Note
+             * @description What Kai should do
+             */
+            note: string;
+            /** @description `manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes */
+            approval_mode?: components["schemas"]["ApprovalMode"] | null;
+            /**
+             * @description Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through `dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told.
+             * @default cloud
+             */
+            location: components["schemas"]["CodingLocation"];
+            /** @description The engine for this session; otherwise the one for its model (your preferred engine when it can run it, else the model's provider's own) */
+            agent?: components["schemas"]["CodingAgent"] | null;
+            /**
+             * Model
+             * @description The provider:model to code on; otherwise your default model
+             */
+            model?: string | null;
+            /**
+             * Base Branch
+             * @description Existing GitHub branch; defaults to the repository's default
+             */
+            base_branch?: string | null;
         };
         /** StorageLimitUpdate */
         StorageLimitUpdate: {
@@ -26036,6 +26094,78 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CodingRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingRunRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    start_standalone_coding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StandaloneCodingCreate"];
             };
         };
         responses: {

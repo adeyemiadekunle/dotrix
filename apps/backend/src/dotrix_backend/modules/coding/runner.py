@@ -428,7 +428,8 @@ class CodingWorker:
             if found is None:
                 raise RunFailed("The project's repository was disconnected")
             repo, installation = found
-            if repo.full_name.casefold() != run.repo_full_name.casefold():
+            if (repo.github_repo_id != run.source_repo_id if run.source_repo_id is not None
+                    else repo.full_name.casefold() != run.repo_full_name.casefold()):
                 raise RunFailed("The project's connected repository changed after this turn was requested")
             if installation.suspended_at is not None:
                 raise RunFailed(f"The GitHub App is suspended on {installation.account_login}")
@@ -445,6 +446,7 @@ class CodingWorker:
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
+            source_sha = run.source_sha
             environment_image_id = run.environment_image_id
             environment = dict(run.environment_snapshot) if run.environment_snapshot else None
             execution_plan = run.execution_plan
@@ -503,6 +505,9 @@ class CodingWorker:
                             "start a new session from the issue") from exc
         await run_git(host, "checkout", "-q", "--detach", "FETCH_HEAD")
         base_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
+
+        if not publish_only and source_sha and not session_branch and base_sha != source_sha:
+            raise RunFailed("The starting branch changed after this turn was requested; start a new coding session")
 
         if not publish_only and not plan_mode and execution_plan:
             expected = execution_plan.get("execution") or {}
@@ -796,10 +801,11 @@ class CodingWorker:
                 raise _Stopped("Stopped before pushing")
             issue_key, run_short, turn = run.issue_key, run.id.hex[-6:], run.turn  # the id's random end: its start is a timestamp shared for hours
             title = await issue_title(session, run)
-        branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
+        branch = session_branch or f"dotrix/{issue_key.lower() or 'task'}-{_slug(title)}-{run_short}"
         if branch == ref.default_branch:
             raise RunFailed("Refusing to push to the default branch")
-        heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
+        pull_title = f"{issue_key}: {title}" if issue_key else title
+        heading = pull_title + (f" (turn {turn})" if turn > 1 else "")
         message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({CODING_AGENT_NAME})"
         await run_git(host, "-c", f"user.name={CODING_AGENT_NAME} via dotrix", "-c", f"user.email={BOT_EMAIL}",
                       "commit", "-q", "--no-verify", "-m", message)
@@ -822,7 +828,7 @@ class CodingWorker:
             await self._ensure_running(run_id)
             pr = await self.app.create_pull_request(
                 ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
-                title=f"{issue_key}: {title}",
+                title=pull_title,
                 body=pr_body(summary, issue_key, run_id, files, guard.ci_sensitive(paths)),
                 token=token,
             )
@@ -1516,9 +1522,10 @@ async def ready_for_acceptance(
         else "Changes ready: waiting for a person to accept them"
     ))
     assert project is not None
+    label = f"{run.issue_key}: {title}" if run.issue_key else title
     await Notifier(session).coding_waiting(
         project, run.id, run.issue_id,
-        f"Changes ready for {run.issue_key}{' (they change files CI runs)' if named else ''}: {title}",
+        f"Changes ready for {label}" + (" (they change files CI runs)" if named else ""),
         datetime.now(UTC), run.agent.value, requester_id=run.requested_by_id,
     )
     AuditLog(session).record(
@@ -1554,7 +1561,7 @@ def turn_ended(session: AsyncSession, run: CodingRun, *, by: uuid.UUID | None = 
     (`by`), nor one still waiting on a person (that has its own notification). Not committed."""
     if run.requested_by_id is None or (by is not None and by == run.requested_by_id):
         return
-    key = run.issue_key
+    key = run.issue_key or run.task_title or "the coding session"
     if run.status is CodingRunStatus.PR_OPENED:
         title = f"{CODING_AGENT_NAME}'s turn on {key} is on PR #{run.pr_number}" if run.pr_number \
             else f"{CODING_AGENT_NAME} finished {key}"
@@ -1639,7 +1646,7 @@ def _slug(title: str) -> str:
 async def issue_title(session: AsyncSession, run: CodingRun) -> str:
     from dotrix_backend.modules.issues.models import Issue
 
-    return await session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.issue_key
+    return await session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.task_title or run.issue_key
 
 
 def pr_body(
@@ -1656,7 +1663,7 @@ def pr_body(
         (summary or "The agent left no summary.").strip()[:20_000],
         "",
         "---",
-        f"Written by {CODING_AGENT_NAME} in a dotrix coding run for {key} ({run_id}), asked for and approved on "
+        f"Written by {CODING_AGENT_NAME} in a dotrix coding run{f' for {key}' if key else ''} ({run_id}), asked for and approved on "
         f"dotrix. {len(files)} file{'s' if len(files) != 1 else ''} changed. A person reviews and merges it.",
     ])
 
@@ -1684,6 +1691,8 @@ def build_coding_worker(
 
 async def issue_to_review(session: AsyncSession, run: CodingRun, title: str, *, opened: bool) -> None:
     """Link the PR on the issue and move it to review, as the coding tool acting for whoever asked."""
+    if run.issue_id is None:
+        return
     project = await session.get(Project, run.project_id)
     member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
         if run.requested_by_id else None

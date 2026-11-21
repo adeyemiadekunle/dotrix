@@ -9,6 +9,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Added
+
+- Start a Code session from a connected repository and prompt, with an optional issue and a choice of starting branch. The coding area is now called Code.
+
 ### Fixed
 
 - Cloud coding stops when a queued turn's connected repository changes. Follow-up turns keep the base branch of the pull request they continue.

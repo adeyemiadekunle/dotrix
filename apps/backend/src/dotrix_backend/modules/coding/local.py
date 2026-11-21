@@ -156,7 +156,7 @@ class LocalRunners:
             run_id=run.id, project_id=run.project_id, session_id=run.session_id, lease_token=run.lease_token,
             lease_seconds=self.settings.coding_lease_seconds, issue_key=run.issue_key,
             title=await issue_title(self.session, run), turn=run.turn, brief=run.brief, tool=run.agent,
-            repo_full_name=run.repo_full_name, base_branch=run.base_branch, branch=run.branch,
+            repo_full_name=run.repo_full_name, base_branch=run.base_branch, branch=run.branch, source_sha=run.source_sha,
         )
         await self.session.commit()
         return CodingClaimed(run=claim)
@@ -169,6 +169,8 @@ class LocalRunners:
         now = datetime.now(UTC)
         runner.last_seen_at = now
         run.lease_expires_at = now + timedelta(seconds=self.settings.coding_lease_seconds)
+        if run.source_sha and data.base_sha and data.base_sha != run.source_sha:
+            raise Unprocessable("The reported commit does not match the admitted starting commit")
         if data.base_sha:
             run.base_sha = data.base_sha
         if data.worktree:
@@ -195,6 +197,8 @@ class LocalRunners:
             run.cost_usd = data.cost_usd if data.cost_usd is not None else cost_of(
                 run.model, input_tokens=run.input_tokens, output_tokens=run.output_tokens,
                 overrides=self.settings.model_prices)
+        if run.source_sha and data.base_sha and data.base_sha != run.source_sha:
+            raise Unprocessable("The reported commit does not match the admitted starting commit")
         if data.base_sha:
             run.base_sha = data.base_sha
         summary = (data.summary or "").strip() or None

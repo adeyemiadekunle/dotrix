@@ -208,7 +208,7 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     assert connected.status_code == 200, connected.text
 
     async def repo_url(ref) -> str:
-        assert ref.full_name == "kunemi/api" and ref.default_branch == "main"
+        assert ref.full_name == "kunemi/api"
         return str(origin)
 
     sandbox = ScriptedSandbox(claude)
@@ -2808,3 +2808,66 @@ async def test_a_session_keeps_the_profile_digest_its_engine_reported_while_the_
     assert await digest() is None
     await worker._record_profile(run_id, "a" * 64)
     assert await digest() == "a" * 64
+
+
+@pytest.mark.parametrize("location", ["cloud", "local"])
+async def test_repository_prompt_opens_a_reviewed_pr_without_an_issue(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session,
+    checkout: Path, tmp_path: Path, location: str,
+) -> None:
+    ada, _, ws, project, _, _ = coding
+    base = f"{ws}/projects/{project['id']}/coding"
+    _git(origin, "branch", "release")
+    edits = {"src/greeting.py": "GREETING = 'Hello'\n"}
+    runner = None
+    if location == "local":
+        runner = _local_runner(db_client, coding, checkout, tmp_path, _tool(edits))
+        await runner.register()
+    response = await db_client.post(f"{base}/sessions", headers=ada.headers, json={
+        "note": "Add a greeting", "base_branch": "release", "approval_mode": "manual", "location": location,
+    })
+    assert response.status_code == 201, response.text
+    waiting = response.json()
+    assert waiting["status"] == "awaiting_approval"
+    assert waiting["base_branch"] == "release"
+    run = await db_session.get(CodingRun, uuid.UUID(waiting["id"]))
+    assert run is not None and run.issue_id is None and run.source_sha == _git(origin, "rev-parse", "release")
+    claude.edits = edits
+    agent_script.say("Checked the change.")
+    approved = await db_client.post(f"{base}/runs/{waiting['id']}/decision", headers=ada.headers,
+                                    json={"decision": "approve"})
+    assert approved.status_code == 200, approved.text
+    if runner is not None:
+        assert approved.json()["status"] == "queued"
+        assert await runner.once()
+        approved = await db_client.get(f"{base}/runs/{waiting['id']}", headers=ada.headers)
+        assert _git(checkout, "status", "--porcelain") == "?? notes.txt"
+    assert approved.json()["status"] == "changes_ready", approved.text
+    assert not github.pulls
+    accepted = await db_client.post(f"{base}/runs/{waiting['id']}/decision", headers=ada.headers,
+                                    json={"decision": "approve"})
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["status"] == "pr_opened"
+    assert github.pulls[0]["base"] == "release"
+    assert github.pulls[0]["title"] == "Add a greeting"
+    follow = await db_client.post(f"{base}/sessions/{waiting['session_id']}/turns", headers=ada.headers,
+                                  json={"message": "Update the greeting", "approval_mode": "manual"})
+    assert follow.status_code == 201, follow.text
+    assert follow.json()["base_branch"] == "release"
+
+
+async def test_repository_prompt_rejects_a_starting_branch_that_moved_before_approval(
+    db_client: AsyncClient, coding, github, origin: Path,
+) -> None:
+    ada, _, ws, project, _, sandbox = coding
+    base = f"{ws}/projects/{project['id']}/coding"
+    response = await db_client.post(f"{base}/sessions", headers=ada.headers, json={
+        "note": "Add a greeting", "approval_mode": "manual",
+    })
+    assert response.status_code == 201, response.text
+    _git(origin, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+         "commit", "--allow-empty", "-qm", "Move the base")
+    done = await _approve(db_client, base.removesuffix("/coding"), response.json(), ada.headers)
+    assert done["status"] == "failed", done
+    assert "starting branch changed" in done["error"]
+    assert not github.pulls and sandbox.opened == 0

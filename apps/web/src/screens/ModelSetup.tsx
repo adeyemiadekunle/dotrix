@@ -31,7 +31,7 @@ export function ModelGate({ children }: { children: ReactNode }) {
       <>
         {access.data?.ready === false && (
           <div className="alert info" role="status" style={{ margin: 16 }}>
-            <span>Connect your personal model to use Chat and Codes. Your projects remain available.</span>
+            <span>Connect your personal model to use Chat and Code. Your projects remain available.</span>
             <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
               Connect a model
             </ActionButton>

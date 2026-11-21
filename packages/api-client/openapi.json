@@ -21654,6 +21654,115 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions": {
+      "post": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Start Standalone Coding",
+        "description": "Start a coding session on the project's connected repository from a prompt.",
+        "operationId": "start_standalone_coding",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandaloneCodingCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingRunRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/runs": {
       "get": {
         "tags": [
@@ -30421,6 +30530,18 @@
           "base_branch": {
             "type": "string",
             "title": "Base Branch"
+          },
+          "source_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha",
+            "description": "Admitted starting commit for a standalone turn"
           },
           "branch": {
             "anyOf": [
@@ -40663,6 +40784,87 @@
           "why"
         ],
         "title": "StaleSource"
+      },
+      "StandaloneCodingCreate": {
+        "properties": {
+          "work_mode": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "build"
+            ],
+            "title": "Work Mode",
+            "default": "build"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Note",
+            "description": "What Kai should do"
+          },
+          "approval_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`manual` (waits for an approver; the default) or `accept_edits` / `auto` (starts at once, approved by you), never above the workspace's cap, and Manual unless you may approve agent changes"
+          },
+          "location": {
+            "$ref": "#/components/schemas/CodingLocation",
+            "description": "Where it codes: `cloud` (a sandbox on the platform) or `local` (your own computer, through `dotrix runner` in a checkout of the project). A follow-up stays where its session is unless told.",
+            "default": "cloud"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodingAgent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The engine for this session; otherwise the one for its model (your preferred engine when it can run it, else the model's provider's own)"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "The provider:model to code on; otherwise your default model"
+          },
+          "base_branch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Branch",
+            "description": "Existing GitHub branch; defaults to the repository's default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "title": "StandaloneCodingCreate"
       },
       "StorageLimitUpdate": {
         "properties": {
