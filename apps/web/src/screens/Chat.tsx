@@ -1611,7 +1611,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
         <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
         <h2 className="ns-title">Start a session</h2>
         {!t && isLive() && (
-          <>
+          <div className="ns-source">
             <label>
               Repository
               <select
@@ -1637,7 +1637,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Repository default" maxLength={200} />
               </label>
             )}
-          </>
+          </div>
         )}
         {avail && (
           <ChoiceCard

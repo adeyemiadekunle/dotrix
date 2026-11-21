@@ -1,4 +1,4 @@
-"""`dotrix codes`: Kai's coding sessions on the platform, as the web app's Codes page shows them.
+"""`dotrix codes`: Kai's coding sessions on the platform, as the web app's Code page shows them.
 
 List them, show a session's turns (the request, what Kai did folded into one line, its summary,
 the files it changed, the pull request and its checks), follow up with another turn, decide a
@@ -243,7 +243,7 @@ def _echo_plan(turn: dict, *, steps: bool) -> None:
         typer.secho("\n  Open questions", bold=True)
         for item in plan["open_questions"]:
             typer.echo(f"    - {item}")
-    typer.secho(f'\n  Build it: dotrix codes follow {turn["issue_key"]} "…" --plan {turn["turn"]}', dim=True)
+    typer.secho(f'\n  Build it: dotrix codes follow {turn["issue_key"] or turn["session_id"]} "…" --plan {turn["turn"]}', dim=True)
 
 
 def _echo_tasks(tasks: list[dict]) -> None:
@@ -278,7 +278,7 @@ def _echo_details(turn: dict) -> None:
 
 
 def _hint(turn: dict) -> str:
-    key = turn["issue_key"]
+    key = turn["issue_key"] or turn["session_id"]
     status = turn.get("status")
     if status == "awaiting_approval" and turn.get("can_decide"):
         return f"dotrix codes approve {key}  or  dotrix codes reject {key}"
@@ -457,7 +457,7 @@ def codes_follow(
 
 
 def _started(cli: Any, codes: Codes, run: dict, wait: bool) -> None:
-    key = run["issue_key"]
+    key = run["issue_key"] or run["session_id"]
     if run["status"] == "awaiting_approval":
         typer.echo(f"{key}: turn {run['turn']} waits for an approval (dotrix codes approve {key}).")
         return
@@ -470,7 +470,7 @@ def _wait(cli: Any, codes: Codes, run: dict) -> None:
     try:
         run = cli._platform_call(lambda: wait_for(codes, run))
     except KeyboardInterrupt:
-        typer.secho(f"\nStopped waiting; Kai keeps working (dotrix codes stop {run['issue_key']} stops it).", dim=True)
+        typer.secho(f"\nStopped waiting; Kai keeps working (dotrix codes stop {run['issue_key'] or run['session_id']} stops it).", dim=True)
         return
     echo_turn(run)
 
