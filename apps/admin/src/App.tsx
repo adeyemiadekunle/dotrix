@@ -1,27 +1,24 @@
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { AppShell, SideNav, SideNavItem, TopNav } from "@dotrix/ui/astryx";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix admin: the console for whoever operates dotrix. It has its own accounts and sign-in
 // (/v1/admin/*, never the web app's session) and reads the whole platform's health and use, across
 // every workspace, without what people wrote.
 import {
   ArrowUpRightIcon,
-  ChartBarIcon,
+  ChartColumnIcon,
   CodeIcon,
   CpuIcon,
   EyeIcon,
-  EyeSlashIcon,
-  ListBulletsIcon,
-  LockKeyIcon,
+  EyeOffIcon,
+  ListIcon,
+  LockKeyholeIcon,
   FingerprintIcon,
   ScrollIcon,
-  SignOutIcon,
-  SquaresFourIcon,
-  UsersThreeIcon,
-  WarningCircleIcon,
-  WarningOctagonIcon,
-  type Icon,
-} from "@phosphor-icons/react";
+  LogOutIcon,
+  LayoutGridIcon,
+  UsersIcon,
+  CircleAlertIcon,
+  OctagonAlertIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 
@@ -42,15 +39,15 @@ const AdminsPage = lazy(() => pages().then((m) => ({ default: m.AdminsPage })));
 /** Where people who use dotrix sign in: the web app (`VITE_APP_URL`, set at build time). */
 const APP_URL = (import.meta.env.VITE_APP_URL as string | undefined) ?? "https://app.dotrix.cc";
 
-const PAGES: { id: string; label: string; icon: Icon; owner?: boolean }[] = [
-  { id: "overview", label: "Overview", icon: ChartBarIcon },
-  { id: "runs", label: "Runs", icon: ListBulletsIcon },
-  { id: "failures", label: "Failures", icon: WarningOctagonIcon },
+const PAGES: { id: string; label: string; icon: LucideIcon; owner?: boolean }[] = [
+  { id: "overview", label: "Overview", icon: ChartColumnIcon },
+  { id: "runs", label: "Runs", icon: ListIcon },
+  { id: "failures", label: "Failures", icon: OctagonAlertIcon },
   { id: "coding", label: "Coding", icon: CodeIcon },
   { id: "models", label: "Models", icon: CpuIcon },
-  { id: "workspaces", label: "Workspaces", icon: SquaresFourIcon },
+  { id: "workspaces", label: "Workspaces", icon: LayoutGridIcon },
   { id: "audit", label: "Audit log", icon: ScrollIcon },
-  { id: "admins", label: "Admins", icon: UsersThreeIcon, owner: true },
+  { id: "admins", label: "Admins", icon: UsersIcon, owner: true },
   { id: "trail", label: "Admin activity", icon: FingerprintIcon, owner: true },
 ];
 
@@ -125,32 +122,25 @@ function Login({ onAuth }: { onAuth: () => void }) {
         </div>
         {auth.isError && (
           <p className="ad-auth-error" role="alert">
-            <WarningCircleIcon size={16} weight="fill" />
+            <CircleAlertIcon size={16} />
             {auth.error.message}
           </p>
         )}
         {first && (
           <label>
             Name
-            <DesignInput className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
+            <input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
           </label>
         )}
         {first && boot.data?.token_required && (
           <label>
             Setup token
-            <DesignInput
-              className="input"
-              type="password"
-              value={f.token}
-              onChange={(e) => setF({ ...f, token: e.target.value })}
-              required
-              autoComplete="off"
-            />
+            <input className="input" type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} required autoComplete="off" />
           </label>
         )}
         <label>
           Email
-          <DesignInput
+          <input
             className="input"
             type="email"
             value={f.email}
@@ -163,7 +153,7 @@ function Login({ onAuth }: { onAuth: () => void }) {
         <label>
           {first ? "Password (at least 8 characters)" : "Password"}
           <span className="ad-pw">
-            <DesignInput
+            <input
               className="input"
               type={show ? "text" : "password"}
               value={f.password}
@@ -172,22 +162,16 @@ function Login({ onAuth }: { onAuth: () => void }) {
               minLength={first ? 8 : 1}
               autoComplete={first ? "new-password" : "current-password"}
             />
-            <ActionButton
-              type="button"
-              className="icon-btn"
-              onClick={() => setShow(!show)}
-              aria-label={show ? "Hide password" : "Show password"}
-              aria-pressed={show}
-            >
-              {show ? <EyeSlashIcon size={16} /> : <EyeIcon size={16} />}
-            </ActionButton>
+            <button type="button" className="icon-btn" onClick={() => setShow(!show)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show}>
+              {show ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+            </button>
           </span>
         </label>
-        <ActionButton type="submit" className="btn btn-primary" disabled={auth.isPending}>
+        <button type="submit" className="btn btn-primary" disabled={auth.isPending}>
           {auth.isPending ? "Signing in…" : first ? "Create and sign in" : "Sign in"}
-        </ActionButton>
+        </button>
         <p className="ad-auth-foot">
-          <LockKeyIcon size={13} />
+          <LockKeyholeIcon size={13} />
           Sessions last 12 hours.
         </p>
       </form>
@@ -228,13 +212,13 @@ function SecondFactor({ challenge, onAuth, onBack }: { challenge: string; onAuth
         </div>
         {verify.isError && (
           <p className="ad-auth-error" role="alert">
-            <WarningCircleIcon size={16} weight="fill" />
+            <CircleAlertIcon size={16} />
             {verify.error.message}
           </p>
         )}
         <label>
           {recovery ? "Recovery code" : "Code"}
-          <DesignInput
+          <input
             className="input"
             value={code}
             onChange={(e) => setCode(e.target.value)}
@@ -247,9 +231,9 @@ function SecondFactor({ challenge, onAuth, onBack }: { challenge: string; onAuth
             pattern={recovery ? undefined : "[0-9]{6}"}
           />
         </label>
-        <ActionButton type="submit" className="btn btn-primary" disabled={verify.isPending}>
+        <button type="submit" className="btn btn-primary" disabled={verify.isPending}>
           {verify.isPending ? "Checking…" : "Sign in"}
-        </ActionButton>
+        </button>
         <p className="ad-auth-foot">
           <button
             type="button"
@@ -303,22 +287,22 @@ function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => voi
                 <li key={c}>{c}</li>
               ))}
             </ul>
-            <ActionButton type="button" className="btn btn-primary" onClick={onDone}>
+            <button type="button" className="btn btn-primary" onClick={onDone}>
               I&apos;ve saved these
-            </ActionButton>
+            </button>
           </>
         ) : !start.data ? (
           <>
             <p className="ad-auth-sub">Admins sign in with a code from an authenticator app as well as a password. Set it up now to continue.</p>
             {start.isError && (
               <p className="ad-auth-error" role="alert">
-                <WarningCircleIcon size={16} weight="fill" />
+                <CircleAlertIcon size={16} />
                 {start.error.message}
               </p>
             )}
-            <ActionButton type="button" className="btn btn-primary" disabled={start.isPending} onClick={() => start.mutate()}>
+            <button type="button" className="btn btn-primary" disabled={start.isPending} onClick={() => start.mutate()}>
               {start.isPending ? "Starting…" : "Set up an authenticator app"}
-            </ActionButton>
+            </button>
           </>
         ) : (
           <>
@@ -331,13 +315,13 @@ function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => voi
             </p>
             {confirm.isError && (
               <p className="ad-auth-error" role="alert">
-                <WarningCircleIcon size={16} weight="fill" />
+                <CircleAlertIcon size={16} />
                 {confirm.error.message}
               </p>
             )}
             <label>
               Code from the app
-              <DesignInput
+              <input
                 className="input"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
@@ -349,9 +333,9 @@ function Enrol({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => voi
                 pattern="[0-9]{6}"
               />
             </label>
-            <ActionButton type="submit" className="btn btn-primary" disabled={confirm.isPending}>
+            <button type="submit" className="btn btn-primary" disabled={confirm.isPending}>
               {confirm.isPending ? "Checking…" : "Turn on two-factor sign-in"}
-            </ActionButton>
+            </button>
           </>
         )}
         {!confirm.data && (
@@ -427,17 +411,17 @@ function Accept({ token, onAuth }: { token: string; onAuth: () => void }) {
             </div>
             {accept.isError && (
               <p className="ad-auth-error" role="alert">
-                <WarningCircleIcon size={16} weight="fill" />
+                <CircleAlertIcon size={16} />
                 {accept.error.message}
               </p>
             )}
             <label>
               Name
-              <DesignInput className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
+              <input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required autoComplete="name" autoFocus />
             </label>
             <label>
               Password (at least 12 characters)
-              <DesignInput
+              <input
                 className="input"
                 type="password"
                 value={f.password}
@@ -449,7 +433,7 @@ function Accept({ token, onAuth }: { token: string; onAuth: () => void }) {
             </label>
             <label>
               Repeat the password
-              <DesignInput
+              <input
                 className="input"
                 type="password"
                 value={f.again}
@@ -459,9 +443,9 @@ function Accept({ token, onAuth }: { token: string; onAuth: () => void }) {
               />
             </label>
             {mismatch && <p className="ad-auth-error">The passwords don&apos;t match.</p>}
-            <ActionButton type="submit" className="btn btn-primary" disabled={accept.isPending || mismatch}>
+            <button type="submit" className="btn btn-primary" disabled={accept.isPending || mismatch}>
               {accept.isPending ? "Creating…" : "Create my account"}
-            </ActionButton>
+            </button>
           </>
         )}
       </form>
@@ -488,21 +472,21 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
         {change.isSuccess ? (
           <>
             <p className="ad-auth-sub">Done. Your other sessions were signed out.</p>
-            <ActionButton type="button" className="btn" onClick={onClose}>
+            <button type="button" className="btn" onClick={onClose}>
               Close
-            </ActionButton>
+            </button>
           </>
         ) : (
           <>
             {change.isError && (
               <p className="ad-auth-error" role="alert">
-                <WarningCircleIcon size={16} weight="fill" />
+                <CircleAlertIcon size={16} />
                 {change.error.message}
               </p>
             )}
             <label>
               Current password
-              <DesignInput
+              <input
                 className="input"
                 type="password"
                 value={f.current}
@@ -514,7 +498,7 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
             </label>
             <label>
               New password (at least 12 characters)
-              <DesignInput
+              <input
                 className="input"
                 type="password"
                 value={f.next}
@@ -526,7 +510,7 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
             </label>
             <label>
               Repeat the new password
-              <DesignInput
+              <input
                 className="input"
                 type="password"
                 value={f.again}
@@ -537,12 +521,12 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
             </label>
             {mismatch && <p className="ad-auth-error">The passwords don&apos;t match.</p>}
             <div className="ad-actions">
-              <ActionButton type="button" className="btn" onClick={onClose}>
+              <button type="button" className="btn" onClick={onClose}>
                 Cancel
-              </ActionButton>
-              <ActionButton type="submit" className="btn btn-primary" disabled={change.isPending || mismatch}>
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={change.isPending || mismatch}>
                 {change.isPending ? "Saving…" : "Change password"}
-              </ActionButton>
+              </button>
             </div>
           </>
         )}
@@ -599,54 +583,34 @@ export function App() {
   if (me.data.must_enrol) return <Enrol onDone={() => void qc.invalidateQueries({ queryKey: ["me"] })} onSignOut={signOut} />;
 
   return (
-    <AppShell
-      height="auto"
-      variant="elevated"
-      contentPadding={0}
-      className="dotrix-admin-shell"
-      topNav={
-        <TopNav
-          label="Admin navigation"
-          heading={
-            <span className="ad-brand">
-              <Mark />
-              dotrix admin
-            </span>
-          }
-        />
-      }
-      sideNav={
-        <SideNav
-          aria-label="Pages"
-          collapsible
-          header={
-            <span className="ad-brand">
-              <Mark />
-              dotrix <em>admin</em>
-            </span>
-          }
-          footer={
-            <div className="ad-side-foot">
-              <span className="ad-who">
-                <b>{me.data.name}</b>
-                <span>{me.data.email}</span>
-              </span>
-              <ActionButton className="icon-btn" onClick={() => setChanging(true)} aria-label="Change password">
-                <LockKeyIcon size={17} />
-              </ActionButton>
-              <ActionButton className="icon-btn" onClick={signOut} aria-label="Sign out">
-                <SignOutIcon size={17} />
-              </ActionButton>
-            </div>
-          }
-        >
+    <div className="ad-shell">
+      <aside className="ad-side">
+        <span className="ad-brand">
+          <Mark />
+          dotrix <em>admin</em>
+        </span>
+        <nav aria-label="Pages">
           {PAGES.filter((p) => !p.owner || me.data.role === "owner").map(({ id, label, icon: I }) => (
-            <SideNavItem key={id} label={label} href={`#/${id}`} isSelected={page === id} icon={<I size={18} />} />
+            <a key={id} href={`#/${id}`} className={page === id ? "on" : undefined} aria-current={page === id ? "page" : undefined}>
+              <I size={17} />
+              <span>{label}</span>
+            </a>
           ))}
-        </SideNav>
-      }
-    >
-      <div className="ad-main">
+        </nav>
+        <div className="ad-side-foot">
+          <span className="ad-who">
+            <b>{me.data.name}</b>
+            <span>{me.data.email}</span>
+          </span>
+          <button type="button" className="icon-btn" onClick={() => setChanging(true)} title="Change password" aria-label="Change password">
+            <LockKeyholeIcon size={17} />
+          </button>
+          <button type="button" className="icon-btn" onClick={signOut} title="Sign out" aria-label="Sign out">
+            <LogOutIcon size={17} />
+          </button>
+        </div>
+      </aside>
+      <main className="ad-main">
         <Suspense fallback={<p className="state">Loading…</p>}>
           {page === "overview" && <Overview go={go} />}
           {page === "runs" && <Runs />}
@@ -658,8 +622,8 @@ export function App() {
           {page === "trail" && me.data.role === "owner" && <TrailPage />}
           {page === "admins" && me.data.role === "owner" && <AdminsPage meId={me.data.id} />}
         </Suspense>
-      </div>
+      </main>
       {changing && <ChangePassword onClose={() => setChanging(false)} />}
-    </AppShell>
+    </div>
   );
 }

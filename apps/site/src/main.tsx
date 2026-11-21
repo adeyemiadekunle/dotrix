@@ -1,24 +1,12 @@
-import "@dotrix/ui/fonts.css";
+import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
-import "@dotrix/ui/globals.css";
 import "./styles.css";
 
 import { hydrateRoot } from "react-dom/client";
 
 import { App } from "./App";
-import { DesignProvider } from "@dotrix/ui/theme";
 
-hydrateRoot(
-  document.getElementById("root")!,
-  <DesignProvider>
-    <App />
-  </DesignProvider>,
-);
-
-const dark = matchMedia("(prefers-color-scheme: dark)");
-const applyTheme = () => document.documentElement.classList.toggle("dark", dark.matches);
-applyTheme();
-dark.addEventListener("change", applyTheme);
+hydrateRoot(document.getElementById("root")!, <App />);
 
 // Sections fade in as they come into view (CSS skips it for people who prefer less motion).
 const seen = new IntersectionObserver(

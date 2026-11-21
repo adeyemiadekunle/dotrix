@@ -20,7 +20,6 @@ import { useIssue } from "../../lib/issues";
 import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskList";
 import { CommentBox, CommentItem } from "../overlays/Drawer";
 import { Av, CommentText, Empty } from "../ui/helpers";
-import { TabList, Tab } from "@dotrix/ui/astryx";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -522,19 +521,24 @@ export function Inbox() {
               <Ic n="settings-2" s={15} />
             </ActionButton>
           </div>
-          <TabList role="tablist" className="inbox-tabs" aria-label="Inbox categories" value={tab} onChange={(value) => openTab(value as typeof tab)} size="sm">
+          <div className="tabs inbox-tabs" role="tablist" aria-label="Inbox categories">
             {TABS.map(([key, label]) => (
-              <Tab
+              <button
                 key={key}
                 id={`inbox-tab-${key}`}
-                value={key}
-                onFocus={() => openTab(key)}
-                label={label}
-                endContent={count(key) > 0 ? <span className="cnt">{count(key)}</span> : undefined}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
                 aria-controls="inbox-list"
-              />
+                className={`tab ${tab === key ? "on" : ""}`}
+                onFocus={() => openTab(key)}
+                onClick={() => openTab(key)}
+              >
+                {label}
+                {count(key) > 0 && <span className="cnt">{count(key)}</span>}
+              </button>
             ))}
-          </TabList>
+          </div>
           <div className="inbox-list" id="inbox-list" role="tabpanel" aria-labelledby={`inbox-tab-${tab}`}>
             {ns.length ? (
               Object.entries(buckets).map(([b, list]) => (

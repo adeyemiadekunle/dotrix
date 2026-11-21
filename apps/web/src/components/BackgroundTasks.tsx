@@ -1,4 +1,3 @@
-import { Code as InlineCode } from "@dotrix/ui/astryx";
 import { useState } from "react";
 
 import { useCodingEvents, type CodingRun } from "@/lib/coding";
@@ -84,7 +83,7 @@ export function BackgroundTasks({ scope, run }: { scope: Scope | undefined; run:
                     {(task.checks ?? []).map((check, index) => (
                       <details key={index} className="background-task-check">
                         <summary>
-                          <InlineCode>{String(check.command ?? "Verification")}</InlineCode> ·{" "}
+                          <code className="inline-code">{String(check.command ?? "Verification")}</code> ·{" "}
                           {check.exit_code === 0 ? "Passed" : check.exit_code == null ? "Unconfirmed" : `Failed (exit ${String(check.exit_code)})`}
                         </summary>
                         {check.expected != null && <p>Expected: {String(check.expected)}</p>}
@@ -154,7 +153,7 @@ export function KaiBackground({ run, kai }: { run: CodingRun; kai: string }) {
                   s={16}
                 />
                 <span className="background-task-title">
-                  {w.kind === "command" ? <InlineCode>{w.label}</InlineCode> : <b>{w.label}</b>}
+                  {w.kind === "command" ? <code className="inline-code">{w.label}</code> : <b>{w.label}</b>}
                   <span className="faint">
                     {w.kind === "worker" ? "Worker" : "Command"} · {WORK_STATES[w.state]}
                   </span>

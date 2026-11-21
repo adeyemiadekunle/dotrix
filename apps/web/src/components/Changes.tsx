@@ -1,5 +1,3 @@
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // An agent's proposed changes (a document diff, an issue's fields) and checkpoints (a plan to
 // continue, change, or stop), the same in Chat and the Inbox.
 import { useState } from "react";
@@ -60,9 +58,9 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
         </b>
         <span className="sp" />
         {!pending && <Decided ch={ch} />}
-        <ActionButton className="ibtn ibtn-xs" onClick={() => setOpen(!open)} aria-label={open ? "Hide details" : "Show details"} aria-expanded={open}>
+        <button className="ibtn ibtn-xs" onClick={() => setOpen(!open)} aria-label={open ? "Hide details" : "Show details"} aria-expanded={open}>
           <Ic n={open ? "chevron-up" : "chevron-down"} s={13} />
-        </ActionButton>
+        </button>
       </div>
       {open && (ch.diff || ch.fields) && (
         <div className="change-b">
@@ -89,7 +87,7 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
         <div className="change-f">
           {rejecting ? (
             <>
-              <DesignInput
+              <input
                 className="input"
                 style={{ height: 28, flex: 1 }}
                 placeholder="Why? The agent learns from it (optional)"
@@ -99,12 +97,12 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
                 autoFocus
                 aria-label="Reason"
               />
-              <ActionButton className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
+              <button className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
                 Cancel
-              </ActionButton>
-              <ActionButton className="btn btn-sm btn-danger" onClick={() => decideChange(ch.id, false, reason)}>
+              </button>
+              <button className="btn btn-sm btn-danger" onClick={() => decideChange(ch.id, false, reason)}>
                 Reject
-              </ActionButton>
+              </button>
             </>
           ) : (
             <>
@@ -112,22 +110,22 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
                 Waiting for your decision
               </span>
               <span className="sp" />
-              <ActionButton className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)}>
+              <button className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)}>
                 Reject
-              </ActionButton>
+              </button>
               {allow && (
-                <ActionButton
+                <button
                   className="btn btn-sm btn-ghost"
                   onClick={() => alwaysAllow(ch.id)}
                   title={`Approve, and let ${allow.agent} ${allow.what} without asking from now on`}
                 >
                   Always allow
-                </ActionButton>
+                </button>
               )}
-              <ActionButton className="btn btn-sm btn-primary" onClick={() => decideChange(ch.id, true)}>
+              <button className="btn btn-sm btn-primary" onClick={() => decideChange(ch.id, true)}>
                 <Ic n="check" s={13} />
                 Approve
-              </ActionButton>
+              </button>
             </>
           )}
         </div>
@@ -163,7 +161,7 @@ function Checkpoint({ ch }: { ch: ProposedChange }) {
         <div className="change-f">
           {steering ? (
             <>
-              <DesignInput
+              <input
                 className="input"
                 style={{ height: 28, flex: 1 }}
                 placeholder="What should change?"
@@ -173,12 +171,12 @@ function Checkpoint({ ch }: { ch: ProposedChange }) {
                 autoFocus
                 aria-label="Changes to the plan"
               />
-              <ActionButton className="btn btn-sm btn-ghost" onClick={() => setSteering(false)}>
+              <button className="btn btn-sm btn-ghost" onClick={() => setSteering(false)}>
                 Cancel
-              </ActionButton>
-              <ActionButton className="btn btn-sm btn-primary" disabled={!note.trim()} onClick={() => answerCheckpoint(ch.id, "steer", note)}>
+              </button>
+              <button className="btn btn-sm btn-primary" disabled={!note.trim()} onClick={() => answerCheckpoint(ch.id, "steer", note)}>
                 Update the plan
-              </ActionButton>
+              </button>
             </>
           ) : (
             <>
@@ -186,15 +184,15 @@ function Checkpoint({ ch }: { ch: ProposedChange }) {
                 The agent paused before the expensive part
               </span>
               <span className="sp" />
-              <ActionButton className="btn btn-sm btn-ghost" onClick={() => answerCheckpoint(ch.id, "stop")}>
+              <button className="btn btn-sm btn-ghost" onClick={() => answerCheckpoint(ch.id, "stop")}>
                 Stop
-              </ActionButton>
-              <ActionButton className="btn btn-sm btn-secondary" onClick={() => setSteering(true)}>
+              </button>
+              <button className="btn btn-sm btn-secondary" onClick={() => setSteering(true)}>
                 Change the plan
-              </ActionButton>
-              <ActionButton className="btn btn-sm btn-primary" onClick={() => answerCheckpoint(ch.id, "continue")}>
+              </button>
+              <button className="btn btn-sm btn-primary" onClick={() => answerCheckpoint(ch.id, "continue")}>
                 Continue
-              </ActionButton>
+              </button>
             </>
           )}
         </div>

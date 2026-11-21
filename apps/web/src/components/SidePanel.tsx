@@ -20,7 +20,6 @@ import { go, useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
 import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
-import { TabList, Tab } from "@dotrix/ui/astryx";
 import { toast } from "../ui/toast";
 import { desktopBrowser } from "../core/desktop";
 import { BrowserPane } from "./BrowserPane";
@@ -102,7 +101,7 @@ export function PanelFrame({
     );
   return (
     <aside className="side-panel" style={{ width }} aria-label={label}>
-      <Splitter dir="col" className="side-panel-split" label="Resize the panel" size={width} min={300} max={960} onResize={setWidth} reversed />
+      <Splitter dir="col" className="side-panel-split" label="Resize the panel" onDrag={(delta) => setWidth((w) => w - delta)} />
       {head}
       {children}
     </aside>
@@ -155,7 +154,7 @@ export function CodingPanes({
   }, []);
   return (
     <aside ref={column} className="side-panel panes" style={{ width }} aria-label="Session panes">
-      <Splitter dir="col" className="side-panel-split" label="Resize the panes" size={width} min={320} max={1100} onResize={setWidth} reversed />
+      <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setWidth((w) => w - delta)} />
       {shown.map((view) =>
         view === "browser" ? (
           <BrowserPane
@@ -514,26 +513,24 @@ function ReviewPanel({
           ))}
         </select>
       )}
-      <TabList
-        role="tablist"
-        className="work-panel-nav"
-        aria-label="Review details"
-        value={detailTab}
-        onChange={(value) => setTab(value as typeof detailTab)}
-        size="sm"
-      >
+      <div className="tabs work-panel-nav" role="tablist" aria-label="Review details">
         {(["summary", "findings", "evidence"] as const).map((value) => (
-          <Tab
+          <button
             key={value}
             id={`${id}-${value}-tab`}
-            value={value}
-            onFocus={() => setTab(value)}
-            label={value[0].toUpperCase() + value.slice(1)}
-            endContent={value === "findings" && findings.length ? String(findings.length) : undefined}
+            type="button"
+            role="tab"
+            aria-selected={detailTab === value}
             aria-controls={`${id}-panel`}
-          />
+            className={`tab ${detailTab === value ? "on" : ""}`}
+            onFocus={() => setTab(value)}
+            onClick={() => setTab(value)}
+          >
+            {value[0].toUpperCase() + value.slice(1)}
+            {value === "findings" && findings.length ? <span className="cnt">{findings.length}</span> : null}
+          </button>
         ))}
-      </TabList>
+      </div>
       <div className="review-panel-body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${detailTab}-tab`}>
         {failed && (
           <p className="muted">

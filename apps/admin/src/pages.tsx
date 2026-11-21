@@ -1,19 +1,16 @@
-import { Code as InlineCode } from "@dotrix/ui/astryx";
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // The console's pages: Overview (is it working), Runs, Failures, Coding, Workspaces, Audit log.
 // Everything is read-only, across every workspace, and never shows what people wrote.
 import {
-  CheckCircleIcon,
-  ClockCounterClockwiseIcon,
+  CircleCheckIcon,
+  HistoryIcon,
   DatabaseIcon,
-  DesktopTowerIcon,
-  GearSixIcon,
-  QueueIcon,
-  WarningCircleIcon,
-  WarningIcon,
-  XCircleIcon,
-} from "@phosphor-icons/react";
+  MonitorIcon,
+  SettingsIcon,
+  ListTodoIcon,
+  CircleAlertIcon,
+  TriangleAlertIcon,
+  CircleXIcon,
+} from "lucide-react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaginationState } from "@tanstack/react-table";
 import { useState, type ReactNode } from "react";
@@ -90,7 +87,7 @@ function checks(h: Health, now: number): Check[] {
   const dependencyCards: Check[] = h.dependencies.map((d) => ({
     id: `dep-${d.id}`,
     label: dependencyLabel[d.id] ?? d.id,
-    icon: <GearSixIcon size={18} />,
+    icon: <SettingsIcon size={18} />,
     tone: dependencyTone[d.state],
     value: d.state === "off" ? "Off" : d.state === "ok" ? "OK" : d.state === "degraded" ? "Degraded" : "Down",
     detail: d.state === "off" ? "not configured" : d.detail,
@@ -108,7 +105,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "emails-waiting",
       label: "Emails waiting",
-      icon: <QueueIcon size={18} />,
+      icon: <ListTodoIcon size={18} />,
       tone: emailTone,
       value: h.notification_emails_waiting || "None",
       detail: emailAge != null ? `oldest for ${duration(emailAge)}` : "notifications not yet emailed",
@@ -116,7 +113,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "automation-events",
       label: "Automation events waiting",
-      icon: <QueueIcon size={18} />,
+      icon: <ListTodoIcon size={18} />,
       tone: h.automation_events_waiting > 100 ? "warn" : "good",
       value: h.automation_events_waiting || "None",
       detail: "written, not yet handled",
@@ -124,7 +121,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "coding-slots",
       label: "Coding slots",
-      icon: <DesktopTowerIcon size={18} />,
+      icon: <MonitorIcon size={18} />,
       tone: slotsFull ? "warn" : "good",
       value: h.coding_slots == null ? `${h.coding_running_cloud} running` : `${h.coding_running_cloud} of ${h.coding_slots}`,
       detail: h.coding_slots == null ? "no limit set" : "cloud turns at once, per worker",
@@ -144,7 +141,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "queue",
       label: "Run queue",
-      icon: <QueueIcon size={18} />,
+      icon: <ListTodoIcon size={18} />,
       tone: queueTone,
       value: h.queue_pending ? `${h.queue_pending} waiting` : "Empty",
       detail: h.queue_oldest_seconds != null ? `oldest for ${duration(h.queue_oldest_seconds)}` : `${h.queue_discarded_24h} given up in 24h`,
@@ -152,7 +149,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "worker",
       label: "Workers",
-      icon: <GearSixIcon size={18} />,
+      icon: <SettingsIcon size={18} />,
       tone: workerTone,
       value: h.jobs === "worker" ? ago(h.worker_last_took_at, now) : h.jobs,
       detail: h.jobs === "worker" ? "last took a run" : "no worker queue in this deployment",
@@ -160,7 +157,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "stuck",
       label: "Stuck runs",
-      icon: <WarningIcon size={18} />,
+      icon: <TriangleAlertIcon size={18} />,
       tone: h.stuck.length ? "bad" : "good",
       value: h.stuck.length || "None",
       detail: "active, with a lapsed lease",
@@ -168,7 +165,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "recovery",
       label: "Needs recovery",
-      icon: <ClockCounterClockwiseIcon size={18} />,
+      icon: <HistoryIcon size={18} />,
       tone: h.recovery_required ? "warn" : "good",
       value: h.recovery_required || "None",
       detail: `coding turns · ${h.interrupted} chat runs interrupted`,
@@ -176,7 +173,7 @@ function checks(h: Health, now: number): Check[] {
     {
       id: "runners",
       label: "Runners",
-      icon: <DesktopTowerIcon size={18} />,
+      icon: <MonitorIcon size={18} />,
       tone: "muted",
       value: `${h.runners_online} of ${h.runners} online`,
       detail: `${h.sandboxes_warm} sandboxes warm · ${h.sandboxes_asleep} asleep`,
@@ -185,11 +182,11 @@ function checks(h: Health, now: number): Check[] {
 }
 
 const TONE_ICON: Record<Tone, ReactNode> = {
-  good: <CheckCircleIcon size={16} weight="fill" />,
-  warn: <WarningCircleIcon size={16} weight="fill" />,
-  bad: <XCircleIcon size={16} weight="fill" />,
-  info: <CheckCircleIcon size={16} weight="fill" />,
-  muted: <CheckCircleIcon size={16} />,
+  good: <CircleCheckIcon size={16} />,
+  warn: <CircleAlertIcon size={16} />,
+  bad: <CircleXIcon size={16} />,
+  info: <CircleCheckIcon size={16} />,
+  muted: <CircleCheckIcon size={16} />,
 };
 
 export function Overview({ go }: { go: (page: string) => void }) {
@@ -804,7 +801,7 @@ export function WorkspacesPage() {
   return (
     <>
       <PageHead title="Workspaces" sub="Workspaces by how much they used dotrix: runs, failures, tokens and coding cost. Click a heading to sort.">
-        <DesignInput
+        <input
           className="input"
           type="search"
           placeholder="Find a workspace"
@@ -888,14 +885,14 @@ export function AuditPage() {
   return (
     <>
       <PageHead title="Audit log" sub="What happened, by whom and in which workspace. Details stay in the workspace: they can carry what people wrote.">
-        <DesignInput
+        <input
           className="input mono"
           placeholder="Action starts with…"
           value={action}
           onChange={(e) => filter(setAction)(e.target.value.trim())}
           aria-label="Filter by action"
         />
-        <DesignInput
+        <input
           className="input mono"
           placeholder="Workspace slug"
           value={workspace}
@@ -908,15 +905,8 @@ export function AuditPage() {
           <option value="agent">Agents</option>
           <option value="system">System</option>
         </select>
-        <DesignInput
-          className="input"
-          type="date"
-          value={since}
-          max={until || undefined}
-          onChange={(e) => filter(setSince)(e.target.value)}
-          aria-label="From date"
-        />
-        <DesignInput
+        <input className="input" type="date" value={since} max={until || undefined} onChange={(e) => filter(setSince)(e.target.value)} aria-label="From date" />
+        <input
           className="input"
           type="date"
           value={until}
@@ -1010,7 +1000,7 @@ export function AdminsPage({ meId }: { meId: string }) {
             invite.mutate();
           }}
         >
-          <DesignInput
+          <input
             className="input"
             type="email"
             placeholder="Email address"
@@ -1023,9 +1013,9 @@ export function AdminsPage({ meId }: { meId: string }) {
             <option value="viewer">Viewer: reads only</option>
             <option value="owner">Owner: manages admins</option>
           </select>
-          <ActionButton type="submit" className="btn btn-primary" disabled={invite.isPending}>
+          <button type="submit" className="btn btn-primary" disabled={invite.isPending}>
             {invite.isPending ? "Inviting…" : "Send invite"}
-          </ActionButton>
+          </button>
         </form>
         {made && (
           <p className="ad-note" role="status">
@@ -1033,7 +1023,7 @@ export function AdminsPage({ meId }: { meId: string }) {
             {made.link_path && (
               <>
                 {" "}
-                <InlineCode className="mono">{`${location.origin}${made.link_path}`}</InlineCode>
+                <code className="mono">{`${location.origin}${made.link_path}`}</code>
               </>
             )}
           </p>
@@ -1227,7 +1217,7 @@ export function TrailPage() {
   return (
     <>
       <PageHead title="Admin activity" sub="Who signed in to this console, who failed to, and what changed on admin accounts. Never passwords or links.">
-        <DesignInput
+        <input
           className="input mono"
           placeholder="Action starts with…"
           value={action}

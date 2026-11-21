@@ -28,8 +28,6 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "design:audit": "node scripts/design/audit-astryx.mjs",
-    "design:benchmark": "node apps/web/scripts/design-benchmark.mjs",
     "check:boundaries": "python scripts/check_boundaries.py && node scripts/check-boundaries.mjs",
     "test:tooling": "python -m unittest discover -s scripts/tests -v && node --test scripts/tests/*.test.mjs",
     "ci:affected": "python scripts/affected.py",

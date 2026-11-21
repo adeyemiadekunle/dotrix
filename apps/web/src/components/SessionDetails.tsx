@@ -1,4 +1,3 @@
-import { MetadataList, MetadataListItem } from "@dotrix/ui/astryx";
 // A coding session's details, as Claude Code's session column shows them: where Kai works (cloud sandbox or
 // your computer, the repository and branch), what the turns used, what they made (files and screenshots), and
 // the pull request with its checks. A column beside the session on wide screens; a popover on narrow ones.
@@ -26,7 +25,7 @@ function Section({ title, children, aside }: { title: string; children: ReactNod
 }
 
 /** The model a session's turns use, as people say it: "Sonnet 5.5". */
-const sessionModel = (model: string | null | undefined) => (model ? modelName(model) : "Your default model");
+export const sessionModel = (model: string | null | undefined) => (model ? modelName(model) : "Your default model");
 export const modeName = (mode: string | null | undefined) => MODE[mode ?? ""] ?? "Manual";
 
 export function SessionDetails({
@@ -113,11 +112,17 @@ export function SessionDetails({
       </Section>
 
       <Section title="Usage">
-        <MetadataList columns="single">
-          <MetadataListItem label="Tokens">{num(tokens)}</MetadataListItem>
-          <MetadataListItem label="On your key">{cost ? `$${cost.toFixed(2)}` : "—"}</MetadataListItem>
-          <MetadataListItem label="Turns">{turns.length}</MetadataListItem>
-        </MetadataList>
+        <div className="sd-usage">
+          <span>
+            <b>{num(tokens)}</b> tokens
+          </span>
+          <span>
+            <b>{cost ? `$${cost.toFixed(2)}` : "—"}</b> on your key
+          </span>
+          <span>
+            <b>{turns.length}</b> turn{turns.length === 1 ? "" : "s"}
+          </span>
+        </div>
         <div className="sd-row faint">
           <Ic n="sparkles" s={15} />
           <span className="grow trunc">

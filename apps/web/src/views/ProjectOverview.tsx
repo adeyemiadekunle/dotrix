@@ -1,4 +1,3 @@
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // Project overview and activity. dotrix adds
 // "Ask in Chat" for a summary, and the agents' latest conversations about the project.
 
@@ -61,10 +60,10 @@ export function ProjectOverview({ p }: { p: Project }) {
                     {p.repo ? "Repository setup" : "Connect repository"}
                   </a>
                 )}
-                <ActionButton className="btn btn-sm btn-ghost" onClick={() => editProject(p.id)}>
+                <button className="btn btn-sm btn-ghost" onClick={() => editProject(p.id)}>
                   <Ic n="pencil" s={13} />
                   Edit
-                </ActionButton>
+                </button>
               </div>
             </div>
             <div className="panel-b" style={{ fontSize: 14, lineHeight: 1.6, color: "var(--text)" }}>
@@ -79,9 +78,9 @@ export function ProjectOverview({ p }: { p: Project }) {
                   Inventory the code, review cited explanations and add goals that code cannot establish. Confirm the baseline’s limits before planning
                   substantial changes.
                 </p>
-                <ActionButton className="btn btn-secondary" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=coverage" })}>
+                <button className="btn btn-secondary" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=coverage" })}>
                   Review repository baseline
-                </ActionButton>
+                </button>
               </div>
             </section>
           )}
@@ -135,9 +134,9 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-h">
               <h2>Coming up</h2>
               <div className="acts">
-                <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "list" })}>
+                <button className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "list" })}>
                   View list
-                </ActionButton>
+                </button>
               </div>
             </div>
             {soon.length ? (
@@ -212,10 +211,10 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-h">
               <h2>Ask the agents</h2>
               <div className="acts">
-                <ActionButton className="btn btn-sm btn-secondary" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
+                <button className="btn btn-sm btn-secondary" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
                   <Ic n="message-square" s={13} />
                   Ask in Chat
-                </ActionButton>
+                </button>
               </div>
             </div>
             <div className="panel-b">
@@ -274,9 +273,9 @@ export function ProjectOverview({ p }: { p: Project }) {
             <div className="panel-h">
               <h2>Recent activity</h2>
               <div className="acts">
-                <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "activity" })}>
+                <button className="btn btn-sm btn-ghost" onClick={() => go("project", { id: p.key, tab: "activity" })}>
                   View all
-                </ActionButton>
+                </button>
               </div>
             </div>
             <div className="panel-b feed">{acts.length ? acts.map((a) => <ActItem key={a.id} a={a} />) : <span className="faint">No activity yet</span>}</div>

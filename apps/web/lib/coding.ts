@@ -1,7 +1,7 @@
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { toast } from "@dotrix/ui/lib/toast";
+import { toast } from "../src/ui/toast";
 
 import { ApiError, api, ensureSession, errorMessage, unwrap } from "@/lib/api";
 import { issueQueriesOf, type Scope } from "@/lib/issues";
@@ -73,7 +73,7 @@ function useCodingMutation<T, R = CodingRun>(scope: Scope | undefined, issueKey:
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (arg: T) => fn(scope!, arg),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["coding-runs", scope?.projectId] });
       void queryClient.invalidateQueries({ queryKey: ["coding-sessions"] });
@@ -352,7 +352,7 @@ export function useSendCodingInput(scope: Scope | undefined, sessionId: string) 
         if (e instanceof ApiError && e.status === 409 && e.problem?.detail?.startsWith(NOT_WORKING)) return null;
         throw e;
       }),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: () => void client.invalidateQueries({ queryKey: inputsKey(scope, sessionId) }),
   });
 }
@@ -367,7 +367,7 @@ export function useCancelCodingInput(scope: Scope | undefined, sessionId: string
           params: { path: { ...sessionPath(scope!, sessionId), input_id: inputId } },
         }),
       ),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: () => void client.invalidateQueries({ queryKey: inputsKey(scope, sessionId) }),
   });
 }

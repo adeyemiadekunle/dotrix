@@ -1217,6 +1217,14 @@
   left: 4px;
   width: 2px;
 }
+/* The panes' edge sits on the panel's border: centre the hover line on it. */
+.side-panel-split::after {
+  left: 1px;
+  width: 3px;
+}
+body.resizing-col .splitter::after {
+  background: var(--acc);
+}
 .splitter.edge-r {
   right: -5px;
 }
@@ -2706,7 +2714,7 @@ section.side-panel-body[hidden] {
   background: var(--divider);
 }
 
-/* Composer controls use Astryx slots: options in plus, model immediately before Send/Stop. */
+/* Composer controls: options in plus, model immediately before Send/Stop. */
 .cmp-box {
   align-items: center;
   padding: 7px 7px 7px 8px;
@@ -3903,7 +3911,7 @@ textarea.onb2-input {
   outline-offset: 3px;
 }
 
-/* Responsive compositions share Astryx tokens; utility classes remain available for page layout. */
+/* Responsive compositions share the design tokens; utility classes remain available for page layout. */
 @layer components {
   .kn-mobile-nav,
   .set-section-picker {
@@ -3930,28 +3938,36 @@ textarea.onb2-input {
     text-align: left;
   }
   .cs-row-title {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    display: block;
     overflow: hidden;
-    overflow-wrap: anywhere;
-    white-space: normal;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     line-height: 1.4;
     font-weight: 500;
+  }
+  .cs-row-foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
   .cs-row-meta {
     display: flex;
     gap: 4px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
     font-size: 12px;
     color: var(--text-2);
+    white-space: nowrap;
   }
-  .cs-row-copy > .badge {
-    align-self: flex-start;
-    max-width: 100%;
-    white-space: normal;
-    height: auto;
-    min-height: 22px;
+  .cs-row-foot > .badge {
+    flex-shrink: 0;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cs-demo-title {
     min-width: 0;
@@ -4126,12 +4142,22 @@ textarea.onb2-input {
 .chat-main {
   min-width: 0;
 }
+.dotrix-chat-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.dotrix-chat-layout > .chat-scroll {
+  flex: 1;
+  min-height: 0;
+}
 .session-start-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  min-height: 48px;
+  height: 44px;
+  padding: 0 16px;
   flex-shrink: 0;
 }
 .session-start-header .chat-new-back {
@@ -4147,7 +4173,7 @@ textarea.onb2-input {
   }
 }
 
-/* Astryx's input/footer slots form a pill at rest and separate rows while editing. */
+/* The composer input and footer form a pill at rest and separate rows while editing. */
 /* Reserve the first editing row below, so focus changes cannot move a clicked conversation action. */
 .compact-composer > div {
   display: grid;
@@ -4220,6 +4246,12 @@ textarea.onb2-input {
 }
 .dotrix-composer-wrap {
   position: relative;
+}
+.dotrix-inline-picker .select {
+  width: auto;
+  height: 26px;
+  padding: 0 24px 0 8px;
+  font-size: 12px;
 }
 .compact-composer:not(:focus-within, .has-draft, :has([aria-expanded="true"])) [aria-hidden="true"]:not(svg) {
   overflow: hidden;

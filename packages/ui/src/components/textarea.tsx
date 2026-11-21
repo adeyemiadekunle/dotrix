@@ -1,45 +1,14 @@
-import { useState, type ComponentProps } from "react";
-import { TextArea } from "@astryxdesign/core/TextArea";
+import * as React from "react";
+import { cn } from "@dotrix/ui/lib/utils";
 
-export function Textarea({
-  className,
-  onChange,
-  disabled,
-  readOnly,
-  required,
-  autoFocus,
-  name,
-  autoCapitalize,
-  style,
-  value,
-  defaultValue,
-  ...props
-}: ComponentProps<"textarea">) {
-  const [draft, setDraft] = useState(String(defaultValue ?? ""));
+function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
-    <TextArea
+    <textarea
+      data-slot="textarea"
+      className={cn("input textarea flex field-sizing-content aria-invalid:border-destructive aria-invalid:shadow-[0_0_0_3px_var(--red-soft)]", className)}
       {...props}
-      data-dotrix-control
-      value={value === undefined ? draft : String(value)}
-      label={props["aria-label"] ?? props.placeholder ?? name ?? "Text"}
-      isLabelHidden
-      htmlName={name}
-      isDisabled={disabled}
-      isReadOnly={readOnly}
-      isRequired={required}
-      hasAutoFocus={autoFocus}
-      autoCapitalize={
-        autoCapitalize === "characters" ? "characters" : autoCapitalize === "words" ? "words" : autoCapitalize === "sentences" ? "sentences" : "none"
-      }
-      onChange={(next, event) => {
-        if (value === undefined) setDraft(next);
-        onChange?.(event);
-      }}
-      containerStyle={style}
-      controlClassName={className
-        ?.split(/\s+/)
-        .filter((c) => c !== "input" && c !== "textarea")
-        .join(" ")}
     />
   );
 }
+
+export { Textarea };

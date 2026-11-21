@@ -1,4 +1,3 @@
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // The agents panel (after Orbit's): who needs you, who is working and on what, and who is free,
 // each with a face and a "now" line; today's replies and tokens at the foot. It opens over the page
 // from the launcher at the bottom right (a chat button, with the faces of whoever needs you or is
@@ -63,7 +62,7 @@ function Row({ p }: { p: Presence }) {
         {p.approve && (
           <span className="ap-acts">
             {p.reject && (
-              <ActionButton
+              <button
                 className="btn btn-sm btn-secondary"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -71,9 +70,9 @@ function Row({ p }: { p: Presence }) {
                 }}
               >
                 Reject
-              </ActionButton>
+              </button>
             )}
-            <ActionButton
+            <button
               className="btn btn-sm btn-primary"
               onClick={(e) => {
                 e.stopPropagation();
@@ -81,8 +80,8 @@ function Row({ p }: { p: Presence }) {
               }}
             >
               Approve
-            </ActionButton>
-            <ActionButton className="btn btn-sm btn-ghost">Open</ActionButton>
+            </button>
+            <button className="btn btn-sm btn-ghost">Open</button>
           </span>
         )}
       </span>
@@ -122,7 +121,7 @@ const ORDER: Record<Presence["state"], number> = { needs: 0, blocked: 1, working
 
 /** The button at the bottom right: up to three faces (whoever needs you first, then whoever is
  * working, else the team's first), and how many wait on you. Escape closes the panel. */
-export function AgentsLauncher({ inline = false }: { inline?: boolean }) {
+export function AgentsLauncher() {
   const all = useTeam();
   const open = agentsShown();
   const waiting = all.filter((p) => p.state === "needs" || p.state === "blocked").length;
@@ -135,7 +134,7 @@ export function AgentsLauncher({ inline = false }: { inline?: boolean }) {
   }, [open]);
   return (
     <button
-      className={`agents-launcher ${inline ? "inline" : ""} ${open ? "on" : ""}`}
+      className={`agents-launcher ${open ? "on" : ""}`}
       onClick={toggleAgents}
       aria-expanded={open}
       aria-controls="agents-panel"
@@ -170,9 +169,9 @@ export function AgentsPanel() {
           {all.length - by(["idle"]).length} active · {by(["idle"]).length} free
         </span>
         <span className="sp" />
-        <ActionButton className="ibtn ibtn-sm" onClick={toggleAgents} aria-label="Hide the agents panel" data-tip="Hide">
+        <button className="ibtn ibtn-sm" onClick={toggleAgents} aria-label="Hide the agents panel" data-tip="Hide">
           <Ic n="chevron-down" s={15} />
-        </ActionButton>
+        </button>
       </div>
       <div className="ap-body">
         <p className="ap-team-note">7 built-in agents · Nova leads the team</p>

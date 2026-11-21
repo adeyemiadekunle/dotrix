@@ -1,4 +1,4 @@
-import "@dotrix/ui/fonts.css";
+import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "@dotrix/ui/globals.css";
 import "./admin.css";
@@ -8,7 +8,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
-import { DesignProvider } from "@dotrix/ui/theme";
 
 // Follow the system theme like the web app does (design.css dark tokens via .dark).
 const dark = matchMedia("(prefers-color-scheme: dark)");
@@ -26,9 +25,7 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <DesignProvider>
-        <App />
-      </DesignProvider>
+      <App />
     </QueryClientProvider>
   </StrictMode>,
 );

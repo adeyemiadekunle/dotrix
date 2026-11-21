@@ -1,25 +1,23 @@
-import { AppShell, TopNav, TopNavItem, Button } from "@dotrix/ui/astryx";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix.cc: what dotrix is, the team, how approvals work, and where to start (the cloud app, the
 // desktop app, or the CLI). Everything here is something dotrix does today.
 import {
-  AppleLogoIcon,
+  CommandIcon,
   ArrowRightIcon,
   ArrowUpRightIcon,
-  BooksIcon,
-  BrowserIcon,
-  ChatCircleDotsIcon,
+  LibraryBigIcon,
+  GlobeIcon,
+  MessageCircleMoreIcon,
   CheckIcon,
   CodeIcon,
   GitPullRequestIcon,
   KeyIcon,
-  LinuxLogoIcon,
-  LockKeyIcon,
-  MagnifyingGlassIcon,
+  TerminalIcon,
+  LockKeyholeIcon,
+  SearchIcon,
   ShieldCheckIcon,
-  TerminalWindowIcon,
-  WindowsLogoIcon,
-} from "@phosphor-icons/react";
+  SquareTerminalIcon,
+  AppWindowIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { APP_URL, DOWNLOADS_URL } from "./config";
@@ -59,7 +57,7 @@ function Bullets({ items }: { items: ReactNode[] }) {
     <ul className="bullets">
       {items.map((item, i) => (
         <li key={i}>
-          <CheckIcon size={16} weight="bold" />
+          <CheckIcon size={16} />
           <span>{item}</span>
         </li>
       ))}
@@ -77,44 +75,38 @@ function Section({ id, children, className = "" }: { id?: string; children: Reac
 
 function Nav() {
   return (
-    <TopNav
-      label="Sections"
-      className="site-navigation"
-      heading={
+    <header className="nav">
+      <div className="wrap nav-in">
         <a href="/" className="brand" aria-label="dotrix home">
           <Mark />
           <span>dotrix</span>
         </a>
-      }
-      startContent={
-        <div className="nav-links">
-          {[
-            ["team", "Team"],
-            ["approvals", "Approvals"],
-            ["keys", "Your keys"],
-            ["start", "Getting started"],
-            ["download", "Download"],
-          ].map(([id, label]) => (
-            <TopNavItem key={id} label={label!} href={`#${id}`} />
-          ))}
-        </div>
-      }
-      endContent={
+        <nav className="nav-links" aria-label="Sections">
+          <a href="#team">Team</a>
+          <a href="#approvals">Approvals</a>
+          <a href="#keys">Your keys</a>
+          <a href="#start">Getting started</a>
+          <a href="#download">Download</a>
+        </nav>
         <div className="nav-cta">
-          <Button label="Sign in" variant="ghost" href={SIGN_IN} />
-          <Button label="Get started" variant="primary" href={SIGN_UP} />
+          <a href={SIGN_IN} className="btn btn-ghost">
+            Sign in
+          </a>
+          <a href={SIGN_UP} className="btn btn-primary btn-sm">
+            Get started
+          </a>
         </div>
-      }
-    />
+      </div>
+    </header>
   );
 }
 
 const TILES = [
-  { Icon: ChatCircleDotsIcon, cls: "t1" },
+  { Icon: MessageCircleMoreIcon, cls: "t1" },
   { Icon: GitPullRequestIcon, cls: "t2" },
   { Icon: ShieldCheckIcon, cls: "t3" },
-  { Icon: BooksIcon, cls: "t4" },
-  { Icon: MagnifyingGlassIcon, cls: "t5" },
+  { Icon: LibraryBigIcon, cls: "t4" },
+  { Icon: SearchIcon, cls: "t5" },
   { Icon: CodeIcon, cls: "t6" },
 ];
 
@@ -125,7 +117,7 @@ function Hero() {
       <div className="tiles" aria-hidden="true">
         {TILES.map(({ Icon, cls }) => (
           <span key={cls} className={`tile ${cls}`}>
-            <Icon size={28} weight="duotone" />
+            <Icon size={28} />
           </span>
         ))}
       </div>
@@ -146,10 +138,10 @@ function Hero() {
         <div className="cta-row">
           <a href={SIGN_UP} className="btn btn-primary btn-lg">
             Open dotrix
-            <ArrowRightIcon size={16} weight="bold" />
+            <ArrowRightIcon size={16} />
           </a>
           <a href={DOWNLOADS_URL} className="btn btn-secondary btn-lg">
-            <WindowsLogoIcon size={17} weight="fill" />
+            <AppWindowIcon size={17} />
             Download for Windows
           </a>
         </div>
@@ -222,13 +214,13 @@ function ApprovalCard() {
       <div className="mock-f">
         <span className="muted">Nothing is pushed until someone accepts.</span>
         <span className="grow" />
-        <ActionButton type="button" className="btn btn-ghost btn-sm" tabIndex={-1}>
+        <button type="button" className="btn btn-ghost btn-sm" tabIndex={-1}>
           Discard
-        </ActionButton>
-        <ActionButton type="button" className="btn btn-light btn-sm" tabIndex={-1}>
-          <CheckIcon size={14} weight="bold" />
+        </button>
+        <button type="button" className="btn btn-light btn-sm" tabIndex={-1}>
+          <CheckIcon size={14} />
           Accept and push
-        </ActionButton>
+        </button>
       </div>
     </div>
   );
@@ -327,7 +319,7 @@ function Keys() {
       <div className="facts">
         {["No markup on tokens", "Keys encrypted, never shared", "A model per agent", "Sandboxes reach only the model API"].map((fact) => (
           <span key={fact}>
-            <CheckIcon size={14} weight="bold" />
+            <CheckIcon size={14} />
             {fact}
           </span>
         ))}
@@ -511,7 +503,7 @@ function GettingStarted() {
         {["Chat on Anthropic, OpenAI or Google", "Kai codes in a sandbox or on your computer", "Desktop app for Windows", "No team workspaces yet"].map(
           (fact) => (
             <span key={fact}>
-              <CheckIcon size={14} weight="bold" />
+              <CheckIcon size={14} />
               {fact}
             </span>
           ),
@@ -532,35 +524,35 @@ function Download() {
       </div>
       <div className="downloads">
         <article className="dl">
-          <BrowserIcon size={26} weight="duotone" />
+          <GlobeIcon size={26} />
           <h3>Web</h3>
           <p>Everything in your browser. Coding runs in the cloud, in a sandbox.</p>
           <a href={SIGN_UP} className="btn btn-primary">
             Open dotrix
-            <ArrowUpRightIcon size={15} weight="bold" />
+            <ArrowUpRightIcon size={15} />
           </a>
           <span className="soon">Nothing to install</span>
         </article>
         <article className="dl">
-          <WindowsLogoIcon size={26} weight="duotone" />
+          <AppWindowIcon size={26} />
           <h3>Desktop</h3>
           <p>The app, with local coding on your own computer. Windows now.</p>
           <a href={DOWNLOADS_URL} className="btn btn-secondary">
             Download for Windows
           </a>
           <span className="soon">
-            <AppleLogoIcon size={14} weight="fill" /> macOS soon
+            <CommandIcon size={14} /> macOS soon
           </span>
         </article>
         <article className="dl">
-          <TerminalWindowIcon size={26} weight="duotone" />
+          <SquareTerminalIcon size={26} />
           <h3>CLI</h3>
           <p>Link a checkout, run Kai locally, and connect Claude Code or Codex.</p>
           <a href={DOWNLOADS_URL} className="btn btn-secondary">
             Download for Windows
           </a>
           <span className="soon">
-            <LinuxLogoIcon size={14} weight="fill" /> macOS and Linux soon
+            <TerminalIcon size={14} /> macOS and Linux soon
           </span>
         </article>
       </div>
@@ -582,14 +574,14 @@ function Final() {
         <div className="cta-row">
           <a href={SIGN_UP} className="btn btn-primary btn-lg">
             Get started
-            <ArrowRightIcon size={16} weight="bold" />
+            <ArrowRightIcon size={16} />
           </a>
           <a href={SIGN_IN} className="btn btn-secondary btn-lg">
             Sign in
           </a>
         </div>
         <p className="fine">
-          <LockKeyIcon size={13} /> Your conversations stay yours. What agents change stays visible to the team.
+          <LockKeyholeIcon size={13} /> Your conversations stay yours. What agents change stays visible to the team.
         </p>
       </div>
     </section>
@@ -619,8 +611,9 @@ function Footer() {
 
 export function App() {
   return (
-    <AppShell height="auto" variant="wash" contentPadding={0} topNav={<Nav />} mobileNav={false} className="dotrix-site">
-      <div>
+    <>
+      <Nav />
+      <main>
         <Hero />
         <Team />
         <Approvals />
@@ -632,8 +625,8 @@ export function App() {
         <GettingStarted />
         <Download />
         <Final />
-      </div>
+      </main>
       <Footer />
-    </AppShell>
+    </>
   );
 }

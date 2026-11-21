@@ -1,7 +1,3 @@
-import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
-import { SelectionInput } from "@dotrix/ui/components/selection-input";
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
@@ -94,13 +90,13 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
   return (
     <section aria-label="Shared chat outcomes" style={{ marginTop: 12 }}>
       {saved.data?.map((item) => (
-        <ActionButton key={item.target} className="btn btn-sm btn-ghost" onClick={() => openShared(item)}>
+        <button key={item.target} className="btn btn-sm btn-ghost" onClick={() => openShared(item)}>
           Open shared {item.destination === "task" ? `task ${item.target}` : item.destination}
-        </ActionButton>
+        </button>
       ))}
       {!open && (canWriteDocs || canWriteTasks) && (
         <div className="chat-share-action">
-          <ActionButton
+          <button
             className="btn btn-sm btn-secondary"
             onClick={() => {
               setOpen(true);
@@ -110,7 +106,7 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
             }}
           >
             Share to project…
-          </ActionButton>
+          </button>
           <span className="faint">Preview a document or task before sharing.</span>
         </div>
       )}
@@ -142,11 +138,11 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                 </label>
                 <label className="field">
                   Outcome title
-                  <DesignInput aria-label="Outcome title" className="input" maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
+                  <input className="input" maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
                 </label>
                 <label className="field">
                   Selected content
-                  <DesignTextarea
+                  <textarea
                     aria-label="Selected content"
                     className="textarea"
                     rows={10}
@@ -198,7 +194,7 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                 <p className="faint">
                   Remove private details, secrets and transcript links. Include the agreed scope, rationale and any open questions a teammate needs.
                 </p>
-                <ActionButton
+                <button
                   className="btn btn-sm btn-primary"
                   disabled={
                     !title.trim() ||
@@ -214,7 +210,7 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                   }}
                 >
                   Preview publication
-                </ActionButton>
+                </button>
               </>
             ) : (
               <>
@@ -250,18 +246,12 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                   later in Knowledge with version history.
                 </p>
                 <label>
-                  <SelectionInput
-                    aria-label="I reviewed this content and want to share it with the project."
-                    type="checkbox"
-                    checked={acknowledged}
-                    disabled={save.isPending}
-                    onChange={(e) => setAcknowledged(e.target.checked)}
-                  />{" "}
-                  I reviewed this content and want to share it with the project.
+                  <input type="checkbox" checked={acknowledged} disabled={save.isPending} onChange={(e) => setAcknowledged(e.target.checked)} /> I reviewed this
+                  content and want to share it with the project.
                 </label>
                 {save.isError && <p role="alert">{errorMessage(save.error)} Your draft is retained. Retry the same publication safely.</p>}
                 <div className="row" style={{ gap: 8, marginTop: 12 }}>
-                  <ActionButton
+                  <button
                     className="btn btn-sm btn-secondary"
                     disabled={save.isPending}
                     onClick={() => {
@@ -272,16 +262,16 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                     }}
                   >
                     Edit selection
-                  </ActionButton>
-                  <ActionButton className="btn btn-sm btn-primary" disabled={!acknowledged || save.isPending} onClick={publish}>
+                  </button>
+                  <button className="btn btn-sm btn-primary" disabled={!acknowledged || save.isPending} onClick={publish}>
                     {save.isPending ? "Publishing…" : "Publish to project"}
-                  </ActionButton>
+                  </button>
                 </div>
               </>
             )}
-            <ActionButton className="btn btn-sm btn-ghost" disabled={save.isPending} onClick={() => setOpen(false)}>
+            <button className="btn btn-sm btn-ghost" disabled={save.isPending} onClick={() => setOpen(false)}>
               Close
-            </ActionButton>
+            </button>
           </div>
         </section>
       )}

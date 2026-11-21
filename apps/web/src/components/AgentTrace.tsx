@@ -8,7 +8,7 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // step looks the same wherever it's shown.
 import { useState, type ReactNode } from "react";
 
-import { HoverCard } from "@dotrix/ui/astryx";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@dotrix/ui/components/hover-card";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@dotrix/ui/components/item";
 import { Marker, MarkerContent, MarkerIcon } from "@dotrix/ui/components/marker";
 
@@ -459,9 +459,14 @@ const TIER: Record<Source["tier"], string> = { primary: "Primary source", reputa
 /** Inline Citation: "[S1]" in a reply as a chip naming the site; hovering it shows the page it stands for. */
 export function Citation({ source }: { source: Source }) {
   return (
-    <HoverCard
-      alignment="start"
-      content={
+    <HoverCard>
+      <HoverCardTrigger asChild>
+        <a className="agent-cite" href={source.url} target="_blank" rel="noreferrer noopener">
+          {source.host || source.label}
+          <span className="sr-only"> ({source.label}, opens in a new tab)</span>
+        </a>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="agent-cite-pop">
         <div className="agent-cite-card" data-align="start">
           <div className="agent-cite-title">{source.title || source.url}</div>
           <div className="agent-cite-meta">
@@ -471,12 +476,7 @@ export function Citation({ source }: { source: Source }) {
             {source.published && <span>{source.published.slice(0, 10)}</span>}
           </div>
         </div>
-      }
-    >
-      <a className="agent-cite" href={source.url} target="_blank" rel="noreferrer noopener">
-        {source.host || source.label}
-        <span className="sr-only"> ({source.label}, opens in a new tab)</span>
-      </a>
+      </HoverCardContent>
     </HoverCard>
   );
 }
@@ -747,9 +747,14 @@ export function ContextUsage({ usage }: { usage: Usage }) {
   if (!total) return null;
   const share = total ? Math.round((input / total) * 100) : 0;
   return (
-    <HoverCard
-      alignment="start"
-      content={
+    <HoverCard>
+      <HoverCardTrigger asChild>
+        <button type="button" className="agent-usage" aria-label={`${k(total)} tokens: details`}>
+          <Ic n="chart-donut" s={12} />
+          {k(total)} tokens
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="agent-usage-pop">
         <div className="agent-usage-card" data-align="start">
           <div className="agent-usage-h">
             <b>Tokens</b>
@@ -785,12 +790,7 @@ export function ContextUsage({ usage }: { usage: Usage }) {
           {usage.model && <p className="agent-usage-note">{usage.model} · on your key</p>}
           {usage.complete === false && <p className="agent-usage-note">The provider didn't report all of it: the real use is higher.</p>}
         </div>
-      }
-    >
-      <button type="button" className="agent-usage" aria-label={`${k(total)} tokens: details`}>
-        <Ic n="chart-donut" s={12} />
-        {k(total)} tokens
-      </button>
+      </HoverCardContent>
     </HoverCard>
   );
 }

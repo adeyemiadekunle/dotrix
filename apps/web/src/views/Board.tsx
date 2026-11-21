@@ -1,4 +1,3 @@
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // Board: a column per status, cards you drag between and
 // within them (core/dragdrop), an inline composer per column, collapsible columns.
 import { useState, type CSSProperties } from "react";
@@ -110,24 +109,20 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
         </button>
       </div>
       <div className="hacts">
-        <ActionButton
+        <button
           className="ibtn ibtn-xs"
           onClick={(e) => (e.stopPropagation(), toggleDone(t.id))}
           data-tip={t.status === "done" ? "Reopen" : "Mark complete"}
           aria-label={t.status === "done" ? "Reopen" : "Mark complete"}
         >
           <Ic n={t.status === "done" ? "rotate-ccw" : "check"} s={13} />
-        </ActionButton>
-        <ActionButton className="ibtn ibtn-xs" onClick={(e) => (e.stopPropagation(), editTask(t.id))} data-tip="Quick edit" aria-label="Quick edit">
+        </button>
+        <button className="ibtn ibtn-xs" onClick={(e) => (e.stopPropagation(), editTask(t.id))} data-tip="Quick edit" aria-label="Quick edit">
           <Ic n="pencil" s={12} />
-        </ActionButton>
-        <ActionButton
-          className="ibtn ibtn-xs"
-          onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id }))}
-          aria-label="More"
-        >
+        </button>
+        <button className="ibtn ibtn-xs" onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id }))} aria-label="More">
           <Ic n="ellipsis" s={13} />
-        </ActionButton>
+        </button>
       </div>
     </div>
   );
@@ -158,12 +153,12 @@ function CardComposer() {
           Enter to add · Esc to cancel
         </span>
         <span className="sp" />
-        <ActionButton className="btn btn-sm btn-ghost" onClick={cancelComposer}>
+        <button className="btn btn-sm btn-ghost" onClick={cancelComposer}>
           Cancel
-        </ActionButton>
-        <ActionButton className="btn btn-sm btn-primary" onClick={() => (commitComposer(v), setV(""))}>
+        </button>
+        <button className="btn btn-sm btn-primary" onClick={() => (commitComposer(v), setV(""))}>
           Add
-        </ActionButton>
+        </button>
       </div>
     </div>
   );
@@ -205,16 +200,16 @@ export function Board({ ts, k, project }: { ts: Task[]; k: string; project?: str
               <span>{s.name}</span>
               <span className="cnt">{col.length}</span>
               <span className="acts">
-                <ActionButton className="ibtn ibtn-xs" onClick={() => startComposer(k, s.id, gb)} data-tip="Add task" aria-label={`Add task to ${s.name}`}>
+                <button className="ibtn ibtn-xs" onClick={() => startComposer(k, s.id, gb)} data-tip="Add task" aria-label={`Add task to ${s.name}`}>
                   <Ic n="plus" s={14} />
-                </ActionButton>
-                <ActionButton
+                </button>
+                <button
                   className="ibtn ibtn-xs"
                   onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "column", id: s.id, key: k })}
                   aria-label="Column options"
                 >
                   <Ic n="ellipsis" s={14} />
-                </ActionButton>
+                </button>
               </span>
             </div>
             <div className="bcol-b" data-col-body={s.id}>

@@ -1,21 +1,22 @@
-import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
+import { Suggestions } from "@dotrix/ui/components/ai-elements/suggestion";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
 import {
-  ChatLayout,
-  ChatMessageList,
-  ChatMessage,
-  ChatMessageBubble,
   ChatComposer,
   ChatComposerInput,
+  ChatLayout,
+  ChatMessage,
+  ChatMessageBubble,
+  ChatMessageList,
   ChatSendButton,
-  type ChatComposerInputHandle,
+  ComplexSelector,
+  DesignButton,
+  InlineCode,
   Lightbox,
   Selector,
-  ComplexSelector,
+  type ChatComposerInputHandle,
   type ComplexSelectorHandle,
-  Button as DesignButton,
-} from "@dotrix/ui/astryx";
-import { ActionButton } from "@dotrix/ui/components/action-button";
+} from "./chat-ui";
 // dotrix's workspace Chat: conversations grouped by project (and
 // "General"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
@@ -251,7 +252,7 @@ const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"
 export function SessionHeader({ className = "", children, ...props }: ComponentProps<"div">) {
   return (
     <div {...props} className={`row cs-head ${className}`}>
-      <SessionListToggle />
+      <SessionListToggle restoreOnly />
       {children}
     </div>
   );
@@ -279,12 +280,13 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
             )}
             {title}
           </span>
-          <span className="cs-row-meta">
-            <span className="mono">{cs.issue_key}</span>
-            <span>· {ago(ms(cs.updated_at))}</span>
-            {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
+          <span className="cs-row-foot">
+            <span className="cs-row-meta">
+              <span>{ago(ms(cs.updated_at))}</span>
+              {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
+            </span>
+            <span className={`badge ${c}`}>{label}</span>
           </span>
-          <span className={`badge ${c}`}>{label}</span>
         </span>
       </button>
       <ActionButton
@@ -971,7 +973,7 @@ function Composer({
     return () => cancelAnimationFrame(frame);
   }, [composerMenuOpen]);
   const a = useAgents().items.find((x) => x.handle === agent);
-  // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
+  // "+" offers the projects (in a new chat) and the work modes; Nova always answers.
   const choices = useMemo(
     () => [
       ...(contexts && setContext ? contexts.map(([id, label]) => ({ id: `project:${id}`, label, auxiliaryData: { group: "Projects" } })) : []),
@@ -984,18 +986,6 @@ function Composer({
     else if (id.startsWith("mode:")) setMode?.(id.slice(5) as WorkMode);
     return "";
   };
-  const triggers = [
-    {
-      character: "@",
-      searchSource: {
-        search: (query: string) => choices.filter((choice) => choice.label.toLowerCase().includes(query.toLowerCase())),
-        bootstrap: () => choices,
-      },
-      onSelect: (item: { id: string }) => choose(item.id),
-      menuLabel: contexts ? "Projects and modes" : "Modes",
-    },
-  ];
-
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
@@ -1029,17 +1019,17 @@ function Composer({
             onChange={setText}
             placeholder={placeholder}
             label="Message"
-            triggers={triggers}
             pasteAsToken={false}
             hasHistory={false}
             onKeyDown={(event) => {
-              // Astryx's default Enter clears synchronously. Dotrix clears only
+              // Enter sends through Dotrix's own path, which clears only
               // after the server accepts the message, retaining failed drafts.
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                 event.preventDefault();
                 void send();
               }
             }}
+            status={submitting ? "sending" : disabled ? "waiting" : "ready"}
             isDisabled={submitting || disabled}
             onSubmit={() => {
               void send();
@@ -1147,6 +1137,7 @@ function Composer({
                 onSend={() => {
                   void send();
                 }}
+                status={submitting ? "sending" : disabled ? "waiting" : "ready"}
                 isDisabled={!text.trim() || S.ui.offline || disabled || submitting}
               />
             )}
@@ -1337,7 +1328,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             </div>
           }
         >
-          <ChatMessageList>
+          <ChatMessageList followKey={last?.id}>
             <div className="chat-col">
               {runs.map((r) => (
                 <div key={r.id}>
@@ -1425,7 +1416,7 @@ function NewChat({
   return (
     <div className="conv new-conversation">
       <div className="session-start-header">
-        <SessionListToggle />
+        <SessionListToggle restoreOnly />
         <ActionButton className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
           <Ic n="arrow-left" s={16} />
         </ActionButton>
@@ -1453,14 +1444,21 @@ function NewChat({
           />
         </div>
         <div className="ns-bottom">
-          <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12, justifyContent: "center" }}>
-            {sugg.map(([i, s]) => (
-              <ActionButton key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable}>
-                <Ic n={i!} s={13} />
-                {s}
-              </ActionButton>
-            ))}
-          </div>
+          <Suggestions
+            className="mb-3 justify-center"
+            items={sugg.map(([i, s]) => ({
+              key: s!,
+              value: s!,
+              content: (
+                <>
+                  <Ic n={i!} s={13} />
+                  {s}
+                </>
+              ),
+            }))}
+            onSelect={(value) => start(value, agent)}
+            disabled={unavailable}
+          />
           <Composer
             key={q}
             placeholder={pid ? `Ask anything about ${ps.find((p) => p.id === pid)?.name ?? "this project"}` : "Ask Nova anything"}
@@ -1607,7 +1605,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   return (
     <div className="ns">
       <div className="session-start-header">
-        <SessionListToggle />
+        <SessionListToggle restoreOnly />
       </div>
       <div className="ns-mid">
         <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
@@ -1803,7 +1801,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 </ActionButton>
               </span>
             )}
-            {!t && <span className="faint">Pick an issue, then where and on which model</span>}
             <span className="sp" />
           </div>
           {menuOpen && (
@@ -2534,7 +2531,11 @@ export function Session({ cs }: { cs: CodingSession }) {
                     {latest?.can_stop && (latest.status === "running" || latest.status === "queued") && !ask.trim() ? (
                       <ChatSendButton isStopShown isDisabled={stop.isPending} onStop={() => stop.mutate(latest.id)} aria-label="Stop coding turn" />
                     ) : (
-                      <ChatSendButton isDisabled={(busy && !working) || !ask.trim() || follow.isPending || sendInput.isPending} onSend={send} />
+                      <ChatSendButton
+                        status={sendInput.isPending || follow.isPending ? "sending" : busy && !working ? "waiting" : "ready"}
+                        isDisabled={(busy && !working) || !ask.trim() || follow.isPending || sendInput.isPending}
+                        onSend={send}
+                      />
                     )}
                   </>
                 }
@@ -2558,7 +2559,7 @@ export function Session({ cs }: { cs: CodingSession }) {
             </div>
           }
         >
-          <ChatMessageList>
+          <ChatMessageList followKey={latest?.id ?? cs.session_id}>
             <div className="chat-col kt-col">
               {turns.map((turn) => (
                 <Fragment key={turn.id}>
@@ -2883,14 +2884,14 @@ function DemoConversation({ id }: { id: string }) {
       <SessionHeader>
         <b className="trunc">{thread.title}</b>
       </SessionHeader>
-      <div className="chat-scroll">
+      <ChatMessageList>
         <div className="chat-col">
           <p className="muted">Sample conversation · Sign in to work with Nova.</p>
           {thread.messages.map((message) => (
             <Message key={message.id} m={message} projectId={thread.project} />
           ))}
         </div>
-      </div>
+      </ChatMessageList>
     </>
   );
 }
@@ -2933,8 +2934,8 @@ function Conversations({ search }: { search: URLSearchParams }) {
           style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
         >
           <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
-            <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={220} max={480} onResize={setListW} />
-            <div style={{ padding: "18px 16px 8px" }} className="row">
+            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
+            <div style={{ height: 44, padding: "0 16px" }} className="row">
               <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
               <span className="sp" />
               <SessionListToggle />

@@ -1,4 +1,3 @@
-import { ActionButton } from "./action-button";
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@dotrix/ui/lib/utils";
@@ -16,7 +15,7 @@ const buttonVariants = cva(
         outline: "btn-secondary",
         secondary: "btn-secondary",
         ghost: "btn-ghost",
-        link: "h-auto! px-0! text-accent underline-offset-4 hover:underline",
+        link: "h-auto! px-0! text-primary underline-offset-4 hover:underline",
       },
       size: {
         default: "",
@@ -46,9 +45,9 @@ function Button({
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
   }) {
-  const classes = cn(buttonVariants({ variant, size, className }));
-  if (asChild) return <Slot.Root data-slot="button" className={classes} {...props} />;
-  return <ActionButton data-slot="button" className={classes} {...props} />;
+  const Comp = asChild ? Slot.Root : "button";
+
+  return <Comp data-slot="button" data-variant={variant} data-size={size} className={cn(buttonVariants({ variant, size, className }))} {...props} />;
 }
 
 export { Button, buttonVariants };

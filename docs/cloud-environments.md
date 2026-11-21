@@ -79,7 +79,7 @@ Use a supported isolated runtime when commands are required.
 ## Remaining full environment contract
 
 - Project settings → Environments: list, create, edit, validate and archive a
-  project-scoped profile. Use Dotrix's existing Astryx controls. Show the image,
+  project-scoped profile. Use Dotrix's existing controls. Show the image,
   repository, setup script, test command and network policy before saving.
 - Only authorized project administrators may change executable configuration or
   secret references. Audit edits without secret values. Workspace network policy

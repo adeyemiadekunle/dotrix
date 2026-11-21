@@ -5,7 +5,7 @@
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { toast } from "@dotrix/ui/lib/toast";
+import { toast } from "../src/ui/toast";
 
 import { ApiError, api, errorMessage, unwrap } from "./api";
 import { useEventStream } from "./runStream";
@@ -158,7 +158,7 @@ function useAgentMutation<Vars, Result>(scope: Scope | undefined, fn: (scope: Sc
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: Vars) => fn(scope!, vars),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: async () => {
       if (!scope) return;
       await queryClient.invalidateQueries({ queryKey: agentKeys.project(scope) });

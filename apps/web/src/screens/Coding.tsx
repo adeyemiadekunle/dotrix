@@ -14,6 +14,7 @@ import { isLive, live } from "../data/live";
 import { D, S, render } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { Message, NewSession, Pending, Session, SessionRow, SessionHeader, openCoding } from "./Chat";
+import { ChatMessageList } from "./chat-ui";
 
 import { buildTree, parseDiff } from "../core/kaiWork";
 import { ChangeList, CommandList, FileTree } from "../components/TurnViews";
@@ -55,8 +56,8 @@ export function Coding() {
           style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
         >
           <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
-            <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={240} max={480} onResize={setListW} />
-            <div style={{ padding: "18px 16px 8px" }} className="row">
+            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
+            <div style={{ height: 44, padding: "0 16px" }} className="row">
               <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Codes</h1>
               <span className="sp" />
               <SessionListToggle />
@@ -125,6 +126,7 @@ type DemoView = Exclude<CodingView, "browser">;
 function DemoSession({ id }: { id: string }) {
   const session = D().coding.find((item) => item.id === id);
   const [views, setViews] = useState<DemoView[]>([]);
+  const [paneW, setPaneW] = useStoredSize("dotrix.demo.panes.width", 460, 320, 1100);
   const [opened, setOpened] = useState<string | null>(null);
   const turn = session ? session.turns.length - 1 : 0;
   if (!session) return <Pending text="This sample session is no longer available." back={toList()} />;
@@ -167,7 +169,7 @@ function DemoSession({ id }: { id: string }) {
             ))}
           </div>
         </SessionHeader>
-        <div className="chat-scroll">
+        <ChatMessageList>
           <div className="chat-col">
             <p className="muted">Sample session · Sign in to work with Kai.</p>
             {session.turns.map((item, index) => (
@@ -182,10 +184,11 @@ function DemoSession({ id }: { id: string }) {
               </div>
             ))}
           </div>
-        </div>
+        </ChatMessageList>
       </div>
       {views.length > 0 && (
-        <aside className="side-panel panes" style={{ width: 460 }} aria-label="Session panes">
+        <aside className="side-panel panes" style={{ width: paneW }} aria-label="Session panes">
+          <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setPaneW((w) => w - delta)} />
           {views.map((view) => (
             <PanelFrame
               key={view}

@@ -1,5 +1,3 @@
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useRef, useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
 
@@ -80,7 +78,7 @@ export function RepositoryCreate({
             </label>
             <label className="field">
               Repository name
-              <DesignInput aria-label="Repository name" className="input" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
+              <input className="input" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
             </label>
             <label className="field">
               Repository visibility
@@ -96,23 +94,17 @@ export function RepositoryCreate({
             </label>
             <label className="field">
               Repository description (optional)
-              <DesignInput
-                aria-label="Repository description (optional)"
-                className="input"
-                value={description}
-                maxLength={350}
-                onChange={(event) => setDescription(event.target.value)}
-              />
+              <input className="input" value={description} maxLength={350} onChange={(event) => setDescription(event.target.value)} />
             </label>
           </fieldset>
           {stage === "edit" && (
-            <ActionButton
+            <button
               className="btn btn-secondary"
               disabled={!installation || !/^[A-Za-z0-9._-]+$/.test(name.trim()) || !!existing}
               onClick={() => setStage("confirm")}
             >
               Review repository
-            </ActionButton>
+            </button>
           )}
           {stage === "confirm" && (
             <>
@@ -120,12 +112,12 @@ export function RepositoryCreate({
                 Create <strong>{fullName}</strong> as a <strong>{privateRepo ? "private" : "public"}</strong> repository with a README? Creating it does not
                 connect it to this project.
               </p>
-              <ActionButton className="btn btn-primary" disabled={busy || !installation || !!existing} onClick={() => void create()}>
+              <button className="btn btn-primary" disabled={busy || !installation || !!existing} onClick={() => void create()}>
                 {busy ? "Creating repository…" : "Confirm creation"}
-              </ActionButton>
-              <ActionButton className="btn btn-ghost" disabled={busy} onClick={() => setStage("edit")}>
+              </button>
+              <button className="btn btn-ghost" disabled={busy} onClick={() => setStage("edit")}>
                 Cancel creation
-              </ActionButton>
+              </button>
             </>
           )}
           {stage === "uncertain" && (
@@ -134,7 +126,7 @@ export function RepositoryCreate({
                 {error} Creation was not confirmed. Check {fullName} on GitHub and refresh the repository list before trying again. A repository already created
                 there is not deleted by leaving setup.
               </p>
-              <ActionButton
+              <button
                 className="btn btn-secondary"
                 disabled={busy}
                 onClick={async () => {
@@ -151,7 +143,7 @@ export function RepositoryCreate({
                 }}
               >
                 Check available repositories
-              </ActionButton>
+              </button>
             </>
           )}
           {existing && (

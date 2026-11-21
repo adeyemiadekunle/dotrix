@@ -2,7 +2,7 @@
 // deterministic model (apps/backend/scripts/e2e_server.py). Run with `pnpm --filter @dotrix/web e2e`.
 import { defineConfig, devices } from "@playwright/test";
 
-const API = process.env.DOTRIX_E2E_API_URL ?? "http://127.0.0.1:8100";
+const API = "http://127.0.0.1:8100";
 const WEB = "http://localhost:3100";
 
 export default defineConfig({
@@ -19,22 +19,13 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [
-    {
-      name: "chromium",
-      use: {
-        ...devices["Desktop Chrome"],
-        viewport: { width: 1440, height: 900 },
-        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {},
-      },
-    },
-  ],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } }],
   webServer: [
     {
       command: "uv run python ../backend/scripts/e2e_server.py",
       url: `${API}/health`,
       timeout: 120_000,
-      reuseExistingServer: Boolean(process.env.DOTRIX_E2E_API_URL),
+      reuseExistingServer: false,
       stdout: "pipe",
     },
     {

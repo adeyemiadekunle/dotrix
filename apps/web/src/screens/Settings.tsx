@@ -1,8 +1,6 @@
-import { Code as InlineCode } from "@dotrix/ui/astryx";
 import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
 import { SelectionInput } from "@dotrix/ui/components/selection-input";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { Switch, Selector, SegmentedControl, SegmentedControlItem } from "@dotrix/ui/astryx";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 // Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
@@ -167,7 +165,7 @@ function SRow({ t, d, children }: { t: ReactNode; d?: ReactNode; children?: Reac
   );
 }
 function Tog({ on, set, label, disabled }: { on: boolean; set: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return <Switch value={on} onChange={set} label={label} isLabelHidden isDisabled={disabled} />;
+  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
 }
 const PTog = ({ k, def = true }: { k: string; def?: boolean }) => <Tog on={P()[k] === undefined ? def : Boolean(P()[k])} set={(v) => setP(k, v)} label={k} />;
 const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
@@ -175,30 +173,37 @@ const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
 );
 function Sel({ k, opts, v }: { k: string; opts: (string | [string, string])[]; v: unknown }) {
   return (
-    <Selector
-      label={k}
-      isLabelHidden
+    <select
+      className="select"
+      style={{ width: "auto", minWidth: 180 }}
       value={String(v)}
-      onChange={(value) => setP(k, k === "weekStart" ? Number(value) : value)}
-      options={opts.map((o) => {
-        const [value, label] = Array.isArray(o) ? o : [o, o];
-        return { value, label };
+      onChange={(e) => setP(k, k === "weekStart" ? +e.target.value : e.target.value)}
+      aria-label={k}
+    >
+      {opts.map((o) => {
+        const [val, n] = Array.isArray(o) ? o : [o, o];
+        return (
+          <option key={val} value={val}>
+            {n}
+          </option>
+        );
       })}
-    />
+    </select>
   );
 }
 function Seg({ k, opts }: { k: "side" | "density"; opts: string[] }) {
   return (
-    <SegmentedControl label={k} value={S.prefs[k]} onChange={(value) => setPref(k, value)}>
-      {opts.map((value) => (
-        <SegmentedControlItem key={value} value={value} label={value[0]!.toUpperCase() + value.slice(1)} />
+    <div className="seg">
+      {opts.map((o) => (
+        <button key={o} className={S.prefs[k] === o ? "on" : ""} onClick={() => setPref(k, o)}>
+          {o[0]!.toUpperCase() + o.slice(1)}
+        </button>
       ))}
-    </SegmentedControl>
+    </div>
   );
 }
 
 const ACCENTS: [string, string][] = [
-  ["astryx", "#15110C"],
   ["indigo", "#4B5BD6"],
   ["blue", "#2F6CD4"],
   ["violet", "#7348CC"],
@@ -2470,9 +2475,9 @@ function LiveSessions() {
             <div className="grow" style={{ minWidth: 0 }}>
               <b>{made.name}</b>: copy it now, it isn't shown again.
               <div className="row" style={{ gap: 6, marginTop: 6 }}>
-                <InlineCode className="mono grow trunc" style={{ fontSize: 12 }}>
+                <code className="mono grow trunc" style={{ fontSize: 12 }}>
                   {made.token}
-                </InlineCode>
+                </code>
                 <ActionButton className="btn btn-secondary btn-sm" onClick={() => void copy(made.token, "Token copied")}>
                   Copy
                 </ActionButton>

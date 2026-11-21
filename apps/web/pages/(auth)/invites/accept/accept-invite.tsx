@@ -1,6 +1,6 @@
 import { Button } from "@dotrix/ui/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { SpinnerGapIcon } from "@phosphor-icons/react";
+import { LoaderCircleIcon } from "lucide-react";
 import { Link } from "@/lib/navigation";
 
 import { AuthCard } from "@/components/auth-card";
@@ -43,7 +43,7 @@ export function AcceptInvite({ token, next }: { token: string; next?: string | n
   if (!preview.data) {
     return (
       <AuthCard title="Opening your invite…">
-        <SpinnerGapIcon className="text-muted-foreground mx-auto size-6 animate-spin" />
+        <LoaderCircleIcon className="text-muted-foreground mx-auto size-6 animate-spin" />
       </AuthCard>
     );
   }
@@ -61,7 +61,7 @@ export function AcceptInvite({ token, next }: { token: string; next?: string | n
         <FormError message={accept.isError ? errorMessage(accept.error) : null} />
         {hasSession() ? (
           <Button className="w-full" disabled={accept.isPending} onClick={() => accept.mutate()}>
-            {accept.isPending && <SpinnerGapIcon className="animate-spin" />}
+            {accept.isPending && <LoaderCircleIcon className="animate-spin" />}
             Accept and join
           </Button>
         ) : (
