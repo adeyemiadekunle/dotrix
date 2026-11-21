@@ -55,6 +55,19 @@ BROWSER_SERVER = "browser"  # its tools are mcp__browser__browser_navigate, … 
 # web, start a sub-agent (which would run under another agent's permissions), or load skills.
 OPENCODE_LOCAL_DENIED = ("bash", "webfetch", "websearch", "question", "subagent", "task", "skill")
 OPENCODE_AGENT = "build"  # pinned: a person's own config could make another agent the default
+def with_note(brief: str, note: str) -> str:
+    """A note for this turn (the browser's) in the turn's own part of the brief, before Kai's contract, which fx takes
+    as the session's system profile (fx_local.split_contract); after the brief when it has no contract."""
+    if not note:
+        return brief
+    from .fx_local import CONTRACT_HEADING
+
+    task, found, contract = brief.rpartition("\n" + CONTRACT_HEADING + "\n")
+    if not found:
+        return brief + note
+    return f"{task}{note}\n\n{CONTRACT_HEADING}\n{contract}"
+
+
 BROWSER_NOTE = """
 
 ## A browser on this computer
@@ -891,7 +904,7 @@ class LocalRunner:
             await report("failed", base_sha=base_sha, error=f"Couldn't start {tool.name}: {exc}")
             return
         assert process.stdin and process.stdout and process.stderr
-        process.stdin.write((run["brief"] + (BROWSER_NOTE if self._browser is not None else "")).encode())
+        process.stdin.write(with_note(run["brief"], BROWSER_NOTE if self._browser is not None else "").encode())
         await process.stdin.drain()
         process.stdin.close()
         errors = asyncio.create_task(process.stderr.read())

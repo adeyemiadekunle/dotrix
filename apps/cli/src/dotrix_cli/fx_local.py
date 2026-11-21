@@ -25,6 +25,9 @@ NATIVE_FX_REFUSAL = ("Local execution requires Linux Bubblewrap with working use
                      "Use cloud coding or another local runtime on this computer.")
 
 AUTH_FILES = ("auth.json", "chatgpt-auth.json", "grok-auth.json", "api-key")
+# Kai's contract ends every brief under this heading (the backend's coding/brief.py, CONTRACT_HEADING). fx takes it
+# as the session's system profile, as a cloud turn does, rather than as words in the conversation.
+CONTRACT_HEADING = "# How Kai works"
 PROVIDER_SETTINGS = ("provider", "providers", "models", "credential_source", "effort")
 
 
@@ -139,6 +142,16 @@ def allowed(call: dict[str, Any], root: Path) -> bool:
         return False
 
 
+def split_contract(brief: str) -> tuple[str, str | None]:
+    """The turn's task and Kai's contract, split at the contract's heading (its last one: the platform appends the
+    contract after everything else, so a heading quoted in an issue stays in the task). None: no contract (an older
+    platform), and the brief goes whole."""
+    task, found, contract = brief.rpartition("\n" + CONTRACT_HEADING + "\n")
+    if not found:
+        return brief, None
+    return task.rstrip() + "\n", (CONTRACT_HEADING + "\n" + contract).strip()
+
+
 def emit(kind: str, **values: Any) -> None:
     print(json.dumps({"type": kind, **values}), flush=True)
 
@@ -153,7 +166,7 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
     if binary is None:
         emit("error", message="The local coding tool is not installed")
         return 1
-    brief = sys.stdin.read()
+    brief, contract = split_contract(sys.stdin.read())
     root = Path.cwd().resolve()
     servers = []
     if browser is not None:
@@ -280,7 +293,12 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
         await request("initialize", {"protocolVersion": 1, "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False},
                                                                                   "terminal": False},
                                      "clientInfo": {"name": "dotrix", "version": "1"}})
-        session = await request("session/new", {"cwd": str(root), "mcpServers": servers})
+        # Kai's contract as the session's system profile (ACP's systemPrompt), as on a cloud turn. Each local turn
+        # starts a session of its own, so there's no saved profile to keep or check.
+        opened = {"cwd": str(root), "mcpServers": servers}
+        if contract:
+            opened["systemPrompt"] = [{"type": "text", "text": contract}]
+        session = await request("session/new", opened)
         session_id = session["sessionId"]
         await request("session/set_mode", {"sessionId": session_id, "modeId": "ask"})
         inbox_open = False

@@ -1121,3 +1121,11 @@ def test_with_the_real_engine_a_command_left_running_and_a_worker_show_as_backgr
     assert events[-1]["type"] == "done", followed.stdout
     told = json.dumps(asked[-1])
     assert "shell-2: `sleep 3; echo LATE` finished (exit 0)" in told and "And then?" in told
+
+
+def test_the_local_runner_splits_kai_s_contract_at_the_same_heading() -> None:
+    """The CLI can't import the backend: its copy of the contract heading must match the brief's."""
+    from dotrix_backend.modules.coding.brief import CONTRACT_HEADING
+
+    local = Path(__file__).resolve().parents[3] / "cli" / "src" / "dotrix_cli" / "fx_local.py"
+    assert f'CONTRACT_HEADING = "{CONTRACT_HEADING}"' in local.read_text()
