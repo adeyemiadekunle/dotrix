@@ -5,7 +5,7 @@
 // so. The command's environment has none of the app's, the runner's or a provider's credentials
 // (devServerRules.ts `serverEnv`). One app per folder at a time: it stops when the turn ends, when Kai starts it
 // again, when its runner stops, and when the app quits.
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -13,10 +13,10 @@ import path from "node:path";
 import { app } from "electron";
 
 import { cleanCommand, type DevCommand, Lines, readCommands, serverEnv, validPort } from "./devServerRules";
+import { stopLocalProcess } from "./localProcess";
 import type { Content, Tool } from "./mcp";
 
 const READY_SECONDS = 180; // installing dependencies first can take a while
-const STOP_GRACE_MS = 5_000;
 
 interface Running {
   child: ChildProcess;
@@ -162,21 +162,7 @@ function end(running: Running): Promise<void> {
   const { child } = running;
   if (running.exited !== null || !child.pid) return Promise.resolve();
   const ended = new Promise<void>((resolve) => child.once("close", () => resolve()));
-  if (process.platform === "win32") {
-    execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, () => undefined);
-  } else {
-    const group = (signal: NodeJS.Signals) => {
-      try {
-        process.kill(-child.pid!, signal);
-      } catch {
-        // Already gone.
-      }
-    };
-    group("SIGTERM");
-    const kill = setTimeout(() => group("SIGKILL"), STOP_GRACE_MS);
-    void ended.then(() => clearTimeout(kill));
-  }
-  return Promise.race([ended, wait(STOP_GRACE_MS * 2)]);
+  return stopLocalProcess(child, ended);
 }
 
 const APP_TOOLS: Tool[] = [

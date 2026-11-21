@@ -96,3 +96,41 @@ export async function worktreeFile(tree: string, file: unknown) {
   const status = beforeSize < 0 ? "added" : afterSize < 0 ? "deleted" : before !== after ? "modified" : "unchanged";
   return { path: file, status, before: binary ? null : before, after: binary ? null : after, binary, too_large: tooLarge };
 }
+
+/** Reserve a managed worktree for a user action and verify it belongs to the selected checkout. */
+export async function reserveLocalAction(folder: string, tree: string): Promise<() => void> {
+  const layout = path.relative(fs.realpathSync(worktreesRoot()), tree).split(path.sep);
+  if (layout.length !== 3 || layout[0] !== ".sessions" || ownWorktree(tree) !== tree) {
+    throw new Error("Local actions require a managed session worktree");
+  }
+  const marker = `${tree}.active`;
+  let lock: number;
+  try {
+    lock = fs.openSync(marker, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("This worktree is active or its last operation was interrupted");
+    throw error;
+  }
+  const release = () => {
+    fs.closeSync(lock);
+    fs.unlinkSync(marker);
+  };
+  try {
+    const common = (cwd: string) => git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    const [top, checkoutGit, treeGit, treeDirectory] = await Promise.all([
+      git(tree, ["rev-parse", "--show-toplevel"]),
+      common(folder),
+      common(tree),
+      git(tree, ["rev-parse", "--absolute-git-dir"]),
+    ]);
+    const commonPath = fs.realpathSync(treeGit.trimEnd());
+    if (fs.realpathSync(top.trimEnd()) !== tree || fs.realpathSync(checkoutGit.trimEnd()) !== commonPath) {
+      throw new Error("This worktree belongs to a different checkout");
+    }
+    if (fs.realpathSync(treeDirectory.trimEnd()) === commonPath) throw new Error("Choose a linked worktree");
+    return release;
+  } catch (error) {
+    release();
+    throw error;
+  }
+}

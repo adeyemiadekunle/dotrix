@@ -231,3 +231,20 @@ export function worktreeHere(run: Pick<CodingRun, "location" | "runner_id" | "wo
   if (!run || run.location !== "local" || !run.worktree || !run.runner_id || !desktop()) return null;
   return runners.some((r) => r.runnerId === run.runner_id) ? run.worktree : null;
 }
+
+export interface LocalCodeProfile {
+  setup: string;
+  tests: string;
+}
+
+interface LocalActionsBridge {
+  localActions: {
+    profile(runnerId: string): Promise<LocalCodeProfile>;
+    save(runnerId: string, profile: LocalCodeProfile): Promise<LocalCodeProfile | null>;
+    run(runnerId: string, tree: string, action: keyof LocalCodeProfile): Promise<{ exitCode: number | null; output: string; timedOut: boolean }>;
+  };
+}
+
+export function desktopLocalActions(): LocalActionsBridge["localActions"] | null {
+  return (globalThis as { dotrixDesktop?: Partial<LocalActionsBridge> }).dotrixDesktop?.localActions ?? null;
+}

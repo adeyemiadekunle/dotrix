@@ -78,10 +78,10 @@ const EXECUTION_ENV = new Set([
 ]);
 
 /** The command's environment: the execution settings from `environ`, its port, and no browser of its own. */
-export function serverEnv(environ: Record<string, string | undefined>, port: number): Record<string, string> {
+export function serverEnv(environ: Record<string, string | undefined>, port?: number): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(environ)) if (value !== undefined && EXECUTION_ENV.has(key.toUpperCase())) env[key] = value;
-  env.PORT = String(port);
+  if (port !== undefined) env.PORT = String(port);
   env.BROWSER = "none"; // a dev server that opens a browser would open the person's, not the pane
   return env;
 }
