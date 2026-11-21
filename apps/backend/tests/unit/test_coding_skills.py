@@ -152,3 +152,18 @@ def test_skill_resources_reject_unsafe_paths(path):
 
     with pytest.raises(ValueError, match="literal relative"):
         skill_resources(f"Resources: {path}")
+
+
+@pytest.mark.parametrize("agent", ["claude-code", "codex", "opencode", "fx"])
+def test_local_terminal_says_it_depends_on_the_computers_sandbox(agent):
+    """The platform can't see a computer's sandbox before its runner starts the turn: only Codex brings
+    its own everywhere, so the others aren't promised a terminal (seen on a Mac, where fx is refused)."""
+    from dotrix_backend.core.settings import Settings
+    from dotrix_backend.modules.coding.capabilities import describe
+    from dotrix_backend.modules.coding.models import CodingAgent, CodingLocation
+
+    run = SimpleNamespace(agent=CodingAgent(agent), model="openai:gpt-5.5", location=CodingLocation.LOCAL, work_mode="build")
+    settings = Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="test-only-secret-for-local-terminal")
+    terminal = next(item for item in describe(run, settings) if item["id"] == "terminal")
+    assert terminal["available"] is (agent == "codex")
+    assert "sandbox" in terminal["reason"]

@@ -1987,8 +1987,15 @@ function CiCard({ turn, scope, canFix, onFix }: { turn: CodingRun; scope: Scope 
   );
 }
 
+/** What a turn ended as when it used no tools: a refused or cut-off turn didn't work on anything. */
+const NO_STEPS: Partial<Record<CodingRun["status"], string>> = {
+  failed: "Failed before any steps",
+  stopped: "Stopped before any steps",
+  recovery_required: "Interrupted before any steps",
+};
+
 /** What a turn did, in a line, as Claude Code folds its tool calls: "Read 2 files, ran 2 commands, edited 3 files". */
-function stepsSummary(events: CodingRun["events"]): string {
+function stepsSummary(events: CodingRun["events"], status?: CodingRun["status"]): string {
   let read = 0,
     edited = 0,
     ran = 0,
@@ -2007,7 +2014,8 @@ function stepsSummary(events: CodingRun["events"]): string {
     other && `used ${other} other tool${other > 1 ? "s" : ""}`,
   ].filter(Boolean) as string[];
   const line = parts.join(", ");
-  return line ? line[0]!.toUpperCase() + line.slice(1) : "Worked on it";
+  if (line) return line[0]!.toUpperCase() + line.slice(1);
+  return (status && NO_STEPS[status]) ?? "Worked on it";
 }
 
 function copyText(text: string) {
@@ -2069,7 +2077,7 @@ function KaiTurn({
                 <TraceCollapsibleTrigger>
                   <TraceLine status={working ? "running" : undefined}>
                     <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
-                    <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events)}</TraceTitle>
+                    <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events, turn.status)}</TraceTitle>
                   </TraceLine>
                 </TraceCollapsibleTrigger>
                 <TraceCollapsibleContent>
