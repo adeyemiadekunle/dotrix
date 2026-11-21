@@ -3521,9 +3521,9 @@ table.tbl {
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-3);
-  padding: 14px 8px 4px;
+  padding: 16px 8px 6px;
 }
-.set-nav .gh:first-child {
+.set-nav > div:first-child .gh {
   padding-top: 0;
 }
 .set-body {
