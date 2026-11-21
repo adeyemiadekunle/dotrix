@@ -15,7 +15,7 @@ import { opensOutside, staysInside } from "./links";
 import { Runners, sameOrigin } from "./runner";
 import { Updates } from "./updates";
 import { notify } from "./notify";
-import { ownWorktree, worktreeFile, worktreeTree } from "./worktree";
+import { createWorktreeBranch, ownWorktree, worktreeEditorUrl, worktreeFile, worktreeTree } from "./worktree";
 
 const WEB_URL = webUrl();
 // The web app is served on the API's origin, so the runner talks to the same one unless told otherwise.
@@ -117,6 +117,20 @@ function bridge(): void {
     if (error) throw new Error(error);
   });
   handle("dotrix:worktree:reveal", (_e, tree: unknown) => shell.showItemInFolder(worktree(tree)));
+  handle("dotrix:worktree:open-editor", async (event, tree: unknown) => {
+    const folder = worktree(tree);
+    const window = parent(event);
+    if (!window) return;
+    const { response } = await dialog.showMessageBox(window, {
+      message: "Open the worktree in an editor",
+      buttons: ["Visual Studio Code", "VS Code Insiders", "Cancel"],
+      cancelId: 2,
+    });
+    if (response === 0 || response === 1) {
+      await shell.openExternal(worktreeEditorUrl(worktree(folder), response === 0 ? "vscode" : "vscode-insiders"));
+    }
+  });
+  handle("dotrix:worktree:create-branch", (_e, tree: unknown, name: unknown) => createWorktreeBranch(worktree(tree), name));
   handle("dotrix:app:info", () => ({ version: app.getVersion(), platform: process.platform, packaged: app.isPackaged }));
   handle("dotrix:app:changelog", () => readChangelog(process.resourcesPath, app.isPackaged));
   handle("dotrix:updates:state", () => updates.state);
