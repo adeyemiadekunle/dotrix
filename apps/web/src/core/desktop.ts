@@ -76,6 +76,8 @@ interface Bridge {
     file(worktree: string, file: string): Promise<WorktreeFile>;
     open(worktree: string): Promise<void>;
     reveal(worktree: string): Promise<void>;
+    openEditor?(worktree: string): Promise<void>;
+    createBranch?(worktree: string, name: string): Promise<void>;
   };
 }
 
