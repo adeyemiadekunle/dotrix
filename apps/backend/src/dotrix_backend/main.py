@@ -48,7 +48,7 @@ from .modules.research.service import build_web_research
 from .modules.search.embeddings import build_embedder
 from .modules.web import router as web_session
 
-API_VERSION = "0.2.0"
+API_VERSION = "0.3.0"
 logger = logging.getLogger(__name__)
 
 

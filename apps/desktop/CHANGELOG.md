@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-21
+
 ### Changed
 
 - Desktop releases and What’s new now track desktop changes separately from server and standalone CLI releases.

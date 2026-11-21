@@ -9,6 +9,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-21
+
 ### Added
 
 - A manual **Live models** workflow (`.github/workflows/live.yml`, Actions → Live models → Run workflow): Nova on DeepAgents and fx, and Kai on every engine in the Docker sandbox from issue to PR, on the provider picked (NVIDIA, Anthropic, OpenAI or all). Keys are secrets of the `live-models` environment (`DOTRIX_LIVE_NVIDIA_API_KEY`, `DOTRIX_LIVE_ANTHROPIC_API_KEY`, `DOTRIX_LIVE_OPENAI_API_KEY`); only the picked provider's key reaches the tests. Never runs on a push or PR.
@@ -391,6 +393,7 @@ The first versioned release: everything built before versioning began, through #
 - Versioned releases: this changelog, one version for every package (`scripts/release.py`), a `stage` branch every PR
   goes into, and a GitHub release tagged `vX.Y.Z` when `stage` merges into `main`.
 
-[Unreleased]: https://github.com/adeyemiadekunle/dotrix/compare/v0.2.0...stage
+[Unreleased]: https://github.com/adeyemiadekunle/dotrix/compare/platform-v0.3.0...stage
+[0.3.0]: https://github.com/adeyemiadekunle/dotrix/releases/tag/platform-v0.3.0
 [0.2.0]: https://github.com/adeyemiadekunle/dotrix/releases/tag/v0.2.0
 [0.1.0]: https://github.com/adeyemiadekunle/dotrix/releases/tag/v0.1.0

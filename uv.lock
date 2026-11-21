@@ -890,7 +890,7 @@ wheels = [
 
 [[package]]
 name = "dotrix"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "apps/cli" }
 dependencies = [
     { name = "dotrix-engine" },
@@ -911,7 +911,7 @@ requires-dist = [
 
 [[package]]
 name = "dotrix-backend"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "apps/backend" }
 dependencies = [
     { name = "aioboto3" },
@@ -970,7 +970,7 @@ requires-dist = [
 
 [[package]]
 name = "dotrix-engine"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/engine" }
 dependencies = [
     { name = "deepagents" },
