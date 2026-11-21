@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-21
+
 ### Changed
 
 - A local fx turn gives fx Kai's contract (`# How Kai works`) as the session's system profile (ACP's `systemPrompt`), as a cloud turn does, rather than as words in the conversation. The person's turn carries only the task. The local driver (`fx_local.py`) splits the brief at the contract's last heading, so one quoted in an issue stays in the task, and the desktop Browser pane's note stays with the task. A brief without a contract, from an older platform, goes whole. Each local turn starts a session of its own, so there's no saved profile to check on resume. Checked with the real kai.3 `fx` in its namespace against a scripted model: the contract arrived in the system message, and the person's turn held only the task.
