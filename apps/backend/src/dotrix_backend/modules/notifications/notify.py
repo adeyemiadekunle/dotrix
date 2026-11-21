@@ -48,7 +48,7 @@ class Notifier:
                       count=count, actor_agent=agent)
 
     async def coding_waiting(
-        self, project: Project, coding_run_id: uuid.UUID, issue_id: uuid.UUID, title: str, at: datetime,
+        self, project: Project, coding_run_id: uuid.UUID, issue_id: uuid.UUID | None, title: str, at: datetime,
         agent: str, *, requester_id: uuid.UUID | None,
     ) -> None:
         """A coding run waits for approval: everyone who may approve agent changes and sees the project

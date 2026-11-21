@@ -70,6 +70,7 @@ class TeamService:
         activity.extend(AgentActivityRead(
             run_id=run.id, parent_run_id=run.origin_run_id, thread_id=run.thread_id, session_id=run.session_id,
             project_id=run.project_id, project_key=project_key, agent="coding-agent", status=run.status,
-            title=f"Coding {run.issue_key}", source="coding", updated_at=run.finished_at or run.started_at or run.created_at,
+            title=(f"Coding {run.issue_key}" if run.issue_key else run.task_title or "Coding session"),
+            source="coding", updated_at=run.finished_at or run.started_at or run.created_at,
         ) for run, project_key in coding)
         return sorted(activity, key=lambda item: item.updated_at, reverse=True)[:100]

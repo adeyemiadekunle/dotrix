@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 /** Only what's inside dotrix's worktrees folder may be read or opened from the web app. */
 function worktreesRoot(): string {
@@ -37,6 +38,51 @@ function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile("git", args, { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (error, stdout) => (error ? reject(error) : resolve(String(stdout))));
   });
+}
+
+export function worktreeEditorUrl(tree: string, editor: "vscode" | "vscode-insiders"): string {
+  const folder = pathToFileURL(tree);
+  if (folder.host) throw new Error("The editor requires a local worktree path");
+  return `${editor}://file${folder.pathname}`;
+}
+
+export async function createWorktreeBranch(tree: string, name: unknown): Promise<void> {
+  const root = fs.realpathSync(worktreesRoot());
+  const layout = path.relative(root, tree).split(path.sep);
+  if (layout.length !== 3 || layout[0] !== ".sessions" || !ownWorktree(tree)) {
+    throw new Error("Branch creation requires a managed session worktree");
+  }
+  if (typeof name !== "string" || name.startsWith("-") || !name || name.length > 200) {
+    throw new Error("Enter a valid Git branch name");
+  }
+  try {
+    await git(tree, ["check-ref-format", `refs/heads/${name}`]);
+  } catch {
+    throw new Error("Enter a valid Git branch name");
+  }
+  const marker = `${tree}.active`;
+  let lock: number;
+  try {
+    lock = fs.openSync(marker, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("The worktree is active or its last operation was interrupted");
+    throw error;
+  }
+  try {
+    const top = (await git(tree, ["rev-parse", "--show-toplevel"])).trimEnd();
+    const directory = (await git(tree, ["rev-parse", "--absolute-git-dir"])).trimEnd();
+    const common = (await git(tree, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trimEnd();
+    if (fs.realpathSync(top) !== tree || fs.realpathSync(directory) === fs.realpathSync(common)) {
+      throw new Error("The folder is not a linked Git worktree");
+    }
+    if ((await git(tree, ["rev-parse", "--abbrev-ref", "HEAD"])).trim() !== "HEAD") {
+      throw new Error("The worktree already has a branch");
+    }
+    await git(tree, ["-c", `core.hooksPath=${os.devNull}`, "switch", "--no-overwrite-ignore", "-c", name]);
+  } finally {
+    fs.closeSync(lock);
+    fs.unlinkSync(marker);
+  }
 }
 
 /** Every file in the worktree as it is now, with how it differs from the commit the turn started on. */
@@ -95,4 +141,42 @@ export async function worktreeFile(tree: string, file: unknown) {
   const binary = !tooLarge && [before, after].some((t) => t?.includes("\0"));
   const status = beforeSize < 0 ? "added" : afterSize < 0 ? "deleted" : before !== after ? "modified" : "unchanged";
   return { path: file, status, before: binary ? null : before, after: binary ? null : after, binary, too_large: tooLarge };
+}
+
+/** Reserve a managed worktree for a user action and verify it belongs to the selected checkout. */
+export async function reserveLocalAction(folder: string, tree: string): Promise<(keepMarker?: boolean) => void> {
+  const layout = path.relative(fs.realpathSync(worktreesRoot()), tree).split(path.sep);
+  if (layout.length !== 3 || layout[0] !== ".sessions" || ownWorktree(tree) !== tree) {
+    throw new Error("Local actions require a managed session worktree");
+  }
+  const marker = `${tree}.active`;
+  let lock: number;
+  try {
+    lock = fs.openSync(marker, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error("This worktree is active or its last operation was interrupted");
+    throw error;
+  }
+  const release = (keepMarker = false) => {
+    fs.closeSync(lock);
+    if (!keepMarker) fs.unlinkSync(marker);
+  };
+  try {
+    const common = (cwd: string) => git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    const [top, checkoutGit, treeGit, treeDirectory] = await Promise.all([
+      git(tree, ["rev-parse", "--show-toplevel"]),
+      common(folder),
+      common(tree),
+      git(tree, ["rev-parse", "--absolute-git-dir"]),
+    ]);
+    const commonPath = fs.realpathSync(treeGit.trimEnd());
+    if (fs.realpathSync(top.trimEnd()) !== tree || fs.realpathSync(checkoutGit.trimEnd()) !== commonPath) {
+      throw new Error("This worktree belongs to a different checkout");
+    }
+    if (fs.realpathSync(treeDirectory.trimEnd()) === commonPath) throw new Error("Choose a linked worktree");
+    return release;
+  } catch (error) {
+    release();
+    throw error;
+  }
 }

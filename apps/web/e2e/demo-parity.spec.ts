@@ -55,7 +55,7 @@ test("a live account uses the same navigation and typography without inheriting 
   await expect(page.locator(".chat-list .sitem")).toHaveCount(0);
   await expect(page.getByText("Sample conversation · Sign in to work with Nova.")).toHaveCount(0);
   await page.goto(`/w/${slug}/codes`);
-  await expect(page.getByRole("heading", { name: "Codes", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Code", exact: true })).toBeVisible();
   await expect(page.locator(".cs-row")).toHaveCount(0);
   expect(await page.locator(".chat-side h1").evaluate((element) => getComputedStyle(element).fontFamily)).toBe(font);
 });

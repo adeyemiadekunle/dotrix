@@ -71,7 +71,7 @@ from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.skills import DEFINITION_OF_DONE, review_skills
 
 from . import guard
-from .brief import split_contract
+from .brief import split_contract, with_task
 from .inputs import accepts_steering, steer_states, take_steers
 from .models import (
     CODING_AGENT_NAME,
@@ -93,6 +93,7 @@ from .tools import BROWSER_RULE, CodingTool, Usage, run_key, tool_for
 from .warm import WarmPool, close_quietly
 
 logger = logging.getLogger(__name__)
+CHECKPOINT_INTERVAL_SECONDS = 20
 
 # The lease token of the coding attempt running in this task (None: not under a lease).
 _LEASE: contextvars.ContextVar[int | None] = contextvars.ContextVar("coding_lease", default=None)
@@ -339,6 +340,8 @@ class CodingWorker:
         except (RunFailed, SandboxError, CheckoutError, GitHubUnavailable) as exc:
             if publication.attempted:
                 await self._record_uncertain_publication(run_id, publication)
+            elif isinstance(exc, SandboxError) and await self._recover_lost_sandbox(run_id):
+                logger.info("coding run %s lost its sandbox and has a saved checkpoint", run_id)
             else:
                 await self._end(run_id, CodingRunStatus.FAILED, error=str(exc))
         except DomainError as exc:  # e.g. the app was uninstalled (NotFound), or may not open PRs
@@ -428,6 +431,9 @@ class CodingWorker:
             if found is None:
                 raise RunFailed("The project's repository was disconnected")
             repo, installation = found
+            if (repo.github_repo_id != run.source_repo_id if run.source_repo_id is not None
+                    else repo.full_name.casefold() != run.repo_full_name.casefold()):
+                raise RunFailed("The project's connected repository changed after this turn was requested")
             if installation.suspended_at is not None:
                 raise RunFailed(f"The GitHub App is suspended on {installation.account_login}")
             ref = RepoRef(run.workspace_id, run.project_id, installation.installation_id, repo.full_name,
@@ -443,6 +449,7 @@ class CodingWorker:
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
+            source_sha = run.source_sha
             environment_image_id = run.environment_image_id
             environment = dict(run.environment_snapshot) if run.environment_snapshot else None
             execution_plan = run.execution_plan
@@ -460,6 +467,8 @@ class CodingWorker:
             # Pushing what's ready runs no model: it needs neither the tool nor a key (one removed
             # while the changes waited mustn't lose them).
             publish_only = accepted is not None or revert is not None
+            checkpoint = await session.scalar(select(CodingRun.cloud_checkpoint).where(CodingRun.id == run_id)) \
+                if not publish_only and run.lease_token > 1 else None
             tool = tool_for(agent, model, self.settings)
             # People see Kai; the engine underneath is kept here, on the run, and in the audit log.
             logger.info("coding run %s: Kai on %s (model %s)%s", run.id, agent.value, model or "default",
@@ -501,6 +510,9 @@ class CodingWorker:
                             "start a new session from the issue") from exc
         await run_git(host, "checkout", "-q", "--detach", "FETCH_HEAD")
         base_sha = (await run_git(host, "rev-parse", "HEAD")).strip()
+
+        if not publish_only and source_sha and not session_branch and base_sha != source_sha:
+            raise RunFailed("The starting branch changed after this turn was requested; start a new coding session")
 
         if not publish_only and not plan_mode and execution_plan:
             expected = execution_plan.get("execution") or {}
@@ -567,11 +579,24 @@ class CodingWorker:
         credential = hashlib.sha256(f"{key}\n{network_digest(allow)}".encode()).hexdigest()
         if environment:
             credential = hashlib.sha256((credential + json.dumps(environment, sort_keys=True) + (environment_image_id or "")).encode()).hexdigest()
+        restored_patch = self._checkpoint_patch(checkpoint, run_id, github_repo_id, base_sha, key) if checkpoint else None
+        if restored_patch:
+            # Validate against the real Git checkout before applying inside the replacement sandbox.
+            await _stage(work, host, restored_patch)
+            await run_git(host, "reset", "--hard", base_sha)
         box = await self.pool.take(session_id, credential)
+        if restored_patch and box is not None:
+            await close_quietly(box)
+            box = None
         woken = False
         if box is None and sleeping is not None:
-            box = await self._wake(session_id, sleeping, slept_at, credential, tool, key)
-            woken = box is not None
+            if restored_patch:
+                await self._session(session_id, sandbox_handle=None, sandbox_slept_at=None)
+                if hasattr(self.sandbox, "discard"):
+                    await self.sandbox.discard(sleeping)
+            else:
+                box = await self._wake(session_id, sleeping, slept_at, credential, tool, key)
+                woken = box is not None
         warm = False
         if box is not None:
             try:
@@ -613,6 +638,14 @@ class CodingWorker:
                         or before_setup.stdout.strip() != after_setup.stdout.strip()):
                     raise RunFailed("Environment setup changed repository files; use a frozen dependency install and keep generated files ignored")
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
+            if restored_patch:
+                applied = await box.exec(["git", "apply", "--index", "--binary", "--whitespace=nowarn", "-"],
+                                         stdin=restored_patch, timeout=60)
+                if applied.code != 0:
+                    raise RunFailed("The saved cloud checkpoint did not apply in the replacement sandbox")
+                await self._update(run_id, step="Restored unpublished changes from the cloud checkpoint")
+                brief = with_task(brief, "## Recovered turn\nThe workspace contains edits from this turn's interrupted attempt. "
+                                  "Inspect the existing changes and continue the original request.")
             where = ("woken from the last turn" if woken else "kept from the last turn") if warm else self.sandbox.kind
             await self._update(run_id, step=f"Sandbox ready ({where}); {CODING_AGENT_NAME} is "
                                + ("continuing the session" if resumed else "working"))
@@ -625,7 +658,11 @@ class CodingWorker:
             extra += profile_args
             started = datetime.now(UTC)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
-                                                 cost_before if resumed else None, plan_mode=plan_mode)
+                                                 cost_before if resumed else None, plan_mode=plan_mode,
+                                                 checkpoint=(lambda: self._checkpoint(
+                                                     run_id, box, baseline, base_sha, github_repo_id, key))
+                                                 if self.secrets.configured and run_sandbox.kind != "local" and not plan_mode
+                                                 else None)
             if plan_mode:
                 try:
                     result_plan = parse_plan(summary)
@@ -706,6 +743,68 @@ class CodingWorker:
             else:
                 await close_quietly(box)
                 await self._session(session_id, state=CodingSessionState.IDLE)
+
+    async def _checkpoint(
+        self, run_id: uuid.UUID, box: SandboxSession, baseline: str, base_sha: str, repo_id: int, key: str,
+    ) -> None:
+        """Read the working files through a temporary Git index while the tool runs."""
+        script = (
+            """set -e; scratch=$(mktemp -d); trap 'rm -rf "$scratch"' EXIT; """
+            'export GIT_INDEX_FILE="$scratch/index"; git read-tree "$1"; git add -A; '
+            'git diff --cached --name-only --no-renames -z "$1"; printf "\\0"; '
+            'git -c core.quotepath=off diff --cached --binary --no-color --no-ext-diff --no-textconv --no-renames "$1"'
+        )
+        captured = await box.exec(["sh", "-c", script, "sh", baseline], timeout=25)
+        if captured.code != 0 or captured.truncated:
+            return
+        raw = captured.raw or captured.stdout.encode()
+        paths, delimiter, patch = raw.partition(b"\0\0")
+        if raw == b"\0":
+            paths, delimiter, patch = b"", raw, b""
+        if not delimiter or len(patch) > guard.MAX_PATCH_BYTES or guard.leaks(key, patch):
+            return
+        if guard.check([path.decode("utf-8", errors="replace") for path in paths.split(b"\0") if path]):
+            return
+        async with self.session_factory() as session:
+            run = await session.get(CodingRun, run_id, with_for_update=True)
+            if run is None or not self._holds(run) or run.status is not CodingRunStatus.RUNNING or run.stop_requested:
+                return
+            run.cloud_checkpoint = self.secrets.encrypt(json.dumps({
+                "run": str(run_id), "repository": repo_id, "base": base_sha, "patch": base64.b64encode(patch).decode(),
+            })) if patch else None
+            await session.commit()
+
+    async def _recover_lost_sandbox(self, run_id: uuid.UUID) -> bool:
+        async with self.session_factory() as session:
+            run = await session.get(CodingRun, run_id, with_for_update=True)
+            if run is None or not self._holds(run) or run.status is not CodingRunStatus.RUNNING:
+                return False
+            if run.stop_requested:
+                await self._finish(session, run, CodingRunStatus.STOPPED, error="Stopped by a person")
+                return True
+            saved = await session.scalar(select(CodingRun.cloud_checkpoint.is_not(None)).where(CodingRun.id == run_id))
+            if not saved:
+                return False
+            mark_coding_recovery_required(
+                session, run, reason="The sandbox became unavailable. A cloud checkpoint is saved for recovery.",
+                source="sandbox_checkpoint",
+            )
+            await session.commit()
+            return True
+
+    def _checkpoint_patch(self, encrypted: str, run_id: uuid.UUID, repo_id: int, base_sha: str, key: str) -> bytes:
+        try:
+            saved = json.loads(self.secrets.decrypt(encrypted) or "null")
+            if not isinstance(saved, dict) or (saved.get("run"), saved.get("repository"), saved.get("base")) != (
+                str(run_id), repo_id, base_sha,
+            ):
+                raise ValueError
+            patch = base64.b64decode(saved["patch"], validate=True)
+            if not patch or len(patch) > guard.MAX_PATCH_BYTES or guard.leaks(key, patch):
+                raise ValueError
+            return patch
+        except (DomainError, KeyError, TypeError, ValueError) as exc:
+            raise RunFailed("The saved cloud checkpoint could not be verified for this repository and starting commit") from exc
 
     async def _blocked(self, run_id: uuid.UUID, box: SandboxSession, since: datetime) -> None:
         """Say which hosts the sandbox refused during the turn (Docker Cloud keeps a log), so a turn that
@@ -794,10 +893,11 @@ class CodingWorker:
                 raise _Stopped("Stopped before pushing")
             issue_key, run_short, turn = run.issue_key, run.id.hex[-6:], run.turn  # the id's random end: its start is a timestamp shared for hours
             title = await issue_title(session, run)
-        branch = session_branch or f"dotrix/{issue_key.lower()}-{_slug(title)}-{run_short}"
+        branch = session_branch or f"dotrix/{issue_key.lower() or 'task'}-{_slug(title)}-{run_short}"
         if branch == ref.default_branch:
             raise RunFailed("Refusing to push to the default branch")
-        heading = f"{issue_key}: {title}" + (f" (turn {turn})" if turn > 1 else "")
+        pull_title = f"{issue_key}: {title}" if issue_key else title
+        heading = pull_title + (f" (turn {turn})" if turn > 1 else "")
         message = f"{heading}\n\n{(summary or '').strip()[:3000]}\n\nCoding run {run_id} ({CODING_AGENT_NAME})"
         await run_git(host, "-c", f"user.name={CODING_AGENT_NAME} via dotrix", "-c", f"user.email={BOT_EMAIL}",
                       "commit", "-q", "--no-verify", "-m", message)
@@ -820,7 +920,7 @@ class CodingWorker:
             await self._ensure_running(run_id)
             pr = await self.app.create_pull_request(
                 ref.installation_id, ref.full_name, head=push.head + branch, base=ref.default_branch,
-                title=f"{issue_key}: {title}",
+                title=pull_title,
                 body=pr_body(summary, issue_key, run_id, files, guard.ci_sensitive(paths)),
                 token=token,
             )
@@ -892,6 +992,7 @@ class CodingWorker:
     async def _code(
         self, run_id: uuid.UUID, box: SandboxSession, tool: CodingTool, model: str | None, tool_session: uuid.UUID,
         brief: str, extra: list[str], cost_before: float | None, *, plan_mode: bool = False, task_key: str | None = None,
+        checkpoint: Callable[[], Awaitable[None]] | None = None,
     ) -> tuple[str | None, float | None]:
         """Run the tool with the brief on the run's model (the tool's default when None), streaming its
         events into the run: its final message, and the cost it reported. A resumed session reports
@@ -971,6 +1072,15 @@ class CodingWorker:
                     stop_reason.append("Stopped by a person")
                     cancel.set()
 
+        async def save_checkpoints() -> None:
+            assert checkpoint is not None
+            while True:
+                await asyncio.sleep(CHECKPOINT_INTERVAL_SECONDS)
+                try:
+                    await checkpoint()
+                except Exception:
+                    logger.warning("coding run %s: cloud checkpoint capture failed", run_id, exc_info=True)
+
         async def send_steers() -> None:
             """A person's messages to this turn, into its inbox in the sandbox once the driver opened it: each
             written to a dot-file and renamed, so the driver never reads half of one."""
@@ -987,6 +1097,7 @@ class CodingWorker:
         browser = not plan_mode and self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
         watcher = asyncio.create_task(watch_stop())
         steerer = asyncio.create_task(send_steers()) if steering else None
+        checkpointer = asyncio.create_task(save_checkpoints()) if checkpoint is not None else None
         try:
             result = await box.exec(
                 readonly_command(tool.command(model, browser=False) + extra) if plan_mode
@@ -1000,6 +1111,9 @@ class CodingWorker:
             watcher.cancel()
             if steerer is not None:
                 steerer.cancel()
+            if checkpointer is not None:
+                checkpointer.cancel()
+                await asyncio.gather(checkpointer, return_exceptions=True)
             await flush()
         if profile_digests and not plan_mode and task_key is None:  # a plan turn's session is thrown away
             await self._record_profile(run_id, profile_digests[-1])
@@ -1419,13 +1533,14 @@ class CodingWorker:
                     return
                 listed = "\n".join(f"- {f['path']} (+{f['added']} -{f['removed']})" for f in files[:60])
                 clipped = diff if len(diff) <= REVIEW_DIFF_CHARS else diff[:REVIEW_DIFF_CHARS] + "\n…(cut)"
-                message = CODE_REVIEW_PROMPT.format(key=run.issue_key, title=title, number=run.pr_number,
+                message = CODE_REVIEW_PROMPT.format(key=run.issue_key or "standalone", title=title, number=run.pr_number,
                                                     url=run.pr_url, files=listed, diff=clipped, done=DEFINITION_OF_DONE,
                                                     skills=_review_skills_line(f"{title}\n{listed}\n{clipped}"),
                                                     summary=(run.summary or "(no report)")[:3_000])
                 review = await AgentService(session, self.reviewer).create_run(
                     ProjectAccess(project, member), RunCreate(message=message[:20_000], agent=REVIEWER),
-                    title=f"Review PR #{run.pr_number} ({run.issue_key})" + (f", turn {run.turn}" if run.turn > 1 else ""),
+                    title=f"Review PR #{run.pr_number} ({run.issue_key or title})"[:180]
+                    + (f", turn {run.turn}" if run.turn > 1 else ""),
                     mode="reviewer.issue",
                 )
                 run.review_run_id, run.review_thread_id = review.id, review.thread_id
@@ -1500,6 +1615,7 @@ async def ready_for_acceptance(
     """A turn's checked changes wait for a person (`changes_ready`): in Manual, or because they change
     files CI runs (`ci_sensitive`, in any mode); its approvers are told. Not committed."""
     run.status, run.files_changed = CodingRunStatus.CHANGES_READY, files
+    run.cloud_checkpoint = None
     run.pending_patch, run.pending_patch_bytes = None, diff
     run.diff = diff.decode("utf-8", errors="replace")  # display only
     run.summary = summary or run.summary
@@ -1514,9 +1630,10 @@ async def ready_for_acceptance(
         else "Changes ready: waiting for a person to accept them"
     ))
     assert project is not None
+    label = f"{run.issue_key}: {title}" if run.issue_key else title
     await Notifier(session).coding_waiting(
         project, run.id, run.issue_id,
-        f"Changes ready for {run.issue_key}{' (they change files CI runs)' if named else ''}: {title}",
+        f"Changes ready for {label}" + (" (they change files CI runs)" if named else ""),
         datetime.now(UTC), run.agent.value, requester_id=run.requested_by_id,
     )
     AuditLog(session).record(
@@ -1533,6 +1650,8 @@ def finish_run(session: AsyncSession, run: CodingRun, status: CodingRunStatus, *
     """End a run (the caller holds it and checked it may): its outcome, audited. Not committed."""
     run.status, run.finished_at = status, datetime.now(UTC)
     run.error = error[:1000] if error else None
+    if status is not CodingRunStatus.FAILED:
+        run.cloud_checkpoint = None
     run.pending_patch = run.pending_patch_bytes = None  # accepted changes are on the branch now, or never will be
     if summary:
         run.summary = summary
@@ -1552,7 +1671,7 @@ def turn_ended(session: AsyncSession, run: CodingRun, *, by: uuid.UUID | None = 
     (`by`), nor one still waiting on a person (that has its own notification). Not committed."""
     if run.requested_by_id is None or (by is not None and by == run.requested_by_id):
         return
-    key = run.issue_key
+    key = run.issue_key or run.task_title or "the coding session"
     if run.status is CodingRunStatus.PR_OPENED:
         title = f"{CODING_AGENT_NAME}'s turn on {key} is on PR #{run.pr_number}" if run.pr_number \
             else f"{CODING_AGENT_NAME} finished {key}"
@@ -1637,7 +1756,7 @@ def _slug(title: str) -> str:
 async def issue_title(session: AsyncSession, run: CodingRun) -> str:
     from dotrix_backend.modules.issues.models import Issue
 
-    return await session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.issue_key
+    return await session.scalar(select(Issue.title).where(Issue.id == run.issue_id)) or run.task_title or run.issue_key
 
 
 def pr_body(
@@ -1654,7 +1773,7 @@ def pr_body(
         (summary or "The agent left no summary.").strip()[:20_000],
         "",
         "---",
-        f"Written by {CODING_AGENT_NAME} in a dotrix coding run for {key} ({run_id}), asked for and approved on "
+        f"Written by {CODING_AGENT_NAME} in a dotrix coding run{f' for {key}' if key else ''} ({run_id}), asked for and approved on "
         f"dotrix. {len(files)} file{'s' if len(files) != 1 else ''} changed. A person reviews and merges it.",
     ])
 
@@ -1682,6 +1801,8 @@ def build_coding_worker(
 
 async def issue_to_review(session: AsyncSession, run: CodingRun, title: str, *, opened: bool) -> None:
     """Link the PR on the issue and move it to review, as the coding tool acting for whoever asked."""
+    if run.issue_id is None:
+        return
     project = await session.get(Project, run.project_id)
     member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
         if run.requested_by_id else None

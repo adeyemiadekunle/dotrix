@@ -266,6 +266,10 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ): {"decision": "reject"},
     (
         "POST",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions",
+    ): {"note": "Fix the test"},
+    (
+        "POST",
         "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/sessions/{session_id}/turns",
     ): {"message": "x"},
     (

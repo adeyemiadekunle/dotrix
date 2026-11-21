@@ -1,6 +1,6 @@
 # Product and release readiness
 
-Maintained against `stage`, 2026-11-12. This is the current product contract and beta release checklist. [Architecture and agents](architecture.md) explains implementation boundaries; [README](../README.md) covers installation and development. Contributor rules remain in [CLAUDE.md](../CLAUDE.md) and [AGENTS.md](../AGENTS.md). A merged feature or passing synthetic test does not establish deployment readiness.
+Maintained against `stage`, 2026-11-21. This is the current product contract and beta release checklist. [Architecture and agents](architecture.md) explains implementation boundaries; [README](../README.md) covers installation and development. Contributor rules remain in [CLAUDE.md](../CLAUDE.md) and [AGENTS.md](../AGENTS.md). A merged feature or passing synthetic test does not establish deployment readiness.
 
 ## Product direction
 
@@ -223,12 +223,48 @@ What a beta participant should be told, with where each is tracked (CLAUDE.md's 
 - **Storage:** 1 GB of uploads per workspace unless the operator raises it; two uploads at the same moment can pass the check together and go over by one file.
 - **Not verified in production:** the Docker Cloud sandbox and the gVisor host, Juno's review posting against a real PR from the deployed host, the first fx turn through the platform's own sandbox, the admin console's two-factor sign-in and alert emails, `deploy/migrate.sh` on the real server, and every row above still unticked.
 
-## Remaining delivery priorities
+## Roadmap: the solo beta on the Kai runtime
 
-Production release gates come first: real host isolation, HTTPS/secrets, backups/restores, migrations, email/account recovery and the deployed Nova → Kai → Juno loop. Check each item above against a date, commit, environment and evidence link; leave unverified items open.
+One ordered list for the solo beta and the move to the Kai runtime (`adeyemiadekunle/kai-runtime`, the private fork of fx). Decided 2026-11-21: **the beta launches with Kai's runtime as the default engine for new Chat and Code sessions.** The runtime's own phases and evidence live in its [migration plan](https://github.com/adeyemiadekunle/kai-runtime/blob/main/docs/DOTRIX_KAI_MIGRATION_PLAN.md); this section sets the order. Record each item against a date, commit, environment and evidence link; leave unverified items open.
 
-Next finish coding text streaming and session usage, deeper background event nesting, specialist memory export/retention, cross-project conversation controls, distributed limits and failure testing, and paid-provider coverage. Keep `DOTRIX_CODING_PARALLEL` off until the deployment validation in [Planning and parallel execution](architecture.md#planning-and-parallel-execution) passes.
+### Where the migration stands
 
-Later work includes real `sbx`/Windows verification, desktop signing/macOS, code graphs and blast radius, app previews/MCP expansion, additional dependency manifests, workspace knowledge, account two-factor authentication, notifications/connectors and enterprise features. Existing capabilities should be checked before implementing an old roadmap item again: GitHub Issues snapshot imports, board check evidence and background task rendering already exist.
+| Runtime phase | State |
+| --- | --- |
+| 0. Released fx 0.0.17 baseline | Done |
+| 1. Shared execution contract and saved-state compatibility | Done. Sessions saved by libfx 0.0.16 and earlier fork builds still read. |
+| 2. Provider capabilities and separate Chat and Code policies | Built. Live checks: NVIDIA only. Anthropic, OpenAI and Google on paid models are open. |
+| 3. Chat on the fork's libfx | Done: `@kunemi-group/kai@0.0.17-kai.2`. DeepAgents is still the default. |
+| 4. Cloud and local coding on the fork's fx | Done: `0.0.17-kai.3` pinned in the coding image. A paid turn inside the gVisor sandbox is open. |
+| 5. Workers, skills, browser and background tasks | Done for the beta: worker profiles and limits, pinned skills, the Browser pane, background tasks. |
+| 6. Kai by default; legacy engines retired | Before the beta (below) |
+| 7. Kai branding and final names | After the beta |
 
-The detailed engineering queue and historical implementation evidence remain in [CLAUDE.md](../CLAUDE.md#remaining-work-by-priority-2026-10-30) and [audit plans](../plans/README.md). Completed audit plans are historical records, not a second product roadmap.
+### 1. Before the beta
+
+Two tracks that can run side by side. The beta opens when both are done.
+
+**Kai by default (runtime phase 6, first half).**
+
+1. Paid-model checks on fx for Chat and Code: Anthropic and OpenAI through the Live models workflow (keys in the `live-models` environment), and a paid turn inside the gVisor sandbox. Check Google on fx chat again, or keep it listed as unsupported.
+2. Set acceptance thresholds before comparing: run fixed tasks on fx and on today's defaults (DeepAgents; Claude Code, Codex, OpenCode) for task success, latency, cost, recovery and human intervention.
+3. The full journey on fx: Nova → Kai → Juno, with a denied action, Stop, a worker restart and a pending approval kept across it.
+4. Make fx the default for new Chat conversations and for every Code session whose model it can run. Existing conversations and sessions keep the runtime they recorded. Local turns keep the other engines where fx can't run commands (no Mac or Windows sandbox yet).
+5. Rehearse rollback: route new work back to the earlier defaults and drain or recover active runs on their recorded runtime.
+
+**Production release gates.** Every unticked item in [Readiness checks](#readiness-checks): host isolation, HTTPS and secrets, backups and restores, migrations, email and account recovery, provider and GitHub setup, failure handling. Run the core loop check on the deployed host with fx as the default, so it proves the engine the beta ships with.
+
+### 2. During the beta
+
+- Measure task completion, abandonment, recovery, cost and return use before widening scope or claiming savings.
+- Finish coding text streaming and session usage, deeper background event nesting, specialist memory export and retention, cross-project conversation controls, distributed limits and failure testing.
+- [Plan 046](../plans/046-coding-workspaces.md): continuing a session in the cloud or locally, cloud checkpoint recovery on a real provider, and packaged desktop checks.
+- Keep `DOTRIX_CODING_PARALLEL` off until the deployment validation in [Planning and parallel execution](architecture.md#planning-and-parallel-execution) passes.
+
+### 3. After the beta
+
+- **Retire legacy engines (runtime phase 6, second half).** Remove DeepAgents, Claude Code, Codex and OpenCode as fallbacks once parity and rollback hold, every active session and saved journal is accounted for, and local coding has a sandbox on each supported OS.
+- **Kai branding (runtime phase 7).** Rename `fx`, `libfx`, `FX_*`, `.fx` and saved runtime identifiers with tested aliases and imports. Until then they keep their names.
+- Later: real `sbx` and Windows verification, desktop signing and macOS, code graphs and blast radius, app previews and MCP expansion, more dependency manifests, workspace knowledge, account two-factor authentication, notifications and connectors, organisations and enterprise features. Check what exists before building an old roadmap item again: GitHub Issues imports, board check evidence and background task rendering already exist.
+
+The detailed engineering queue and historical evidence remain in [CLAUDE.md](../CLAUDE.md#remaining-work-by-priority-2026-10-30) and [audit plans](../plans/README.md). Completed audit plans are historical records, not a second roadmap.

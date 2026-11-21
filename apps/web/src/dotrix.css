@@ -2899,6 +2899,26 @@ section.side-panel-body[hidden] {
   letter-spacing: -0.02em;
   text-align: center;
 }
+.ns-source {
+  display: grid;
+  gap: 10px;
+  width: min(440px, 100%);
+}
+.ns-source label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.ns-source input,
+.ns-source select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
 .ns-bottom {
   width: 100%;
   max-width: 820px;

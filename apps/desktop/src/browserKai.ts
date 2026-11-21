@@ -230,7 +230,7 @@ export class KaiBrowser implements ToolSet {
     const host = this.host();
     const turn = this.turnOf(caller);
     const nowhere =
-      "The Browser pane couldn't be opened: the person needs to open this coding session in Codes in the dotrix app, and didn't in time. " +
+      "The Browser pane couldn't be opened: the person needs to open this coding session in Code in the dotrix app, and didn't in time. " +
       "Go on without it, and say what you couldn't check.";
     if (!turn) throw new Error("No turn is coding in this project on this computer now.");
     if (!host || host.isDestroyed()) throw new Error(nowhere);

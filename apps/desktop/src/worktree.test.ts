@@ -1,0 +1,52 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+import { createWorktreeBranch, worktreeEditorUrl } from "./worktree";
+
+test("editor links encode the local folder with the chosen editor scheme", () => {
+  const folder = path.resolve("name with # and ?");
+  assert.match(worktreeEditorUrl(folder, "vscode"), /^vscode:\/\/file\/.*name%20with%20%23%20and%20%3F$/);
+  assert.match(worktreeEditorUrl(folder, "vscode-insiders"), /^vscode-insiders:\/\/file\//);
+});
+
+test("branch creation reserves the managed worktree and preserves both checkouts", async (t) => {
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dotrix-worktree-")));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.mock.method(os, "homedir", () => home);
+  const repo = path.join(home, "repo");
+  const tree = path.join(home, ".dotrix", "worktrees", ".sessions", "project", "session");
+  fs.mkdirSync(path.dirname(tree), { recursive: true });
+  fs.mkdirSync(repo);
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "file.txt"), "base\n");
+  git(repo, "add", "file.txt");
+  git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Base");
+  git(repo, "worktree", "add", "-q", "--detach", tree, "HEAD");
+  fs.writeFileSync(path.join(tree, "file.txt"), "local edit\n");
+  git(tree, "add", "file.txt");
+  fs.writeFileSync(path.join(tree, "file.txt"), "unstaged edit\n");
+  const status = git(tree, "status", "--porcelain");
+  const marker = `${tree}.active`;
+  fs.writeFileSync(marker, "runner\n");
+  await assert.rejects(createWorktreeBranch(tree, "feature/local"), /worktree is active/);
+  assert.equal(fs.readFileSync(marker, "utf8"), "runner\n");
+  fs.unlinkSync(marker);
+  await assert.rejects(createWorktreeBranch(tree, "../bad"), /valid Git branch/);
+  git(repo, "branch", "existing");
+  await assert.rejects(createWorktreeBranch(tree, "existing"), /already exists/);
+  assert.equal(fs.existsSync(marker), false);
+  await createWorktreeBranch(tree, "feature/local");
+  assert.equal(git(tree, "branch", "--show-current"), "feature/local");
+  assert.equal(git(tree, "status", "--porcelain"), status);
+  assert.equal(fs.readFileSync(path.join(tree, "file.txt"), "utf8"), "unstaged edit\n");
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  assert.equal(fs.readFileSync(path.join(repo, "file.txt"), "utf8"), "base\n");
+  assert.equal(fs.existsSync(marker), false);
+  await assert.rejects(createWorktreeBranch(tree, "another"), /already has a branch/);
+  await assert.rejects(createWorktreeBranch(repo, "outside"), /managed session worktree/);
+});

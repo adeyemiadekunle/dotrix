@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 
@@ -62,6 +62,21 @@ class CodingRunCreate(BaseModel):
     agent: CodingAgent | None = Field(default=None, description="The engine for this session; otherwise the one for its model "
                                       "(your preferred engine when it can run it, else the model's provider's own)")
     model: str | None = Field(default=None, max_length=100, description="The provider:model to code on; otherwise your default model")
+
+
+class StandaloneCodingCreate(CodingRunCreate):
+    note: str = Field(min_length=1, max_length=5_000, pattern=r"\S", description="What Kai should do")
+    base_branch: str | None = Field(default=None, min_length=1, max_length=200, pattern=r"^[A-Za-z0-9_][A-Za-z0-9_./-]*$",
+                                    description="Existing GitHub branch; defaults to the repository's default")
+
+    @field_validator("base_branch")
+    @classmethod
+    def valid_branch_path(cls, branch: str | None) -> str | None:
+        if branch is not None and (".." in branch or branch.endswith(".") or any(
+            not part or part.startswith(".") or part.endswith(".lock") for part in branch.split("/")
+        )):
+            raise ValueError("Use a valid Git branch name")
+        return branch
 
 
 class CodingFollowUp(BaseModel):
@@ -333,6 +348,8 @@ class CodingClaim(BaseModel):
     tool: CodingAgent = Field(description="The tool to code with")
     repo_full_name: str
     base_branch: str
+    source_sha: str | None = Field(default=None, description="Admitted starting commit for a standalone turn")
+    managed_worktree: bool = Field(default=False, description="Reuse the worktree assigned to this session and runner")
     branch: str | None = Field(description="The session's branch to build on (a follow-up), else the base branch")
 
 

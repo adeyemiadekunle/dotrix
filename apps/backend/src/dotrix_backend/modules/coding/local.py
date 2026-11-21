@@ -44,8 +44,9 @@ from .models import (
     CodingRun,
     CodingRunner,
     CodingRunStatus,
+    CodingSession,
 )
-from .runner import add_events, finish_run, issue_title, ready_for_acceptance
+from .runner import _session_row, add_events, finish_run, issue_title, ready_for_acceptance
 from .schemas import (
     CodingClaim,
     CodingClaimed,
@@ -118,13 +119,21 @@ class LocalRunners:
 
     # -- its turns --------------------------------------------------------------------------
 
-    async def claim(self, member: Membership, runner_id: uuid.UUID) -> CodingClaimed:
+    async def claim(self, member: Membership, runner_id: uuid.UUID, *, managed_worktrees: bool = False) -> CodingClaimed:
         """The oldest approved local turn of yours in a project this runner serves, now held by it
         (a new lease). Also its heartbeat: being asked is being seen."""
         runner = await self._own(member, runner_id)
         now = datetime.now(UTC)
         runner.last_seen_at = now
+        bound = select(CodingSession.id).where(
+            CodingSession.id == CodingRun.session_id,
+            CodingSession.workspace_id == member.workspace_id,
+            CodingSession.local_worktree_runner_id.is_not(None),
+        )
+        if managed_worktrees:
+            bound = bound.where(CodingSession.local_worktree_runner_id != runner.id)
         run = await self.session.scalar(select(CodingRun).where(
+            ~bound.exists(),
             CodingRun.workspace_id == member.workspace_id, CodingRun.requested_by_id == member.user_id,
             CodingRun.location == CodingLocation.LOCAL, CodingRun.status == CodingRunStatus.QUEUED,
             CodingRun.accepted_at.is_(None), CodingRun.revert_of.is_(None), CodingRun.stop_requested.is_(False),
@@ -144,6 +153,11 @@ class LocalRunners:
             return CodingClaimed(run=None)
         if runner.tools and run.agent.value not in runner.tools:
             run.agent = CodingAgent(runner.tools[0])  # it codes with what that computer has
+        session = await self.session.get(CodingSession, run.session_id)
+        if managed_worktrees and run.turn == 1 and run.lease_token == 0:
+            session = await _session_row(self.session, run)
+            session.local_worktree_runner_id = runner.id
+        use_worktree = session is not None and session.local_worktree_runner_id == runner.id
         run.status, run.started_at, run.runner_id, run.runner_name = CodingRunStatus.RUNNING, now, runner.id, runner.name
         run.lease_token += 1
         run.lease_expires_at = now + timedelta(seconds=self.settings.coding_lease_seconds)
@@ -156,7 +170,8 @@ class LocalRunners:
             run_id=run.id, project_id=run.project_id, session_id=run.session_id, lease_token=run.lease_token,
             lease_seconds=self.settings.coding_lease_seconds, issue_key=run.issue_key,
             title=await issue_title(self.session, run), turn=run.turn, brief=run.brief, tool=run.agent,
-            repo_full_name=run.repo_full_name, base_branch=run.base_branch, branch=run.branch,
+            repo_full_name=run.repo_full_name, base_branch=run.base_branch, branch=run.branch, source_sha=run.source_sha,
+            managed_worktree=use_worktree,
         )
         await self.session.commit()
         return CodingClaimed(run=claim)
@@ -169,6 +184,8 @@ class LocalRunners:
         now = datetime.now(UTC)
         runner.last_seen_at = now
         run.lease_expires_at = now + timedelta(seconds=self.settings.coding_lease_seconds)
+        if run.source_sha and data.base_sha and data.base_sha != run.source_sha:
+            raise Unprocessable("The reported commit does not match the admitted starting commit")
         if data.base_sha:
             run.base_sha = data.base_sha
         if data.worktree:
@@ -195,6 +212,8 @@ class LocalRunners:
             run.cost_usd = data.cost_usd if data.cost_usd is not None else cost_of(
                 run.model, input_tokens=run.input_tokens, output_tokens=run.output_tokens,
                 overrides=self.settings.model_prices)
+        if run.source_sha and data.base_sha and data.base_sha != run.source_sha:
+            raise Unprocessable("The reported commit does not match the admitted starting commit")
         if data.base_sha:
             run.base_sha = data.base_sha
         summary = (data.summary or "").strip() or None

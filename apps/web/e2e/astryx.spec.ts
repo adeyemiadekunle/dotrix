@@ -47,7 +47,7 @@ for (const width of [390, 768, 1440]) {
       const opener = page.getByRole("button", { name: "Open navigation", exact: true });
       await opener.click();
       const drawer = page.getByRole("dialog");
-      await expect(drawer.getByRole("link", { name: "Codes", exact: true })).toBeVisible();
+      await expect(drawer.getByRole("link", { name: "Code", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(drawer).toBeHidden();
       await expect(opener).toBeFocused();

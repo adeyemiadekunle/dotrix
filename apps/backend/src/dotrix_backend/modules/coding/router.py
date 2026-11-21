@@ -53,6 +53,7 @@ from .schemas import (
     SandboxNetworkRead,
     SandboxNetworkUpdate,
     SharedCodingOutcomeRead,
+    StandaloneCodingCreate,
 )
 from .service import CodingService
 from .stream import follow_session
@@ -93,6 +94,14 @@ async def start_coding(key: str, data: CodingRunCreate, access: CodingInstructor
     the brief it will get is in the run. People who may instruct the coding agent. 409
     `coding_unavailable` (not set up, or no connected repo), `coding_busy` (one is already open)."""
     return await coding.start(access, key, data)
+
+
+@router.post("/sessions", status_code=status.HTTP_201_CREATED, responses=errors(403, 409, 422))
+async def start_standalone_coding(
+    data: StandaloneCodingCreate, access: CodingInstructor, coding: Coding,
+) -> CodingRunRead:
+    """Start a coding session on the project's connected repository from a prompt."""
+    return await coding.start_standalone(access, data)
 
 
 @router.get("/runs")
@@ -372,10 +381,12 @@ async def revoke_coding_runner(
 
 
 @workspace_router.post("/runners/{runner_id}/claim", responses=errors(403))
-async def claim_coding_run(runner_id: uuid.UUID, member: Instructor, runners: Runners) -> CodingClaimed:
+async def claim_coding_run(
+    runner_id: uuid.UUID, member: Instructor, runners: Runners, managed_worktrees: bool = False,
+) -> CodingClaimed:
     """The runner's poll: the oldest approved local turn of yours in a project it serves, now held by
     it under a new lease (`run` is null when none waits). Counts as its heartbeat."""
-    return await runners.claim(member, runner_id)
+    return await runners.claim(member, runner_id, managed_worktrees=managed_worktrees)
 
 
 @workspace_router.post("/runners/{runner_id}/runs/{coding_run_id}/heartbeat", responses=errors(403, 409))

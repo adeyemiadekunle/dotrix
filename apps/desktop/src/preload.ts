@@ -60,6 +60,11 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
       return () => ipcRenderer.removeListener("dotrix:browser:open", wrapped);
     },
   },
+  localActions: {
+    profile: (runnerId: string) => ipcRenderer.invoke("dotrix:local-actions:profile", runnerId),
+    save: (runnerId: string, profile: { setup: string; tests: string }) => ipcRenderer.invoke("dotrix:local-actions:save", runnerId, profile),
+    run: (runnerId: string, tree: string, action: "setup" | "tests") => ipcRenderer.invoke("dotrix:local-actions:run", runnerId, tree, action),
+  },
   devServers: {
     list: () => ipcRenderer.invoke("dotrix:dev-servers:list"),
     save: (folder: string, command: { command: string; port: number | null } | null) => ipcRenderer.invoke("dotrix:dev-servers:save", folder, command),
@@ -69,5 +74,7 @@ contextBridge.exposeInMainWorld("dotrixDesktop", {
     file: (worktree: string, file: string) => ipcRenderer.invoke("dotrix:worktree:file", worktree, file),
     open: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:open", worktree),
     reveal: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:reveal", worktree),
+    openEditor: (worktree: string) => ipcRenderer.invoke("dotrix:worktree:open-editor", worktree),
+    createBranch: (worktree: string, name: string) => ipcRenderer.invoke("dotrix:worktree:create-branch", worktree, name),
   },
 });

@@ -270,7 +270,8 @@ def test_claude_code_gets_a_browser_only_from_the_platform() -> None:
     assert list(config["mcpServers"]) == ["browser"] and server["command"] == "sh" and server["args"][0] == "-c"
     # Started in its output folder, which is its only workspace root: a screenshot it names never lands in the repository.
     script = server["args"][1]
-    assert script.startswith("mkdir -p /tmp/playwright && cd /tmp/playwright && exec playwright-mcp ")
+    assert script.startswith("mkdir -p /tmp/playwright && cd /tmp/playwright && ")
+    assert 'export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/ms-playwright}" && exec playwright-mcp ' in script
     assert "--headless" in script and "--ignore-roots" in script and "--output-dir /tmp/playwright" in script
     assert "mcp__browser" in with_browser[with_browser.index("--allowedTools") + 1]
 

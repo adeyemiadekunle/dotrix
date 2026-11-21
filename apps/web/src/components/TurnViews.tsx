@@ -11,7 +11,7 @@ import { languageOf, useHighlight, type HighlightToken } from "@dotrix/ui/hooks/
 import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
 import type { Scope } from "@/lib/issues";
 
-import { desktop, useDesktopRunners, worktreeHere } from "../core/desktop";
+import { desktop, desktopLocalActions, type LocalCodeProfile, useDesktopRunners, worktreeHere } from "../core/desktop";
 import { Ic } from "../core/icons";
 import { OutputReading } from "./AgentTrace";
 import { buildTree, fileIcon, terminal, type DiffFile, type DiffHunk, type TreeNode } from "../core/kaiWork";
@@ -90,6 +90,7 @@ export function FilesView({
 /** Each command the turn ran, with its recorded output (read-only). */
 export function TerminalView({ scope, run, enabled = true }: { scope: Scope | undefined; run: CodingRun; enabled?: boolean }) {
   const events = useCodingEvents(scope, run, enabled);
+  const tree = worktreeHere(run, useDesktopRunners());
   const commands = useMemo(() => terminal(events.data ?? run.events ?? []), [events.data, run.events]);
   if (events.isLoading) return <p className="muted">Loading commands…</p>;
   if (events.isError)
@@ -101,7 +102,108 @@ export function TerminalView({ scope, run, enabled = true }: { scope: Scope | un
         </ActionButton>
       </p>
     );
-  return <CommandList entries={commands} working={run.status === "running"} />;
+  return (
+    <>
+      {tree && run.runner_id && /(?:^|[/\\])\.sessions[/\\][^/\\]+[/\\][^/\\]+$/.test(tree) && (
+        <LocalWorktreeActions key={tree} tree={tree} runnerId={run.runner_id} disabled={!enabled || run.status === "running" || run.status === "queued"} />
+      )}
+      <CommandList entries={commands} working={run.status === "running"} />
+    </>
+  );
+}
+
+function LocalWorktreeActions({ tree, runnerId, disabled }: { tree: string; runnerId: string; disabled: boolean }) {
+  const bridge = desktopLocalActions();
+  const [profile, setProfile] = useState<LocalCodeProfile | null>(null);
+  const [draft, setDraft] = useState<LocalCodeProfile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ title: string; output: string; failed: boolean } | null>(null);
+  useEffect(() => {
+    let current = true;
+    void bridge?.profile(runnerId).then(
+      (value) => {
+        if (current) setProfile(value);
+      },
+      (error: unknown) => {
+        if (current) toast(error instanceof Error ? error.message : "Couldn't load the local profile");
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, runnerId]);
+  if (!bridge || !profile) return null;
+  const perform = async (action: keyof LocalCodeProfile) => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const run = await bridge.run(runnerId, tree, action);
+      const status = run.timedOut ? "timed out" : run.exitCode === null ? "stopped" : `exited with code ${run.exitCode}`;
+      setResult({ title: `${action === "setup" ? "Setup" : "Tests"} ${status}`, output: run.output, failed: run.timedOut || run.exitCode !== 0 });
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Couldn't run the local command");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="work-file-actions">
+      <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+        <ActionButton className="btn btn-sm btn-ghost" disabled={disabled || busy || !profile.setup} onClick={() => void perform("setup")}>
+          Run setup
+        </ActionButton>
+        <ActionButton className="btn btn-sm btn-ghost" disabled={disabled || busy || !profile.tests} onClick={() => void perform("tests")}>
+          Run tests
+        </ActionButton>
+        <ActionButton className="btn btn-sm btn-ghost" disabled={busy} onClick={() => setDraft(draft ? null : { ...profile })}>
+          Local profile
+        </ActionButton>
+      </div>
+      {draft && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (busy) return;
+            setBusy(true);
+            void bridge
+              .save(runnerId, draft)
+              .then((saved) => {
+                if (saved) {
+                  setProfile(saved);
+                  setDraft(null);
+                }
+              })
+              .catch((error: unknown) => toast(error instanceof Error ? error.message : "Couldn't save the local profile"))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <p className="faint">These commands run in this worktree on your computer when you select an action.</p>
+          <label>
+            Setup command{" "}
+            <input className="input mono" value={draft.setup} maxLength={500} disabled={busy} onChange={(e) => setDraft({ ...draft, setup: e.target.value })} />
+          </label>
+          <label>
+            Test command{" "}
+            <input className="input mono" value={draft.tests} maxLength={500} disabled={busy} onChange={(e) => setDraft({ ...draft, tests: e.target.value })} />
+          </label>
+          <ActionButton type="submit" className="btn btn-sm" disabled={busy}>
+            Save profile
+          </ActionButton>
+        </form>
+      )}
+      {busy && !draft && (
+        <p role="status" className="faint">
+          Running local command…
+        </p>
+      )}
+      {result && (
+        <div role="status">
+          <p>{result.title}</p>
+          {result.output && <OutputReading text={result.output} failed={result.failed} />}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ---------- Changes: each file's diff ---------- */
@@ -278,7 +380,58 @@ function WorktreeButtons({ worktree }: { worktree: string }) {
       <ActionButton className="ibtn ibtn-sm" onClick={act(bridge.worktree.reveal)} aria-label="Show the worktree in its folder" data-tip="Show in folder">
         <Ic n="external-link" s={14} />
       </ActionButton>
+      {bridge.worktree.openEditor && (
+        <ActionButton className="btn btn-sm btn-ghost" onClick={act(bridge.worktree.openEditor)}>
+          Open in IDE
+        </ActionButton>
+      )}
     </>
+  );
+}
+
+function WorktreeBranch({ worktree }: { worktree: string }) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [created, setCreated] = useState(false);
+  const [name, setName] = useState("");
+  const create = desktop()?.worktree.createBranch;
+  if (!create || created || !/(?:^|[/\\])\.sessions[/\\][^/\\]+[/\\][^/\\]+$/.test(worktree)) return null;
+  if (!open) {
+    return (
+      <ActionButton className="btn btn-sm btn-ghost" onClick={() => setOpen(true)}>
+        Create branch
+      </ActionButton>
+    );
+  }
+  return (
+    <form
+      className="work-file-actions"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || !name.trim()) return;
+        setPending(true);
+        void create(worktree, name.trim())
+          .then(() => {
+            setCreated(true);
+            toast(`Created branch ${name.trim()}`);
+          })
+          .catch((error: unknown) => toast(error instanceof Error ? error.message : "The branch couldn't be created"))
+          .finally(() => setPending(false));
+      }}
+    >
+      <p className="faint">
+        Git switches this worktree to the new branch and keeps your edits ready to commit. Start a new Code session if you want Kai to continue coding.
+      </p>
+      <label>
+        Branch name <input className="input" value={name} onChange={(event) => setName(event.target.value)} maxLength={200} required disabled={pending} />
+      </label>
+      <ActionButton type="submit" className="btn btn-sm" disabled={pending || !name.trim()}>
+        Create branch
+      </ActionButton>
+      <ActionButton type="button" className="btn btn-sm btn-ghost" onClick={() => setOpen(false)} disabled={pending}>
+        Cancel
+      </ActionButton>
+    </form>
   );
 }
 
@@ -332,6 +485,7 @@ function Files({
           <WorktreeButtons worktree={worktree} />
         </div>
       )}
+      {worktree && run.status !== "running" && run.status !== "queued" && <WorktreeBranch key={worktree} worktree={worktree} />}
       <label className="row faint" style={{ gap: 6, fontSize: 12, marginBottom: 6 }}>
         <SelectionInput aria-label="Changed only ( )" type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         Changed only ({root.changed})

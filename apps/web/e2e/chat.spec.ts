@@ -236,16 +236,16 @@ test("general chat excludes project context", async ({ page }) => {
   await expect(page.getByText("Test model reply: Hello Nova")).toBeVisible({ timeout: 30_000 });
 });
 
-test("Chat and Codes are separate pages, Codes right below Chat in the sidebar", async ({ page }) => {
+test("Chat and Code are separate pages, Code right below Chat in the sidebar", async ({ page }) => {
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page);
   const side = page.getByRole("navigation", { name: "Main" });
   const items = await side.locator("a.astryx-side-nav-item").allInnerTexts();
   const chatAt = items.findIndex((t) => t.trim() === "Chat");
-  expect(items[chatAt + 1]?.trim()).toBe("Codes");
+  expect(items[chatAt + 1]?.trim()).toBe("Code");
   await expect(page.getByRole("navigation", { name: "Sessions" })).toHaveCount(0); // Chat lists conversations only
-  await side.getByRole("link", { name: "Codes", exact: true }).click();
+  await side.getByRole("link", { name: "Code", exact: true }).click();
   await expect(page).toHaveURL(/\/codes$/);
   await expect(page.getByRole("heading", { name: "Start a session" })).toBeVisible();
   await expect(page.getByRole("button", { name: "New session" })).toBeVisible();

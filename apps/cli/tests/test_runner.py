@@ -417,12 +417,16 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     (edited / "a.txt").write_text("edited by hand\n")
     (trees / "other-project").mkdir()
     os.utime(trees / "other-project", (week_ago, week_ago))
+    managed = trees / ".sessions" / "p"
+    managed.mkdir(parents=True)
+    age(managed)
 
     runner = LocalRunner(api=None, repo=checkout, workspace_id="w", project_id="p", worktrees=trees, echo=lambda _: None)
     runner._coding_in = busy
     removed = await runner.clean_worktrees()
     assert sorted(removed) == sorted([old, stray])
     assert recent.is_dir() and busy.is_dir() and (trees / "other-project").is_dir()
+    assert managed.is_dir()
     assert (edited / "a.txt").read_text() == "edited by hand\n"
     listed = subprocess.run(["git", "-C", str(checkout), "worktree", "list"], capture_output=True, text=True).stdout
     assert str(old) not in listed and str(recent) in listed
@@ -707,3 +711,147 @@ async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(t
     assert reported == ["sent", "accepted", "delivered"], (beats, result)
     assert any(e["text"] == "Heard: Use the refunds table" for b in beats for e in b["events"]) or any(
         e["text"] == "Heard: Use the refunds table" for e in result["events"])
+
+
+async def test_managed_worktree_leaves_unpublished_and_interrupted_edits_in_place(tmp_path: Path) -> None:
+    from uuid import uuid4
+
+    checkout = _checkout(tmp_path, {"a.txt": b"original\n"})
+    calls = []
+
+    class Api:
+        async def post(self, path, body=None):
+            calls.append((path, body))
+            return {"stop": False}
+
+    runner = LocalRunner(api=Api(), repo=checkout, workspace_id="w", project_id="p", runner_id="r1",
+                         command=_tool("raise AssertionError('must not run')"), isolation="none",
+                         worktrees=tmp_path / "trees", echo=lambda _: None)
+    session = str(uuid4())
+    tree = runner.worktrees / ".sessions" / "p" / session
+    tree.parent.mkdir(parents=True)
+    from dotrix_cli.runner import git
+
+    await git(checkout, "worktree", "add", "-q", "--detach", str(tree), "HEAD")
+    (tree / "a.txt").write_text("unpublished\n")
+    run = {**_RUN, "turn": 2, "session_id": session, "managed_worktree": True}
+
+    await runner.work(run)
+    path, body = calls.pop()
+    assert path.endswith("/result") and body["outcome"] == "failed"
+    assert "unpublished edits" in body["error"]
+    assert (tree / "a.txt").read_text() == "unpublished\n"
+    assert (checkout / "a.txt").read_text() == "original\n"
+    active = tree.with_suffix(".active")
+    assert not active.exists()
+
+    active.write_text("previous attempt\n")
+    await runner.work({**run, "lease_token": 2})
+    path, body = calls.pop()
+    assert path.endswith("/result") and body["outcome"] == "failed"
+    assert "last turn was interrupted" in body["error"]
+    assert active.read_text() == "previous attempt\n"
+    assert (tree / "a.txt").read_text() == "unpublished\n"
+
+    active.unlink()
+    await git(tree, "restore", "--", "a.txt")
+    origin = tmp_path / "origin"
+    (origin / "a.txt").write_text("upstream\n")
+    await git(origin, "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qam", "Change upstream")
+    runner.command = _tool("from pathlib import Path; assert Path('a.txt').read_text() == 'upstream\\n'")
+    await runner.work({**run, "lease_token": 3})
+    assert calls[-1][1]["outcome"] == "no_changes"
+    assert (tree / "a.txt").read_text() == "upstream\n"
+    assert (checkout / "a.txt").read_text() == "original\n"
+
+
+def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_tree(tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from typer.testing import CliRunner
+
+    from dotrix_cli import cli
+    from dotrix_cli.sync import LinkState
+
+    repo = _checkout(tmp_path, {"file.bin": b"\0original", ".gitignore": b"ignored*.txt\n", "deleted.txt": b"old"})
+    state_dir = tmp_path / "link"
+    state_dir.mkdir()
+    project_id, session_id = str(uuid4()), str(uuid4())
+    LinkState("https://example.invalid", "workspace", project_id, "REPO", "Repository").save(state_dir)
+    monkeypatch.setattr(cli, "_resolve_project", lambda _: SimpleNamespace(root_dir=repo, dotrix_dir=state_dir))
+    root = tmp_path / "trees"
+    tree = root / ".sessions" / project_id / session_id
+    tree.parent.mkdir(parents=True)
+
+    def git_at(cwd, *args):
+        return subprocess.check_output(["git", "-C", str(cwd), *args])
+
+    def command(action, *args):
+        return CliRunner().invoke(cli.app, ["worktree", action, session_id, "--worktrees", str(root), *args])
+
+    git_at(repo, "worktree", "add", "-q", "--detach", str(tree), "HEAD")
+    base = git_at(tree, "rev-parse", "HEAD")
+    (tree / "file.bin").write_bytes(b"\0updated\xff")
+    (tree / "deleted.txt").unlink()
+    (tree / "added.txt").write_text("new")
+    (tree / "ignored.txt").write_text("ignored local data")
+    (tree / "ignored-staged.txt").write_text("staged")
+    git_at(tree, "add", "-f", "--", "ignored-staged.txt")
+    (tree / "ignored-staged.txt").write_text("edited since staging")
+    git_at(tree, "add", "--", "deleted.txt")
+    before = git_at(tree, "status", "--porcelain=v1")
+    marker = tree.with_suffix(".active")
+    marker.write_text("running")
+    assert command("snapshot").exit_code != 0
+    assert marker.read_text() == "running"
+    marker.unlink()
+
+    saved = command("snapshot")
+    assert saved.exit_code == 0, saved.output
+    assert git_at(tree, "status", "--porcelain=v1") == before
+    refused = command("restore")
+    assert refused.exit_code != 0 and "already exists" in refused.output
+    assert (tree / "file.bin").read_bytes() == b"\0updated\xff"
+
+    shutil.rmtree(tree)  # Simulate a missing folder with its old Git registration still present.
+    restored = command("restore")
+    assert restored.exit_code == 0, restored.output
+    assert git_at(tree, "rev-parse", "HEAD") == base
+    assert (tree / "file.bin").read_bytes() == b"\0updated\xff"
+    assert (tree / "added.txt").read_text() == "new"
+    assert not (tree / "deleted.txt").exists()
+    assert not (tree / "ignored.txt").exists()
+    assert (tree / "ignored-staged.txt").read_text() == "edited since staging"
+    assert git_at(tree, "status", "--porcelain=v1").splitlines() == [
+        b"A  added.txt", b"D  deleted.txt", b"M  file.bin", b"A  ignored-staged.txt",
+    ]
+    assert git_at(repo, "status", "--porcelain=v1") == b""
+
+    assert command("cleanup").exit_code != 0
+    assert (tree / "file.bin").read_bytes() == b"\0updated\xff"
+    git_at(tree, "reset", "--hard", "HEAD")
+    (tree / "ignored.txt").write_text("keep me")
+    refused = command("cleanup")
+    assert refused.exit_code != 0 and "ignored files" in refused.output
+    assert (tree / "ignored.txt").read_text() == "keep me"
+    (tree / "ignored.txt").unlink()
+    (tree / "untracked.txt").write_text("keep me")
+    assert command("cleanup").exit_code != 0
+    assert (tree / "untracked.txt").read_text() == "keep me"
+    (tree / "untracked.txt").unlink()
+    marker.write_text("running")
+    assert command("cleanup").exit_code != 0
+    marker.unlink()
+    cleaned = command("cleanup")
+    assert cleaned.exit_code == 0, cleaned.output
+    assert not tree.exists()
+    restored_clean = command("restore", "--cleanup")
+    assert restored_clean.exit_code == 0, restored_clean.output
+    assert git_at(tree, "status", "--porcelain=v1") == b""
+    assert git_at(tree, "rev-parse", "HEAD") == base
+    assert command("cleanup").exit_code == 0
+    assert command("restore").exit_code == 0
+    assert (tree / "file.bin").read_bytes() == b"\0updated\xff"
