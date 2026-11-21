@@ -806,7 +806,7 @@ class LocalRunner:
             await report("failed", error=f"Couldn't fetch {ref} from {self.remote}: {exc}")
             return
         if source_sha := run.get("source_sha"):
-            if await git(self.repo, "rev-parse", "FETCH_HEAD") != source_sha:
+            if (await git(self.repo, "rev-parse", "FETCH_HEAD")).strip() != source_sha:
                 await report("failed", error="The starting branch changed after this turn was requested")
                 return
         # A worktree per attempt: a turn claimed again (after a crash) never reuses one that may hold work.

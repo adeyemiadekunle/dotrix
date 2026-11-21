@@ -2559,7 +2559,11 @@ async def race_world(engine, monkeypatch):
     async def available(self, project, user_id):  # not under test: keys, tools and sandboxes
         return SimpleNamespace(available=True, reason=None, agent=CodingAgent.CLAUDE_CODE)
 
+    async def repo(self, project, *, for_update=False):  # both workers see the same admitted repository
+        return SimpleNamespace(full_name="kunemi/api")
+
     monkeypatch.setattr(CodingService, "availability", available)
+    monkeypatch.setattr(CodingService, "_repo", repo)
     async with sessions() as session:
         session.add(User(id=user_id, email=f"{user_id}@example.com", display_name="Ada"))
         await session.flush()
@@ -2859,6 +2863,9 @@ async def test_repository_prompt_opens_a_reviewed_pr_without_an_issue(
     assert accepted.json()["status"] == "pr_opened"
     assert github.pulls[0]["base"] == "release"
     assert github.pulls[0]["title"] == "Add a greeting"
+    listed = await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)
+    assert listed.status_code == 200, listed.text
+    assert any(row["session_id"] == waiting["session_id"] and row["title"] == "Add a greeting" for row in listed.json())
     follow = await db_client.post(f"{base}/sessions/{waiting['session_id']}/turns", headers=ada.headers,
                                   json={"message": "Update the greeting", "approval_mode": "manual"})
     assert follow.status_code == 201, follow.text

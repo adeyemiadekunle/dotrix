@@ -133,15 +133,17 @@ class CodingService:
         self.github = github or GitHubAppClient(settings)
 
     async def _require_base(self, project: Project, branch: str | None = None) -> str:
+        repo = await self._repo(project, for_update=True)
+        if repo is None:
+            raise CodingUnavailable("Connect the project's GitHub repository before starting Kai.")
         try:
             ready = await ConnectorService(self.session, self.github).readiness(project, branch=branch)
         except DomainError as exc:
-            raise CodingUnavailable(f"Couldn't verify the repository's default branch: {exc.detail}. "
+            raise CodingUnavailable(f"Couldn't verify the repository's {branch or 'default'} branch: {exc.detail}. "
                                     "Check GitHub App access and try again before starting Kai.") from exc
         if not ready.ready:
             raise CodingUnavailable(ready.reason or "Check the connected repository before starting Kai")
-        repo = await self._repo(project)
-        assert repo is not None and ready.full_name and ready.default_branch and ready.commit_sha
+        assert ready.full_name and ready.default_branch and ready.commit_sha
         # Snapshot the current name and default branch into the new run, including a
         # default-branch change made since this repository was connected.
         repo.full_name, repo.default_branch = ready.full_name, ready.default_branch
@@ -470,7 +472,7 @@ class CodingService:
             checked_sha = await self._require_base(access.project, turns[0].base_branch if issue is None else None)
             if issue is None:
                 source_sha = checked_sha
-        repo = await self._repo(access.project)
+        repo = await self._repo(access.project, for_update=with_branch is not None)
         first = turns[0]
         if repo is None or (repo.github_repo_id != first.source_repo_id if first.source_repo_id is not None
                             else repo.full_name.casefold() != first.repo_full_name.casefold()):
@@ -954,11 +956,12 @@ class CodingService:
 
     # -- helpers -------------------------------------------------------------------------
 
-    async def _repo(self, project: Project) -> ConnectedRepo | None:
-        return await self.session.scalar(
-            select(ConnectedRepo).where(ConnectedRepo.project_id == project.id,
-                                        ConnectedRepo.workspace_id == project.workspace_id)
-        )
+    async def _repo(self, project: Project, *, for_update: bool = False) -> ConnectedRepo | None:
+        query = select(ConnectedRepo).where(ConnectedRepo.project_id == project.id,
+                                            ConnectedRepo.workspace_id == project.workspace_id)
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        return await self.session.scalar(query)
 
     async def _turns(self, access: ProjectAccess, session_id: uuid.UUID) -> list[CodingRun]:
         """A session's turns, when you may see it (any of its turns: see `_sees`)."""

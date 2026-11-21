@@ -1427,13 +1427,14 @@ class CodingWorker:
                     return
                 listed = "\n".join(f"- {f['path']} (+{f['added']} -{f['removed']})" for f in files[:60])
                 clipped = diff if len(diff) <= REVIEW_DIFF_CHARS else diff[:REVIEW_DIFF_CHARS] + "\n…(cut)"
-                message = CODE_REVIEW_PROMPT.format(key=run.issue_key, title=title, number=run.pr_number,
+                message = CODE_REVIEW_PROMPT.format(key=run.issue_key or "standalone", title=title, number=run.pr_number,
                                                     url=run.pr_url, files=listed, diff=clipped, done=DEFINITION_OF_DONE,
                                                     skills=_review_skills_line(f"{title}\n{listed}\n{clipped}"),
                                                     summary=(run.summary or "(no report)")[:3_000])
                 review = await AgentService(session, self.reviewer).create_run(
                     ProjectAccess(project, member), RunCreate(message=message[:20_000], agent=REVIEWER),
-                    title=f"Review PR #{run.pr_number} ({run.issue_key})" + (f", turn {run.turn}" if run.turn > 1 else ""),
+                    title=f"Review PR #{run.pr_number} ({run.issue_key or title})"[:180]
+                    + (f", turn {run.turn}" if run.turn > 1 else ""),
                     mode="reviewer.issue",
                 )
                 run.review_run_id, run.review_thread_id = review.id, review.thread_id
