@@ -9,6 +9,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-21
+
 ### Added
 
 - Cloud Build turns can restore unpublished edits from an encrypted checkpoint when their sandbox is lost and the source commit still matches.
@@ -17,6 +19,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Kai on fx kept building an old plan. fx takes Kai's contract as the session's system profile and keeps it for the session's life, but four per-turn parts of the brief were added after the contract, so they went into that profile and a resumed session never read them again: a newly selected saved plan (its tasks and acceptance criteria), the cloud environment, the pinned skill catalog and Nova's added handoff instructions. They now go above the contract into the turn's own prompt (`brief.with_task`), as Code's step-by-step plan tasks already did. Reported in review on adeyemiadekunle/dotrix#298. The 0.3.0 tags were cut before this fix merged, so it ships here.
 - Cloud coding stops when a queued turn's connected repository changes. Follow-up turns keep the base branch of the pull request they continue.
 
 ## [0.3.0] - 2026-11-21
@@ -27,7 +30,6 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
-- Kai on fx kept building an old plan. fx takes Kai's contract as the session's system profile and keeps it for the session's life, but four per-turn parts of the brief were added after the contract, so they went into that profile and a resumed session never read them again: a newly selected saved plan (its tasks and acceptance criteria), the cloud environment, the pinned skill catalog and Nova's added handoff instructions. They now go above the contract into the turn's own prompt (`brief.with_task`), as Codes' step-by-step plan tasks already did. Reported in review on adeyemiadekunle/dotrix#298.
 - fx chat behind an outbound proxy: Nova on fx went straight to the provider and was refused where DeepAgents went through the proxy, because libfx calls the provider with Node's own `fetch`, which ignores `HTTPS_PROXY` unless asked. The chat host now starts with `NODE_USE_ENV_PROXY=1`. Found running Nova's live tests on NVIDIA behind a proxy; with the switch all 7 passed on DeepAgents and fx.
 - Kai's background commands: a command Kai started with `&` isn't one fx keeps, so Codes didn't list it and nobody could stop it (seen on a live NVIDIA turn). Kai's rules now say to leave a command running the shell tool's own way, never with `&`, `nohup` or `disown`. New sessions get the rule; open ones keep the profile they started with. Checked again live on NVIDIA (Nemotron 3 Ultra): Kai left the command to fx (`shell-3`), the host reported it finished between turns, and the next turn listed it and read its output by id.
 - Cloud coding under gVisor (`DOTRIX_CODING_DOCKER_RUNTIME=runsc`, required when deployed) could never reach the model. A gVisor container on the sandbox's internal network can't reach Docker's own resolver (127.0.0.11). So the agent couldn't find its egress proxy by name, and the proxy couldn't look up the model API's host. Three changes:
@@ -404,7 +406,8 @@ The first versioned release: everything built before versioning began, through #
 - Versioned releases: this changelog, one version for every package (`scripts/release.py`), a `stage` branch every PR
   goes into, and a GitHub release tagged `vX.Y.Z` when `stage` merges into `main`.
 
-[Unreleased]: https://github.com/adeyemiadekunle/dotrix/compare/platform-v0.3.0...stage
+[Unreleased]: https://github.com/adeyemiadekunle/dotrix/compare/platform-v0.4.0...stage
+[0.4.0]: https://github.com/adeyemiadekunle/dotrix/releases/tag/platform-v0.4.0
 [0.3.0]: https://github.com/adeyemiadekunle/dotrix/releases/tag/platform-v0.3.0
 [0.2.0]: https://github.com/adeyemiadekunle/dotrix/releases/tag/v0.2.0
 [0.1.0]: https://github.com/adeyemiadekunle/dotrix/releases/tag/v0.1.0
