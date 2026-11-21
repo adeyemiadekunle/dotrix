@@ -2901,7 +2901,7 @@ async def test_repository_prompt_rejects_a_starting_branch_that_moved_before_app
 async def test_cloud_recovery_restores_only_a_checkpoint_from_the_same_base(
     db_client: AsyncClient, coding, github, origin, monkeypatch, branch_moved, db_session,
 ) -> None:
-    from dotrix_backend.modules.coding.sandbox import SandboxError
+    from dotrix_backend.modules.coding.sandbox import DockerSandbox, DockerSession
 
     ada, _, _, _, _, sandbox = coding
     monkeypatch.setattr(sandbox, "kind", "docker")
@@ -2918,7 +2918,16 @@ async def test_cloud_recovery_restores_only_a_checkpoint_from_the_same_base(
             (box.root / "repo" / "ignored.txt").write_text("scratch")
             assert checkpoint is not None
             await checkpoint()
-            raise SandboxError("Sandbox disappeared")
+            async def docker_result(argv, **kwargs):
+                if argv[1] == "exec":
+                    return ExecResult(code=1, stdout="", stderr="Error response from daemon: No such container")
+                assert argv[1:3] == ["container", "ls"]
+                return ExecResult(code=0, stdout="", stderr="")
+
+            with monkeypatch.context() as docker:
+                docker.setattr("dotrix_backend.modules.coding.sandbox.run_process", docker_result)
+                await DockerSession(DockerSandbox(self.settings), "dotrix-test-lost").exec(["claude"], timeout=5)
+            pytest.fail("Docker sandbox loss did not trigger recovery")
         assert (box.root / "repo" / "saved.bin").read_bytes() == b"\0saved\xff"
         assert not (box.root / "repo" / "ignored.txt").exists()
         return await original_code(self, run_id, box, *args, checkpoint=checkpoint, **kwargs)

@@ -31,6 +31,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -462,8 +463,21 @@ class DockerSession:
     ) -> ExecResult:
         cli = [self.sandbox.bin, "exec", *(["-i"] if stdin is not None else []), "-w", f"{DOCKER_HOME}/repo",
                self.name, *argv]
-        return await run_process(cli, env=self.sandbox.cli_env(), stdin=stdin, on_line=on_line, timeout=timeout,
-                                 cancel=cancel)
+        result = await run_process(cli, env=self.sandbox.cli_env(), stdin=stdin, on_line=on_line, timeout=timeout,
+                                   cancel=cancel)
+        if result.code != 0 and not (result.cancelled or result.timed_out or (cancel and cancel.is_set())):
+            # docker exec can fail because either the command or its container exited.
+            # Ask the daemon rather than interpreting output the command can write itself.
+            try:
+                running = await self.sandbox.cli(
+                    "container", "ls", "--filter", f"name=^/?{re.escape(self.name)}$", "--format", "{{.Names}}",
+                )
+            except SandboxError:
+                logger.debug("Couldn't check whether Docker sandbox %s is still running", self.name)
+            else:
+                if self.name not in running.splitlines():
+                    raise SandboxError("The Docker sandbox stopped or was removed")
+        return result
 
     async def close(self) -> None:
         for args in (["rm", "-f", "-v", self.name, f"{self.name}-egress"], ["network", "rm", self.name]):
