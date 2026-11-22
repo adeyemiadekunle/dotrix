@@ -2393,21 +2393,6 @@ export function Session({ cs }: { cs: CodingSession }) {
             </span>
           )}
           <span className="sp" />
-          {/* Open panes button when no panes are open */}
-          {panes.length === 0 && (
-            <button
-              className="ibtn ibtn-sm"
-              onClick={() => {
-                setPanes(["changes"]);
-                setMenu(null);
-              }}
-              aria-label="Open panes"
-              title="Open panes"
-            >
-              <Ic n="panel-right" s={16} />
-            </button>
-          )}
-          {/* Session details button */}
           <button
             className={`cs-view ${detailsOn ? "on" : ""}`}
             data-details
@@ -2417,6 +2402,19 @@ export function Session({ cs }: { cs: CodingSession }) {
             data-tip="Details"
           >
             <Ic n="list-bullets" s={16} />
+          </button>
+          {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
+          <button
+            className={`cs-view ${panes.length ? "on" : ""}`}
+            onClick={() => {
+              setPanes(panes.length ? [] : ["changes"]);
+              setMenu(null);
+            }}
+            aria-pressed={panes.length > 0}
+            aria-label={panes.length ? "Hide the panes" : "Show the panes"}
+            data-tip={panes.length ? "Hide panes" : "Show panes"}
+          >
+            <Ic n="panel-right" s={16} />
           </button>
         </SessionHeader>
         {shot && (

@@ -159,11 +159,16 @@ function DemoSession({ id }: { id: string }) {
           </ActionButton>
           <b className="trunc cs-demo-title">{title}</b>
           <span className="sp" />
-          {!showPanel && (
-            <button className="ibtn ibtn-sm" onClick={() => setOpenViews(["changes"])} aria-label="Open panes" title="Open panes">
-              <Ic n="panel-right" s={16} />
-            </button>
-          )}
+          {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
+          <button
+            className={`cs-view ${showPanel ? "on" : ""}`}
+            onClick={() => setOpenViews(showPanel ? [] : ["changes"])}
+            aria-pressed={showPanel}
+            aria-label={showPanel ? "Hide the panes" : "Show the panes"}
+            data-tip={showPanel ? "Hide panes" : "Show panes"}
+          >
+            <Ic n="panel-right" s={16} />
+          </button>
         </SessionHeader>
         <ChatMessageList>
           <div className="chat-col">
