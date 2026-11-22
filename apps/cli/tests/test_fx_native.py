@@ -133,3 +133,153 @@ def test_kai_s_contract_splits_from_the_turn_s_task_and_the_browser_note_stays_i
     task, contract = split_contract(noted)
     assert "## A browser on this computer" in task and "browser" not in contract
     assert with_note("Just the task.", "\nNOTE") == "Just the task.\nNOTE" and with_note(brief, "") == brief
+
+
+def test_local_fx_session_state_roundtrips_and_refuses_symlinks_and_shared_dirs(tmp_path: Path):
+    import hashlib
+    import os
+
+    from dotrix_cli.fx_local import digest_of, restore_session_state, save_session_state
+
+    contract = "# How Kai works\n\nYou are Kai."
+    assert digest_of(contract) == hashlib.sha256(contract.encode("utf-8")).hexdigest()
+    assert digest_of(None) is None and digest_of("   ") is None
+
+    profile = tmp_path / "profile-1"
+    (profile / ".fx" / "sessions" / "fx-s1").mkdir(parents=True)
+    (profile / ".fx" / "dotrix-session.json").write_text(json.dumps({
+        "fxSession": "fx-s1", "profileDigest": digest_of(contract), "profile": contract,
+    }))
+    (profile / ".fx" / "sessions" / "fx-s1" / "journal.json").write_text('{"turns":1}')
+
+    state_dir = tmp_path / "saved.fx-session"
+    save_session_state(profile, state_dir)
+    assert (state_dir / "dotrix-session.json").is_file()
+    assert (state_dir / "sessions" / "fx-s1" / "journal.json").read_text() == '{"turns":1}'
+    if os.name != "nt":
+        assert state_dir.stat().st_mode & 0o077 == 0
+        assert (state_dir / "dotrix-session.json").stat().st_mode & 0o077 == 0
+
+    restored_profile = tmp_path / "profile-2"
+    restore_session_state(restored_profile, state_dir)
+    assert json.loads((restored_profile / ".fx" / "dotrix-session.json").read_text())["fxSession"] == "fx-s1"
+    assert (restored_profile / ".fx" / "sessions" / "fx-s1" / "journal.json").read_text() == '{"turns":1}'
+
+    if os.name != "nt":
+        secret = tmp_path / "secret.txt"
+        secret.write_text("top-secret")
+        (state_dir / "sessions" / "link").symlink_to(secret)
+        with pytest.raises(ValueError, match="symbolic links"):
+            restore_session_state(tmp_path / "profile-3", state_dir)
+        (state_dir / "sessions" / "link").unlink()
+        state_dir.chmod(0o755)
+        with pytest.raises(ValueError, match="private"):
+            restore_session_state(tmp_path / "profile-3", state_dir)
+
+
+async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_path: Path, monkeypatch, capsys):
+    import asyncio
+    import io
+    import sys
+    from contextlib import asynccontextmanager
+
+    from dotrix_cli import fx_local, fx_native
+
+    fake_fx = tmp_path / "fx"
+    log = tmp_path / "acp.log"
+    script = (
+        "import json, os, sys\n"
+        "log = open(os.environ['FAKE_ACP_LOG'], 'a')\n"
+        "def send(msg):\n"
+        "    sys.stdout.write(json.dumps(msg) + '\\n'); sys.stdout.flush()\n"
+        "for line in sys.stdin:\n"
+        "    msg = json.loads(line)\n"
+        "    log.write(json.dumps(msg) + '\\n'); log.flush()\n"
+        "    method, mid = msg.get('method'), msg.get('id')\n"
+        "    if method == 'initialize':\n"
+        "        send({'jsonrpc': '2.0', 'id': mid, 'result': {'protocolVersion': 1}})\n"
+        "    elif method == 'session/new':\n"
+        "        send({'jsonrpc': '2.0', 'id': mid, 'result': {'sessionId': 'fx-local-1'}})\n"
+        "    elif method == 'session/resume':\n"
+        "        if os.environ.get('FAIL_RESUME') == '1':\n"
+        "            send({'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32603, 'message': 'bad'}})\n"
+        "        else:\n"
+        "            send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': 'fx-local-1',\n"
+        "                  'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'OLD_REPLAY'}}}})\n"
+        "            send({'jsonrpc': '2.0', 'id': mid, 'result': {}})\n"
+        "    elif method == 'session/set_mode':\n"
+        "        send({'jsonrpc': '2.0', 'id': mid, 'result': None})\n"
+        "    elif method == 'session/prompt':\n"
+        "        sid = msg['params']['sessionId']\n"
+        "        send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': sid,\n"
+        "              'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Done local.'}}}})\n"
+        "        send({'jsonrpc': '2.0', 'id': mid, 'result': {'stopReason': 'end_turn', 'usage': {'inputTokens': 5, 'outputTokens': 2}}})\n"
+    )
+    fake_fx.write_text(f"#!{sys.executable}\n{script}")
+    fake_fx.chmod(0o755)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("FAKE_ACP_LOG", str(log))
+    monkeypatch.setattr(fx_native, "available", lambda: True)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake_fx) if name == "fx" else None)
+
+    launches = 0
+
+    @asynccontextmanager
+    async def fake_launch(profile, binary, root, browser):
+        nonlocal launches
+        launches += 1
+        proc = await asyncio.create_subprocess_exec(
+            binary, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE, env={**os.environ},
+        )
+        yield proc, 0
+
+    import os
+    monkeypatch.setattr(fx_native, "launch", fake_launch)
+
+    contract = "# How Kai works\n\nYou are Kai."
+    digest = fx_local.digest_of(contract)
+    brief = f"Fix bug\n{fx_local.CONTRACT_HEADING}\n\nYou are Kai."
+
+    profile1 = tmp_path / "p1"
+    (profile1 / ".fx").mkdir(parents=True)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(brief))
+    assert await fx_local.run(profile1) == 0
+    out1 = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert out1[0] == {"type": "started", "resumed": False, "profileDigest": digest}
+    assert out1[-1] == {"type": "done", "final": "Done local.", "usage": {"inputTokens": 5, "outputTokens": 2}, "stopReason": "end_turn"}
+
+    state_dir = tmp_path / "state"
+    fx_local.save_session_state(profile1, state_dir)
+
+    profile2 = tmp_path / "p2"
+    (profile2 / ".fx").mkdir(parents=True)
+    fx_local.restore_session_state(profile2, state_dir)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(brief))
+    assert await fx_local.run(profile2, resume=True, pinned_digest=digest) == 0
+    out2 = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert out2[0] == {"type": "started", "resumed": True, "profileDigest": digest}
+    assert not any("OLD_REPLAY" in str(ev) for ev in out2)
+
+    # Mismatched pinned digest refuses BEFORE launching sandbox/fx.
+    before_launches = launches
+    monkeypatch.setattr(sys, "stdin", io.StringIO(brief))
+    assert await fx_local.run(profile2, resume=True, pinned_digest="0" * 64) == 1
+    assert launches == before_launches
+    err = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert err["type"] == "error" and "saved state doesn't match" in err["message"]
+
+    # Changed contract without pinned digest also refuses before launch.
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"Fix\n{fx_local.CONTRACT_HEADING}\n\nChanged."))
+    assert await fx_local.run(profile2, resume=True) == 1
+    assert launches == before_launches
+    capsys.readouterr()
+
+    # Unreadable engine session falls back to a fresh conversation and says so.
+    monkeypatch.setenv("FAIL_RESUME", "1")
+    monkeypatch.setattr(sys, "stdin", io.StringIO(brief))
+    assert await fx_local.run(profile2, resume=True, pinned_digest=digest) == 0
+    out3 = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert out3[0] == {"type": "started", "resumed": False, "profileDigest": digest, "fresh": True}

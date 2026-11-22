@@ -67,6 +67,7 @@ const keyEnv = arg("--key-env");
 const model = arg("--model");
 const dotrixSession = arg("--session");
 const resume = args.includes("--resume");
+const planMode = args.includes("--plan");
 const mcpConfig = arg("--mcp-config");
 const profile = arg("--profile") ? Buffer.from(arg("--profile"), "base64").toString("utf8") : null;
 const pinnedDigest = arg("--profile-digest") ?? null;
@@ -166,6 +167,25 @@ writeFileSync(
     cache_warming: false,
     session_titles: false,
     sound: false,
+    ...(planMode
+      ? {
+          permission_mode: "ask",
+          permission: {
+            "*": "deny",
+            read: "allow",
+            glob: "allow",
+            grep: "allow",
+            read_tool_result: "allow",
+            capability_search: "allow",
+            toolbox: "allow",
+            skill: "allow",
+            subagent: "allow",
+            edit: "deny",
+            bash: "deny",
+            shell: "deny",
+          },
+        }
+      : {}),
     providers: {
       dotrix: {
         protocol: "openai-chat-completions",
@@ -198,9 +218,14 @@ const savedSession = () => {
 
 // Kai's workers (fx agent profiles under ~/.fx/agents): a new session's from --workers, a resumed one's as saved
 // with it, so it keeps the workers it started with. The profile digest covers the contract and the workers.
+const READ_ONLY_TOOLS = new Set(["read_file", "glob_files", "grep_files", "read_tool_result"]);
 const kept = saved();
 const continuing = Boolean(resume && kept.fxSession);
-const workerProfiles = continuing ? (kept.workers ?? null) : workerArg;
+const rawWorkers = continuing ? (kept.workers ?? null) : workerArg;
+const workerProfiles =
+  planMode && Array.isArray(rawWorkers)
+    ? rawWorkers.filter((w) => Array.isArray(w?.tools) && w.tools.every((t) => READ_ONLY_TOOLS.has(String(t))))
+    : rawWorkers;
 const digestOf = (text, set) =>
   text && text.trim()
     ? createHash("sha256")
@@ -250,7 +275,7 @@ if (setting.status !== 0 || setting.stdout.trim() !== "false") fail("The coding 
 // MCP servers or workers stop it, with what it runs, and a new one starts. The model is the provider's default in the
 // settings above, not `--model` (that names an AI Gateway model).
 const HOST_KEY = createHash("sha256")
-  .update(JSON.stringify({ baseUrl, keyEnv, model, fxBin, mcpServers, workers: workerProfiles ?? null }))
+  .update(JSON.stringify({ baseUrl, keyEnv, model, fxBin, mcpServers, workers: workerProfiles ?? null, ...(planMode ? { planMode: true } : {}) }))
   .digest("hex");
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -518,6 +543,7 @@ host.lines.on("line", (line) => {
   if (msg.method === "session/update") return onUpdate(msg.params?.update);
   if (msg.method === "libfx/hook") return onHook(msg.params);
   if (msg.method === "session/request_permission" && msg.id !== undefined) {
+    if (planMode) return reply(msg.id, { outcome: { outcome: "cancelled" } });
     // full-access shouldn't ask; if it does, the sandbox is the boundary: allow this once.
     const options = msg.params?.options ?? [];
     const allow = options.find((o) => o.kind === "allow_once") ?? options.find((o) => String(o.kind).startsWith("allow"));
@@ -548,7 +574,7 @@ process.on("SIGTERM", cancel);
 
 async function open() {
   const cwd = process.cwd();
-  const previous = resume ? savedSession() : null;
+  const previous = resume && !planMode ? savedSession() : null;
   if (previous && host.hello.session === previous) {
     // Still open in the host from the last turn, with its commands: the conversation goes on as it is.
     return { id: previous, resumed: true, profileDigest: kept.profileDigest ?? null };
@@ -650,7 +676,7 @@ try {
   const session = await open();
   sessionId = session.id;
   send({ host: { session: sessionId } });
-  await call("session/set_mode", { sessionId, modeId: "full-access" });
+  await call("session/set_mode", { sessionId, modeId: planMode ? "ask" : "full-access" });
   emit({
     type: "started",
     model,

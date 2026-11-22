@@ -1201,6 +1201,16 @@ async def test_fx_chat_runs_through_api_and_keeps_its_runtime(
         default = await client.post(f"{base}/runs", headers=headers, json={"message": "Default?"})
         assert default.status_code == 202 and default.json()["chat_runtime"] == "deepagents", default.text
         assert default.json()["reply"] == "Default DeepAgents answer"
+        # Production runner (settings_model_factory): new interactive project conversations default to fx
+        # when the model's provider is supported by fx and has a personal key.
+        from dotrix_backend.modules.agents.llm import settings_model_factory
+
+        runner.model_factory = settings_model_factory(settings)
+        with model_server() as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            fx_default = await client.post(f"{base}/runs", headers=headers, json={"message": "Default on fx?"})
+            assert fx_default.status_code == 202 and fx_default.json()["chat_runtime"] == "fx", fx_default.text
+            assert "Private project evidence" in fx_default.json()["reply"]
 
 
 async def test_fx_queued_run_fails_if_project_access_was_removed_before_it_starts(nova_pilot_world, agent_script):

@@ -352,7 +352,7 @@ def chat(
         "and yours). Change it in the chat with /approvals NAME.",
     ),
     runtime: str | None = typer.Option(
-        None, "--runtime", help="The chat runtime for a new conversation: deepagents (the default) or fx."
+        None, "--runtime", help="The chat runtime for a new conversation: fx (the default) or deepagents."
     ),
 ):
     """Interactive session. Any write pauses for your approval. That pause IS Action Mode.

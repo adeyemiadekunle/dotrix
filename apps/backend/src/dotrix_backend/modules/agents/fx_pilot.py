@@ -381,9 +381,11 @@ async def _turn(
             allowed = tuple(tool.name for tool in tools if tool.idempotent or tool.hands_off or tool.name == "delegate_tasks")
             turn = asyncio.create_task(
                 # A bound run's turn may be open (its worker died) or handed off (an approval, specialists).
-                runtime.resume(session_id, on_event=observe, message_id=str(run_id), rerun_tools=allowed, message=message)
+                runtime.resume(session_id, on_event=observe, message_id=str(run_id), rerun_tools=allowed,
+                               message=message, correlation_id=str(run_id))
                 if existing is not None else runtime.prompt(session_id, message, on_event=observe,
-                                                            message_id=str(run_id), rerun_tools=allowed))
+                                                            message_id=str(run_id), rerun_tools=allowed,
+                                                            correlation_id=str(run_id)))
 
             async def deliver_steering():
                 while not turn.done():

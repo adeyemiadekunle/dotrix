@@ -60,6 +60,18 @@ def test_kai_2_resumes_bindings_made_on_kai_1_and_on_fx_0_0_16():
     }
 
 
+def test_kai_3_resumes_bindings_made_on_kai_2_kai_1_and_on_fx_0_0_16():
+    from dotrix_backend.modules.agents import fx_pilot
+
+    assert fx_pilot._earlier_bindings("0.0.17-kai.3") == {
+        "libfx-0.0.15-pilot-1": True, "libfx-0.0.15-delegation-1": True,
+        "libfx-0.0.16-pilot-2": False, "libfx-0.0.16-delegation-2": False,
+        "libfx-0.0.16-chat-3": False, "libfx-0.0.16-delegation-3": False,
+        "libfx-0.0.17-kai.1-chat-3": False, "libfx-0.0.17-kai.1-delegation-3": False,
+        "libfx-0.0.17-kai.2-chat-3": False, "libfx-0.0.17-kai.2-delegation-3": False,
+    }
+
+
 def test_a_later_artifact_upgrades_only_the_bindings_it_was_shown_to_resume(monkeypatch):
     from dotrix_backend.modules.agents import fx_pilot
     from dotrix_engine.runtimes import fx as fx_module
