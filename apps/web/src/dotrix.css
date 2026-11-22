@@ -2267,6 +2267,10 @@ section.side-panel-body[hidden] {
 }
 /* Expanded: the panes lie over the whole Code area (the list and the session), under the app's
    sidebar, as a maximised browser window; Escape or Restore brings the column back. */
+/* With the details column between them, the panes leave room for it as well. */
+.cs-details ~ .side-panel.panes {
+  max-width: calc(100% - 660px);
+}
 .side-panel.panes.wide {
   position: absolute;
   inset: 0;

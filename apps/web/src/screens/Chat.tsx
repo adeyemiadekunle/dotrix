@@ -2210,12 +2210,16 @@ export function Session({ cs }: { cs: CodingSession }) {
   useEffect(() => {
     if (panes.length && !search.has("panel")) setPanes(panes);
   });
-  // The session's details: a column beside it on wide screens (hidden by its button), a popover on narrow ones.
+  // The session's details (its context, tools, background tasks, usage): on wide screens a column beside the
+  // session, between it and any open panes, hidden by its button (with panes open it starts hidden, so they
+  // get the room, and the button brings it back); a popover on narrow screens.
   const [detailsHidden, setDetailsHidden] = useStoredFlag("dotrix.coding.detailsHidden");
+  const [detailsBesidePanes, setDetailsBesidePanes] = useState(false);
   const [detailsPop, setDetailsPop] = useState(false);
   const wide = useWide("(min-width: 1280px)");
-  const detailsColumn = wide && !detailsHidden && panes.length === 0;
-  const toggleDetails = () => (wide && panes.length === 0 ? setDetailsHidden(!detailsHidden) : setDetailsPop(!detailsPop));
+  const detailsColumn = wide && (panes.length ? detailsBesidePanes : !detailsHidden);
+  const toggleDetails = () =>
+    !wide ? setDetailsPop(!detailsPop) : panes.length ? setDetailsBesidePanes(!detailsBesidePanes) : setDetailsHidden(!detailsHidden);
   /** A file the session changed, opened in Files (in the latest turn that changed it, or the latest). */
   const openPath = (path: string, turnId?: string) => {
     const owner = turnId ?? [...turns].reverse().find((t) => t.files_changed.some((f) => fileOf(f) === path))?.id ?? latest?.id;
@@ -2795,6 +2799,11 @@ export function Session({ cs }: { cs: CodingSession }) {
           </ChatMessageList>
         </ChatLayout>
       </div>
+      {detailsColumn && (
+        <aside className="cs-details" aria-label="Session details">
+          {details}
+        </aside>
+      )}
       {panes.length > 0 && (
         <CodingPanes
           scope={scope}
@@ -2806,11 +2815,6 @@ export function Session({ cs }: { cs: CodingSession }) {
           onAskFix={setAsk}
           fixLabel={`Ask ${CODING_AGENT.name} to fix`}
         />
-      )}
-      {detailsColumn && (
-        <aside className="cs-details" aria-label="Session details">
-          {details}
-        </aside>
       )}
     </div>
   );
