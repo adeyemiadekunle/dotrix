@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { signUp } from "./helpers";
+import { pickSelect, signUp } from "./helpers";
 
 const org = {
   id: "organisation-installation",
@@ -29,7 +29,7 @@ async function start(page: Page) {
   await expect(page.getByRole("heading", { name: "Connect GitHub", exact: true })).toBeVisible();
 }
 async function review(page: Page) {
-  await page.getByLabel("Repository owner", { exact: true }).selectOption(org.id);
+  await pickSelect(page, page.getByLabel("Repository owner", { exact: true }), org.account_login);
   await page.getByLabel("Repository name", { exact: true }).fill("booking");
   await page.getByRole("button", { name: "Review repository", exact: true }).click();
 }
@@ -52,7 +52,7 @@ test("organisation creation requires confirmation and a separate connection", as
   await start(page);
   await review(page);
   await expect(page.getByText("acme/booking", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Repository visibility", { exact: true })).toHaveValue("private");
+  await expect(page.getByLabel("Repository visibility", { exact: true })).toHaveAttribute("data-value", "private");
   expect(creations).toEqual([]);
   await page.getByRole("button", { name: "Cancel creation", exact: true }).click();
   expect(creations).toEqual([]);
@@ -60,7 +60,7 @@ test("organisation creation requires confirmation and a separate connection", as
   await page.getByRole("button", { name: "Confirm creation", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Repository created." })).toBeVisible();
   expect(creations).toEqual([{ installation_ref: org.id, name: "booking", private: true, description: "" }]);
-  await expect(page.getByLabel("Repository", { exact: true })).toHaveValue(`${org.id}:42`);
+  await expect(page.getByLabel("Repository", { exact: true })).toHaveAttribute("data-value", `${org.id}:42`);
   await expect(page.getByRole("button", { name: "Use repository", exact: true })).toBeEnabled();
   expect(attached).toBe(0);
 });
@@ -83,10 +83,11 @@ test("a lost creation response recovers the repository without another create or
   await expect(page.getByRole("button", { name: "Confirm creation", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Check available repositories", exact: true }).click();
   await expect(page.getByRole("button", { name: "Review repository", exact: true })).toBeDisabled();
-  await page.getByLabel("Repository", { exact: true }).selectOption(`${org.id}:42`);
+  await pickSelect(page, page.getByLabel("Repository", { exact: true }), "acme/booking");
   await expect(page.getByRole("button", { name: "Use repository", exact: true })).toBeEnabled();
   expect(creations).toBe(1);
   await page.reload();
+  await page.getByLabel("Repository", { exact: true }).click();
   await expect(page.getByRole("option", { name: "acme/booking", exact: true })).toHaveCount(1);
   expect(creations).toBe(1);
 });

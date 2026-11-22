@@ -1,5 +1,6 @@
 // A project's uploaded files, under Knowledge: search, type, sort, grid or list, drop to upload.
 // Documents are also converted to Markdown into the project's knowledge, for the agents.
+import { SelectField } from "@dotrix/ui/components/select";
 import type { CSSProperties, ReactNode } from "react";
 
 import { openPop, openTask } from "../core/actions";
@@ -41,39 +42,29 @@ export function Files({ pid, lead }: { pid: string; lead?: ReactNode }) {
             aria-label="Search files"
           />
         </div>
-        <select
-          className="select"
-          style={{ height: 26, width: "auto", fontSize: 12 }}
-          value={ft}
-          onChange={(e) => set("fileType", e.target.value)}
+        <SelectField
+          size="sm"
           aria-label="Filter by type"
-        >
-          <option value="all">All types</option>
-          {Object.entries(FT)
-            .filter(([k]) => k !== "other")
-            .map(([k, v]) => (
-              <option key={k} value={k}>
-                {v.n}
-              </option>
-            ))}
-        </select>
-        <select
-          className="select"
-          style={{ height: 26, width: "auto", fontSize: 12 }}
-          value={sort}
-          onChange={(e) => set("fileSort", e.target.value)}
+          value={ft}
+          onValueChange={(value) => set("fileType", value)}
+          options={[
+            { value: "all", label: "All types" },
+            ...Object.entries(FT)
+              .filter(([k]) => k !== "other")
+              .map(([k, v]) => ({ value: k, label: v.n })),
+          ]}
+        />
+        <SelectField
+          size="sm"
           aria-label="Sort"
-        >
-          {[
+          value={sort}
+          onValueChange={(value) => set("fileSort", value)}
+          options={[
             ["date", "Newest"],
             ["name", "Name"],
             ["type", "Type"],
-          ].map(([k, n]) => (
-            <option key={k} value={k}>
-              Sort: {n}
-            </option>
-          ))}
-        </select>
+          ].map(([k, n]) => ({ value: k, label: `Sort: ${n}` }))}
+        />
         <span className="sp" />
         <div className="seg">
           {(

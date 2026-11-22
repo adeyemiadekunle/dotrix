@@ -2,6 +2,7 @@ import { useAtPicker } from "../components/AtPicker";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { Suggestions } from "@dotrix/ui/components/ai-elements/suggestion";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
+import { Select, SelectContent, SelectField, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
 import {
   ChatComposer,
   ChatComposerInput,
@@ -24,7 +25,7 @@ import {
 // Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
 // URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Codes.
 import { useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps } from "react";
 
 import {
   isActive,
@@ -93,6 +94,7 @@ import { useAgents, useProjects } from "../data/lists";
 import { useAllTasks } from "../data/tasks";
 import { Markdown } from "@/components/markdown";
 import { PublishChatOutcome } from "../components/PublishChatOutcome";
+import { ChangeCard } from "../components/Changes";
 import { RunApprovals } from "../components/RunApprovals";
 import { openDocument } from "./Knowledge";
 import { Av, PIcon } from "../ui/helpers";
@@ -233,7 +235,7 @@ function ThreadRow({ row, on }: { row: Row; on: boolean }) {
   );
 }
 
-const STATUS: Record<CodingSession["status"], [string, string]> = {
+export const STATUS: Record<CodingSession["status"], [string, string]> = {
   awaiting_approval: ["Waiting for approval", "amber"],
   queued: ["Queued", ""],
   running: ["Working", "accent"],
@@ -250,9 +252,28 @@ const BUSY: CodingSession["status"][] = ["awaiting_approval", "queued", "running
 const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"];
 
 /** Shared session chrome keeps sample and live panes on the same responsive layout. */
-export function SessionHeader({ className = "", children, ...props }: ComponentProps<"div">) {
+export function SessionHeader({ className = "", children, ref, ...props }: ComponentProps<"div">) {
+  const ownRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const head = ownRef.current;
+    const conv = head?.closest<HTMLElement>(".conv");
+    if (!head || !conv) return;
+    const update = () => conv.style.setProperty("--cs-head-h", `${head.offsetHeight}px`);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, []);
   return (
-    <div {...props} className={`row cs-head ${className}`}>
+    <div
+      {...props}
+      ref={(node) => {
+        ownRef.current = node;
+        if (typeof ref === "function") ref(node);
+        else if (ref) ref.current = node;
+      }}
+      className={`row cs-head ${className}`}
+    >
       <SessionListToggle restoreOnly />
       {children}
     </div>
@@ -283,6 +304,7 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
           </span>
           <span className="cs-row-foot">
             <span className="cs-row-meta">
+              {cs.issue_key && <span className="mono">{cs.issue_key} ·</span>}
               <span>{ago(ms(cs.updated_at))}</span>
               {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
             </span>
@@ -476,7 +498,12 @@ export function Message({
           {tag && <span className="badge">{tag}</span>}
           {m.by !== D().me && <span>{w?.name ?? "Someone"} ·</span>}
           <time>{ago(m.at)}</time>
-          <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(m.text)} aria-label="Copy what you wrote" data-tip="Copy">
+          <ActionButton
+            className="ibtn ibtn-xs"
+            onClick={() => copyText(m.text)}
+            aria-label={m.by === D().me ? "Copy what you wrote" : "Copy message"}
+            data-tip="Copy"
+          >
             <Ic n="copy" s={13} />
           </ActionButton>
           <Av id={m.by} cls="sm" tip={false} />
@@ -586,6 +613,16 @@ function RunMessages({ run, projectId, scope, stream }: { run: Run; projectId: s
                 }
           }
         >
+          {stream && stream.activity && (
+            <Trace className="agent-trace" aria-live="polite">
+              <TraceLine status="running">
+                <TraceIcon>
+                  <Ic n="spinner-gap" cls="animate-spin" />
+                </TraceIcon>
+                <TraceTitle>{stream.activity}</TraceTitle>
+              </TraceLine>
+            </Trace>
+          )}
           {broke && <RunFailure who={agentName(handleOf(run.agent))} message={run.error} />}
           {scope && !stream && run.status === "completed" && run.requested_by_id === D().me && !!run.reply && (
             <PublishChatOutcome scope={scope} runId={run.id} reply={run.reply} />
@@ -711,6 +748,7 @@ function Pick({
   label,
   lead,
   plain = false,
+  variant = "default",
   groupOf,
 }: {
   value: string;
@@ -720,6 +758,7 @@ function Pick({
   lead?: React.ReactNode;
   /** Compact text trigger for the composer and its options menu. */
   plain?: boolean;
+  variant?: "default" | "ghost";
   /** Options under headings (the Model Selector's providers): each option's group, "" for none. */
   groupOf?: (value: string) => string;
 }) {
@@ -732,7 +771,37 @@ function Pick({
   return (
     <span className={plain ? "dotrix-inline-picker" : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
       {lead}
-      <Selector label={label} isLabelHidden value={value} onChange={onChange} options={choices} hasSearch={options.length > 8} size="sm" />
+      <Selector label={label} isLabelHidden value={value} onChange={onChange} options={choices} hasSearch={options.length > 8} size="sm" variant={variant} />
+    </span>
+  );
+}
+
+/** Standalone Approval mode selector rendered directly in the composer toolbar (not inside +). */
+export function ApprovalPick({
+  value,
+  onChange,
+  options,
+}: {
+  value: ApprovalMode;
+  onChange: (value: ApprovalMode) => void;
+  options: [ApprovalMode, string, string][];
+}) {
+  const tip = options.find(([v]) => v === value)?.[2];
+  return (
+    <span className="cmp-approval-wrap" data-tip={tip}>
+      <Select value={value} onValueChange={(next) => onChange(next as ApprovalMode)}>
+        <SelectTrigger size="sm" variant="ghost" aria-label="Approvals" className={`cmp-approval-trigger ${value === "auto" ? "amber" : ""}`}>
+          <Ic n="shield-check" s={12} />
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent aria-label="Approvals">
+          {options.map(([val, label]) => (
+            <SelectItem key={val} value={val}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </span>
   );
 }
@@ -790,10 +859,15 @@ function WhereItCodes({
       <span className="composer-menu-heading">Environment</span>
       {localReady || folder ? (
         <DesignButton
-          label={localReady ? localLabel : `${localLabel} (${starting ? "Starting…" : folder?.state === "failed" ? "Stopped" : "Not ready"})`}
+          label={
+            <>
+              <span>{localReady ? localLabel : `${localLabel} (${starting ? "Starting…" : folder?.state === "failed" ? "Stopped" : "Not ready"})`}</span>
+              {location === "local" && <Ic n="check" s={14} cls="composer-menu-check" />}
+            </>
+          }
           variant="ghost"
           className="composer-menu-option"
-          icon={<Ic n="laptop" s={16} />}
+          icon={<Ic n="laptop" s={15} />}
           aria-pressed={location === "local"}
           isDisabled={!localReady}
           data-tip={folder?.folder ?? localWhy ?? undefined}
@@ -811,7 +885,7 @@ function WhereItCodes({
           label={folder ? (folder.state === "failed" ? "Choose the folder again" : "Choose another folder") : "Add a folder"}
           variant="ghost"
           className="composer-menu-option"
-          icon={<Ic n="folder-plus" s={16} />}
+          icon={<Ic n="folder-plus" s={15} />}
           isDisabled={starting}
           onClick={() => {
             onAdd();
@@ -820,10 +894,15 @@ function WhereItCodes({
         />
       )}
       <DesignButton
-        label="Cloud sandbox"
+        label={
+          <>
+            <span>Cloud sandbox</span>
+            {location === "cloud" && <Ic n="check" s={14} cls="composer-menu-check" />}
+          </>
+        }
         variant="ghost"
         className="composer-menu-option"
-        icon={<Ic n="cloud" s={16} />}
+        icon={<Ic n="cloud" s={15} />}
         aria-pressed={location === "cloud"}
         data-tip={cloudReady ? "In a sandbox on the platform" : (cloudWhy ?? undefined)}
         onClick={() => choose("cloud")}
@@ -832,10 +911,10 @@ function WhereItCodes({
   );
 }
 
-const SAMPLE_COMPOSER_MODELS = ["openai:gpt-5.4", "anthropic:claude-sonnet-5-5"];
+export const SAMPLE_COMPOSER_MODELS = ["openai:gpt-5.4", "anthropic:claude-sonnet-5-5"];
 
 /** New sessions choose a model; existing sessions keep the model admitted for their run. */
-function ComposerModel({
+export function ComposerModel({
   model,
   models,
   onChange,
@@ -849,9 +928,9 @@ function ComposerModel({
   return (
     <span className="cmp-model composer-model">
       {onChange && models?.length ? (
-        <Pick plain value={model ?? ""} onChange={onChange} options={models} label="Model" groupOf={providerName} />
+        <Pick plain variant="ghost" value={model ?? ""} onChange={onChange} options={models} label="Model" groupOf={providerName} />
       ) : (
-        <DesignButton label={model ? modelName(model) : empty} aria-label="Model" variant="ghost" size="sm" isDisabled />
+        <DesignButton label={model ? modelName(model) : empty} aria-label="Model" variant="ghost" size="sm" className="cmp-model-static" isDisabled />
       )}
     </span>
   );
@@ -922,19 +1001,17 @@ function Composer({
     onMode: setMode,
   });
   const a = useAgents().items.find((x) => x.handle === agent);
-  // "+" offers the projects (in a new chat) and the work modes; Nova always answers.
+  // "+" offers the work modes (projects already live in the context card and @-mentions); Nova always answers.
   const choices = useMemo(
-    () => [
-      ...(contexts && setContext ? contexts.map(([id, label]) => ({ id: `project:${id}`, label, auxiliaryData: { group: "Projects" } })) : []),
-      ...(setMode ? modeOptions.map(([id, label]) => ({ id: `mode:${id}`, label, auxiliaryData: { group: "Modes" } })) : []),
-    ],
-    [contexts, setContext, setMode, modeOptions],
+    () => (setMode ? modeOptions.map(([id, label]) => ({ id: `mode:${id}`, label, auxiliaryData: { group: "Modes" } })) : []),
+    [setMode, modeOptions],
   );
   const choose = (id: string) => {
-    if (id.startsWith("project:")) setContext?.(id.slice(8));
-    else if (id.startsWith("mode:")) setMode?.(id.slice(5) as WorkMode);
+    if (id.startsWith("mode:")) setMode?.(id.slice(5) as WorkMode);
     return "";
   };
+  const hasRuntimeRow = Boolean(runtime && (setRuntime || runtime === "fx"));
+  const hasAgentChip = Boolean(agent !== "auto" && a && setAgent);
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
@@ -988,9 +1065,9 @@ function Composer({
           />
         }
         footerActions={
-          <>
+          <div className="cmp-footer-left">
             <ComplexSelector
-              label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
+              label="Chat options"
               isLabelHidden
               value=""
               placement="above"
@@ -999,84 +1076,115 @@ function Composer({
                 <DesignButton
                   {...triggerProps}
                   role="button"
-                  label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
+                  label="Chat options"
+                  className="cmp-plus-btn"
                   variant="ghost"
                   size="sm"
                   isIconOnly
-                  icon={<Ic n="plus" s={18} />}
+                  icon={<Ic n="plus" s={16} />}
                 />
               )}
             >
               {(_value, _change, close) => (
                 <div className="composer-options-menu">
-                  {choices.map((choice, index) => (
-                    <Fragment key={choice.id}>
-                      {(index === 0 || choices[index - 1]?.auxiliaryData.group !== choice.auxiliaryData.group) && (
-                        <span className="composer-menu-heading">{choice.auxiliaryData.group}</span>
-                      )}
-                      <DesignButton
-                        label={choice.label}
-                        variant="ghost"
-                        className="composer-menu-option"
-                        icon={
-                          <Ic
-                            n={
-                              choice.id === `mode:${mode}` || choice.id === `project:${context}`
-                                ? "check"
-                                : choice.id.startsWith("mode:")
-                                  ? MODE_ICONS[choice.id.slice(5) as WorkMode]
-                                  : choice.id === "project:"
-                                    ? "layers"
-                                    : "folder"
-                            }
-                            s={16}
-                          />
-                        }
-                        aria-pressed={choice.id.startsWith("mode:") ? choice.id === `mode:${mode}` : choice.id === `project:${context}`}
-                        onClick={() => {
-                          choose(choice.id);
-                          close();
-                          ref.current?.focus();
-                        }}
-                      />
-                    </Fragment>
-                  ))}
-                  {choices.length === 0 && <span className="composer-menu-note">General chat</span>}
-                  {approval && setApproval && approvals.length > 1 && (
-                    <span>
-                      <Pick
-                        plain
-                        value={approval}
-                        onChange={(v) => setApproval(v as ApprovalMode)}
-                        options={approvals.map(([v, l]): [string, string] => [v, l])}
-                        label="Approvals"
-                      />
-                    </span>
+                  {choices.map((choice, index) => {
+                    const selected = choice.id === `mode:${mode}`;
+                    const groupChanged = index === 0 || choices[index - 1]?.auxiliaryData.group !== choice.auxiliaryData.group;
+                    return (
+                      <Fragment key={choice.id}>
+                        {groupChanged && index > 0 && <div className="composer-menu-sep" />}
+                        {groupChanged && <span className="composer-menu-heading">{choice.auxiliaryData.group}</span>}
+                        <DesignButton
+                          label={
+                            <>
+                              <span>{choice.label}</span>
+                              {selected && <Ic n="check" s={14} cls="composer-menu-check" />}
+                            </>
+                          }
+                          variant="ghost"
+                          className="composer-menu-option"
+                          icon={<Ic n={MODE_ICONS[choice.id.slice(5) as WorkMode]} s={15} />}
+                          aria-pressed={selected}
+                          onClick={() => {
+                            choose(choice.id);
+                            close();
+                            ref.current?.focus();
+                          }}
+                        />
+                      </Fragment>
+                    );
+                  })}
+                  {choices.length === 0 && (
+                    <span className="composer-menu-note">{contexts ? "Choose a project above to pick a work mode" : "General chat"}</span>
                   )}
-                  {runtime &&
-                    (setRuntime ? (
-                      <Pick
-                        plain
-                        value={runtime}
-                        onChange={(v) => setRuntime(v as ChatRuntime)}
-                        options={[
-                          ["deepagents", "Standard"],
-                          ["fx", "fx"],
-                        ]}
-                        label="Chat runtime"
-                      />
-                    ) : (
-                      runtime === "fx" && <span data-tip="This conversation runs on fx">fx</span>
-                    ))}
-                  {agent !== "auto" && a && setAgent && (
-                    <button className="cmp-chip" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
-                      Involve {a.name} <Ic n="x" s={10} />
-                    </button>
+                  {hasRuntimeRow && (
+                    <>
+                      <div className="composer-menu-sep" />
+                      {setRuntime ? (
+                        <div className="composer-menu-row">
+                          <span className="composer-menu-row-label">Runtime</span>
+                          <Pick
+                            plain
+                            value={runtime!}
+                            onChange={(v) => setRuntime(v as ChatRuntime)}
+                            options={[
+                              ["deepagents", "Standard"],
+                              ["fx", "fx"],
+                            ]}
+                            label="Chat runtime"
+                          />
+                        </div>
+                      ) : (
+                        runtime === "fx" && (
+                          <div className="composer-menu-row">
+                            <span className="composer-menu-row-label">Runtime</span>
+                            <span data-tip="This conversation runs on fx">fx</span>
+                          </div>
+                        )
+                      )}
+                    </>
+                  )}
+                  {hasAgentChip && a && setAgent && (
+                    <>
+                      <div className="composer-menu-sep" />
+                      <button className="cmp-chip" onClick={() => setAgent("auto")} aria-label={`Remove request to involve ${a.name}`}>
+                        Involve {a.name} <Ic n="x" s={10} />
+                      </button>
+                    </>
                   )}
                 </div>
               )}
             </ComplexSelector>
-          </>
+            {mode && (
+              <span
+                className={`cmp-status-badge ${mode === "build" || mode === "plan" ? "accent" : ""}`}
+                aria-label={`Work mode: ${WORK_MODES.find(([v]) => v === mode)?.[1] ?? mode}`}
+                data-tip="Work mode"
+              >
+                <Ic n={MODE_ICONS[mode]} s={12} />
+                <span>{WORK_MODES.find(([v]) => v === mode)?.[1] ?? mode}</span>
+              </span>
+            )}
+            {mode &&
+              approval &&
+              (setApproval && approvals.length > 1 ? (
+                <ApprovalPick value={approval} onChange={setApproval} options={approvals} />
+              ) : (
+                <span
+                  className={`cmp-status-badge ${approval === "auto" ? "amber" : ""}`}
+                  aria-label={`Approval mode: ${APPROVAL_MODES.find(([v]) => v === approval)?.[1] ?? approval}`}
+                  data-tip="Approvals"
+                >
+                  <Ic n="shield-check" s={12} />
+                  <span>{APPROVAL_MODES.find(([v]) => v === approval)?.[1] ?? approval}</span>
+                </span>
+              ))}
+            {runtime === "fx" && (
+              <span className="cmp-status-badge mono" aria-label="Runtime: fx" data-tip="Chat runtime">
+                fx
+              </span>
+            )}
+          </div>
         }
         sendActions={<ComposerModel model={model} models={models} onChange={setModel} empty={setModel ? "No models connected" : "Model not recorded"} />}
         sendButton={
@@ -1179,13 +1287,16 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
     <div className="conv">
       <div className="conv-main">
         <SessionHeader>
-          <ActionButton className="ibtn ibtn-sm" onClick={() => open("")} aria-label="Back to conversations">
+          <ActionButton className="ibtn ibtn-sm cs-back" onClick={() => open("")} aria-label="Back to conversations">
             <Ic n="arrow-left" s={15} />
           </ActionButton>
           <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
             {title || (runs[0] ? (runs[0].title ?? runTitle(runs[0])) : "")}
           </b>
           <span className="sp" />
+          <ActionButton className="ibtn ibtn-sm" onClick={() => copyText(location.href)} aria-label="Copy link to conversation" data-tip="Copy link">
+            <Ic n="link" s={14} />
+          </ActionButton>
           {p ? (
             <button className="pillbtn" onClick={() => go("project", { id: p.key, tab: "overview" })}>
               <PIcon p={p} s={12} />
@@ -1216,15 +1327,15 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
               {inputBusy && (
                 <div className="chat-delivery-row">
                   <label htmlFor="chat-delivery-kind">Send as</label>
-                  <select
+                  <SelectField
                     id="chat-delivery-kind"
+                    size="sm"
+                    className="chat-delivery-select"
                     aria-label="Delivery action"
                     value={awaitingApproval ? "queue" : inputKind}
-                    onChange={(event) => setInputKind(event.target.value as "queue" | "steer")}
-                  >
-                    <option value="queue">Queue after this turn</option>
-                    {!awaitingApproval && <option value="steer">Steer this turn</option>}
-                  </select>
+                    onValueChange={(value) => setInputKind(value as "queue" | "steer")}
+                    options={[{ value: "queue", label: "Queue after this turn" }, ...(!awaitingApproval ? [{ value: "steer", label: "Steer this turn" }] : [])]}
+                  />
                 </div>
               )}
               <Queue
@@ -1295,7 +1406,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
                     ))}
                 </div>
               ))}
-              {active && (
+              {active && !stream.text && (
                 <div className="chat-msg agent working">
                   <div className="who">
                     <Face c={agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
@@ -1337,7 +1448,7 @@ function NewChat({
   mode0: string | null;
 }) {
   const ws = wsId();
-  const ps = useProjects().items.filter((p) => canSee(p));
+  const ps = useProjects().items.filter((p) => canSee(p) && (p.status !== "complete" || p.key === projectKey));
   const [pid, setPid] = useState<string>(across ? "" : (projByKey(projectKey ?? "")?.id ?? ""));
   const [agent, setAgent] = useState(agent0 ?? "auto");
   const models = useModels(ws).data ?? [];
@@ -1380,22 +1491,28 @@ function NewChat({
           <h2 className="ns-title">
             {greeting()}, {me()?.name.split(" ")[0]}
           </h2>
-          <ChoiceCard
-            label="Chat context"
-            choices={[
-              ...ps.map((p): Choice => ({ id: p.id, label: p.name, icon: <PIcon p={p} s={14} />, on: pid === p.id, onPick: () => setPid(p.id) })),
-              {
-                id: "",
-                label: "General",
-                icon: <Ic n="layers" s={16} />,
-                on: !pid,
-                onPick: () => {
-                  setPid("");
-                  setRuntime("deepagents");
-                },
-              },
-            ]}
-          />
+          <div className="ns-source">
+            <div className="ns-field">
+              <span className="ns-field-label">Chat context</span>
+              <SelectField
+                aria-label="Chat context"
+                className="w-full"
+                value={pid}
+                onValueChange={(value) => {
+                  setPid(value);
+                  if (!value) setRuntime("deepagents");
+                }}
+                options={[
+                  { value: "", label: "General", icon: <Ic n="layers" s={14} /> },
+                  ...ps.map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                    icon: <PIcon p={p} s={14} />,
+                  })),
+                ]}
+              />
+            </div>
+          </div>
         </div>
         <div className="ns-bottom">
           <Suggestions
@@ -1427,20 +1544,25 @@ function NewChat({
               setPid(value);
               if (!value) setRuntime("deepagents");
             }}
-            mode={pid ? mode : undefined}
-            setMode={pid ? setMode : undefined}
+            mode={mode}
+            setMode={setMode}
             modeOptions={WORK_MODES}
             runtime={pid && runtimeOptions?.fx_available ? runtime : undefined}
             setRuntime={pid && runtimeOptions?.fx_available ? setRuntime : undefined}
             disabled={unavailable}
-            approval={pid ? approval : undefined}
-            setApproval={pid ? setApproval : undefined}
+            approval={approval}
+            setApproval={setApproval}
             onSend={start}
             autoFocus={Boolean(q)}
             draftOnly={!liveChat}
             initial={q}
           />
           {unavailable && <p role="alert">Connect a compatible personal model in settings to use fx.</p>}
+          {!liveChat && (
+            <p className="ns-sample-note faint">
+              Sample preview · <a href="/login">Sign in to work with Nova.</a>
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -1451,7 +1573,7 @@ function NewChat({
 
 export function NewSession({ issue0 }: { issue0: string | null }) {
   // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
-  const projects = useProjects().items.filter((p) => canSee(p));
+  const projects = useProjects().items.filter((p) => canSee(p) && p.status !== "complete");
   const ps = new Set(projects.map((p) => p.id));
   const [projectId, setProjectId] = useState("");
   const [branch, setBranch] = useState("");
@@ -1469,6 +1591,10 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (!note) {
+      el.style.height = "";
+      return;
+    }
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [note]);
@@ -1560,27 +1686,30 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
         <h2 className="ns-title">Start a session</h2>
         {!t && (
           <div className="ns-source">
-            <label>
-              Repository
-              <select
+            <div className="ns-field">
+              <span className="ns-field-label">Repository</span>
+              <SelectField
+                aria-label="Repository"
+                placeholder="Choose a repository"
                 value={projectId}
-                onChange={(e) => {
-                  setProjectId(e.target.value);
+                onValueChange={(value) => {
+                  setProjectId(value);
                   setBranch("");
                 }}
-              >
-                <option value="">Choose a repository</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.repo ? `${p.repo} · ${p.name}` : `${p.name} · No repository`}
-                  </option>
-                ))}
-              </select>
-            </label>
+                className="w-full"
+                options={[
+                  { value: "", label: "Choose a repository" },
+                  ...projects.map((p) => ({
+                    value: p.id,
+                    label: p.repo ? `${p.repo} · ${p.name}` : `${p.name} · No repository`,
+                  })),
+                ]}
+              />
+            </div>
             {project?.repo && (
               <label>
                 Starting branch
-                <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Repository default" maxLength={200} />
+                <input className="input" value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Repository default" maxLength={200} />
               </label>
             )}
             {liveSession && project && !project.repo && !allowed("projects:manage") && <p className="faint">Ask a project admin to connect a repository.</p>}
@@ -1662,6 +1791,19 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
           <ChatComposer
             value={note}
             onSubmit={go_}
+            header={
+              t ? (
+                <span className="cmp-chip" title={`${t.key} ${t.title}`}>
+                  <Ic n="square-check" s={12} />
+                  <span className="trunc">
+                    {t.key} {t.title}
+                  </span>
+                  <ActionButton className="ibtn ibtn-xs" onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
+                    <Ic n="x" s={11} />
+                  </ActionButton>
+                </span>
+              ) : undefined
+            }
             input={
               <textarea
                 data-dotrix-control
@@ -1700,52 +1842,69 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
               />
             }
             footerActions={
-              <CodingOptions mode={codingMode} setMode={setCodingMode} local={location === "local"} placement="above" focusInput={() => ref.current?.focus()}>
-                {(close) => (
-                  <>
-                    <DesignButton
-                      label="Pick an issue"
-                      variant="ghost"
-                      className="composer-menu-option"
-                      icon={<Ic n="square-check" s={16} />}
-                      onClick={() => {
-                        close();
-                        ask();
-                      }}
-                    />
-                    {approvals.length > 1 && (
-                      <span data-tip={APPROVAL_MODES.find(([v]) => v === approval)?.[2]}>
-                        <Pick
-                          plain
-                          value={approval}
-                          onChange={(v) => setApproval(v as ApprovalMode)}
-                          options={approvals.map(([v, l]): [string, string] => [v, l])}
-                          label="Approvals"
-                        />
-                      </span>
-                    )}
-                    {avail && (avail.local_available || location === "local" || here) && (
-                      <WhereItCodes
-                        location={location}
-                        setWhere={setWhere}
-                        cloudReady={avail.available}
-                        cloudWhy={avail.reason}
-                        localReady={avail.local_available}
-                        localName={avail.local_runner}
-                        localWhy={avail.local_reason}
-                        folder={hereRunner}
-                        canAdd={Boolean(here && slug && pkey)}
-                        adding={adding}
-                        onAdd={codeHere}
-                        onClose={() => {
+              <div className="cmp-footer-left">
+                <CodingOptions mode={codingMode} setMode={setCodingMode} local={location === "local"} placement="above" focusInput={() => ref.current?.focus()}>
+                  {(close) => (
+                    <>
+                      <div className="composer-menu-sep" />
+                      <DesignButton
+                        label="Pick an issue"
+                        variant="ghost"
+                        className="composer-menu-option"
+                        icon={<Ic n="square-check" s={15} />}
+                        onClick={() => {
                           close();
-                          ref.current?.focus();
+                          ask();
                         }}
                       />
-                    )}
-                  </>
+                      {avail && (avail.local_available || location === "local" || here) && (
+                        <>
+                          <div className="composer-menu-sep" />
+                          <WhereItCodes
+                            location={location}
+                            setWhere={setWhere}
+                            cloudReady={avail.available}
+                            cloudWhy={avail.reason}
+                            localReady={avail.local_available}
+                            localName={avail.local_runner}
+                            localWhy={avail.local_reason}
+                            folder={hereRunner}
+                            canAdd={Boolean(here && slug && pkey)}
+                            adding={adding}
+                            onAdd={codeHere}
+                            onClose={() => {
+                              close();
+                              ref.current?.focus();
+                            }}
+                          />
+                        </>
+                      )}
+                    </>
+                  )}
+                </CodingOptions>
+                <span className="cmp-status-badge accent" aria-label={`Coding mode: ${codingMode === "plan" ? "Plan" : "Build"}`} data-tip="Mode">
+                  <Ic n={codingMode === "plan" ? "list-checks" : "hammer"} s={12} />
+                  <span>{codingMode === "plan" ? "Plan" : "Build"}</span>
+                </span>
+                {approvals.length > 1 ? (
+                  <ApprovalPick value={approval} onChange={setApproval} options={approvals} />
+                ) : (
+                  <span
+                    className={`cmp-status-badge ${approval === "auto" ? "amber" : ""}`}
+                    aria-label={`Approval mode: ${modeName(approval)}`}
+                    data-tip="Approvals"
+                  >
+                    <Ic n="shield-check" s={12} />
+                    <span>{modeName(approval)}</span>
+                  </span>
                 )}
-              </CodingOptions>
+                {!t && (
+                  <button type="button" className="cmp-status-pill" onClick={ask} aria-label="Link an issue" data-tip="Pick an issue">
+                    <Ic n="square-check" s={12} />
+                    <span className="cmp-pill-label-compact">Issue</span>
+                  </button>
+                )}
+              </div>
             }
             sendActions={
               <ComposerModel
@@ -1775,20 +1934,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
               </>
             }
           />
-          <div className="kt-foot cmp-foot">
-            {t && (
-              <span className="cmp-chip" title={`${t.key} ${t.title}`}>
-                <Ic n="square-check" s={12} />
-                <span className="trunc">
-                  {t.key} {t.title}
-                </span>
-                <ActionButton className="ibtn ibtn-xs" onClick={() => setTid("")} aria-label={`Remove ${t.key}`}>
-                  <Ic n="x" s={11} />
-                </ActionButton>
-              </span>
-            )}
-            <span className="sp" />
-          </div>
           {menuOpen && (
             <>
               <span
@@ -1800,13 +1945,13 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 }}
               />
               <div
-                className="pop"
+                className="pop cs-issue-pop"
                 id="cs-issues"
                 role="listbox"
                 aria-label="Issues"
                 style={{
                   position: "absolute",
-                  bottom: "calc(100% + 6px)",
+                  bottom: "calc(100% + 8px)",
                   left: 0,
                   right: 0,
                   overflowY: "auto",
@@ -1815,6 +1960,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                   zIndex: 80,
                 }}
               >
+                <div className="composer-menu-heading">Link an issue</div>
                 {found.length ? (
                   found.map((x, i) => (
                     <button
@@ -1844,6 +1990,11 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
             </>
           )}
         </div>
+        {!liveSession && (
+          <p className="ns-sample-note faint">
+            Sample preview · <a href="/login">Sign in</a> to start coding sessions.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1856,7 +2007,7 @@ const fileOf = (f: Record<string, unknown>) => String(f.path ?? f.file ?? f.name
 const lineCounts = (files: Record<string, unknown>[]) =>
   files.reduce<[number, number]>((sum, f) => [sum[0] + (Number(f.added) || 0), sum[1] + (Number(f.removed) || 0)], [0, 0]);
 /** Lines added and removed, as Claude Code shows them; a button when it opens the changes. */
-function LineCounts({ files, onClick, tip }: { files: Record<string, unknown>[]; onClick?: () => void; tip?: string }) {
+export function LineCounts({ files, onClick, tip }: { files: Record<string, unknown>[]; onClick?: () => void; tip?: string }) {
   const [added, removed] = lineCounts(files);
   const body = (
     <>
@@ -1977,7 +2128,7 @@ function stepsSummary(events: CodingRun["events"], status?: CodingRun["status"])
   return (status && NO_STEPS[status]) ?? "Worked on it";
 }
 
-function copyText(text: string) {
+export function copyText(text: string) {
   void navigator.clipboard
     ?.writeText(text)
     .then(() => toast("Copied"))
@@ -2135,7 +2286,6 @@ export function Session({ cs }: { cs: CodingSession }) {
   const turns = useCodingSession(scope, cs.session_id).data ?? [];
   const latest = turns.at(-1);
   const [codingMode, setCodingMode] = useState<"plan" | "build">("build");
-  const [optionsOpen, setOptionsOpen] = useState(false);
   // The open session is followed as it happens; its turns land in the query above.
   useCodingSessionStream(scope, cs.session_id, turns.some(isOpenTurn));
   const decide = useDecideCoding(scope, cs.issue_key);
@@ -2298,28 +2448,22 @@ export function Session({ cs }: { cs: CodingSession }) {
   useEffect(() => {
     const el = box.current;
     if (!el) return;
+    if (!ask) {
+      el.style.height = "";
+      return;
+    }
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [ask]);
   const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
-  // The bar's height (it wraps on phones): the panes float under it on narrow screens.
-  const convRef = useRef<HTMLDivElement>(null);
-  const headRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const head = headRef.current;
-    if (!head) return;
-    const ro = new ResizeObserver(() => convRef.current?.style.setProperty("--cs-head-h", `${head.offsetHeight}px`));
-    ro.observe(head);
-    return () => ro.disconnect();
-  }, []);
   const details = (
     <SessionDetails cs={cs} turns={turns} onOpenFile={openPath} onOpenChanges={openChanges} onShot={(src, name) => setShot({ src, name })} shotSrc={shotSrc} />
   );
   const detailsOn = detailsColumn || detailsPop;
   return (
-    <div className="conv" ref={convRef}>
+    <div className="conv">
       <div className="conv-main">
-        <SessionHeader ref={headRef}>
+        <SessionHeader>
           <ActionButton className="ibtn ibtn-sm cs-back" onClick={() => openCoding("")} aria-label="Back to sessions" data-tip="Sessions">
             <Ic n="arrow-left" s={15} />
           </ActionButton>
@@ -2369,6 +2513,20 @@ export function Session({ cs }: { cs: CodingSession }) {
             </span>
           )}
           <span className="sp" />
+          {(latest?.files_changed?.length ?? 0) > 0 && latest && (
+            <LineCounts files={latest.files_changed} onClick={() => openChanges(latest.id)} tip="Open changes" />
+          )}
+          {pushed?.ci_state && (
+            <button
+              className={`pillbtn cs-ci-pill ${pushed.ci_state}`}
+              onClick={() => openPane(pushed.ci_state === "failed" ? "review" : "terminal")}
+              data-tip={`CI ${pushed.ci_state}`}
+              aria-label={`CI ${pushed.ci_state}`}
+            >
+              <Ic n={pushed.ci_state === "passed" ? "circle-check" : "circle-x"} s={12} />
+              CI
+            </button>
+          )}
           <button
             className={`cs-view ${detailsOn ? "on" : ""}`}
             data-details
@@ -2412,20 +2570,20 @@ export function Session({ cs }: { cs: CodingSession }) {
           className="dotrix-chat-layout"
           density={S.prefs.density === "compact" ? "compact" : "balanced"}
           composer={
-            <div className={`chat-input kt-input dotrix-composer-wrap ${optionsOpen ? "menu-open" : ""}`}>
+            <div className="chat-input kt-input dotrix-composer-wrap">
               {latest && <KaiBackground run={latest} kai={kai} />}
               {working && (
                 <div className="chat-delivery-row">
                   <label htmlFor="coding-delivery-kind">Send as</label>
-                  <select
+                  <SelectField
                     id="coding-delivery-kind"
+                    size="sm"
+                    className="chat-delivery-select"
                     aria-label="Delivery action"
                     value={inputKind}
-                    onChange={(event) => setPickedKind(event.target.value as "steer" | "queue")}
-                  >
-                    {steerable && <option value="steer">Steer this turn</option>}
-                    <option value="queue">Queue for the next turn</option>
-                  </select>
+                    onValueChange={(value) => setPickedKind(value as "steer" | "queue")}
+                    options={[...(steerable ? [{ value: "steer", label: "Steer this turn" }] : []), { value: "queue", label: "Queue for the next turn" }]}
+                  />
                 </div>
               )}
               <Queue
@@ -2465,16 +2623,30 @@ export function Session({ cs }: { cs: CodingSession }) {
                 isStopShown={Boolean(latest?.can_stop && (latest.status === "running" || latest.status === "queued") && !ask.trim())}
                 onSubmit={send}
                 footerActions={
-                  <CodingOptions
-                    mode={codingMode}
-                    setMode={setCodingMode}
-                    local={latest?.location === "local"}
-                    disabled={busy && !(working && inputKind === "queue")}
-                    onOpenChange={setOptionsOpen}
-                    focusInput={() => box.current?.focus()}
-                  >
-                    {() => <span className="composer-menu-note">Approvals: {modeName(latest?.approval_mode)}</span>}
-                  </CodingOptions>
+                  <div className="cmp-footer-left">
+                    <CodingOptions
+                      mode={codingMode}
+                      setMode={setCodingMode}
+                      local={latest?.location === "local"}
+                      disabled={busy && !(working && inputKind === "queue")}
+                      placement="above"
+                      focusInput={() => box.current?.focus()}
+                    />
+                    <span className="cmp-status-badge accent" aria-label={`Coding mode: ${codingMode === "plan" ? "Plan" : "Build"}`} data-tip="Mode">
+                      <Ic n={codingMode === "plan" ? "list-checks" : "hammer"} s={12} />
+                      <span>{codingMode === "plan" ? "Plan" : "Build"}</span>
+                    </span>
+                    {latest?.approval_mode && (
+                      <span
+                        className={`cmp-status-badge ${latest.approval_mode === "auto" ? "amber" : ""}`}
+                        aria-label={`Approval mode: ${modeName(latest.approval_mode)}`}
+                        data-tip="Approvals"
+                      >
+                        <Ic n="shield-check" s={12} />
+                        <span>{modeName(latest.approval_mode)}</span>
+                      </span>
+                    )}
+                  </div>
                 }
                 input={
                   <textarea
@@ -2562,76 +2734,89 @@ export function Session({ cs }: { cs: CodingSession }) {
                     <Ic n="question" s={14} />
                     <b style={{ fontWeight: 500 }}>{kai} has questions</b>
                   </div>
-                  <ol>
-                    {(latest.questions ?? []).map((question, index) => (
-                      <li key={index}>{question}</li>
-                    ))}
-                  </ol>
+                  <div className="change-b">
+                    <ol className="cs-plan-list">
+                      {(latest.questions ?? []).map((question, index) => (
+                        <li key={index}>{question}</li>
+                      ))}
+                    </ol>
+                  </div>
                   <div className="change-f">
                     <span className="faint" style={{ fontSize: 12 }}>
                       Answer below: your reply is the next turn. Anything queued waits until then.
                     </span>
                     <span className="sp" />
-                    <ActionButton className="btn btn-primary" onClick={() => box.current?.focus()}>
+                    <ActionButton className="btn btn-sm btn-primary" onClick={() => box.current?.focus()}>
                       Answer
                     </ActionButton>
                   </div>
                 </div>
               )}
-              {latest?.plan_result && (
-                <div className="change" aria-label="Kai's saved plan">
-                  <h3>{String(latest.plan_result.title ?? "Implementation plan")}</h3>
-                  <p>{String(latest.plan_result.summary ?? "")}</p>
-                  <ol>
-                    {(Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks : []).map((task, index) => (
-                      <li key={index}>
-                        <b>{String(task.title)}</b>
-                        <p>{String(task.detail ?? "")}</p>
-                      </li>
-                    ))}
-                  </ol>
-                  <TraceList
-                    title="Acceptance criteria"
-                    items={Array.isArray(latest.plan_result.acceptance_criteria) ? latest.plan_result.acceptance_criteria.map(String) : []}
-                    icon="check-square"
-                  />
-                  <TraceList
-                    title="Open questions"
-                    items={Array.isArray(latest.plan_result.open_questions) ? latest.plan_result.open_questions.map(String) : []}
-                    icon="question"
-                  />
-                  <ActionButton
-                    className="btn btn-primary"
-                    disabled={busy || follow.isPending}
-                    onClick={() =>
-                      follow.mutate({
-                        message: "Build the selected plan",
-                        work_mode: "build",
-                        source_plan_id: latest.id,
-                      })
-                    }
-                  >
-                    Build this plan
-                  </ActionButton>
-                  {(Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks.length : 0) > 1 && (
-                    <ActionButton
-                      className="btn"
-                      disabled={busy || follow.isPending}
-                      title="A turn for each task, in order: the next starts when one finishes, and you can cancel what's left"
-                      onClick={() =>
-                        follow.mutate({
-                          message: "Build the selected plan, one task at a time",
-                          work_mode: "build",
-                          source_plan_id: latest.id,
-                          step_by_step: true,
-                        })
-                      }
-                    >
-                      Build step by step
-                    </ActionButton>
-                  )}
-                </div>
-              )}
+              {latest?.plan_result &&
+                (() => {
+                  const planTasks = Array.isArray(latest.plan_result.tasks) ? latest.plan_result.tasks : [];
+                  const planCriteria = Array.isArray(latest.plan_result.acceptance_criteria) ? latest.plan_result.acceptance_criteria.map(String) : [];
+                  const planQuestions = Array.isArray(latest.plan_result.open_questions) ? latest.plan_result.open_questions.map(String) : [];
+                  return (
+                    <div className="change" aria-label="Kai's saved plan">
+                      <div className="change-h">
+                        <Ic n="list-checks" s={14} />
+                        <b style={{ fontWeight: 500 }}>{String(latest.plan_result.title ?? "Implementation plan")}</b>
+                        <span className="badge">Saved plan</span>
+                      </div>
+                      <div className="agent-plan-body">
+                        {Boolean(latest.plan_result.summary) && <p style={{ margin: 0 }}>{String(latest.plan_result.summary)}</p>}
+                        <PlanSteps
+                          title={`${planTasks.length} task${planTasks.length === 1 ? "" : "s"}`}
+                          steps={planTasks.map((planTask) => ({
+                            title: String(planTask.title ?? ""),
+                            detail: planTask.detail ? String(planTask.detail) : undefined,
+                            note: Array.isArray(planTask.depends_on) && planTask.depends_on.length ? `after ${planTask.depends_on.join(", ")}` : undefined,
+                          }))}
+                        />
+                        <TraceList title="Acceptance criteria" items={planCriteria} icon="check-square" />
+                        <TraceList title="Open questions" items={planQuestions} icon="question" />
+                      </div>
+                      <div className="change-f">
+                        <span className="faint" style={{ fontSize: 12 }}>
+                          Build all at once, or one task per turn.
+                        </span>
+                        <span className="sp" />
+                        {planTasks.length > 1 && (
+                          <ActionButton
+                            className="btn btn-sm btn-secondary"
+                            disabled={busy || follow.isPending}
+                            title="A turn for each task, in order: the next starts when one finishes, and you can cancel what's left"
+                            onClick={() =>
+                              follow.mutate({
+                                message: "Build the selected plan, one task at a time",
+                                work_mode: "build",
+                                source_plan_id: latest.id,
+                                step_by_step: true,
+                              })
+                            }
+                          >
+                            Build step by step
+                          </ActionButton>
+                        )}
+                        <ActionButton
+                          className="btn btn-sm btn-primary"
+                          disabled={busy || follow.isPending}
+                          onClick={() =>
+                            follow.mutate({
+                              message: "Build the selected plan",
+                              work_mode: "build",
+                              source_plan_id: latest.id,
+                            })
+                          }
+                        >
+                          <Ic n="hammer" s={12} />
+                          Build this plan
+                        </ActionButton>
+                      </div>
+                    </div>
+                  );
+                })()}
               {latest?.status === "awaiting_approval" && (
                 <div className="change">
                   <div className="change-h">
@@ -2796,7 +2981,7 @@ export function Session({ cs }: { cs: CodingSession }) {
 }
 
 /** Whether the window matches `query` now, kept current as it's resized. */
-function useWide(query: string): boolean {
+export function useWide(query: string): boolean {
   const [on, setOn] = useState(() => window.matchMedia(query).matches);
   useEffect(() => {
     const media = window.matchMedia(query);
@@ -2862,21 +3047,89 @@ function ToCoding({ search }: { search: URLSearchParams }) {
 
 function DemoConversation({ id }: { id: string }) {
   const thread = D().threads.find((item) => item.id === id);
+  const [mode, setMode] = useState<WorkMode>("discuss");
+  const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
+  const modelOptions = useMemo(
+    () =>
+      [...(thread?.model && !SAMPLE_COMPOSER_MODELS.includes(thread.model) ? [thread.model] : []), ...SAMPLE_COMPOSER_MODELS].map((item): [string, string] => [
+        item,
+        modelName(item),
+      ]),
+    [thread?.model],
+  );
+  const [chosenModel, setModel] = useState<string>(thread?.model ?? SAMPLE_COMPOSER_MODELS[0] ?? "");
   if (!thread) return <Pending text="This sample conversation is no longer available." />;
+  const p = proj(thread.project ?? "");
   return (
-    <>
-      <SessionHeader>
-        <b className="trunc">{thread.title}</b>
-      </SessionHeader>
-      <ChatMessageList>
-        <div className="chat-col">
-          <p className="muted">Sample conversation · Sign in to work with Nova.</p>
-          {thread.messages.map((message) => (
-            <Message key={message.id} m={message} projectId={thread.project} />
-          ))}
-        </div>
-      </ChatMessageList>
-    </>
+    <div className="conv">
+      <div className="conv-main">
+        <SessionHeader>
+          <ActionButton className="ibtn ibtn-sm cs-back" onClick={() => open("")} aria-label="Back to conversations">
+            <Ic n="arrow-left" s={15} />
+          </ActionButton>
+          <b className="trunc" style={{ fontWeight: 600, fontSize: 13.5 }}>
+            {thread.title}
+          </b>
+          <span className="sp" />
+          {p ? (
+            <button className="pillbtn" onClick={() => go("project", { id: p.key, tab: "overview" })}>
+              <PIcon p={p} s={12} />
+              {p.name}
+            </button>
+          ) : (
+            <span className="pillbtn">
+              <Ic n="layers" s={13} />
+              General
+            </span>
+          )}
+        </SessionHeader>
+        <ChatLayout
+          className="dotrix-chat-layout"
+          density={S.prefs.density === "compact" ? "compact" : "balanced"}
+          composer={
+            <div className="chat-input">
+              <Composer
+                placeholder="Draft a reply"
+                agent="auto"
+                model={chosenModel}
+                setModel={setModel}
+                models={modelOptions}
+                context={p?.name ?? "General"}
+                mode={mode}
+                setMode={setMode}
+                modeOptions={WORK_MODES}
+                approval={approval}
+                setApproval={setApproval}
+                onSend={() => {}}
+                draftOnly
+              />
+            </div>
+          }
+        >
+          <ChatMessageList>
+            <div className="chat-col">
+              <p className="muted">
+                Sample conversation · <a href="/login">Sign in to work with Nova.</a>
+              </p>
+              {thread.messages.map((message) => (
+                <Message key={message.id} m={message} projectId={thread.project}>
+                  {message.changes?.map((change) => (
+                    <ChangeCard key={change.id} ch={change} />
+                  ))}
+                  {message.limit && (
+                    <LimitNotice
+                      said={`${message.limit.provider}: rate limit reached`}
+                      resetsAt={message.limit.resetsAt}
+                      onContinue={() => toast("Sign in to continue conversations")}
+                    />
+                  )}
+                </Message>
+              ))}
+            </div>
+          </ChatMessageList>
+        </ChatLayout>
+      </div>
+    </div>
   );
 }
 

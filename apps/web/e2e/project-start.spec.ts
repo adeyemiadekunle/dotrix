@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectComposerMode, signUp } from "./helpers";
+import { expectComposerMode, pickSelect, signUp } from "./helpers";
 
 test("an idea needs only a working title and opens an editable Nova discussion without GitHub", async ({ page }) => {
   await signUp(page);
@@ -35,7 +35,7 @@ test("an idea needs only a working title and opens an editable Nova discussion w
   expect(project).toMatchObject({ name: "Booking concept", source: "docs_only", description: "", repo_url: null });
   await page.getByRole("link", { name: "Explore with Nova", exact: true }).click();
   await expect(page.getByLabel("Message", { exact: true })).toHaveText(/clarifying the problem, intended users, constraints and uncertainties/);
-  await expect(page.getByRole("button", { name: "Project and mode", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Chat options", exact: true })).toBeVisible();
   await expectComposerMode(page, "Discuss");
   expect(githubRequests).toEqual([]);
   expect(agentRequests).toEqual([]);
@@ -111,7 +111,7 @@ test("existing repositories start with GitHub selection and require confirmation
   page.on("request", (request) => {
     if (request.method() === "PUT" && new URL(request.url()).pathname.endsWith("/repository")) attachments.push(request.url());
   });
-  await page.getByLabel("Repository", { exact: true }).selectOption({ label: "acme/existing" });
+  await pickSelect(page, page.getByLabel("Repository", { exact: true }), "acme/existing");
   await expect(page.getByRole("button", { name: "Use repository", exact: true })).toBeEnabled();
   const project = await page.evaluate(async ({ workspace, project }) => (await fetch(`/v1/workspaces/${workspace}/projects/${project}`)).json(), {
     workspace: saved.searchParams.get("workspace"),

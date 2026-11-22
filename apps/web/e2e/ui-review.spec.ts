@@ -4,11 +4,15 @@ test("new chat is visible and preserves the full approval mode", async ({ page }
   await page.goto("/w/dotrix/chat");
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page).toHaveURL(/\/chat\?new=1$/);
+  await page.getByRole("combobox", { name: "Chat context", exact: true }).click();
   await page.getByRole("listbox", { name: "Chat context" }).getByRole("option", { name: "Website Redesign", exact: true }).click();
-  await page.getByRole("button", { name: "Project and mode", exact: true }).click();
   const approval = page.getByRole("combobox", { name: "Approvals" });
   await expect(approval).toBeVisible();
   expect(await approval.evaluate((el) => el.clientWidth >= el.scrollWidth)).toBe(true);
+  await page.getByRole("button", { name: "Chat options", exact: true }).click();
+  const options = page.getByRole("dialog", { name: "Chat options", exact: true });
+  await expect(options).toBeVisible();
+  await expect(options.getByRole("button", { name: "Website Redesign", exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await page.locator(".chat-side").getByRole("button", { name: "Hide the list" }).click();
   await expect(page.getByRole("button", { name: "Show the list", exact: true })).toBeVisible();

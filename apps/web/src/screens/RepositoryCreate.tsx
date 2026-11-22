@@ -1,3 +1,4 @@
+import { SelectField } from "@dotrix/ui/components/select";
 import { useRef, useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
 
@@ -65,33 +66,35 @@ export function RepositoryCreate({
         <>
           <fieldset disabled={busy || stage !== "edit"} style={{ border: 0, padding: 0, margin: 0 }}>
             <legend>Create in a GitHub organisation</legend>
-            <label className="field">
-              Repository owner
-              <select aria-label="Repository owner" className="select" value={owner} onChange={(event) => setOwner(event.target.value)}>
-                <option value="">Choose an organisation</option>
-                {organisations.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.account_login}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="field">
+              <span className="label">Repository owner</span>
+              <SelectField
+                aria-label="Repository owner"
+                className="w-full"
+                disabled={busy || stage !== "edit"}
+                value={owner}
+                onValueChange={setOwner}
+                options={[{ value: "", label: "Choose an organisation" }, ...organisations.map((item) => ({ value: item.id, label: item.account_login }))]}
+              />
+            </div>
             <label className="field">
               Repository name
               <input className="input" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
             </label>
-            <label className="field">
-              Repository visibility
-              <select
+            <div className="field">
+              <span className="label">Repository visibility</span>
+              <SelectField
                 aria-label="Repository visibility"
-                className="select"
+                className="w-full"
+                disabled={busy || stage !== "edit"}
                 value={privateRepo ? "private" : "public"}
-                onChange={(event) => setPrivate(event.target.value === "private")}
-              >
-                <option value="private">Private</option>
-                <option value="public">Public</option>
-              </select>
-            </label>
+                onValueChange={(value) => setPrivate(value === "private")}
+                options={[
+                  { value: "private", label: "Private" },
+                  { value: "public", label: "Public" },
+                ]}
+              />
+            </div>
             <label className="field">
               Repository description (optional)
               <input className="input" value={description} maxLength={350} onChange={(event) => setDescription(event.target.value)} />

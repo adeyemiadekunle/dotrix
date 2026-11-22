@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Revamped the shared Chat and Code composers, moved approval mode selection out of the `+` options menu into its own toolbar select, made mode indicators non-interactive badges, replaced the `NewChat` context card and remaining web/admin native `<select>` elements with `SelectField`, narrowed scrollbars to `6px`, and exposed `Settings → Browser` in desktop mode.
+
 - The Code pane button opens a chooser inside the right panel and supports separate Browser and Terminal tabs.
 
 - Sample Code sessions preview the desktop Browser tab and address bar without navigating.

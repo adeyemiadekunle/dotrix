@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { createOrganisation, newUser, signUp } from "./helpers";
+import { createOrganisation, newUser, pickSelect, signUp } from "./helpers";
 
 // Members in a real workspace: an organisation invites people (by email or a link), sees who
 // is pending, decides who sees a restricted project, hands over ownership, and removes people.
@@ -88,7 +88,7 @@ test("join by link, see a restricted project once added, then become the owner; 
   await page.getByRole("button", { name: "Share" }).click();
   // Added people only count once the project is restricted on the server: wait for that save.
   const restricted = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/projects\/[^/]+$/.test(new URL(r.url()).pathname));
-  await page.getByLabel("General access").selectOption("private");
+  await pickSelect(page, page.getByLabel("General access"), "Only people added");
   expect((await restricted).status()).toBe(200);
   await expect(page.getByText("Owners, admins, and the people added")).toBeVisible();
   await page.getByPlaceholder(/Add people/).fill("Bob");

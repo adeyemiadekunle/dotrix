@@ -1,6 +1,7 @@
 // Tables with pages: TanStack Table on shadcn's table and pagination. Server-paged when given a
 // `total` (runs, the audit log: the API returns one page and how many match), otherwise paged and
 // sorted here (workspaces, failures).
+import { SelectField } from "@dotrix/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@dotrix/ui/components/table";
 import {
   Pagination,
@@ -163,16 +164,16 @@ export function DataTable<T>({
           <span className="dt-count">
             {from.toLocaleString()}–{to.toLocaleString()} of {count.toLocaleString()}
           </span>
-          <label className="dt-size">
-            Rows
-            <select className="input" value={page.pageSize} onChange={(e) => table.setPagination({ pageIndex: 0, pageSize: Number(e.target.value) })}>
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="dt-size">
+            <span>Rows</span>
+            <SelectField
+              size="sm"
+              aria-label="Rows per page"
+              value={String(page.pageSize)}
+              onValueChange={(value) => table.setPagination({ pageIndex: 0, pageSize: Number(value) })}
+              options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          </div>
           <Pages index={page.pageIndex} count={table.getPageCount()} go={(i) => table.setPageIndex(i)} />
         </div>
       ) : null}

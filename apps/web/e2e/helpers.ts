@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export const PASSWORD = "e2e-only-password-1234";
 
@@ -87,10 +87,16 @@ export async function createTask(page: Page, workspaceId: string, projectId: str
   return (await created.json()) as { id: string; key: string };
 }
 
+/** Pick an option from a revamped SelectField (Radix combobox + portaled listbox). */
+export async function pickSelect(page: Page, trigger: Locator, option: string | RegExp) {
+  await trigger.click();
+  await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
+}
+
 /** A mode is selected inside +; checking it must not change it or send a message. */
 export async function expectComposerMode(page: Page, name: "Discuss" | "Plan" | "Build" | "Review") {
-  const plus = page.getByRole("button", { name: /^(Project and mode|Mode)$/ });
-  const menu = page.getByRole("dialog", { name: /^(Project and mode|Mode)$/ });
+  const plus = page.getByRole("button", { name: /^(Chat options|Project and mode|Mode)$/ });
+  const menu = page.getByRole("dialog", { name: /^(Chat options|Project and mode|Mode)$/ });
   if (!(await menu.isVisible())) await plus.click();
   await expect(menu.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");

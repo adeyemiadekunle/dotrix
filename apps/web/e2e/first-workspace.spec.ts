@@ -82,7 +82,7 @@ test("a saved organisation choice still allows personal setup after role restric
   await expect(page.getByRole("heading", { name: "Open your team workspace", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Set up a project in your own workspace", exact: true }).click();
   await expect(page.getByRole("heading", { name: "How do you want to start?", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Workspace", { exact: true })).not.toHaveValue(organisation.id);
+  await expect(page.getByLabel("Workspace", { exact: true })).not.toHaveAttribute("data-value", organisation.id);
 });
 
 test("a different saved choice opens its summary instead of continuing in the stale workspace", async ({ page }) => {
@@ -107,7 +107,7 @@ test("a different saved choice opens its summary instead of continuing in the st
   await expect(page.getByLabel("Project name", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   const selected = new URL(page.url()).searchParams.get("workspace");
-  await expect(page.getByLabel("Workspace", { exact: true })).toHaveValue(selected!);
+  await expect(page.getByLabel("Workspace", { exact: true })).toHaveAttribute("data-value", selected!);
 });
 
 test("a background profile refetch reconciles another tab's saved organisation before project setup", async ({ page }) => {
@@ -134,6 +134,6 @@ test("a background profile refetch reconciles another tab's saved organisation b
   await expect(page.getByText(/Chosen from another tab · Organisation/)).toBeVisible();
   await expect(page.getByLabel("Project name", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByLabel("Workspace", { exact: true })).toHaveValue(organisation.id);
+  await expect(page.getByLabel("Workspace", { exact: true })).toHaveAttribute("data-value", organisation.id);
   expect(new URL(page.url()).searchParams.get("workspace")).toBe(organisation.id);
 });

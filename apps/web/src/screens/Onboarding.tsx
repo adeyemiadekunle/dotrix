@@ -5,6 +5,7 @@
 // Only server-confirmed workspace and project IDs are kept in the URL across refreshes, sign-in and
 // GitHub's redirect, so setup resumes where it was; keys stay in memory. A save whose response was
 // lost is recovered from what the server saved, never made twice.
+import { SelectField } from "@dotrix/ui/components/select";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
@@ -503,25 +504,21 @@ export function Onboarding() {
               ))}
             </div>
             {(choosable.length > 1 || addingProject) && (
-              <label className="field">
-                Workspace
-                <select
+              <div className="field">
+                <span className="label">Workspace</span>
+                <SelectField
                   aria-label="Workspace"
-                  className="select onb2-input"
+                  className="w-full onb2-input"
+                  disabled={busy}
                   value={workspaceId}
-                  onChange={(event) => {
-                    setWorkspace(event.target.value);
+                  onValueChange={(value) => {
+                    setWorkspace(value);
                     setProject("");
-                    move("start", "", event.target.value);
+                    move("start", "", value);
                   }}
-                >
-                  {workspaces.data?.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={(workspaces.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
+                />
+              </div>
             )}
             {workspaceId && workspaces.isSuccess && !workspace && <p role="alert">This workspace is unavailable. Select another workspace to continue.</p>}
             {addingProject &&
@@ -669,18 +666,20 @@ export function Onboarding() {
                   />
                 </label>
                 {workspace?.kind === "organization" && (
-                  <label className="field">
-                    Who can see it
-                    <select
+                  <div className="field">
+                    <span className="label">Who can see it</span>
+                    <SelectField
                       aria-label="Project access"
-                      className="select onb2-input"
+                      className="w-full onb2-input"
+                      disabled={busy}
                       value={accessLevel}
-                      onChange={(event) => setAccessLevel(event.target.value as "workspace" | "restricted")}
-                    >
-                      <option value="workspace">Everyone in {workspace.name}</option>
-                      <option value="restricted">Only owners, admins and people added</option>
-                    </select>
-                  </label>
+                      onValueChange={(value) => setAccessLevel(value as "workspace" | "restricted")}
+                      options={[
+                        { value: "workspace", label: `Everyone in ${workspace.name}` },
+                        { value: "restricted", label: "Only owners, admins and people added" },
+                      ]}
+                    />
+                  </div>
                 )}
               </fieldset>
               <div className="onb2-acts">
@@ -702,29 +701,23 @@ export function Onboarding() {
                 </button>
               </div>
               {!!projects.data?.length && (
-                <label className="field onb2-resume">
-                  Continue setting up an existing project
-                  <select
+                <div className="field onb2-resume">
+                  <span className="label">Continue setting up an existing project</span>
+                  <SelectField
                     aria-label="Continue setting up an existing project"
-                    className="select onb2-input"
+                    className="w-full onb2-input"
                     disabled={busy}
                     value=""
-                    onChange={(event) => {
-                      const saved = projects.data?.find((item) => item.id === event.target.value);
+                    onValueChange={(value) => {
+                      const saved = projects.data?.find((item) => item.id === value);
                       if (!saved) return;
                       const start = projectStart(saved.source);
                       setProject(saved.id);
                       move(start === "idea" ? "model" : "github", saved.id, workspaceId, start);
                     }}
-                  >
-                    <option value="">Choose a project</option>
-                    {projects.data.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    options={[{ value: "", label: "Choose a project" }, ...projects.data.map((item) => ({ value: item.id, label: item.name }))]}
+                  />
+                </div>
               )}
             </form>
           )}
@@ -773,17 +766,22 @@ export function Onboarding() {
           {github.data?.configured && (
             <div className="onb2-fields">
               {!!repos.data?.length && (
-                <label className="field">
-                  Repository
-                  <select aria-label="Repository" className="select onb2-input" value={repoId} onChange={(event) => setRepo(event.target.value)}>
-                    <option value="">Select a repository</option>
-                    {repos.data.map((repo) => (
-                      <option key={`${repo.installation_ref}:${repo.github_repo_id}`} value={`${repo.installation_ref}:${repo.github_repo_id}`}>
-                        {repo.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="field">
+                  <span className="label">Repository</span>
+                  <SelectField
+                    aria-label="Repository"
+                    className="w-full onb2-input"
+                    value={repoId}
+                    onValueChange={setRepo}
+                    options={[
+                      { value: "", label: "Select a repository" },
+                      ...repos.data.map((repo) => ({
+                        value: `${repo.installation_ref}:${repo.github_repo_id}`,
+                        label: repo.full_name,
+                      })),
+                    ]}
+                  />
+                </div>
               )}
               <RepositoryCreate
                 key={`${workspaceId}:${projectId}`}
@@ -880,25 +878,20 @@ export function Onboarding() {
             <p role="alert">Encrypted key storage isn&apos;t available here. Ask your administrator to configure it.</p>
           )}
           <div className="onb2-fields">
-            <label className="field">
-              Model provider
-              <select
+            <div className="field">
+              <span className="label">Model provider</span>
+              <SelectField
                 aria-label="Model provider"
                 disabled={busy || !models.data}
-                className="select onb2-input"
+                className="w-full onb2-input"
                 value={provider}
-                onChange={(event) => {
-                  setProvider(event.target.value);
+                onValueChange={(value) => {
+                  setProvider(value);
                   setApiKey("");
                 }}
-              >
-                {models.data?.keys.map((item) => (
-                  <option key={item.provider} value={item.provider}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={(models.data?.keys ?? []).map((item) => ({ value: item.provider, label: item.label }))}
+              />
+            </div>
             <label className="field">
               Model API key
               <span className="onb2-name">
@@ -922,28 +915,22 @@ export function Onboarding() {
               </span>
             </label>
             {!!access.data?.models.length && (
-              <label className="field">
-                Default model
-                <select
+              <div className="field">
+                <span className="label">Default model</span>
+                <SelectField
                   aria-label="Default model"
                   disabled={busy}
-                  className="select onb2-input"
+                  className="w-full onb2-input"
                   value={models.data?.default_model ?? ""}
-                  onChange={(event) =>
+                  onValueChange={(value) =>
                     void perform(async () => {
-                      await myDefaultModelSaved(event.target.value || null);
+                      await myDefaultModelSaved(value || null);
                       await models.refetch();
                     })
                   }
-                >
-                  <option value="">Choose a default model</option>
-                  {access.data.models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={[{ value: "", label: "Choose a default model" }, ...access.data.models.map((model) => ({ value: model, label: model }))]}
+                />
+              </div>
             )}
           </div>
           {access.isError && (

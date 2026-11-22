@@ -49,8 +49,8 @@ test("the command palette finds an agent and opens Chat with it", async ({ page 
   await page.getByRole("dialog", { name: "Command menu" }).getByRole("combobox").fill("research");
   await page.getByRole("option", { name: /Vega/ }).click();
   await expect(page).toHaveURL(/\/chat\?new=1&agent=research/);
-  await expect(page.getByRole("button", { name: "Project and mode" })).toBeVisible();
-  await page.getByRole("button", { name: "Project and mode", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Chat options", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Chat options", exact: true }).click();
   await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
   await page.keyboard.press("Escape");
 });

@@ -1,4 +1,5 @@
 // The workspace activity feed: everything that changed, by people and agents.
+import { SelectField } from "@dotrix/ui/components/select";
 import { ActItem } from "../components/TaskList";
 import { dayBucket } from "../core/utils";
 import { S, canSee, proj, render } from "../data/store";
@@ -48,20 +49,13 @@ export function ActivityPage() {
             </button>
           ))}
         </div>
-        <select
-          className="select"
-          style={{ height: 26, width: "auto", fontSize: 12 }}
-          value={whoF}
-          onChange={(e) => ((S.ui.actWho = e.target.value), render())}
+        <SelectField
+          size="sm"
           aria-label="Filter by person"
-        >
-          <option value="all">Everyone</option>
-          {members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+          value={whoF}
+          onValueChange={(value) => ((S.ui.actWho = value), render())}
+          options={[{ value: "all", label: "Everyone" }, ...members.map((m) => ({ value: m.id, label: m.name }))]}
+        />
       </div>
       {as.length ? (
         Object.entries(b).map(([k, list]) => (

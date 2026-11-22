@@ -221,6 +221,7 @@ export function ChangeList({
 }) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [viewed, setViewed] = useState<Set<string>>(new Set());
+  const [wrap, setWrap] = useState(false);
   const toggle = (set: Set<string>, path: string) => (set.has(path) ? new Set([...set].filter((p) => p !== path)) : new Set(set).add(path));
   if (loading) return <p className="muted">Loading the changes…</p>;
   if (!files.length)
@@ -234,16 +235,20 @@ export function ChangeList({
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
-    <div className="kp-changes">
+    <div className={`kp-changes ${wrap ? "wrap" : ""}`}>
       <div className="row faint" style={{ gap: 8, fontSize: 12, marginBottom: 6 }}>
         {files.length} file{files.length === 1 ? "" : "s"} changed
         <span style={{ color: "var(--green)" }}>+{added}</span>
         <span style={{ color: "var(--red)" }}>-{removed}</span>
         {viewed.size > 0 && (
-          <span className="sp" style={{ textAlign: "right" }}>
-            {viewed.size} of {files.length} viewed
+          <span>
+            · {viewed.size} of {files.length} viewed
           </span>
         )}
+        <span className="sp" />
+        <button type="button" className={`btn btn-xs ${wrap ? "btn-secondary" : "btn-ghost"}`} aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+          Wrap lines
+        </button>
       </div>
       {files.map((f) => {
         const seen = viewed.has(f.path);

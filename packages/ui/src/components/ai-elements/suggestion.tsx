@@ -31,7 +31,7 @@ function Suggestions({
   const normalized: SuggestionItem[] = items.map((item) => (typeof item === "string" ? { key: item, content: item } : item));
   if (normalized.length === 0) return null;
   return (
-    <div className={cn("flex gap-2 overflow-x-auto overscroll-x-contain pb-1", className)}>
+    <div className={cn("flex flex-wrap gap-2 pb-1", className)}>
       {normalized.map((item) => (
         <Button key={item.key} variant="outline" size="sm" className="shrink-0" disabled={disabled} onClick={() => onSelect(item.value ?? item.key, item)}>
           {item.content}

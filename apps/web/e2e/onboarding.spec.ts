@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { newUser, signUp } from "./helpers";
+import { newUser, pickSelect, signUp } from "./helpers";
 
 test("new accounts save a first project, resume setup and connect a personal model without recreating the workspace", async ({ page }) => {
   const person = newUser();
@@ -40,7 +40,7 @@ test("new accounts save a first project, resume setup and connect a personal mod
   expect(page.url()).toBe(location);
   await page.getByRole("button", { name: "Continue with documents only" }).click();
   await expect(page.getByRole("heading", { name: "Connect your model", exact: true })).toBeVisible();
-  await page.getByLabel("Model provider", { exact: true }).selectOption("openai");
+  await pickSelect(page, page.getByLabel("Model provider", { exact: true }), /OpenAI/i);
   const fakeKey = "test-personal-onboarding-key-only";
   await page.getByLabel("Model API key", { exact: true }).fill(fakeKey);
   const saved = page.waitForResponse((response) => response.url().endsWith("/me/model-keys/openai") && response.request().method() === "PUT");
@@ -141,7 +141,7 @@ test("later projects use the shared setup in the selected workspace and recover 
   await expect(page.getByText(/A project with this key is already saved/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
   await expect(page.getByRole("heading", { name: "Create a project", exact: true })).toBeVisible();
-  await page.getByLabel("Continue setting up an existing project", { exact: true }).selectOption({ label: "Saved once" });
+  await pickSelect(page, page.getByLabel("Continue setting up an existing project", { exact: true }), "Saved once");
   await expect(page.getByRole("heading", { name: "Connect GitHub", exact: true })).toBeVisible();
   const savedUrl = page.url();
   await page.reload();
