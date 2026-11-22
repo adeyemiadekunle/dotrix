@@ -2557,9 +2557,39 @@ section.side-panel-body[hidden] {
 .ptabs-add {
   position: relative;
 }
-.ptabs-menu {
-  min-width: 180px;
-  z-index: 30;
+.ptabs-content,
+.ptabs-content-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.ptabs-content-body[inert] {
+  visibility: hidden;
+}
+.ptabs-panel[data-inactive] {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+.ptabs-chooser {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 20px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  background: var(--bg);
+}
+.ptabs-chooser h2 {
+  margin: 0 0 6px;
+  font-size: var(--fs-md);
+}
+.ptabs-chooser .btn {
+  justify-content: flex-start;
 }
 .ptabs-panel {
   display: flex;
@@ -2692,6 +2722,10 @@ section.side-panel-body[hidden] {
 }
 .browser-slot.on {
   visibility: visible;
+}
+.ptabs-panel[data-inactive] .browser-slot.on,
+.ptabs-content-body[inert] .browser-slot.on {
+  visibility: hidden;
 }
 .browser-page {
   flex: 1;

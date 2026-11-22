@@ -100,7 +100,7 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
-import { CODING_VIEWS, CodingPanes, useActivePane, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, CodingPanes, codingPaneType, newCodingPane, useActivePane, type CodingPaneId, type CodingView } from "../components/SidePanel";
 import { BackgroundTasks, KaiBackground } from "../components/BackgroundTasks";
 import { SessionDetails, modeName } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
@@ -2121,11 +2121,12 @@ function KaiTurn({
 }
 
 /** The panes a session can show beside it; the address keeps the open ones (`panel=changes,files`). */
-const paneList = (value: string | null, PANES: typeof CODING_VIEWS): CodingView[] =>
+const paneList = (value: string | null, PANES: typeof CODING_VIEWS): CodingPaneId[] =>
   (value ?? "")
     .split(",")
     .map((v) => (v === "coding" ? "changes" : v))
-    .filter((v): v is CodingView => PANES.some((p) => p.id === v))
+    .filter((v): v is CodingPaneId => /^(changes|files|terminal|review|browser)$|^(terminal|browser)-[1-9]\d{0,5}$/.test(v))
+    .filter((v) => PANES.some((p) => p.id === codingPaneType(v)))
     .filter((v, i, all) => all.indexOf(v) === i);
 
 export function Session({ cs }: { cs: CodingSession }) {
@@ -2156,7 +2157,7 @@ export function Session({ cs }: { cs: CodingSession }) {
   const browserOff = useBrowserSettings()?.enabled === false;
   const PANES = useMemo(() => CODING_VIEWS.filter((view) => view.id !== "browser" || !browserOff), [browserOff]);
   const panes = paneList(asked ?? (search.has("file") ? "files" : lastPanes), PANES);
-  const setPanes = (next: CodingView[], extra: Record<string, string> = {}) => {
+  const setPanes = (next: CodingPaneId[], extra: Record<string, string> = {}) => {
     const query = new URLSearchParams(search);
     // Opening a file or a turn sets them; closing the last pane lets them go.
     for (const key of !next.length || Object.keys(extra).length ? ["panel", "file", "line", "turn", "ref"] : ["panel"]) query.delete(key);
@@ -2170,7 +2171,12 @@ export function Session({ cs }: { cs: CodingSession }) {
     setActivePane(view);
     setPanes(panes.includes(view) ? panes : [...panes, view], extra);
   };
-  const closePane = (view: CodingView) => setPanes(panes.filter((v) => v !== view));
+  const addPane = (view: CodingView) => {
+    const id = newCodingPane(view, panes);
+    setActivePane(id);
+    if (!panes.includes(id)) setPanes([...panes, id]);
+  };
+  const closePane = (view: CodingPaneId) => setPanes(panes.filter((v) => v !== view));
   const togglePane = (view: CodingView) => (panes.includes(view) ? closePane(view) : openPane(view));
   // The address always says which panes are open (the list beside the session folds for them: screens/Coding.tsx).
   useEffect(() => {
@@ -2775,6 +2781,8 @@ export function Session({ cs }: { cs: CodingSession }) {
           cs={cs}
           active={activePane}
           views={panes}
+          items={PANES}
+          onAdd={addPane}
           onSelect={setActivePane}
           onOpen={openPane}
           onClose={closePane}

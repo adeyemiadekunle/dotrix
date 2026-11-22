@@ -124,6 +124,8 @@ const Page = memo(function Page({
 
 export function BrowserPane({
   sessionId,
+  primary = true,
+  visible = true,
   stacked,
   tabbed = false,
   expanded,
@@ -131,6 +133,8 @@ export function BrowserPane({
   onClose,
 }: {
   sessionId: string;
+  primary?: boolean;
+  visible?: boolean;
   stacked: boolean;
   /** A tab of the panes' tab strip (SidePanel.tsx PaneTabs): it names and closes the pane. */
   tabbed?: boolean;
@@ -141,10 +145,10 @@ export function BrowserPane({
   const bridge = desktopBrowser();
   const settings = useBrowserSettings();
   const [tabs, setTabs] = useState<Tab[]>(() => {
-    const saved = kept.get(sessionId);
+    const saved = primary ? kept.get(sessionId) : undefined;
     return saved?.urls.length ? saved.urls.map((url) => newTab(url)) : [newTab()];
   });
-  const [activeId, setActiveId] = useState(() => tabs[Math.min(kept.get(sessionId)?.active ?? 0, tabs.length - 1)]!.id);
+  const [activeId, setActiveId] = useState(() => tabs[Math.min((primary ? kept.get(sessionId)?.active : undefined) ?? 0, tabs.length - 1)]!.id);
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0]!;
   const [draft, setDraft] = useState(active.url ?? "");
   const [problem, setProblem] = useState<string | null>(null);
@@ -154,8 +158,8 @@ export function BrowserPane({
 
   // Remembered for the next time this session's pane opens.
   useEffect(() => {
-    kept.set(sessionId, { urls: tabs.map((tab) => tab.url), active: Math.max(0, tabs.indexOf(active)) });
-  }, [sessionId, tabs, active]);
+    if (primary) kept.set(sessionId, { urls: tabs.map((tab) => tab.url), active: Math.max(0, tabs.indexOf(active)) });
+  }, [sessionId, tabs, active, primary]);
 
   // The address bar follows the tab and its page, unless a person is typing in it.
   const shownTab = useRef(active.id);
@@ -183,11 +187,11 @@ export function BrowserPane({
     setActiveId(tab.id);
   }, []);
   // A page that asks for a new window gets a tab.
-  useEffect(() => bridge?.onOpen((url) => open(url)), [bridge, open]);
+  useEffect(() => (visible ? bridge?.onOpen((url) => open(url)) : undefined), [bridge, open, visible]);
   // Kai asks for its tab (now, or before this pane opened): made once per request, and shown, in its own session's pane only.
   const made = useRef(new Set<number>());
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !primary) return;
     const make = (request: KaiTabRequest) => {
       if (request.sessionId !== sessionId || made.current.has(request.id)) return;
       made.current.add(request.id);
@@ -197,7 +201,7 @@ export function BrowserPane({
     };
     void bridge.kaiRequests().then((waiting) => waiting.forEach(make));
     return bridge.onKai(make);
-  }, [bridge, sessionId]);
+  }, [bridge, sessionId, primary]);
 
   const close = (id: string) => {
     const index = tabs.findIndex((tab) => tab.id === id);

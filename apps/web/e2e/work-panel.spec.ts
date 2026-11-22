@@ -76,7 +76,7 @@ const paneTab = (page: Page, name: string) => page.getByRole("tablist", { name: 
 
 async function openPane(page: Page, name: string) {
   await page.getByRole("button", { name: "Open a pane", exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
+  await page.getByRole("button", { name, exact: true }).click();
 }
 
 async function mockWorkspace(
@@ -162,9 +162,13 @@ test("the session bar opens tabbed panes beside it, and Juno's findings show on 
   await files.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
   await expect(files.getByRole("button", { name: "Back to the files" })).toBeVisible();
   await page.getByRole("button", { name: "Open a pane", exact: true }).click();
-  const addPane = page.getByRole("menu", { name: "Open a pane", exact: true });
-  await expect(addPane.getByRole("menuitem", { name: "Browser", exact: true })).toHaveCount(0);
-  await addPane.getByRole("menuitem", { name: "Terminal", exact: true }).click();
+  const addPane = page.getByRole("region", { name: "Open a pane", exact: true });
+  await expect(addPane.getByRole("button", { name: "Browser", exact: true })).toHaveCount(0);
+  await addPane.getByRole("button", { name: "Terminal", exact: true }).click();
+  await openPane(page, "Terminal");
+  await expect(paneTab(page, "Terminal 2")).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "Close Terminal 2", exact: true }).click();
+  await expect(paneTab(page, "Terminal")).toHaveAttribute("aria-selected", "true");
   const terminal = pane(page, "Terminal");
   await expect(terminal.getByText("Recorded output · read-only")).toBeVisible();
   await expect(terminal.getByText("24 tests passed")).toBeVisible();

@@ -138,9 +138,9 @@ export function PanelFrame({
 }
 
 /** A tab strip over the panes, as a browser's: one tab per open pane (its icon, name, and a close button;
- *  a middle click closes it too), a + menu for the panes not open, and at the end, expand and close all.
+ *  a middle click closes it too), a + chooser for opening panes, and at the end, expand and close all.
  *  The arrow keys, Home and End move between tabs, as WAI-ARIA's tabs pattern has them. */
-export function PaneTabs<V extends string>({
+export function PaneTabs({
   items,
   open,
   active,
@@ -151,44 +151,39 @@ export function PaneTabs<V extends string>({
   onCloseAll,
   expanded,
   onExpand,
+  children,
 }: {
-  items: { id: V; label: string; icon: string }[];
-  open: V[];
-  active: V | null;
+  items: { id: CodingView; label: string; icon: string }[];
+  open: CodingPaneId[];
+  active: CodingPaneId | null;
   idPrefix: string;
-  onSelect: (view: V) => void;
-  onClose: (view: V) => void;
-  onAdd: (view: V) => void;
+  onSelect: (view: CodingPaneId) => void;
+  onClose: (view: CodingPaneId) => void;
+  onAdd: (view: CodingView) => void;
   onCloseAll: () => void;
   expanded: boolean;
   onExpand: () => void;
+  children: ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
   const strip = useRef<HTMLDivElement>(null);
-  const addWrap = useRef<HTMLDivElement>(null);
-  const closed = items.filter((item) => !open.includes(item.id));
-  const item = (view: V) => items.find((candidate) => candidate.id === view);
-  // The + menu closes on a click outside it and on Escape, as the app's other menus do.
+  const addButton = useRef<HTMLButtonElement>(null);
+  const firstChoice = useRef<HTMLButtonElement>(null);
+  const item = (view: CodingPaneId) => items.find((candidate) => candidate.id === codingPaneType(view));
   useEffect(() => {
     if (!adding) return;
-    const outside = (event: PointerEvent) => {
-      if (!addWrap.current?.contains(event.target as Node)) setAdding(false);
-    };
+    firstChoice.current?.focus();
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        setAdding(false);
-      }
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setAdding(false);
+      addButton.current?.focus();
     };
-    document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", escape, true);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape, true);
-    };
+    return () => document.removeEventListener("keydown", escape, true);
   }, [adding]);
-  // Expanded over Code, Escape restores the panes (an open + menu takes Escape first).
+  // Expanded over Code, Escape restores the panes (an open chooser takes Escape first).
   useEffect(() => {
     if (!expanded) return;
     const restore = (event: KeyboardEvent) => {
@@ -200,11 +195,12 @@ export function PaneTabs<V extends string>({
     document.addEventListener("keydown", restore);
     return () => document.removeEventListener("keydown", restore);
   }, [expanded, onExpand]);
-  const focusTab = (view: V) => {
+  const focusTab = (view: CodingPaneId) => {
+    setAdding(false);
     onSelect(view);
     requestAnimationFrame(() => strip.current?.querySelector<HTMLButtonElement>(`#${idPrefix}-tab-${view}`)?.focus());
   };
-  const move = (event: ReactKeyboardEvent, view: V) => {
+  const move = (event: ReactKeyboardEvent, view: CodingPaneId) => {
     const index = open.indexOf(view);
     const next =
       event.key === "ArrowRight"
@@ -221,90 +217,98 @@ export function PaneTabs<V extends string>({
     focusTab(next);
   };
   return (
-    <div className="ptabs">
-      <div ref={strip} className="ptabs-list" role="tablist" aria-label="Panes">
-        {open.map((view) => {
-          const on = view === active;
-          const label = item(view)?.label ?? view;
-          return (
-            <div
-              key={view}
-              className={`ptab ${on ? "on" : ""}`}
-              onAuxClick={(event) => {
-                if (event.button === 1) {
-                  event.preventDefault();
-                  onClose(view);
-                }
-              }}
-            >
-              <button
-                type="button"
-                role="tab"
-                id={`${idPrefix}-tab-${view}`}
-                aria-selected={on}
-                aria-controls={`${idPrefix}-panel`}
-                tabIndex={on ? 0 : -1}
-                className="ptab-main"
-                onClick={() => onSelect(view)}
-                onKeyDown={(event) => move(event, view)}
-                title={label}
+    <>
+      <div className="ptabs">
+        <div ref={strip} className="ptabs-list" role="tablist" aria-label="Panes">
+          {open.map((view) => {
+            const on = !adding && view === active;
+            const name = item(view)?.label ?? view;
+            const index = view.split("-")[1];
+            const label = index ? `${name} ${index}` : name;
+            return (
+              <div
+                key={view}
+                className={`ptab ${on ? "on" : ""}`}
+                onAuxClick={(event) => {
+                  if (event.button === 1) {
+                    event.preventDefault();
+                    onClose(view);
+                  }
+                }}
               >
-                {item(view) && <Ic n={item(view)!.icon} s={14} />}
-                <span className="ptab-label">{label}</span>
-              </button>
-              <button type="button" className="ptab-x" tabIndex={on ? 0 : -1} aria-label={`Close ${label}`} onClick={() => onClose(view)}>
-                <Ic n="x" s={12} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      {closed.length > 0 && (
-        <div ref={addWrap} className="ptabs-add">
-          <ActionButton
-            className="ibtn ibtn-sm"
-            onClick={() => setAdding((current) => !current)}
-            aria-haspopup="menu"
-            aria-expanded={adding}
-            aria-label="Open a pane"
-            data-tip={adding ? undefined : "Open a pane"}
-          >
-            <Ic n="plus" s={14} />
-          </ActionButton>
-          {adding && (
-            <div className="pop cs-menu ptabs-menu" role="menu" aria-label="Open a pane">
-              {closed.map((candidate) => (
                 <button
-                  key={candidate.id}
                   type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setAdding(false);
-                    onAdd(candidate.id);
-                  }}
+                  role="tab"
+                  id={`${idPrefix}-tab-${view}`}
+                  aria-selected={on}
+                  aria-controls={`${idPrefix}-panel-${view}`}
+                  tabIndex={view === active ? 0 : -1}
+                  className="ptab-main"
+                  onClick={() => focusTab(view)}
+                  onKeyDown={(event) => move(event, view)}
+                  title={label}
                 >
-                  <Ic n={candidate.icon} s={14} />
-                  <span className="grow">{candidate.label}</span>
+                  {item(view) && <Ic n={item(view)!.icon} s={14} />}
+                  <span className="ptab-label">{label}</span>
                 </button>
-              ))}
-            </div>
-          )}
+                <button type="button" className="ptab-x" tabIndex={on ? 0 : -1} aria-label={`Close ${label}`} onClick={() => onClose(view)}>
+                  <Ic n="x" s={12} />
+                </button>
+              </div>
+            );
+          })}
         </div>
-      )}
-      <span className="sp" />
-      <ActionButton
-        className="ibtn ibtn-sm"
-        onClick={onExpand}
-        aria-pressed={expanded}
-        aria-label={expanded ? "Restore the panes" : "Expand the panes over Code"}
-        data-tip={expanded ? "Restore" : "Expand"}
-      >
-        <Ic n={expanded ? "arrows-in" : "arrows-out"} s={14} />
-      </ActionButton>
-      <ActionButton className="ibtn ibtn-sm" onClick={onCloseAll} aria-label="Close all panes" data-tip="Close all">
-        <Ic n="x" s={14} />
-      </ActionButton>
-    </div>
+        <ActionButton
+          ref={addButton}
+          className="ibtn ibtn-sm ptabs-add"
+          onClick={() => setAdding((current) => !current)}
+          aria-expanded={adding}
+          aria-controls={`${idPrefix}-chooser`}
+          aria-label="Open a pane"
+          data-tip={adding ? undefined : "Open a pane"}
+        >
+          <Ic n="plus" s={14} />
+        </ActionButton>
+        <span className="sp" />
+        <ActionButton
+          className="ibtn ibtn-sm"
+          onClick={onExpand}
+          aria-pressed={expanded}
+          aria-label={expanded ? "Restore the panes" : "Expand the panes over Code"}
+          data-tip={expanded ? "Restore" : "Expand"}
+        >
+          <Ic n={expanded ? "arrows-in" : "arrows-out"} s={14} />
+        </ActionButton>
+        <ActionButton className="ibtn ibtn-sm" onClick={onCloseAll} aria-label="Close all panes" data-tip="Close all">
+          <Ic n="x" s={14} />
+        </ActionButton>
+      </div>
+      <div className="ptabs-content">
+        <div className="ptabs-content-body" inert={adding}>
+          {children}
+        </div>
+        {adding && (
+          <section className="ptabs-chooser" id={`${idPrefix}-chooser`} aria-labelledby={`${idPrefix}-chooser-title`}>
+            <h2 id={`${idPrefix}-chooser-title`}>Open a pane</h2>
+            {items.map((candidate, index) => (
+              <ActionButton
+                key={candidate.id}
+                ref={index === 0 ? firstChoice : undefined}
+                className="btn btn-secondary"
+                onClick={() => {
+                  setAdding(false);
+                  onAdd(candidate.id);
+                  requestAnimationFrame(() => strip.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus());
+                }}
+              >
+                <Ic n={candidate.icon} s={16} />
+                {candidate.label}
+              </ActionButton>
+            ))}
+          </section>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -357,6 +361,8 @@ export function CodingPanes({
   cs,
   active,
   views,
+  items,
+  onAdd,
   onSelect,
   onOpen,
   onClose,
@@ -366,11 +372,13 @@ export function CodingPanes({
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
-  active: CodingView | null;
-  views: CodingView[];
-  onSelect: (view: CodingView) => void;
+  active: CodingPaneId | null;
+  views: CodingPaneId[];
+  items: typeof CODING_VIEWS;
+  onAdd: (view: CodingView) => void;
+  onSelect: (view: CodingPaneId) => void;
   onOpen: (view: CodingView, extra?: Record<string, string>) => void;
-  onClose: (view: CodingView) => void;
+  onClose: (view: CodingPaneId) => void;
   onCloseAll: () => void;
   onAskFix?: (message: string) => void;
   fixLabel: string;
@@ -400,40 +408,63 @@ export function CodingPanes({
   }, [expanded]);
   if (!views.length || !active) return null;
   return (
-    <aside ref={column} className={`side-panel panes ${expanded ? "wide" : ""}`} aria-label="Session panes">
+    <CodePaneAside column={column} expanded={expanded}>
       <PaneTabs
-        items={CODING_VIEWS}
+        items={items}
         open={views}
         active={active}
         idPrefix={panelId}
         onSelect={onSelect}
         onClose={onClose}
-        onAdd={(view) => onOpen(view)}
+        onAdd={onAdd}
         onCloseAll={onCloseAll}
         expanded={expanded}
         onExpand={() => setExpanded((current) => !current)}
-      />
-      <div className="ptabs-panel" role="tabpanel" id={`${panelId}-panel`} aria-labelledby={`${panelId}-tab-${active}`}>
-        {active === "browser" ? (
-          <BrowserPane key={active} sessionId={cs.session_id} stacked tabbed expanded={false} onClose={() => onClose(active)} />
-        ) : (
-          <CodingPanel
-            key={active}
-            scope={scope}
-            cs={cs}
-            view={active}
-            onView={(next, extra) => onOpen(next, extra)}
-            onClose={() => onClose(active)}
-            onAskFix={onAskFix}
-            onCloseAll={onCloseAll}
-            fixLabel={fixLabel}
-            stacked
-            tabbed
-            expanded={false}
-          />
-        )}
-      </div>
-    </aside>
+      >
+        {views
+          .filter((id) => id === active || codingPaneType(id) === "browser")
+          .map((id) => {
+            const view = codingPaneType(id);
+            return (
+              <div
+                key={id}
+                className="ptabs-panel"
+                data-inactive={id !== active || undefined}
+                inert={id !== active}
+                role="tabpanel"
+                id={`${panelId}-panel-${id}`}
+                aria-labelledby={`${panelId}-tab-${id}`}
+              >
+                {view === "browser" ? (
+                  <BrowserPane
+                    sessionId={cs.session_id}
+                    primary={id === "browser"}
+                    visible={id === active}
+                    stacked
+                    tabbed
+                    expanded={false}
+                    onClose={() => onClose(id)}
+                  />
+                ) : (
+                  <CodingPanel
+                    scope={scope}
+                    cs={cs}
+                    view={view}
+                    onView={(next, extra) => onOpen(next, extra)}
+                    onClose={() => onClose(id)}
+                    onAskFix={onAskFix}
+                    onCloseAll={onCloseAll}
+                    fixLabel={fixLabel}
+                    stacked
+                    tabbed
+                    expanded={false}
+                  />
+                )}
+              </div>
+            );
+          })}
+      </PaneTabs>
+    </CodePaneAside>
   );
 }
 
@@ -463,7 +494,20 @@ function NoTurn({ query }: { query: ReturnType<typeof useCodingSession> }) {
 
 /** What Coding's panel shows; the session header's buttons pick it (screens/Chat.tsx Session). */
 export type CodingView = "changes" | "files" | "terminal" | "review" | "browser";
-const VIEWS: { id: CodingView; label: string; icon: string }[] = [
+export type CodingPaneId = CodingView | `${"terminal" | "browser"}-${number}`;
+
+export function codingPaneType(id: CodingPaneId): CodingView {
+  return id.split("-")[0] as CodingView;
+}
+
+export function newCodingPane(view: CodingView, open: CodingPaneId[]): CodingPaneId {
+  if (!open.includes(view) || (view !== "browser" && view !== "terminal")) return view;
+  let number = 2;
+  while (open.includes(`${view}-${number}`)) number += 1;
+  return `${view}-${number}`;
+}
+
+export const CODE_PANE_ITEMS: { id: CodingView; label: string; icon: string }[] = [
   { id: "changes", label: "Changes", icon: "git-compare" },
   { id: "files", label: "Files", icon: "folder-tree" },
   { id: "terminal", label: "Terminal", icon: "square-terminal" },
@@ -471,7 +515,7 @@ const VIEWS: { id: CodingView; label: string; icon: string }[] = [
   { id: "browser", label: "Browser", icon: "globe" },
 ];
 /** The panes there are here: Browser only in the desktop app (components/BrowserPane.tsx), whose bridge is set before the page loads. */
-export const CODING_VIEWS = VIEWS.filter((view) => view.id !== "browser" || desktopBrowser());
+export const CODING_VIEWS = CODE_PANE_ITEMS.filter((view) => view.id !== "browser" || desktopBrowser());
 
 /** Juno's findings with a `path:line` reference, by path: shown on those lines in Changes. */
 function findingNotes(review: Run | undefined, turn: CodingRun | undefined): Map<string, DiffNote[]> {

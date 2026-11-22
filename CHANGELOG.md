@@ -11,6 +11,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- The Code pane button opens a chooser inside the right panel and supports separate Browser and Terminal tabs.
+
+- Sample Code sessions preview the desktop Browser tab and address bar without navigating.
+
 - Chat and Code share the compact composer layout, with an expanded prompt while typing and model selection in the sample Chat.
 
 - Sample Code sessions show a follow-up composer for drafting. Starting a run still requires signing in and opening a live session.
