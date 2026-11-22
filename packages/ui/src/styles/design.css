@@ -4278,6 +4278,7 @@ table.tbl {
 @media (max-width: 640px) {
   :root {
     --topbar-h: 50px;
+    --bottomnav-h: calc(57px + env(safe-area-inset-bottom, 0px));
   }
   .bottomnav {
     display: flex;

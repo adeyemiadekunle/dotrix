@@ -619,8 +619,10 @@ function FileView({
               className={`kp-src-line ${i + 1 === initialLine ? "kp-line-reference" : ""}`}
               role="row"
             >
-              <span className="kp-no">{i + 1}</span>
-              <span className="kp-text">
+              <span className="kp-no" role="rowheader">
+                {i + 1}
+              </span>
+              <span className="kp-text" role="cell">
                 <Code text={l} tokens={tokens?.[i]} />
               </span>
             </div>

@@ -2943,6 +2943,15 @@ section.side-panel-body[hidden] {
   }
 }
 
+@media (max-width: 640px) {
+  .shell.no-topbar > .main {
+    padding-bottom: var(--bottomnav-h);
+  }
+  .side-panel.panes {
+    bottom: var(--bottomnav-h);
+  }
+}
+
 /* The desktop app: a new version ready to install (shell/DesktopApp.tsx), and What's new. */
 .update-bar {
   display: flex;
