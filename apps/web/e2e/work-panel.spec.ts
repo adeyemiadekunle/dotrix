@@ -76,7 +76,7 @@ const paneTab = (page: Page, name: string) => page.getByRole("tablist", { name: 
 
 async function openPane(page: Page, name: string) {
   await page.getByRole("button", { name: "Open a pane", exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
+  await page.getByRole("button", { name, exact: true }).click();
 }
 
 async function mockWorkspace(
@@ -162,9 +162,13 @@ test("the session bar opens tabbed panes beside it, and Juno's findings show on 
   await files.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
   await expect(files.getByRole("button", { name: "Back to the files" })).toBeVisible();
   await page.getByRole("button", { name: "Open a pane", exact: true }).click();
-  const addPane = page.getByRole("menu", { name: "Open a pane", exact: true });
-  await expect(addPane.getByRole("menuitem", { name: "Browser", exact: true })).toHaveCount(0);
-  await addPane.getByRole("menuitem", { name: "Terminal", exact: true }).click();
+  const addPane = page.getByRole("region", { name: "Open a pane", exact: true });
+  await expect(addPane.getByRole("button", { name: "Browser", exact: true })).toHaveCount(0);
+  await addPane.getByRole("button", { name: "Terminal", exact: true }).click();
+  await openPane(page, "Terminal");
+  await expect(paneTab(page, "Terminal 2")).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "Close Terminal 2", exact: true }).click();
+  await expect(paneTab(page, "Terminal")).toHaveAttribute("aria-selected", "true");
   const terminal = pane(page, "Terminal");
   await expect(terminal.getByText("Recorded output · read-only")).toBeVisible();
   await expect(terminal.getByText("24 tests passed")).toBeVisible();
@@ -433,6 +437,11 @@ test("Code starts from a repository and branch without picking an issue", async 
     false,
     () => true,
     async () => {
+      await page.route("**/v1/workspaces", (route) =>
+        route.fulfill({
+          json: [{ id: "w1", slug: "test-workspace", name: "Test workspace", kind: "personal", permissions: ["agents:code", "projects:manage"] }],
+        }),
+      );
       await page.route("**/v1/workspaces/w1/projects", (route) =>
         route.fulfill({
           json: [
@@ -446,6 +455,7 @@ test("Code starts from a repository and branch without picking an issue", async 
               created_at: date,
               updated_at: date,
             },
+            { id: "p2", key: "DOCS", name: "Docs project", status: "active", access: "open", created_at: date, updated_at: date },
           ],
         }),
       );
@@ -457,6 +467,9 @@ test("Code starts from a repository and branch without picking an issue", async 
   );
   const send = page.getByRole("button", { name: "Start coding", exact: true });
   const repository = page.getByRole("combobox", { name: "Repository", exact: true });
+  await repository.selectOption("p2");
+  await expect(page.getByRole("link", { name: "Connect repository" })).toHaveAttribute("href", /project=p2.*step=github/);
+  await expect(send).toBeDisabled();
   await repository.selectOption("p1", { timeout: 10_000 });
   const bounds = (await repository.boundingBox())!;
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
@@ -527,6 +540,7 @@ for (const width of [390, 1440]) {
     await page.getByRole("button", { name: "Code options", exact: true }).click();
     await page.getByRole("group", { name: "Where it codes", exact: true }).getByRole("button", { name: "Your computer", exact: true }).click();
     await expect(page.locator(".composer-model")).toContainText("Model managed locally");
+    await expect(page.getByRole("option", { name: "Your computer" })).toHaveAttribute("aria-selected", "true");
     await page.getByRole("button", { name: "Code options", exact: true }).click();
     await expect(page.getByRole("dialog").getByRole("button", { name: "Plan (read only)", exact: true })).toBeDisabled();
     await page.keyboard.press("Escape");

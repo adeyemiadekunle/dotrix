@@ -235,7 +235,7 @@
     padding: 0;
   }
   @media (max-width: 1200px) {
-    .side-panel {
+    .side-panel:not(.panes) {
       position: absolute;
       inset: 0 0 0 auto;
       width: min(420px, 100%) !important;
@@ -701,8 +701,11 @@
   --launcher-h: 60px; /* its height and the gap above it, for what stacks over it */
 }
 /* Chat's composer runs along the bottom: the launcher sits above it, beside the conversation. */
-:root:has(.chat-main .cmp-box) {
-  --launcher-b: 112px;
+:root:has(.chat-main .compact-composer) {
+  --launcher-b: calc(94px + var(--bottomnav-h, 0px));
+}
+:root:has(.chat-main .compact-composer .composer-textarea:focus) {
+  --launcher-b: calc(176px + var(--bottomnav-h, 0px));
 }
 .agents-launcher {
   position: fixed;
@@ -2420,11 +2423,20 @@ section.side-panel-body[hidden] {
   padding: 0;
   display: flex;
   flex-direction: column;
-  /* However wide it was dragged, the session keeps a readable column beside it. */
+  width: var(--code-panes-width, min(440px, 42%));
+  /* Leave room for the session beside the docked panes. */
   max-width: calc(100% - 360px);
   border-left: 1px solid var(--border);
   background: var(--bg);
   overflow: hidden;
+}
+.splitter.col.code-pane-resize {
+  inset: 0 auto 0 0;
+  width: 6px;
+  z-index: 3;
+}
+.splitter.col.code-pane-resize::after {
+  left: 0;
 }
 /* Expanded: the panes lie over the whole Code area (the list and the session), under the app's
    sidebar, as a maximised browser window; Escape or Restore brings the column back. */
@@ -2545,9 +2557,39 @@ section.side-panel-body[hidden] {
 .ptabs-add {
   position: relative;
 }
-.ptabs-menu {
-  min-width: 180px;
-  z-index: 30;
+.ptabs-content,
+.ptabs-content-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.ptabs-content-body[inert] {
+  visibility: hidden;
+}
+.ptabs-panel[data-inactive] {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+.ptabs-chooser {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 20px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  background: var(--bg);
+}
+.ptabs-chooser h2 {
+  margin: 0 0 6px;
+  font-size: var(--fs-md);
+}
+.ptabs-chooser .btn {
+  justify-content: flex-start;
 }
 .ptabs-panel {
   display: flex;
@@ -2680,6 +2722,10 @@ section.side-panel-body[hidden] {
 }
 .browser-slot.on {
   visibility: visible;
+}
+.ptabs-panel[data-inactive] .browser-slot.on,
+.ptabs-content-body[inert] .browser-slot.on {
+  visibility: hidden;
 }
 .browser-page {
   flex: 1;
@@ -2931,13 +2977,18 @@ section.side-panel-body[hidden] {
   opacity: 0.6;
 }
 /* Narrow screens: the panes float over the session, under its bar, so the bar's buttons stay in reach. */
-@media (max-width: 1200px) {
+@media (max-width: 900px) {
+  .code-pane-resize {
+    display: none;
+  }
   .side-panel.panes {
-    top: var(--cs-head-h, 46px);
+    top: var(--cs-head-h, 44px);
+    width: min(440px, 100%);
+    max-width: none;
     border-top: 1px solid var(--border);
     right: 0;
     bottom: 0;
-    position: fixed;
+    position: absolute;
     z-index: 40;
     box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
   }
@@ -2946,9 +2997,6 @@ section.side-panel-body[hidden] {
 @media (max-width: 640px) {
   .shell.no-topbar > .main {
     padding-bottom: var(--bottomnav-h);
-  }
-  .side-panel.panes {
-    bottom: var(--bottomnav-h);
   }
 }
 
@@ -4486,6 +4534,13 @@ textarea.onb2-input {
   max-width: 100%;
 }
 
+/* Keep the last header tooltip within the content scroller. */
+.cs-pane-toggle[data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 /* Session navigation hides completely; the same panel icon remains in the main header. */
 .chat-side[hidden] {
   display: none;
@@ -4551,21 +4606,21 @@ textarea.onb2-input {
   grid-row: 1;
   min-width: 0;
 }
-.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div {
-  padding: 12px;
+.compact-composer:has(.composer-textarea:focus) > div {
+  padding: 8px;
   row-gap: 12px;
 }
-.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:first-child {
+.compact-composer:has(.composer-textarea:focus) > div > div:first-child {
   grid-column: 1 / -1;
   grid-row: 1;
   padding: 4px;
   min-height: 32px;
 }
-.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:last-child > div:first-child {
+.compact-composer:has(.composer-textarea:focus) > div > div:last-child > div:first-child {
   grid-column: 1;
   grid-row: 2;
 }
-.compact-composer:is(:focus-within, .has-draft, :has([aria-expanded="true"])) > div > div:last-child > div:last-child {
+.compact-composer:has(.composer-textarea:focus) > div > div:last-child > div:last-child {
   grid-column: 2 / -1;
   grid-row: 2;
   justify-content: flex-end;
@@ -4604,7 +4659,7 @@ textarea.onb2-input {
   padding: 0 24px 0 8px;
   font-size: 12px;
 }
-.compact-composer:not(:focus-within, .has-draft, :has([aria-expanded="true"])) [aria-hidden="true"]:not(svg) {
+.compact-composer:not(:has(.composer-textarea:focus)) [aria-hidden="true"]:not(svg) {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -4629,7 +4684,31 @@ textarea.onb2-input {
   justify-content: flex-end;
   min-height: 112px;
 }
-.ns-bottom .dotrix-composer-wrap:has(.coding-start-composer),
+.code-start .ns-mid {
+  padding-block: 24px 16px;
+}
+.code-start .ns-bottom {
+  flex-shrink: 0;
+}
+.code-start .dotrix-composer-wrap {
+  min-height: 0;
+}
+.compact-composer {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.compact-composer .composer-textarea {
+  display: block;
+  max-height: 24px;
+}
+.compact-composer:has(.composer-textarea:focus) {
+  background: transparent;
+}
+.compact-composer .composer-textarea:focus {
+  min-height: 56px;
+  max-height: 200px;
+}
 .dotrix-chat-layout .kt-input.dotrix-composer-wrap {
   min-height: 144px;
 }

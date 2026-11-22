@@ -11,6 +11,18 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- The Code pane button opens a chooser inside the right panel and supports separate Browser and Terminal tabs.
+
+- Sample Code sessions preview the desktop Browser tab and address bar without navigating.
+
+- Chat and Code share the compact composer layout, with an expanded prompt while typing and model selection in the sample Chat.
+
+- Sample Code sessions show a follow-up composer for drafting. Starting a run still requires signing in and opening a live session.
+
+- Code’s right panel docks beside the session at desktop widths. The session list has a fixed width and the right panel resizes from its left edge, and hovering over the pane toggle no longer produces a horizontal scrollbar.
+
+- Workspace selection updates the sample immediately. Code shows the repository and execution environment up front, with a Cloud model picker, a prompt that expands while editing, and a setup link for projects without a repository.
+
 - On phones, the bottom navigation no longer covers Code’s Stop button or review actions. File previews expose line numbers to assistive technology.
 
 - Restored Chat’s project and mode picker, keyboard navigation in Inbox and Juno’s review, and accessible labels for Settings switches and notifications. Opening a file or changes brings its Code tab forward.

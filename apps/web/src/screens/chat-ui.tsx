@@ -102,7 +102,7 @@ type ComplexSelectorProps = {
   label: string;
   isLabelHidden?: boolean;
   value: string;
-  placement?: string;
+  placement?: "above" | "below";
   alignment?: string;
   isDisabled?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -110,7 +110,7 @@ type ComplexSelectorProps = {
   children: ReactNode | ((value: string, change: (value: string) => void, close: () => void) => ReactNode);
 };
 
-export function ComplexSelector({ label, value, isDisabled, onOpenChange, renderTrigger, children }: ComplexSelectorProps) {
+export function ComplexSelector({ label, value, placement = "below", isDisabled, onOpenChange, renderTrigger, children }: ComplexSelectorProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement>(null);
   const close = useCallback(() => {
@@ -161,7 +161,7 @@ export function ComplexSelector({ label, value, isDisabled, onOpenChange, render
           className="pop floating"
           role="dialog"
           aria-label={label}
-          style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 70, minWidth: 200 }}
+          style={{ position: "absolute", [placement === "above" ? "bottom" : "top"]: "calc(100% + 6px)", left: 0, zIndex: 70, minWidth: 200 }}
         >
           {typeof children === "function" ? children(value, () => undefined, close) : children}
         </div>
@@ -208,6 +208,64 @@ export function DesignButton({
       {icon}
       {label}
     </ActionButton>
+  );
+}
+
+export function CodingOptions({
+  mode,
+  setMode,
+  local,
+  disabled = false,
+  onOpenChange,
+  placement = "below",
+  focusInput,
+  children,
+}: {
+  mode: "plan" | "build";
+  setMode: (mode: "plan" | "build") => void;
+  local: boolean;
+  disabled?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  placement?: "above" | "below";
+  focusInput: () => void;
+  children?: (close: () => void) => ReactNode;
+}) {
+  return (
+    <ComplexSelector
+      label="Code options"
+      isLabelHidden
+      value=""
+      placement={placement}
+      alignment="start"
+      isDisabled={disabled}
+      onOpenChange={onOpenChange}
+      renderTrigger={(props) => (
+        <DesignButton {...props} role="button" label="Code options" variant="ghost" size="sm" isIconOnly icon={<Ic n="plus" s={20} />} />
+      )}
+    >
+      {(_value, _change, close) => (
+        <div className="composer-options-menu">
+          <span className="composer-menu-heading">Mode</span>
+          {(["build", "plan"] as const).map((value) => (
+            <DesignButton
+              key={value}
+              className="composer-menu-option"
+              label={value === "plan" ? "Plan (read only)" : "Build"}
+              variant="ghost"
+              aria-pressed={mode === value}
+              icon={<Ic n={mode === value ? "check" : value === "plan" ? "list-checks" : "hammer"} s={16} />}
+              isDisabled={disabled || (value === "plan" && local)}
+              onClick={() => {
+                setMode(value);
+                close();
+                focusInput();
+              }}
+            />
+          ))}
+          {children?.(close)}
+        </div>
+      )}
+    </ComplexSelector>
   );
 }
 
@@ -263,7 +321,7 @@ export function ChatComposerInput({
 }
 
 export function ChatComposer({
-  className = "",
+  className,
   onSubmit,
   input,
   footerActions,
@@ -286,7 +344,7 @@ export function ChatComposer({
   return (
     <form
       {...props}
-      className={className}
+      className={["dotrix-composer", "compact-composer", className].filter(Boolean).join(" ")}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit?.(event);
