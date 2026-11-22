@@ -18,7 +18,7 @@ import { ChatMessageList } from "./chat-ui";
 
 import { buildTree, parseDiff } from "../core/kaiWork";
 import { ChangeList, CommandList, FileTree } from "../components/TurnViews";
-import { PanelFrame, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, PaneTabs, PanelFrame, useActivePane, type CodingView } from "../components/SidePanel";
 import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
 import { demoCodingSessions } from "../core/demoSessions";
 
@@ -122,12 +122,15 @@ export function Coding() {
 
 /** The sample session's panes: recorded excerpts only, so no Browser. */
 type DemoView = Exclude<CodingView, "browser">;
+const DEMO_VIEWS = CODING_VIEWS.filter((view): view is (typeof CODING_VIEWS)[number] & { id: DemoView } => view.id !== "browser");
 
 function DemoSession({ id }: { id: string }) {
   const session = D().coding.find((item) => item.id === id);
   const [openViews, setOpenViews] = useState<DemoView[]>([]);
-  const [activeView, setActiveView] = useState<DemoView | null>(null);
+  const [activeView, setActiveView] = useActivePane(openViews);
+  const [expanded, setExpanded] = useState(false);
   const [paneW, setPaneW] = useStoredSize("dotrix.demo.panes.width", 460, 320, 1100);
+  const closeView = (view: DemoView) => setOpenViews((current) => current.filter((item) => item !== view));
   const [opened, setOpened] = useState<string | null>(null);
   const turn = session ? session.turns.length - 1 : 0;
   if (!session) return <Pending text="This sample session is no longer available." back={toList()} />;
@@ -157,15 +160,7 @@ function DemoSession({ id }: { id: string }) {
           <b className="trunc cs-demo-title">{title}</b>
           <span className="sp" />
           {!showPanel && (
-            <button
-              className="ibtn ibtn-sm"
-              onClick={() => {
-                setOpenViews(["changes"]);
-                setActiveView("changes");
-              }}
-              aria-label="Open panes"
-              title="Open panes"
-            >
+            <button className="ibtn ibtn-sm" onClick={() => setOpenViews(["changes"])} aria-label="Open panes" title="Open panes">
               <Ic n="panel-right" s={16} />
             </button>
           )}
@@ -187,117 +182,69 @@ function DemoSession({ id }: { id: string }) {
           </div>
         </ChatMessageList>
       </div>
-      {showPanel && (
-        <aside className="side-panel panes" style={{ width: paneW }} aria-label="Session panes">
-          <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setPaneW((w) => w - delta)} />
-          <div className="pane-layout">
-            {/* Vertical tab bar on the left */}
-            <div className="pane-tab-bar">
-              {openViews.map((view) => (
-                <button key={view} className={`pane-tab-vertical ${activeView === view ? "on" : ""}`} onClick={() => setActiveView(view)} title={labels[view]}>
-                  <Ic n={{ changes: "plus-minus", files: "folder-simple", terminal: "terminal", review: "shield-check" }[view]} s={16} />
-                  <span className="pane-tab-label">{labels[view]}</span>
-                  <span
-                    className="pane-tab-close"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOpenViews((current) => current.filter((item) => item !== view));
-                      if (activeView === view) {
-                        const remaining = openViews.filter((item) => item !== view);
-                        setActiveView(remaining[0] ?? null);
-                      }
-                    }}
-                  >
-                    <Ic n="x" s={12} />
-                  </span>
-                </button>
-              ))}
-              {/* Add pane button */}
-              <div className="pane-tab-add-vertical">
-                <select
-                  className="pane-tab-select-vertical"
-                  value=""
-                  onChange={(e) => {
-                    const view = e.target.value as DemoView;
-                    if (view && !openViews.includes(view)) {
-                      setOpenViews((current) => [...current, view]);
-                      setActiveView(view);
-                    }
-                  }}
-                  aria-label="Add pane"
-                >
-                  <option value="">+</option>
-                  {(Object.keys(labels) as DemoView[])
-                    .filter((view) => !openViews.includes(view))
-                    .map((view) => (
-                      <option key={view} value={view}>
-                        {labels[view]}
-                      </option>
-                    ))}
-                </select>
+      {showPanel && activeView && (
+        <aside className={`side-panel panes ${expanded ? "wide" : ""}`} style={expanded ? undefined : { width: paneW }} aria-label="Session panes">
+          {!expanded && <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setPaneW((w) => w - delta)} />}
+          <PaneTabs
+            items={DEMO_VIEWS}
+            open={openViews}
+            active={activeView}
+            idPrefix="demo-panes"
+            onSelect={setActiveView}
+            onClose={closeView}
+            onAdd={(view) => setOpenViews((current) => (current.includes(view) ? current : [...current, view]))}
+            onCloseAll={() => setOpenViews([])}
+            expanded={expanded}
+            onExpand={() => setExpanded((current) => !current)}
+          />
+          <div className="ptabs-panel" role="tabpanel" id="demo-panes-panel" aria-labelledby={`demo-panes-tab-${activeView}`}>
+            <PanelFrame
+              label={labels[activeView]}
+              title={activeView === "terminal" ? <span className="faint">Recorded sample commands</span> : null}
+              widthKey="dotrix.demo.panes.width"
+              tabbed
+              onClose={() => closeView(activeView)}
+              tools={<span className="badge">Recorded excerpts</span>}
+            >
+              <div className="side-panel-body">
+                {activeView === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
+                {activeView === "files" && (
+                  <>
+                    <p className="faint">
+                      Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
+                    </p>
+                    {opened ? (
+                      <>
+                        <ActionButton className="btn btn-ghost" onClick={() => setOpened(null)}>
+                          Back to the files
+                        </ActionButton>
+                        <p className="mono">{opened}</p>
+                        {files.some((file) => file.path === opened) ? (
+                          <ChangeList files={files.filter((file) => file.path === opened)} turn={{ status: session.status, turn: turn + 1 }} loading={false} />
+                        ) : (
+                          <p className="muted">This sample includes the file path; its contents were not recorded.</p>
+                        )}
+                      </>
+                    ) : (
+                      <FileTree nodes={tree.children} onOpen={setOpened} />
+                    )}
+                  </>
+                )}
+                {activeView === "terminal" && (
+                  <CommandList
+                    working={false}
+                    entries={(session.terminal ?? []).map((command, index) => ({
+                      ref: String(index),
+                      command: command.cmd,
+                      output: command.out ?? null,
+                      failed: false,
+                      at: new Date(active?.at ?? session.at).toISOString(),
+                    }))}
+                  />
+                )}
+                {activeView === "review" && <p className="muted">No saved Juno review for this sample session.</p>}
               </div>
-            </div>
-            {/* Content area */}
-            <div className="pane-content-area">
-              {activeView && (
-                <PanelFrame
-                  label={labels[activeView]}
-                  title={<b>{labels[activeView]}</b>}
-                  widthKey="dotrix.demo.panes.width"
-                  stacked={true}
-                  onClose={() => {
-                    setOpenViews((current) => current.filter((item) => item !== activeView));
-                    const remaining = openViews.filter((item) => item !== activeView);
-                    setActiveView(remaining[0] ?? null);
-                  }}
-                  tools={<span className="badge">Recorded excerpts</span>}
-                >
-                  {activeView === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
-                  {activeView === "files" && (
-                    <>
-                      <p className="faint">
-                        Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
-                      </p>
-                      {opened ? (
-                        <>
-                          <ActionButton className="btn btn-ghost" onClick={() => setOpened(null)}>
-                            Back to the files
-                          </ActionButton>
-                          <p className="mono">{opened}</p>
-                          {files.some((file) => file.path === opened) ? (
-                            <ChangeList
-                              files={files.filter((file) => file.path === opened)}
-                              turn={{ status: session.status, turn: turn + 1 }}
-                              loading={false}
-                            />
-                          ) : (
-                            <p className="muted">This sample includes the file path; its contents were not recorded.</p>
-                          )}
-                        </>
-                      ) : (
-                        <FileTree nodes={tree.children} onOpen={setOpened} />
-                      )}
-                    </>
-                  )}
-                  {activeView === "terminal" && (
-                    <>
-                      <p className="faint">Recorded sample commands</p>
-                      <CommandList
-                        working={false}
-                        entries={(session.terminal ?? []).map((command, index) => ({
-                          ref: String(index),
-                          command: command.cmd,
-                          output: command.out ?? null,
-                          failed: false,
-                          at: new Date(active?.at ?? session.at).toISOString(),
-                        }))}
-                      />
-                    </>
-                  )}
-                  {activeView === "review" && <p className="muted">No saved Juno review for this sample session.</p>}
-                </PanelFrame>
-              )}
-            </div>
+            </PanelFrame>
           </div>
         </aside>
       )}

@@ -125,12 +125,15 @@ const Page = memo(function Page({
 export function BrowserPane({
   sessionId,
   stacked,
+  tabbed = false,
   expanded,
   onExpand,
   onClose,
 }: {
   sessionId: string;
   stacked: boolean;
+  /** A tab of the panes' tab strip (SidePanel.tsx PaneTabs): it names and closes the pane. */
+  tabbed?: boolean;
   expanded: boolean;
   onExpand?: () => void;
   onClose: () => void;
@@ -289,13 +292,16 @@ export function BrowserPane({
       onClose={onClose}
       closeLabel="Close Browser"
       stacked={stacked}
+      tabbed={tabbed}
       expanded={expanded}
       onExpand={onExpand}
       title={
-        <span className="side-panel-title">
-          <Ic n="globe" s={14} />
-          <b>Browser</b>
-        </span>
+        tabbed ? null : (
+          <span className="side-panel-title">
+            <Ic n="globe" s={14} />
+            <b>Browser</b>
+          </span>
+        )
       }
       tools={
         <div className="cs-title-wrap">
