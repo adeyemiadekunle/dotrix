@@ -31,6 +31,7 @@ const CASES: Record<Route, Params> = {
   teams: {},
   team: { id: "design" },
   activity: {},
+  skills: {},
   settings: { sec: "models" },
   archive: {},
   chat: {},

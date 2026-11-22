@@ -1099,9 +1099,14 @@ class CodingWorker:
         steerer = asyncio.create_task(send_steers()) if steering else None
         checkpointer = asyncio.create_task(save_checkpoints()) if checkpoint is not None else None
         try:
+            browser_argv = (
+                tool.command(model, browser=True, browser_engine=self.settings.coding_browser_engine)
+                if browser
+                else tool.command(model, browser=False)
+            )
+            command = readonly_command(tool.command(model, browser=False) + extra) if plan_mode else browser_argv + extra
             result = await box.exec(
-                readonly_command(tool.command(model, browser=False) + extra) if plan_mode
-                else tool.command(model, browser=browser) + extra,
+                command,
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )

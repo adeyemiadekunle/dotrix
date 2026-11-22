@@ -3420,6 +3420,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/skills/registry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Skill Registry
+         * @description Category-based Skills Registry metadata across built-in skills, reviewed bundles, and workspace skills.
+         */
+        get: operations["get_workspace_skill_registry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/skills/{name}": {
         parameters: {
             query?: never;
@@ -11309,6 +11329,59 @@ export interface components {
         SignupResponse: {
             user: components["schemas"]["UserRead"];
             tokens: components["schemas"]["TokenPair"];
+        };
+        /** SkillCategoryRead */
+        SkillCategoryRead: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** SkillRegistryItemRead */
+        SkillRegistryItemRead: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Category */
+            category: string;
+            /** Tags */
+            tags: string[];
+            /** Agents */
+            agents: string[];
+            /** Required Tools */
+            required_tools: string[];
+            /** Trust */
+            trust: string;
+            /** Origin */
+            origin: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Version */
+            version: number;
+            /** Registry Version */
+            registry_version: string;
+            /** Sha256 */
+            sha256: string;
+            /** Source Repo */
+            source_repo?: string | null;
+            /** Source Revision */
+            source_revision?: string | null;
+            /** License */
+            license?: string | null;
+            /** Content */
+            content: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** SkillRegistryRead */
+        SkillRegistryRead: {
+            /** Categories */
+            categories: components["schemas"]["SkillCategoryRead"][];
+            /** Items */
+            items: components["schemas"]["SkillRegistryItemRead"][];
         };
         /**
          * SourceRead
@@ -22682,6 +22755,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceSkillRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_workspace_skill_registry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillRegistryRead"];
                 };
             };
             /** @description Missing, invalid, or expired credentials */

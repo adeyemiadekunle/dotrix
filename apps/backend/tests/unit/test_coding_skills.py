@@ -167,3 +167,32 @@ def test_local_terminal_says_it_depends_on_the_computers_sandbox(agent):
     terminal = next(item for item in describe(run, settings) if item["id"] == "terminal")
     assert terminal["available"] is (agent == "codex")
     assert "sandbox" in terminal["reason"]
+
+
+async def test_workspace_skill_registry_merges_categories_and_workspace_state(monkeypatch):
+    import uuid
+    from datetime import UTC, datetime
+
+    from dotrix_backend.modules.rules.schemas import WorkspaceSkillRead
+    from dotrix_backend.modules.rules.service import WorkspaceSkills
+
+    now = datetime.now(UTC)
+    row = WorkspaceSkillRead(
+        name="custom-qa",
+        description="Run visual smoke check",
+        content="Description: Run visual smoke check\nCategory: testing\nTags: smoke, qa\nRequires: browser\n",
+        version=2,
+        updated_by_id=None,
+        updated_at=now,
+    )
+    service = WorkspaceSkills(None)  # type: ignore[arg-type]
+    monkeypatch.setattr(service, "list", AsyncMock(return_value=[row]))
+
+    registry = await service.registry(uuid.uuid4())
+    assert any(category.id == "frontend" and category.label == "Frontend" for category in registry.categories)
+    by_id = {item.id: item for item in registry.items}
+    assert by_id["custom-qa"].version == 2
+    assert by_id["custom-qa"].updated_at == now
+    assert by_id["custom-qa"].required_tools == ["browser"]
+    assert by_id["frontend-modern-web-guidance"].trust == "reviewed"
+    assert by_id["frontend-modern-web-guidance"].enabled is False

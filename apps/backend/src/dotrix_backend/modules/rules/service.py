@@ -12,10 +12,17 @@ from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionR
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_engine.skills import describe_skill
+from dotrix_engine.skills import SKILL_CATEGORIES, build_skill_registry, describe_skill
 
 from .models import WorkspaceRule, WorkspaceSkill
-from .schemas import WorkspaceRuleRead, WorkspaceRuleSave, WorkspaceSkillRead
+from .schemas import (
+    SkillCategoryRead,
+    SkillRegistryItemRead,
+    SkillRegistryRead,
+    WorkspaceRuleRead,
+    WorkspaceRuleSave,
+    WorkspaceSkillRead,
+)
 
 BASE = "base"
 
@@ -107,6 +114,37 @@ class WorkspaceSkills:
             .order_by(WorkspaceSkill.name)
         )
         return [skill_read(r) for r in rows]
+
+    async def registry(self, workspace_id: uuid.UUID) -> SkillRegistryRead:
+        rows = await self.list(workspace_id)
+        ws_map = {row.name: (row.content, row.version) for row in rows}
+        updated = {row.name: row.updated_at for row in rows}
+        return SkillRegistryRead(
+            categories=[SkillCategoryRead(id=cid, label=label) for cid, label in SKILL_CATEGORIES],
+            items=[
+                SkillRegistryItemRead(
+                    id=item.id,
+                    name=item.name,
+                    description=item.description,
+                    category=item.category,
+                    tags=list(item.tags),
+                    agents=list(item.agents),
+                    required_tools=list(item.required_tools),
+                    trust=item.trust,
+                    origin=item.origin,
+                    enabled=item.enabled,
+                    version=item.version,
+                    registry_version=item.registry_version,
+                    sha256=item.sha256,
+                    source_repo=item.source_repo,
+                    source_revision=item.source_revision,
+                    license=item.license,
+                    content=item.content,
+                    updated_at=updated.get(item.id),
+                )
+                for item in build_skill_registry(ws_map)
+            ],
+        )
 
     async def texts(self, workspace_id: uuid.UUID) -> dict[str, str]:
         return {s.name: s.content for s in await self.list(workspace_id)}

@@ -28,6 +28,7 @@ import { Project } from "../screens/Project";
 import { Projects } from "../screens/Projects";
 import { ActivityPage } from "../screens/Activity";
 import { Search } from "../screens/Search";
+import { Skills } from "../screens/Skills";
 import { MyTasks, WorkspaceTasks } from "../screens/TaskPages";
 import { Empty } from "../ui/helpers";
 import { ROUTE_NAMES, Shell, routeName } from "./Shell";
@@ -45,6 +46,7 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   timeline: ToHome,
   favorites: () => <ToMyTasks view="starred" />,
   activity: ActivityPage,
+  skills: Skills,
   projects: Projects,
   project: Project,
   overview: ToHome,

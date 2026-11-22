@@ -13,12 +13,19 @@ costs a line until an agent reads it.
 """
 from __future__ import annotations
 
+import hashlib
 import re
+from dataclasses import dataclass
+
+from .skill_bundles import BUILTIN_SKILL_META, BUNDLED_SKILLS, SKILL_CATEGORIES, VALID_CATEGORY_IDS
 
 SKILLS_FOLDER = "agent-rules/skills/"
 _DESCRIPTION = re.compile(r"^description\s*:\s*(.+)$", re.IGNORECASE)
+_CATEGORY = re.compile(r"^category\s*:\s*(.+)$", re.IGNORECASE)
+_TAGS = re.compile(r"^tags\s*:\s*(.+)$", re.IGNORECASE)
 _AGENTS = re.compile(r"^agents\s*:\s*(.+)$", re.IGNORECASE)
 _WHEN = re.compile(r"^when\s*:\s*(.+)$", re.IGNORECASE)
+_CATEGORY_ORDER = {cid: index for index, (cid, _) in enumerate(SKILL_CATEGORIES)}
 
 # What every change of Kai's has to meet before it's done, and what Juno checks it against.
 DEFINITION_OF_DONE = """## Definition of done
@@ -444,3 +451,232 @@ def skill_requires(content: str) -> list[str]:
     """Advisory requirements, never permission grants; unknown capabilities remain unavailable."""
     return list(dict.fromkeys(word.strip() for line in content.splitlines() if line.lower().startswith("requires:")
                               for word in line.partition(":")[2].split(",") if word.strip()))[:20]
+
+
+def skill_category(content: str) -> str | None:
+    """Optional primary category declared via a `Category:` line."""
+    for line in content.splitlines():
+        if (match := _CATEGORY.match(line.strip())) is not None:
+            value = match.group(1).strip().lower()
+            return value or None
+    return None
+
+
+def skill_tags(content: str) -> tuple[str, ...]:
+    """Searchable lowercase tags declared via a `Tags:` line."""
+    for line in content.splitlines():
+        if (match := _TAGS.match(line.strip())) is not None:
+            tags = [tag.strip().lower() for tag in match.group(1).split(",") if tag.strip()]
+            return tuple(dict.fromkeys(tags))[:20]
+    return ()
+
+
+def skill_title(name: str, content: str) -> str:
+    """Human-readable skill title from the first Markdown heading, or from its canonical ID."""
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            heading = stripped.lstrip("#").strip()
+            if heading.lower().startswith("skill:"):
+                heading = heading[6:].strip()
+            if heading:
+                return heading[0].upper() + heading[1:] if heading[0].islower() else heading
+            break
+    return name.replace("-", " ").title()
+
+
+@dataclass(frozen=True)
+class SkillMetadata:
+    """Normalized Skills Registry entry across built-ins, reviewed bundles, and workspace skills."""
+
+    id: str
+    name: str
+    description: str
+    category: str
+    tags: tuple[str, ...]
+    agents: tuple[str, ...]
+    required_tools: tuple[str, ...]
+    trust: str
+    origin: str
+    enabled: bool
+    version: int
+    registry_version: str
+    sha256: str
+    source_repo: str | None
+    source_revision: str | None
+    license: str | None
+    content: str
+
+
+def _metadata_from_content(
+    *,
+    skill_id: str,
+    content: str,
+    fallback_category: str,
+    fallback_tags: tuple[str, ...],
+    trust: str,
+    origin: str,
+    enabled: bool,
+    version: int,
+    registry_version: str,
+    source_repo: str | None,
+    source_revision: str | None,
+    license: str | None,
+    name: str | None = None,
+    agents: tuple[str, ...] | None = None,
+    required_tools: tuple[str, ...] | None = None,
+) -> SkillMetadata:
+    parsed_cat = skill_category(content)
+    category = parsed_cat if parsed_cat in VALID_CATEGORY_IDS else (fallback_category if fallback_category in VALID_CATEGORY_IDS else "general")
+    parsed_tags = skill_tags(content) or fallback_tags
+    parsed_agents = agents if agents is not None else tuple(sorted(skill_agents(content) or ()))
+    parsed_tools = required_tools if required_tools is not None else tuple(skill_requires(content))
+    return SkillMetadata(
+        id=skill_id,
+        name=name or skill_title(skill_id, content),
+        description=describe_skill(content),
+        category=category,
+        tags=parsed_tags,
+        agents=parsed_agents,
+        required_tools=parsed_tools,
+        trust=trust,
+        origin=origin,
+        enabled=enabled,
+        version=version,
+        registry_version=registry_version,
+        sha256=hashlib.sha256(content.encode()).hexdigest(),
+        source_repo=source_repo,
+        source_revision=source_revision,
+        license=license,
+        content=content,
+    )
+
+
+def build_skill_registry(workspace_skills: dict[str, tuple[str, int]] | None = None) -> list[SkillMetadata]:
+    """Merge built-in skills, pinned curated bundles, and workspace skills into one registry list."""
+    ws = workspace_skills or {}
+    items: list[SkillMetadata] = []
+
+    for skill_id, builtin_content in SKILLS.items():
+        default_cat, default_tags = BUILTIN_SKILL_META.get(skill_id, ("general", ()))
+        if skill_id in ws:
+            ws_content, version = ws[skill_id]
+            items.append(
+                _metadata_from_content(
+                    skill_id=skill_id,
+                    content=ws_content,
+                    fallback_category=default_cat,
+                    fallback_tags=default_tags,
+                    trust="workspace",
+                    origin="workspace",
+                    enabled=True,
+                    version=version,
+                    registry_version=f"{max(version, 1)}.0.0",
+                    source_repo=None,
+                    source_revision=None,
+                    license=None,
+                )
+            )
+        else:
+            items.append(
+                _metadata_from_content(
+                    skill_id=skill_id,
+                    content=builtin_content,
+                    fallback_category=default_cat,
+                    fallback_tags=default_tags,
+                    trust="builtin",
+                    origin="builtin",
+                    enabled=True,
+                    version=0,
+                    registry_version="1.0.0",
+                    source_repo=None,
+                    source_revision="builtin",
+                    license="Dotrix",
+                )
+            )
+
+    for skill_id, bundle in BUNDLED_SKILLS.items():
+        if skill_id in SKILLS:
+            continue
+        if skill_id in ws:
+            ws_content, version = ws[skill_id]
+            if hashlib.sha256(ws_content.encode()).hexdigest() == bundle.sha256:
+                items.append(
+                    _metadata_from_content(
+                        skill_id=skill_id,
+                        content=ws_content,
+                        fallback_category=bundle.category,
+                        fallback_tags=bundle.tags,
+                        trust=bundle.trust,
+                        origin="bundle",
+                        enabled=True,
+                        version=version,
+                        registry_version=bundle.registry_version,
+                        source_repo=bundle.source_repo,
+                        source_revision=bundle.source_revision,
+                        license=bundle.license,
+                        name=bundle.name,
+                        agents=bundle.agents,
+                        required_tools=bundle.required_tools,
+                    )
+                )
+            else:
+                items.append(
+                    _metadata_from_content(
+                        skill_id=skill_id,
+                        content=ws_content,
+                        fallback_category=bundle.category,
+                        fallback_tags=bundle.tags,
+                        trust="workspace",
+                        origin="workspace",
+                        enabled=True,
+                        version=version,
+                        registry_version=f"{max(version, 1)}.0.0",
+                        source_repo=None,
+                        source_revision=None,
+                        license=None,
+                    )
+                )
+        else:
+            items.append(
+                _metadata_from_content(
+                    skill_id=skill_id,
+                    content=bundle.content,
+                    fallback_category=bundle.category,
+                    fallback_tags=bundle.tags,
+                    trust=bundle.trust,
+                    origin="bundle",
+                    enabled=False,
+                    version=0,
+                    registry_version=bundle.registry_version,
+                    source_repo=bundle.source_repo,
+                    source_revision=bundle.source_revision,
+                    license=bundle.license,
+                    name=bundle.name,
+                    agents=bundle.agents,
+                    required_tools=bundle.required_tools,
+                )
+            )
+
+    for skill_id, (ws_content, version) in ws.items():
+        if skill_id in SKILLS or skill_id in BUNDLED_SKILLS:
+            continue
+        items.append(
+            _metadata_from_content(
+                skill_id=skill_id,
+                content=ws_content,
+                fallback_category="general",
+                fallback_tags=(),
+                trust="workspace",
+                origin="workspace",
+                enabled=True,
+                version=version,
+                registry_version=f"{max(version, 1)}.0.0",
+                source_repo=None,
+                source_revision=None,
+                license=None,
+            )
+        )
+
+    items.sort(key=lambda item: (_CATEGORY_ORDER.get(item.category, len(SKILL_CATEGORIES)), item.id))
+    return items

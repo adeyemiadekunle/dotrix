@@ -27,6 +27,7 @@ export type Route =
   | "teams"
   | "team"
   | "activity"
+  | "skills"
   | "settings"
   | "archive"
   | "chat"
@@ -53,6 +54,7 @@ const SIMPLE: Partial<Record<Route, string>> = {
   members: "members",
   teams: "teams",
   activity: "activity",
+  skills: "skills",
   archive: "archive",
   chat: "chat",
   codes: "codes",

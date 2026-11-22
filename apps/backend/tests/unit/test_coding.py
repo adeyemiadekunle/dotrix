@@ -532,3 +532,30 @@ def test_a_runner_base_commit_accepts_a_real_id_or_none():
     for value in ("0123456789abcdef0123456789abcdef01234567", None):
         assert RunnerHeartbeat(lease_token=1, base_sha=value).base_sha == value
         assert RunnerResult(lease_token=1, outcome="no_changes", base_sha=value).base_sha == value
+
+
+def test_agent_browser_mcp_selector_and_step_descriptions() -> None:
+    from dotrix_backend.modules.coding.tools import (
+        AGENT_BROWSER_MCP,
+        BROWSER_MCP,
+        Fx,
+        _describe_browser,
+        browser_mcp,
+        tool_for,
+    )
+
+    assert browser_mcp() == BROWSER_MCP
+    assert browser_mcp("agent-browser") == AGENT_BROWSER_MCP
+    fx = tool_for(CodingAgent.FX, "openai:gpt-5.5", _settings())
+    assert isinstance(fx, Fx)
+    argv = fx.command("openai:gpt-5.5", browser=True, browser_engine="agent-browser")
+    assert json.loads(argv[argv.index("--mcp-config") + 1]) == AGENT_BROWSER_MCP
+    claude_argv = ClaudeCode().command("claude-haiku-5-5", browser=True, browser_engine="agent-browser")
+    assert json.loads(claude_argv[claude_argv.index("--mcp-config") + 1]) == AGENT_BROWSER_MCP
+
+    assert _describe_browser("browser_open", {"url": "http://localhost:3000"}) == "Opened http://localhost:3000 in the browser"
+    assert _describe_browser("browser_snapshot", {}) == "Read the page"
+    assert _describe_browser("browser_click", {"ref": "@e2"}) == "Clicked @e2"
+    assert _describe_browser("browser_fill", {"ref": "@e3", "text": "ada"}) == "Filled in @e3"
+    assert _describe_browser("browser_screenshot", {"filename": "proof.png"}) == "Took a screenshot"
+    assert _describe_browser("browser_close", {}) == "Closed the browser"

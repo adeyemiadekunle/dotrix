@@ -9,6 +9,11 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ## [Unreleased]
 
+### Added
+
+- Added the category-based Skills Registry (`packages/engine/src/dotrix_engine/skill_bundles.py`, `skills.py`), `GET /v1/workspaces/{workspace_id}/skills/registry` endpoint, curated pinned skill bundles (Google Modern Web Guidance, Browser Exploratory Verification, and Anthropic Knowledge Work compatible pilots), and dedicated `/w/{workspace}/skills` UI page with category tabs, search, trust/origin filters, provenance, and workspace enablement controls.
+- Added the typed sandboxed `agent-browser` MCP adapter ([agent-browser-mcp.mjs](infra/coding/agent-browser-mcp.mjs)) with SSRF/metadata/private-network/path guards, `coding_browser_engine` backend wiring (`playwright` default or `agent-browser`), and the Playwright vs `agent-browser` seven-scenario benchmark harness ([benchmark-browser.mjs](infra/coding/benchmark-browser.mjs)).
+
 ### Fixed
 
 - Revamped the shared Chat and Code composers, moved approval mode selection out of the `+` options menu into its own toolbar select, made mode indicators non-interactive badges, replaced the `NewChat` context card and remaining web/admin native `<select>` elements with `SelectField`, narrowed scrollbars to `6px`, and exposed `Settings → Browser` in desktop mode.
