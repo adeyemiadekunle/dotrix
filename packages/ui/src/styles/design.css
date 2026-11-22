@@ -1082,8 +1082,9 @@ kbd,
   overflow: hidden;
   user-select: none;
 }
+/* 44px, its row centred, as the session bar and the lists' headers beside it. */
 .side-top {
-  padding: 8px 8px 4px;
+  padding: 6px 8px;
 }
 .ws {
   display: flex;

@@ -2271,7 +2271,7 @@ section.side-panel-body[hidden] {
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  height: 40px;
+  height: 44px;
   padding: 0 6px 0 4px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
@@ -4208,10 +4208,11 @@ textarea.onb2-input {
   align-items: flex-start;
   width: 100%;
 }
+/* The session bar lines up with the sidebar's top row and the lists' headers: 44px, content centred. */
 .cs-head {
-  min-height: 56px;
+  min-height: 44px;
   height: auto;
-  padding-block: 8px;
+  padding-block: 0;
 }
 .dotrix-composer .composer-textarea {
   width: 100%;
