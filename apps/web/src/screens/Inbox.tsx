@@ -21,6 +21,8 @@ import { CellAssignee, CellDue, CellPrio, CellStatus } from "../components/TaskL
 import { CommentBox, CommentItem } from "../overlays/Drawer";
 import { Av, CommentText, Empty } from "../ui/helpers";
 
+import { tabKeys } from "../ui/tabs";
+
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
 const projOf = (n: Notif) => (n.project ? proj(n.project) : n.task ? proj(task(n.task)?.project) : null);
@@ -521,7 +523,7 @@ export function Inbox() {
               <Ic n="settings-2" s={15} />
             </ActionButton>
           </div>
-          <div className="tabs inbox-tabs" role="tablist" aria-label="Inbox categories">
+          <div className="tabs inbox-tabs" role="tablist" aria-label="Inbox categories" onKeyDown={tabKeys}>
             {TABS.map(([key, label]) => (
               <button
                 key={key}
@@ -531,7 +533,7 @@ export function Inbox() {
                 aria-selected={tab === key}
                 aria-controls="inbox-list"
                 className={`tab ${tab === key ? "on" : ""}`}
-                onFocus={() => openTab(key)}
+                tabIndex={tab === key ? 0 : -1}
                 onClick={() => openTab(key)}
               >
                 {label}

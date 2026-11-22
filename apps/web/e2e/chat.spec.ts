@@ -188,8 +188,9 @@ test("the + menu opens and cancels without touching the draft", async ({ page })
 
   // A typed @ still opens the same list, and a pick removes the trigger.
   await box.fill("Ship it @");
-  await expect(page.getByRole("listbox")).toBeVisible();
-  await page.getByRole("option", { name: "Plan", exact: true }).click();
+  const suggestions = page.getByRole("listbox", { name: "Projects and modes" });
+  await expect(suggestions).toBeVisible();
+  await suggestions.getByRole("option", { name: "Plan", exact: true }).click();
   await expect(box).toHaveText("Ship it ");
   await expectComposerMode(page, "Plan");
 });
@@ -228,7 +229,7 @@ test("general chat excludes project context", async ({ page }) => {
   await addProject(page, "Alpha", "ALP");
   await openChat(page);
   await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await page.getByRole("radio", { name: "General", exact: true }).first().check();
+  await page.getByRole("listbox", { name: "Chat context" }).getByRole("option", { name: "General", exact: true }).click();
   await expect(page.getByText("All projects", { exact: true })).toHaveCount(0);
   await page.getByLabel("Message", { exact: true }).fill("Hello Nova");
   await page.getByLabel("Message", { exact: true }).press("Enter");

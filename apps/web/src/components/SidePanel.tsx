@@ -20,6 +20,7 @@ import { go, useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
 import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
+import { tabKeys } from "../ui/tabs";
 import { toast } from "../ui/toast";
 import { desktopBrowser } from "../core/desktop";
 import { BrowserPane } from "./BrowserPane";
@@ -315,7 +316,9 @@ export function useActivePane<V extends string>(open: V[]): [V | null, (view: V)
 export function CodingPanes({
   scope,
   cs,
+  active,
   views,
+  onSelect,
   onOpen,
   onClose,
   onCloseAll,
@@ -324,7 +327,9 @@ export function CodingPanes({
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
+  active: CodingView | null;
   views: CodingView[];
+  onSelect: (view: CodingView) => void;
   onOpen: (view: CodingView, extra?: Record<string, string>) => void;
   onClose: (view: CodingView) => void;
   onCloseAll: () => void;
@@ -333,7 +338,6 @@ export function CodingPanes({
 }) {
   const [width, setWidth] = useStoredSize("dotrix.coding.panes.width", 560, 320, 1100);
   const [expanded, setExpanded] = useState(false);
-  const [active, setActive] = useActivePane(views);
   const panelId = useId().replace(/:/g, "");
   // Over the page on narrow screens: Escape closes the panes.
   const closeAll = useRef(onCloseAll);
@@ -365,7 +369,7 @@ export function CodingPanes({
         open={views}
         active={active}
         idPrefix={panelId}
-        onSelect={setActive}
+        onSelect={onSelect}
         onClose={onClose}
         onAdd={(view) => onOpen(view)}
         onCloseAll={onCloseAll}
@@ -723,7 +727,7 @@ function ReviewPanel({
           ))}
         </select>
       )}
-      <div className="tabs work-panel-nav" role="tablist" aria-label="Review details">
+      <div className="tabs work-panel-nav" role="tablist" aria-label="Review details" onKeyDown={tabKeys}>
         {(["summary", "findings", "evidence"] as const).map((value) => (
           <button
             key={value}
@@ -733,7 +737,7 @@ function ReviewPanel({
             aria-selected={detailTab === value}
             aria-controls={`${id}-panel`}
             className={`tab ${detailTab === value ? "on" : ""}`}
-            onFocus={() => setTab(value)}
+            tabIndex={detailTab === value ? 0 : -1}
             onClick={() => setTab(value)}
           >
             {value[0].toUpperCase() + value.slice(1)}

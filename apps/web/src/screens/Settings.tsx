@@ -165,7 +165,7 @@ function SRow({ t, d, children }: { t: ReactNode; d?: ReactNode; children?: Reac
   );
 }
 function Tog({ on, set, label, disabled }: { on: boolean; set: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return <input type="checkbox" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
+  return <input type="checkbox" role="switch" className="toggle" checked={on} onChange={(e) => set(e.target.checked)} aria-label={label} disabled={disabled} />;
 }
 const PTog = ({ k, def = true }: { k: string; def?: boolean }) => <Tog on={P()[k] === undefined ? def : Boolean(P()[k])} set={(v) => setP(k, v)} label={k} />;
 const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (

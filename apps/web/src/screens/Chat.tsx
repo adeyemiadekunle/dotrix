@@ -1,3 +1,4 @@
+import { useAtPicker } from "../components/AtPicker";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { Suggestions } from "@dotrix/ui/components/ai-elements/suggestion";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
@@ -14,8 +15,6 @@ import {
   InlineCode,
   Lightbox,
   Selector,
-  type ChatComposerInputHandle,
-  type ComplexSelectorHandle,
 } from "./chat-ui";
 // dotrix's workspace Chat: conversations grouped by project (and
 // "General"), a new chat with project, agent, and model; replies with what the agent did
@@ -99,7 +98,7 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
-import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, CodingPanes, useActivePane, type CodingView } from "../components/SidePanel";
 import { BackgroundTasks, KaiBackground } from "../components/BackgroundTasks";
 import { SessionDetails, modeName } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
@@ -960,8 +959,18 @@ function Composer({
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
-  const ref = useRef<ChatComposerInputHandle>(null);
-  const picker = useRef<ComplexSelectorHandle>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const atPicker = useAtPicker({
+    text,
+    setText,
+    ref,
+    projects: contexts,
+    project: context,
+    onProject: setContext,
+    modes: setMode ? modeOptions : undefined,
+    mode,
+    onMode: setMode,
+  });
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -997,6 +1006,7 @@ function Composer({
       await onSend(q, agent);
       setAgent?.("auto");
       setText("");
+      atPicker.close();
     } catch {
       // The mutation reports the error; keep the person's draft for retry.
     } finally {
@@ -1005,6 +1015,7 @@ function Composer({
   };
   return (
     <div ref={wrapper} className={`dotrix-composer-wrap ${composerMenuOpen ? "menu-open" : ""}`} style={{ position: "relative" }}>
+      {atPicker.menu}
       <ChatComposer
         className={`dotrix-composer compact-composer ${text ? "has-draft" : ""}`}
         onSubmit={() => {
@@ -1014,14 +1025,15 @@ function Composer({
         isDisabled={disabled || submitting}
         input={
           <ChatComposerInput
-            handleRef={ref}
+            textareaRef={ref}
             value={text}
-            onChange={setText}
+            onChange={(event) => atPicker.onChange(event.currentTarget)}
             placeholder={placeholder}
             label="Message"
             pasteAsToken={false}
             hasHistory={false}
             onKeyDown={(event) => {
+              if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && atPicker.onKeyDown(event)) return;
               // Enter sends through Dotrix's own path, which clears only
               // after the server accepts the message, retaining failed drafts.
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
@@ -1039,7 +1051,6 @@ function Composer({
         footerActions={
           <>
             <ComplexSelector
-              handleRef={picker}
               label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
               isLabelHidden
               value=""
@@ -2203,7 +2214,11 @@ export function Session({ cs }: { cs: CodingSession }) {
     go("codes", {}, { search: query.toString(), replace: true });
     setLastPanes(next.join(","));
   };
-  const openPane = (view: CodingView, extra: Record<string, string> = {}) => setPanes(panes.includes(view) ? panes : [...panes, view], extra);
+  const [activePane, setActivePane] = useActivePane(panes);
+  const openPane = (view: CodingView, extra: Record<string, string> = {}) => {
+    setActivePane(view);
+    setPanes(panes.includes(view) ? panes : [...panes, view], extra);
+  };
   const closePane = (view: CodingView) => setPanes(panes.filter((v) => v !== view));
   const togglePane = (view: CodingView) => (panes.includes(view) ? closePane(view) : openPane(view));
   // The address always says which panes are open (the list beside the session folds for them: screens/Coding.tsx).
@@ -2808,7 +2823,9 @@ export function Session({ cs }: { cs: CodingSession }) {
         <CodingPanes
           scope={scope}
           cs={cs}
+          active={activePane}
           views={panes}
+          onSelect={setActivePane}
           onOpen={openPane}
           onClose={closePane}
           onCloseAll={() => setPanes([])}

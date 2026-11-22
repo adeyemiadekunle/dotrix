@@ -230,7 +230,14 @@ function Sidebar() {
   const projs = useProjects().items.filter((p) => p.status !== "complete");
   const inProj = route === "project" ? projByKey(params.id)?.id : null;
   return (
-    <nav id="main-navigation" className="side" aria-label="Main" inert={narrow() && !u.mnav ? true : undefined}>
+    <nav
+      id="main-navigation"
+      className="side"
+      role={narrow() && u.mnav ? "dialog" : undefined}
+      aria-label="Main"
+      aria-hidden={narrow() && !u.mnav ? true : undefined}
+      inert={narrow() && !u.mnav ? true : undefined}
+    >
       <div className="side-top">
         <div className="row" style={{ gap: 2 }}>
           <button

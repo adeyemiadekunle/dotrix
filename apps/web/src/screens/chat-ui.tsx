@@ -2,7 +2,7 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 import { ChatScroller } from "@dotrix/ui/components/chat-scroller";
 import type { PromptStatus } from "@dotrix/ui/components/prompt-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
-import { useEffect, useImperativeHandle, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 
 import { Ic } from "../core/icons";
 
@@ -82,7 +82,7 @@ export function Selector({
       <SelectTrigger size={size === "sm" ? "sm" : "default"} aria-label={label}>
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent aria-label={label}>
         {sections.map((section, index) => (
           <SelectGroup key={section.title ?? index}>
             {section.title && <SelectLabel>{section.title}</SelectLabel>}
@@ -98,10 +98,6 @@ export function Selector({
   );
 }
 
-export interface ComplexSelectorHandle {
-  close: () => void;
-}
-
 type ComplexSelectorProps = {
   label: string;
   isLabelHidden?: boolean;
@@ -110,24 +106,30 @@ type ComplexSelectorProps = {
   alignment?: string;
   isDisabled?: boolean;
   onOpenChange?: (open: boolean) => void;
-  handleRef?: Ref<ComplexSelectorHandle>;
   renderTrigger: (props: ComponentProps<"button"> & { role?: string }) => ReactNode;
   children: ReactNode | ((value: string, change: (value: string) => void, close: () => void) => ReactNode);
 };
 
-export function ComplexSelector({ label, value, isDisabled, onOpenChange, handleRef, renderTrigger, children }: ComplexSelectorProps) {
+export function ComplexSelector({ label, value, isDisabled, onOpenChange, renderTrigger, children }: ComplexSelectorProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement>(null);
-  const setOpenState = (next: boolean) => {
-    setOpen(next);
-    onOpenChange?.(next);
-  };
-  const close = () => setOpenState(false);
-  useImperativeHandle(handleRef, () => ({ close }), [close]);
+  const close = useCallback(() => {
+    setOpen(false);
+    onOpenChange?.(false);
+  }, [onOpenChange]);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) close();
+      const target = event.target;
+      if (!(target instanceof Element) || root.current?.contains(target)) return;
+      const listbox = target.closest('[role="listbox"]');
+      if (
+        listbox?.id &&
+        [...(root.current?.querySelectorAll("[aria-controls]") ?? [])].some((element) => element.getAttribute("aria-controls") === listbox.id)
+      ) {
+        return;
+      }
+      close();
     };
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") close();
@@ -138,24 +140,26 @@ export function ComplexSelector({ label, value, isDisabled, onOpenChange, handle
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [close, open]);
   return (
     <span ref={root} style={{ position: "relative", display: "inline-flex" }}>
       {renderTrigger({
         type: "button",
         role: "button",
         "aria-label": label,
-        "aria-haspopup": "menu",
+        "aria-haspopup": "dialog",
         "aria-expanded": open,
         disabled: isDisabled,
         onClick: () => {
-          if (!isDisabled) setOpenState(!open);
+          if (isDisabled) return;
+          setOpen(!open);
+          onOpenChange?.(!open);
         },
       })}
       {open && (
         <div
           className="pop floating"
-          role="menu"
+          role="dialog"
           aria-label={label}
           style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 70, minWidth: 200 }}
         >
@@ -207,12 +211,8 @@ export function DesignButton({
   );
 }
 
-export interface ChatComposerInputHandle {
-  focus: () => void;
-}
-
 export function ChatComposerInput({
-  handleRef,
+  textareaRef,
   value,
   onChange,
   placeholder,
@@ -225,9 +225,9 @@ export function ChatComposerInput({
   onSubmit: _onSubmit,
   ...props
 }: Omit<ComponentProps<"textarea">, "onChange" | "value"> & {
-  handleRef?: Ref<ChatComposerInputHandle>;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
   value: string;
-  onChange: (value: string) => void;
+  onChange: ComponentProps<"textarea">["onChange"];
   label?: string;
   isDisabled?: boolean;
   /** The PromptInput status model: "sending" makes the box read-only, "waiting" disables it. */
@@ -237,19 +237,17 @@ export function ChatComposerInput({
   hasHistory?: boolean;
   onSubmit?: () => void;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useImperativeHandle(handleRef, () => ({ focus: () => ref.current?.focus() }), []);
   useEffect(() => {
-    const el = ref.current;
+    const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [value]);
+  }, [textareaRef, value]);
   return (
     <span style={{ position: "relative", display: "block", minWidth: 0 }}>
       <textarea
         {...props}
-        ref={ref}
+        ref={textareaRef}
         className={`composer-textarea ${props.className ?? ""}`.trim()}
         rows={1}
         value={value}
@@ -257,7 +255,7 @@ export function ChatComposerInput({
         readOnly={status === "sending"}
         placeholder={placeholder}
         aria-label={label}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={onChange}
         onKeyDown={onKeyDown}
       />
     </span>

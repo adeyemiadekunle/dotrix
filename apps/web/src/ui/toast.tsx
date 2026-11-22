@@ -46,7 +46,7 @@ export function Toasts() {
     () => toasts,
   );
   return (
-    <div id="toasts" aria-live="polite">
+    <div id="toasts" role="region" aria-label="Notifications" aria-live="polite">
       {list.map((t) => (
         <div key={t.id} className={`toast ${t.out ? "out" : ""}`} role="status">
           {t.kind === "err" ? <Ic n="circle-alert" s={15} cls="bad" /> : t.kind === "info" ? <Ic n="info" s={15} /> : <Ic n="circle-check" s={15} cls="ok" />}

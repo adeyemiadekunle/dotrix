@@ -70,17 +70,14 @@ const review = (number: number) => ({
   ],
 });
 
-/** A pane beside the session (Changes, Files, Terminal, Review); several can be open, stacked. */
+/** The active pane beside the session. Its sibling tabs stay open. */
 const pane = (page: Page, name: string) => page.locator(`.side-panel section.pane[aria-label="${name}"]`);
-/** Opens or closes a pane from the session bar's menu of panes (the "…"). */
-async function toggle(page: Page, name: string) {
-  const menuButton = page.getByRole("button", { name: "Panes", exact: true });
-  await menuButton.click();
-  await page.getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) }).click();
-  await menuButton.click();
+const paneTab = (page: Page, name: string) => page.getByRole("tablist", { name: "Panes" }).getByRole("tab", { name, exact: true });
+
+async function openPane(page: Page, name: string) {
+  await page.getByRole("button", { name: "Open a pane", exact: true }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
 }
-/** The session bar's own buttons for Changes and Files. */
-const barButton = (page: Page, name: string) => page.getByRole("group", { name: "Session panes" }).getByRole("button", { name, exact: true });
 
 async function mockWorkspace(
   page: Page,
@@ -146,28 +143,32 @@ async function mockWorkspace(
   });
   await before(); // routes added here win over the ones above
   await page.goto(`/w/test-workspace/${search}`);
-  if (openPanel) await barButton(page, "Changes").click();
+  if (openPanel) await page.getByRole("button", { name: "Show the panes", exact: true }).click();
 }
 
-test("the session bar opens panes beside it, stacked, and Juno's findings show on their lines", async ({ page, context, baseURL }) => {
+test("the session bar opens tabbed panes beside it, and Juno's findings show on their lines", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!);
   const changes = pane(page, "Changes");
-  await expect(barButton(page, "Changes")).toHaveAttribute("aria-pressed", "true");
+  await expect(paneTab(page, "Changes")).toHaveAttribute("aria-selected", "true");
   await expect(changes.getByText(path, { exact: true })).toBeVisible();
   // Juno's finding on line 2 sits under that line in the diff, and opens the review beside it.
   await changes.getByRole("button", { name: /Juno's finding on line 2: Keyboard focus is difficult to see/ }).click();
   const review = pane(page, "Review");
   await expect(review).toBeVisible();
-  await expect(changes).toBeVisible(); // panes stack: Changes stays open
-  await barButton(page, "Files").click();
+  await expect(changes).toBeHidden();
+  await expect(paneTab(page, "Changes")).toBeVisible();
+  await openPane(page, "Files");
   const files = pane(page, "Files");
   await files.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
   await expect(files.getByRole("button", { name: "Back to the files" })).toBeVisible();
-  await toggle(page, "Terminal");
+  await page.getByRole("button", { name: "Open a pane", exact: true }).click();
+  const addPane = page.getByRole("menu", { name: "Open a pane", exact: true });
+  await expect(addPane.getByRole("menuitem", { name: "Browser", exact: true })).toHaveCount(0);
+  await addPane.getByRole("menuitem", { name: "Terminal", exact: true }).click();
   const terminal = pane(page, "Terminal");
   await expect(terminal.getByText("Recorded output · read-only")).toBeVisible();
   await expect(terminal.getByText("24 tests passed")).toBeVisible();
-  await expect(page.getByRole("menuitemcheckbox", { name: /^Browser/ })).toHaveCount(0); // the Browser pane is in the desktop app only
+  await paneTab(page, "Review").click();
   await expect(review.getByText("Keyboard focus is difficult to see")).toBeVisible();
   // Juno's review details are keyboard tabs.
   await review.getByRole("tab", { name: /^Findings/ }).click();
@@ -178,33 +179,36 @@ test("the session bar opens panes beside it, stacked, and Juno's findings show o
   await review.getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveValue(/Keyboard focus is difficult to see/);
   // A reference in the review opens its line in Files.
-  await toggle(page, "Terminal");
+  await page.getByRole("button", { name: "Close Terminal", exact: true }).click();
   await review.getByRole("button", { name: `${path}:2` }).click();
   await expect(files.locator(".kp-line-reference")).toContainText("const href = '#plans'");
   await files.getByRole("button", { name: "Back to the files" }).click();
+  await paneTab(page, "Review").click();
   await review.getByRole("button", { name: `${path}:2` }).click();
   await expect(files.locator(".kp-line-reference")).toBeVisible();
   // A turn's changes chip in the transcript shows that turn in every pane.
   await page.locator(".kt").first().locator(".kt-lines").first().click();
+  await paneTab(page, "Review").click();
   await expect(review.getByText("Earlier finding")).toBeVisible();
   await expect(review.getByText("Superseded by a later coding turn")).toBeVisible();
   // A pane's close button closes just that pane; "Close all panes" the rest; the shortcut opens Changes again.
-  await review.getByRole("button", { name: "Close Review" }).click();
+  await page.getByRole("button", { name: "Close Review", exact: true }).click();
   await expect(review).toHaveCount(0);
-  await expect(changes).toBeVisible();
-  await page.getByRole("button", { name: "Panes", exact: true }).click();
-  await page.getByRole("menuitem", { name: /Close all panes/ }).click();
+  await expect(paneTab(page, "Changes")).toBeVisible();
+  await page.getByRole("button", { name: "Close all panes", exact: true }).click();
   await expect(page.locator(".side-panel")).toHaveCount(0);
   await page.keyboard.press("Control+Shift+D");
-  await expect(barButton(page, "Changes")).toHaveAttribute("aria-pressed", "true");
+  await expect(paneTab(page, "Changes")).toHaveAttribute("aria-selected", "true");
 });
 
 test("a pane expands to the whole column and back", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!);
-  await barButton(page, "Files").click();
-  await pane(page, "Changes").getByRole("button", { name: "Expand Changes" }).click();
-  await expect(pane(page, "Files")).toHaveCount(0);
-  await pane(page, "Changes").getByRole("button", { name: "Show the other panes" }).click();
+  await openPane(page, "Files");
+  await page.getByRole("button", { name: "Expand the panes over Code" }).click();
+  await expect(page.getByRole("complementary", { name: "Session panes" })).toHaveClass(/\bwide\b/);
+  await expect(paneTab(page, "Changes")).toBeVisible();
+  await page.getByRole("button", { name: "Restore the panes" }).click();
+  await expect(page.getByRole("complementary", { name: "Session panes" })).not.toHaveClass(/\bwide\b/);
   await expect(pane(page, "Files")).toBeVisible();
   await expect(page).toHaveURL(/panel=changes%2Cfiles|panel=changes,files/);
 });
@@ -227,7 +231,7 @@ test("a file in the session's details opens it in Files", async ({ page, context
   const details = page.getByRole("complementary", { name: "Session details" });
   await expect(details.getByText("Cloud")).toBeVisible();
   await details.getByRole("button", { name: `Open ${path} in Files` }).click();
-  await expect(barButton(page, "Files")).toHaveAttribute("aria-pressed", "true");
+  await expect(paneTab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await expect(pane(page, "Files").getByRole("button", { name: "Back to the files" })).toBeVisible();
   await expect(page).toHaveURL(/file=/);
 });
@@ -238,9 +242,9 @@ test("a linked review reference opens its turn and file directly, from an older 
   await mockWorkspace(page, context, baseURL!, `chat?${search}`, false);
   await expect(page).toHaveURL(/\/codes\?session=session1/);
   const files = pane(page, "Files");
-  await expect(barButton(page, "Files")).toHaveAttribute("aria-pressed", "true");
+  await expect(paneTab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await expect(files.locator(".kp-line-reference")).toContainText("const href = '#plans'");
-  await files.getByRole("button", { name: "Close Files" }).click();
+  await page.getByRole("button", { name: "Close Files", exact: true }).click();
   await expect(page.locator(".side-panel")).toHaveCount(0);
   await expect(page).not.toHaveURL(/file=/);
 });
@@ -248,7 +252,7 @@ test("a linked review reference opens its turn and file directly, from an older 
 test("an unavailable review can be retried without showing a different turn's review", async ({ page, context, baseURL }) => {
   let available = false;
   await mockWorkspace(page, context, baseURL!, undefined, true, () => available);
-  await toggle(page, "Review");
+  await openPane(page, "Review");
   const review = pane(page, "Review");
   await expect(review.getByText("Some reviews couldn't be loaded.")).toBeVisible({ timeout: 20_000 });
   await expect(review.getByText("Earlier finding")).toHaveCount(0);
@@ -262,12 +266,12 @@ test("the panes are closeable and keyboard accessible on mobile", async ({ page,
   await mockWorkspace(page, context, baseURL!);
   const panel = page.locator(".side-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Close Changes" })).toBeFocused();
+  await expect(paneTab(page, "Changes")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  await expect(barButton(page, "Changes")).toBeFocused();
-  // The session bar stays above the panes, so its menu opens other panes over them.
-  await toggle(page, "Review");
+  await expect(page.getByRole("button", { name: "Show the panes", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Show the panes", exact: true }).click();
+  await openPane(page, "Review");
   await pane(page, "Review").getByRole("button", { name: "Ask Kai to fix" }).click();
   await expect(panel).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveValue(/Keyboard focus is difficult to see/);
@@ -331,7 +335,7 @@ test("file/diff text, line annotations, syntax colors and path copying survive b
   const light = await token.evaluate((el) => getComputedStyle(el).color);
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(token).not.toHaveCSS("color", light);
-  await barButton(page, "Files").click();
+  await openPane(page, "Files");
   const files = pane(page, "Files");
   await files.getByRole("treeitem", { name: /Navigation.tsx/ }).click();
   await expect(files.locator(".kp-source .kp-text")).toHaveText(["const nav = true;", "const href = '#plans';"]);
@@ -545,7 +549,7 @@ for (const width of [390, 1440]) {
     );
     const model = page.locator(".composer-model");
     await expect(model).toContainText("GPT-5.4");
-    const stop = page.locator(".dotrix-composer").getByRole("button", { name: "Stop", exact: true });
+    const stop = page.locator(".dotrix-composer").getByRole("button", { name: "Stop coding turn", exact: true });
     await expect(stop).toBeEnabled();
     const modelBounds = (await model.boundingBox())!;
     const stopBounds = (await stop.boundingBox())!;
