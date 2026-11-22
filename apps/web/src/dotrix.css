@@ -2253,56 +2253,113 @@ section.side-panel-body[hidden] {
   color: var(--red);
 }
 
-/* The panes beside a session: stacked in one resizable column, each with its own bar. */
+/* The panes beside a session: vertical tab bar on the left, content on the right. */
 .side-panel.panes {
   padding: 0;
   display: flex;
   flex-direction: row;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
 }
-.pane-rail {
+.pane-layout {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
+.pane-tab-bar {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   padding: 8px 4px;
   border-right: 1px solid var(--border);
   background: var(--surface-2);
-  width: 44px;
+  width: 120px;
   flex-shrink: 0;
-  height: 100%;
 }
-.pane-rail-item {
+.pane-tab-vertical {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
+  gap: 8px;
+  padding: 8px 10px;
   border: none;
   background: transparent;
   color: var(--text-3);
   border-radius: 6px;
   cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
   transition:
     background 0.15s,
     color 0.15s;
+  text-align: left;
+  white-space: nowrap;
 }
-.pane-rail-item:hover {
+.pane-tab-vertical:hover {
   background: var(--surface-3);
   color: var(--text-1);
 }
-.pane-rail-item.on {
-  background: var(--accent);
-  color: var(--accent-text);
+.pane-tab-vertical.on {
+  background: var(--surface);
+  color: var(--text-1);
+  border-left: 2px solid var(--accent);
 }
-.pane-content {
+.pane-tab-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pane-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-4);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  flex-shrink: 0;
+}
+.pane-tab-close:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.pane-tab-add-vertical {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.pane-tab-select-vertical {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: center;
+}
+.pane-tab-select-vertical:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+.pane-content-area {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  position: relative;
 }
-.pane-content .pane,
-.pane-content .side-panel {
+.pane-content-area .pane,
+.pane-content-area .side-panel {
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
@@ -2688,15 +2745,6 @@ section.side-panel-body[hidden] {
     position: fixed;
     z-index: 40;
     box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
-  }
-  .side-panel.panes.collapsed {
-    width: 44px !important;
-  }
-  .side-panel.panes.full-width {
-    top: var(--cs-head-h, 46px);
-    left: 0;
-    right: 0;
-    bottom: 0;
   }
 }
 

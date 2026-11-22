@@ -84,7 +84,7 @@ import { openPop, openTask } from "../core/actions";
 import { desktop, desktopBrowser, useBrowserSettings, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
-import { MOD, ago, greeting } from "../core/utils";
+import { ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
 import { D, S, canSee, me, proj, projByKey, render, task, who } from "../data/store";
@@ -2393,67 +2393,31 @@ export function Session({ cs }: { cs: CodingSession }) {
             </span>
           )}
           <span className="sp" />
-          {/* As Claude Code's session bar: the details, then each pane (several can be open, stacked), then the menu of panes. */}
-          <div className="cs-views" role="group" aria-label="Session panes">
+          {/* Open panes button when no panes are open */}
+          {panes.length === 0 && (
             <button
-              className={`cs-view ${detailsOn ? "on" : ""}`}
-              data-details
-              onClick={toggleDetails}
-              aria-pressed={detailsOn}
-              aria-label="Session details"
-              data-tip="Details"
+              className="ibtn ibtn-sm"
+              onClick={() => {
+                setPanes(["changes"]);
+                setMenu(null);
+              }}
+              aria-label="Open panes"
+              title="Open panes"
             >
-              <Ic n="list-bullets" s={16} />
+              <Ic n="panel-right" s={16} />
             </button>
-            {PANES.filter((v) => v.id === "changes" || v.id === "files").map((v) => (
-              <button
-                key={v.id}
-                className={`cs-view ${panes.includes(v.id) ? "on" : ""}`}
-                onClick={() => togglePane(v.id)}
-                aria-pressed={panes.includes(v.id)}
-                aria-label={v.label}
-                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.label}
-              >
-                <Ic n={v.id === "changes" ? "plus-minus" : "folder-simple"} s={16} />
-              </button>
-            ))}
-            <div className="cs-title-wrap">
-              <button
-                className={`cs-view ${menu === "panes" ? "on" : ""}`}
-                data-menu
-                onClick={() => setMenu(menu === "panes" ? null : "panes")}
-                aria-haspopup="menu"
-                aria-expanded={menu === "panes"}
-                aria-label="Panes"
-                data-tip={menu === "panes" ? undefined : "Panes"}
-              >
-                <Ic n="dots-three" s={18} />
-              </button>
-              {menu === "panes" && (
-                <div className="pop cs-menu right" role="menu" aria-label="Panes">
-                  {PANES.map((v) => (
-                    <button key={v.id} role="menuitemcheckbox" aria-checked={panes.includes(v.id)} onClick={() => togglePane(v.id)}>
-                      <Ic n={v.icon} s={14} />
-                      <span className="grow">{v.label}</span>
-                      {v.id === "changes" && <kbd>{MOD}⇧D</kbd>}
-                      {v.id === "terminal" && <kbd>Ctrl `</kbd>}
-                      {panes.includes(v.id) && <Ic n="check" s={14} />}
-                    </button>
-                  ))}
-                  {panes.length > 0 && (
-                    <>
-                      <hr />
-                      <button role="menuitem" onClick={() => (setMenu(null), setPanes([]))}>
-                        <Ic n="x" s={14} />
-                        <span className="grow">Close all panes</span>
-                        <kbd>{MOD}\</kbd>
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          )}
+          {/* Session details button */}
+          <button
+            className={`cs-view ${detailsOn ? "on" : ""}`}
+            data-details
+            onClick={toggleDetails}
+            aria-pressed={detailsOn}
+            aria-label="Session details"
+            data-tip="Details"
+          >
+            <Ic n="list-bullets" s={16} />
+          </button>
         </SessionHeader>
         {shot && (
           <Lightbox
