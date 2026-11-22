@@ -204,7 +204,6 @@ function DemoSession({ id }: { id: string }) {
               widthKey="dotrix.demo.panes.width"
               tabbed
               onClose={() => closeView(activeView)}
-              tools={<span className="badge">Recorded excerpts</span>}
             >
               <div className="side-panel-body">
                 {activeView === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
