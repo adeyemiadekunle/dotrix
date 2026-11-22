@@ -1,5 +1,3 @@
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // What an agent run waits on, from the API: changes to approve or reject, and checkpoints (a plan
 // to continue, change, or stop). A run resumes once, with every decision, so with several changes
 // waiting the choices are sent together when the last one is made.
@@ -8,9 +6,11 @@ import { useState } from "react";
 import { useDecide, type Approval, type Decision, type Run } from "@/lib/agent";
 import type { Scope } from "@/lib/issues";
 
+import { Confirmation as ConfirmPrompt } from "@dotrix/ui/components/ai-elements/confirmation";
+
 import { Ic } from "../core/icons";
 import { D, who } from "../data/store";
-import { Confirmation, PlanSteps } from "./AgentTrace";
+import { PlanSteps } from "./AgentTrace";
 import { Diff } from "./Changes";
 
 const KIND: Record<string, [string, string]> = {
@@ -57,9 +57,9 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
         </b>
         <span className="sp" />
         {!pending && <Decided a={a} />}
-        <ActionButton className="ibtn ibtn-xs" onClick={() => setOpen(!open)} aria-label={open ? "Hide details" : "Show details"} aria-expanded={open}>
+        <button className="ibtn ibtn-xs" onClick={() => setOpen(!open)} aria-label={open ? "Hide details" : "Show details"} aria-expanded={open}>
           <Ic n={open ? "chevron-up" : "chevron-down"} s={13} />
-        </ActionButton>
+        </button>
       </div>
       {open && (a.diff || fields.length > 0) && (
         <div className="change-b">
@@ -84,15 +84,21 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
       )}
       {pending && !choice && !rejecting ? (
         <div className="change-f change-confirm">
-          <Confirmation icon="hand-palm" title={`${label}?`} description="Waiting for your decision">
-            <ActionButton className="btn btn-sm btn-secondary" onClick={() => setRejecting(true)} disabled={busy}>
-              Reject
-            </ActionButton>
-            <ActionButton className="btn btn-sm btn-primary" onClick={() => onChoose({ decision: "approve", reason: "" })} disabled={busy}>
-              <Ic n="check" s={13} />
-              Approve
-            </ActionButton>
-          </Confirmation>
+          <ConfirmPrompt
+            icon={<Ic n="hand-palm" />}
+            title={`${label}?`}
+            description="Waiting for your decision"
+            denyLabel="Reject"
+            approveLabel={
+              <>
+                <Ic n="check" s={13} />
+                Approve
+              </>
+            }
+            disabled={busy}
+            onDeny={() => setRejecting(true)}
+            onApprove={() => onChoose({ decision: "approve", reason: "" })}
+          />
         </div>
       ) : pending ? (
         <div className="change-f">
@@ -102,13 +108,13 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
                 {choice.decision === "approve" ? "You approve this" : "You reject this"}; sent with the others
               </span>
               <span className="sp" />
-              <ActionButton className="btn btn-sm btn-ghost" onClick={() => onChoose(undefined)} disabled={busy}>
+              <button className="btn btn-sm btn-ghost" onClick={() => onChoose(undefined)} disabled={busy}>
                 Undo
-              </ActionButton>
+              </button>
             </>
           ) : (
             <>
-              <DesignInput
+              <input
                 className="input"
                 style={{ height: 28, flex: 1 }}
                 placeholder="Why? The agent learns from it (optional)"
@@ -118,12 +124,12 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
                 autoFocus
                 aria-label="Reason"
               />
-              <ActionButton className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
+              <button className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
                 Cancel
-              </ActionButton>
-              <ActionButton className="btn btn-sm btn-danger" onClick={() => onChoose({ decision: "reject", reason })} disabled={busy}>
+              </button>
+              <button className="btn btn-sm btn-danger" onClick={() => onChoose({ decision: "reject", reason })} disabled={busy}>
                 Reject
-              </ActionButton>
+              </button>
             </>
           )}
         </div>
@@ -155,7 +161,7 @@ function Checkpoint({ a, onAnswer, busy }: { a: Approval; onAnswer: (c: Choice) 
       )}
       {pending && (
         <div className="change-f">
-          <DesignInput
+          <input
             className="input"
             style={{ height: 28, flex: 1 }}
             placeholder="Change something? Say what, then Change plan"
@@ -164,19 +170,15 @@ function Checkpoint({ a, onAnswer, busy }: { a: Approval; onAnswer: (c: Choice) 
             onKeyDown={(e) => e.key === "Enter" && note.trim() && onAnswer({ decision: "steer", reason: note.trim() })}
             aria-label="What to change"
           />
-          <ActionButton
-            className="btn btn-sm btn-secondary"
-            disabled={busy || !note.trim()}
-            onClick={() => onAnswer({ decision: "steer", reason: note.trim() })}
-          >
+          <button className="btn btn-sm btn-secondary" disabled={busy || !note.trim()} onClick={() => onAnswer({ decision: "steer", reason: note.trim() })}>
             Change plan
-          </ActionButton>
-          <ActionButton className="btn btn-sm btn-ghost" disabled={busy} onClick={() => onAnswer({ decision: "reject", reason: "" })}>
+          </button>
+          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => onAnswer({ decision: "reject", reason: "" })}>
             Stop
-          </ActionButton>
-          <ActionButton className="btn btn-sm btn-primary" disabled={busy} onClick={() => onAnswer({ decision: "approve", reason: "" })}>
+          </button>
+          <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => onAnswer({ decision: "approve", reason: "" })}>
             Continue
-          </ActionButton>
+          </button>
         </div>
       )}
     </div>
@@ -219,13 +221,13 @@ export function RunApprovals({ run, scope }: { run: Run; scope: Scope | undefine
       )}
       {waiting.length > 1 && (
         <div className="row" style={{ justifyContent: "flex-end", gap: 6, marginTop: 8 }}>
-          <ActionButton className="btn btn-sm btn-ghost" onClick={() => all("reject")} disabled={decide.isPending}>
+          <button className="btn btn-sm btn-ghost" onClick={() => all("reject")} disabled={decide.isPending}>
             Reject all
-          </ActionButton>
-          <ActionButton className="btn btn-sm btn-secondary" onClick={() => all("approve")} disabled={decide.isPending}>
+          </button>
+          <button className="btn btn-sm btn-secondary" onClick={() => all("approve")} disabled={decide.isPending}>
             <Ic n="check-check" s={13} />
             Approve all {waiting.length}
-          </ActionButton>
+          </button>
         </div>
       )}
     </div>

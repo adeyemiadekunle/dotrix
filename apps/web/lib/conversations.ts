@@ -1,7 +1,7 @@
 // Conversations across projects (or about none): read-only, private to whoever started them.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@dotrix/ui/lib/toast";
+import { toast } from "../src/ui/toast";
 
 import { isActive, type Run, type RunStreamState } from "@/lib/agent";
 import { api, errorMessage, unwrap } from "@/lib/api";
@@ -44,7 +44,7 @@ export function useSendCross(workspaceId: string | undefined) {
   return useMutation({
     mutationFn: (body: Schemas["WorkspaceRunCreate"]) =>
       unwrap(api.POST("/v1/workspaces/{workspace_id}/conversations/runs", { params: { path: { workspace_id: workspaceId! } }, body })),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ["conversations", workspaceId] }),
   });
 }
@@ -58,7 +58,7 @@ export function useStopCross(workspaceId: string | undefined) {
           params: { path: { workspace_id: workspaceId!, run_id: runId } },
         }),
       ),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ["conversations", workspaceId] }),
   });
 }

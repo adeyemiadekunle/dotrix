@@ -37,14 +37,15 @@ export function useSessionSidebar(area: "chat" | "coding", selection: string, au
 
 export const SessionSidebarContext = createContext<ReturnType<typeof useSessionSidebar> | null>(null);
 
-/** The same panel icon hides the list and restores it beside the conversation. */
-export function SessionListToggle() {
+/** The same panel icon hides the list and restores it beside the conversation. `restoreOnly` keeps it
+ *  for main-pane headers, where it should appear only while the list is hidden. */
+export function SessionListToggle({ restoreOnly = false }: { restoreOnly?: boolean }) {
   const sidebar = useContext(SessionSidebarContext);
-  if (!sidebar) return null;
+  if (!sidebar || (restoreOnly && !sidebar.hidden)) return null;
   const label = sidebar.hidden ? "Show the list" : "Hide the list";
   return (
     <ActionButton
-      className="ibtn session-list-toggle"
+      className="ibtn ibtn-sm session-list-toggle"
       onClick={() => {
         sidebar.toggle();
         requestAnimationFrame(() => {
@@ -57,7 +58,7 @@ export function SessionListToggle() {
       aria-expanded={!sidebar.hidden}
       aria-controls={sidebar.id}
     >
-      <Ic n="sidebar-simple" s={20} />
+      <Ic n="sidebar-simple" s={15} />
     </ActionButton>
   );
 }

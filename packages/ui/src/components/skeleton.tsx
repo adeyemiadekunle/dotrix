@@ -1,5 +1,7 @@
-import { Skeleton as AstryxSkeleton } from "@astryxdesign/core/Skeleton";
-import type { ComponentProps } from "react";
-export function Skeleton(props: ComponentProps<typeof AstryxSkeleton>) {
-  return <AstryxSkeleton {...props} />;
+import { cn } from "@dotrix/ui/lib/utils";
+
+function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-slot="skeleton" className={cn("sk rounded-md", className)} {...props} />;
 }
+
+export { Skeleton };

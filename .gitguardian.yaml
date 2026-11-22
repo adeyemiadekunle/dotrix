@@ -1,0 +1,5 @@
+version: 2
+secret:
+  ignored_paths:
+    # Icon-name alias map; "password"-shaped keys are icon names, not credentials.
+    - apps/web/icons-plugin.ts

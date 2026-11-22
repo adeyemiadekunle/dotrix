@@ -1,4 +1,3 @@
-import { TabList, Tab } from "@dotrix/ui/astryx";
 import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
 import { ActionButton } from "@dotrix/ui/components/action-button";
@@ -118,16 +117,21 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
   // The uploaded originals sit beside the documents made from them.
   const nFiles = useProjectFiles(p.id).items.length;
   const seg = (
-    <TabList
-      aria-label="Knowledge"
-      value={view}
-      onChange={(value) => go("project", { id: p.key, tab: "knowledge" }, { replace: true, search: value === "docs" ? undefined : `view=${value}` })}
-      size="sm"
-    >
-      <Tab value="docs" label="Documents" />
-      <Tab value="files" label={nFiles ? `Files ${nFiles}` : "Files"} />
-      {isLive() && <Tab value="coverage" label="Coverage" />}
-    </TabList>
+    <div className="tabs" role="tablist" aria-label="Knowledge">
+      {(["docs", "files", ...(isLive() ? ["coverage"] : [])] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={view === value}
+          className={`tab ${view === value ? "on" : ""}`}
+          onFocus={() => go("project", { id: p.key, tab: "knowledge" }, { replace: true, search: value === "docs" ? undefined : `view=${value}` })}
+          onClick={() => go("project", { id: p.key, tab: "knowledge" }, { replace: true, search: value === "docs" ? undefined : `view=${value}` })}
+        >
+          {value === "docs" ? "Documents" : value === "files" ? (nFiles ? `Files ${nFiles}` : "Files") : "Coverage"}
+        </button>
+      ))}
+    </div>
   );
   if (view === "files") return <Files pid={p.id} lead={seg} />;
   if (view === "coverage" && isLive()) return <Coverage pid={p.id} lead={seg} openPage={(path) => openDocument(p, path)} />;
@@ -283,7 +287,7 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
                       />
                     </div>
                   ) : (
-                    <Markdown outline>{cur.content}</Markdown>
+                    <Markdown>{cur.content}</Markdown>
                   )}
                 </div>
               </section>

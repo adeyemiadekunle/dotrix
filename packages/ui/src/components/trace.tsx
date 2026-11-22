@@ -4,8 +4,9 @@
 "use client";
 
 import * as React from "react";
+import { ChevronRightIcon } from "lucide-react";
 
-import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@dotrix/ui/components/collapsible";
 import { cn } from "@dotrix/ui/lib/utils";
 
 function Trace({ className, ...props }: React.ComponentProps<"div">) {
@@ -61,46 +62,46 @@ function TraceDescription({ className, ...props }: React.ComponentProps<"span">)
 
 function TraceCollapsible({
   className,
-  children,
-  open,
-  defaultOpen = false,
-  onOpenChange,
   ...props
-}: React.ComponentProps<"div"> & { open?: boolean; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void }) {
-  const slots = React.Children.toArray(children);
-  const trigger = slots.find((child) => React.isValidElement(child) && child.type === TraceCollapsibleTrigger);
-  const content = slots.filter((child) => child !== trigger);
+}: Omit<React.ComponentProps<typeof Collapsible>, "asChild" | "open"> &
+  ({ open?: undefined } | { open: boolean; onOpenChange: NonNullable<React.ComponentProps<typeof Collapsible>["onOpenChange"]> })) {
+  return <Collapsible data-slot="trace-collapsible" className={cn("flex w-full min-w-0 flex-col", className)} {...props} />;
+}
+
+function TraceCollapsibleTrigger({ className, children, ...props }: Omit<React.ComponentProps<typeof CollapsibleTrigger>, "asChild">) {
   return (
-    <Collapsible
+    <CollapsibleTrigger
+      data-slot="trace-collapsible-trigger"
+      className={cn(
+        "group/trace-collapsible-trigger flex w-fit max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-md text-left text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 has-[[data-status=error]]:text-destructive",
+        className,
+      )}
       {...props}
-      className={cn("min-w-0 w-full", className)}
-      trigger={trigger}
-      isOpen={open}
-      defaultIsOpen={defaultOpen}
-      onOpenChange={onOpenChange}
-      chevronPosition="start"
     >
-      {content}
-    </Collapsible>
-  );
-}
-function TraceCollapsibleTrigger({ children, className, ...props }: React.ComponentProps<"span">) {
-  return (
-    <span {...props} data-slot="trace-collapsible-trigger" className={cn("inline-flex min-w-0 items-center gap-2", className)}>
       {children}
-    </span>
+      <TraceIcon className="transition-transform group-aria-expanded/trace-collapsible-trigger:rotate-90">
+        <ChevronRightIcon />
+      </TraceIcon>
+    </CollapsibleTrigger>
   );
 }
-function TraceCollapsibleContent({ children, className, ...props }: React.ComponentProps<"div">) {
+
+function TraceCollapsibleContent({ className, children, ...props }: Omit<React.ComponentProps<typeof CollapsibleContent>, "asChild">) {
   return (
-    <div
-      {...props}
+    <CollapsibleContent
       data-slot="trace-collapsible-content"
-      className={cn("mt-2 mb-1 ml-2 min-w-0 border-l pl-4 leading-relaxed text-muted-foreground", className)}
+      className="min-w-0 overflow-hidden duration-200 data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up"
+      {...props}
     >
-      {children}
-    </div>
+      <div
+        data-slot="trace-collapsible-content-inner"
+        className={cn("mt-2 mb-1 ml-[calc(--spacing(2)-1px)] min-w-0 border-l pr-1 pl-4 leading-relaxed wrap-break-word text-muted-foreground", className)}
+      >
+        {children}
+      </div>
+    </CollapsibleContent>
   );
 }
+
 export { Trace, TraceLine, TraceIcon, TraceTitle, TraceDescription, TraceCollapsible, TraceCollapsibleTrigger, TraceCollapsibleContent };
 export type { TraceStatus };

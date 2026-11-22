@@ -11,7 +11,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@dotrix/ui/components/pagination";
-import { CaretDownIcon, CaretUpDownIcon, CaretUpIcon } from "@phosphor-icons/react";
+import { ChevronDownIcon, ChevronsUpDownIcon, ChevronUpIcon } from "lucide-react";
 import {
   flexRender,
   getCoreRowModel,
@@ -103,11 +103,11 @@ export function DataTable<T>({
                       <button type="button" className={`dt-sort${right ? " r" : ""}`} onClick={header.column.getToggleSortingHandler()}>
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {sort === "asc" ? (
-                          <CaretUpIcon size={12} />
+                          <ChevronUpIcon size={12} />
                         ) : sort === "desc" ? (
-                          <CaretDownIcon size={12} />
+                          <ChevronDownIcon size={12} />
                         ) : (
-                          <CaretUpDownIcon size={12} className="dt-idle" />
+                          <ChevronsUpDownIcon size={12} className="dt-idle" />
                         )}
                       </button>
                     ) : (

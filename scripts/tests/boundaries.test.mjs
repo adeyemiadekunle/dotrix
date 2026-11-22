@@ -12,7 +12,7 @@ const packages = [app, ui, desktop];
 
 test("shared packages need declared public imports", () => {
   assert.deepEqual(inspect('import { Button } from "@dotrix/ui/components/button";', filename, app, packages), []);
-  assert.equal(inspect('import("../../../packages/ui/src/astryx")', filename, app, packages).length, 1);
+  assert.equal(inspect('import("../../../packages/ui/src/components/button")', filename, app, packages).length, 1);
   assert.equal(inspect('export * from "@dotrix/ui/src/private";', filename, app, packages).length, 1);
   assert.equal(inspect('import "@dotrix/ui";', filename, { ...app, dependencies: {} }, packages).length, 1);
 });

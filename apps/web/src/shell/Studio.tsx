@@ -1,7 +1,6 @@
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // The workspace app (the render loop): your preferences on
 // <html>, the page title, the shell with the screen for the URL, and the overlay layers.
-import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { hasSession } from "@/lib/api";
 
@@ -18,9 +17,14 @@ import { ModalLayer } from "../overlays/Modals";
 import { installDragDrop } from "../core/dragdrop";
 import { installKeyboard } from "../core/keyboard";
 import { Palette } from "../overlays/Palette";
+import { Chat } from "../screens/Chat";
+import { Coding } from "../screens/Coding";
 import { MemberPage, Members } from "../screens/Members";
+import { Settings } from "../screens/Settings";
 import { ModelGate } from "../screens/ModelSetup";
 import { Home } from "../screens/Home";
+import { Inbox } from "../screens/Inbox";
+import { Project } from "../screens/Project";
 import { Projects } from "../screens/Projects";
 import { ActivityPage } from "../screens/Activity";
 import { Search } from "../screens/Search";
@@ -33,14 +37,7 @@ onLoaded.push(() => void loadInvites());
 // A run that stopped at its model's limit since: say so, with Continue.
 onLoaded.push(limitToasts);
 
-// Load the heavier work areas when visited, keeping them out of Home and auth.
-const Chat = lazy(() => import("../screens/Chat").then((module) => ({ default: module.Chat })));
-const Coding = lazy(() => import("../screens/Coding").then((module) => ({ default: module.Coding })));
-const Settings = lazy(() => import("../screens/Settings").then((module) => ({ default: module.Settings })));
-const Inbox = lazy(() => import("../screens/Inbox").then((module) => ({ default: module.Inbox })));
-const Project = lazy(() => import("../screens/Project").then((module) => ({ default: module.Project })));
-
-const SCREENS: Partial<Record<Route, ComponentType>> = {
+const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   home: Home,
   mytasks: MyTasks,
   tasks: WorkspaceTasks,
@@ -105,13 +102,13 @@ function NotFound() {
         <h1>Page not found</h1>
         <p>The page you&apos;re looking for was moved, deleted, or never existed. Check the link or head back home.</p>
         <div className="row">
-          <ActionButton className="btn btn-secondary" onClick={back}>
+          <button className="btn btn-secondary" onClick={back}>
             <Ic n="arrow-left" s={14} />
             Go back
-          </ActionButton>
-          <ActionButton className="btn btn-primary" onClick={() => go("home")}>
+          </button>
+          <button className="btn btn-primary" onClick={() => go("home")}>
             Go to Home
-          </ActionButton>
+          </button>
         </div>
       </div>
     </div>
@@ -122,18 +119,7 @@ function Screen() {
   const { route } = useRoute();
   if (route === "notfound") return <NotFound />;
   const C = SCREENS[route];
-  if (C)
-    return (
-      <Suspense
-        fallback={
-          <div className="page" role="status">
-            Loading…
-          </div>
-        }
-      >
-        <C />
-      </Suspense>
-    );
+  if (C) return <C />;
   return (
     <div className="page">
       <Empty icon="hammer" title={ROUTE_NAMES[route] ?? "Coming next"} text="This page isn't built yet." />
@@ -191,18 +177,18 @@ export function Studio() {
     if (missing === slug)
       return (
         <Full icon="file-question" title="Workspace not found" text="It doesn't exist, or you aren't a member of it.">
-          <ActionButton className="btn btn-primary" onClick={() => location.assign("/")}>
+          <button className="btn btn-primary" onClick={() => location.assign("/")}>
             Go to your workspace
-          </ActionButton>
+          </button>
         </Full>
       );
     if (live.mode === "error")
       return (
         <Full icon="cloud-alert" title="The workspace didn't load" text={live.error || "Try again in a moment."}>
-          <ActionButton className="btn btn-primary" onClick={() => void loadWorkspace(slug)}>
+          <button className="btn btn-primary" onClick={() => void loadWorkspace(slug)}>
             <Ic n="refresh-cw" s={14} />
             Try again
-          </ActionButton>
+          </button>
         </Full>
       );
     // The bridge fills the directory as its queries land; screens assume members, agents and

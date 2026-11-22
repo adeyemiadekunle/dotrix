@@ -28,13 +28,11 @@ test("Knowledge shows the repository's coverage, and how to get the first invent
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await page.goto(`/w/${slugOf(page)}/p/KUM/knowledge`);
-  await page.getByRole("navigation", { name: "Knowledge", exact: true }).getByRole("button", { name: "Coverage", exact: true }).click();
+  await page.getByRole("tab", { name: "Coverage" }).click();
   await expect(page).toHaveURL(/view=coverage/);
-  await expect(page.getByRole("heading", { name: "No inventory yet", exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByText(/Connect the project's GitHub repository \(project settings/)).toBeVisible();
+  await expect(page.getByText("No inventory yet")).toBeVisible();
+  await expect(page.getByText(/Connect the project's GitHub repository \(project settings/)).toBeVisible();
   // Taking one without a connected repository says why it can't.
   await page.getByRole("button", { name: "Take inventory now" }).click();
-  await expect(
-    page.getByRole("region", { name: "Notifications" }).getByText(/Connect the project's GitHub repository first|Reading code isn't set up/),
-  ).toBeVisible();
+  await expect(page.getByText(/Connect the project's GitHub repository first|Reading code isn't set up/)).toBeVisible();
 });

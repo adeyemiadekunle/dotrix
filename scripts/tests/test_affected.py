@@ -27,7 +27,7 @@ class AffectedTests(unittest.TestCase):
 
     def test_ui_reaches_all_consumers_but_not_python_or_desktop(self):
         result = affected.select(['packages/ui/src/components/button.tsx'])
-        self.assertEqual(result['components'], ['admin', 'site', 'ui', 'web'])
+        self.assertEqual(result['components'], ['admin', 'ui', 'web'])
         self.assertFalse(result['python'])
         self.assertFalse(result['desktop'])
         self.assertTrue(result['e2e'])

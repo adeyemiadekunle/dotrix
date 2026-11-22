@@ -1,5 +1,3 @@
-import { SelectionInput } from "@dotrix/ui/components/selection-input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
@@ -112,7 +110,7 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
                   </select>
                 </label>
                 <span>Page {page}</span>
-                <ActionButton
+                <button
                   className="btn btn-sm btn-secondary"
                   disabled={busy || page === 1}
                   onClick={() => {
@@ -121,8 +119,8 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
                   }}
                 >
                   Previous page
-                </ActionButton>
-                <ActionButton
+                </button>
+                <button
                   className="btn btn-sm btn-secondary"
                   disabled={busy || !snapshot?.has_more}
                   onClick={() => {
@@ -131,10 +129,10 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
                   }}
                 >
                   Next page
-                </ActionButton>
-                <ActionButton className="btn btn-sm btn-primary" disabled={busy} onClick={() => preview.mutate()}>
+                </button>
+                <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => preview.mutate()}>
                   {preview.isPending ? "Loading…" : "Load preview"}
-                </ActionButton>
+                </button>
               </div>
               {preview.isError && <p role="alert">{errorMessage(preview.error)}</p>}
               {snapshot && (
@@ -151,7 +149,7 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
                   {snapshot.items.map((item) => (
                     <article key={item.source_id} className="panel" style={{ padding: 12, marginBottom: 8 }}>
                       <label>
-                        <SelectionInput
+                        <input
                           type="checkbox"
                           aria-label={`Select GitHub issue ${item.number}`}
                           disabled={busy || !!imported.data || item.blocked || !!item.existing_key}
@@ -186,19 +184,13 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
                     </article>
                   ))}
                   <label>
-                    <SelectionInput
-                      aria-label="I reviewed the selected content and mappings and want to share these tasks with this project."
-                      type="checkbox"
-                      checked={ack}
-                      disabled={busy || !!imported.data}
-                      onChange={(e) => setAck(e.target.checked)}
-                    />{" "}
-                    I reviewed the selected content and mappings and want to share these tasks with this project.
+                    <input type="checkbox" checked={ack} disabled={busy || !!imported.data} onChange={(e) => setAck(e.target.checked)} /> I reviewed the
+                    selected content and mappings and want to share these tasks with this project.
                   </label>
                   <p>
-                    <ActionButton className="btn btn-primary" disabled={busy || !selected.length || !ack || !!imported.data} onClick={() => imported.mutate()}>
+                    <button className="btn btn-primary" disabled={busy || !selected.length || !ack || !!imported.data} onClick={() => imported.mutate()}>
                       {imported.isPending ? "Importing…" : `Import ${selected.length} selected issues`}
-                    </ActionButton>
+                    </button>
                   </p>
                   {imported.isError && (
                     <p role="alert">
@@ -212,14 +204,14 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
                         {imported.data.items.filter((item) => item.outcome !== "created").length} skipped.
                       </p>
                       {imported.data.items.map((item) => (
-                        <ActionButton
+                        <button
                           key={item.source_id}
                           className="btn btn-sm btn-ghost"
                           disabled={item.outcome === "deleted_task"}
                           onClick={() => openTask(item.issue_key)}
                         >
                           {item.issue_key} · {item.outcome.replaceAll("_", " ")}
-                        </ActionButton>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -227,9 +219,9 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
               )}
             </>
           )}
-          <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("project", { id: projectKey, tab: "board" })}>
+          <button className="btn btn-sm btn-ghost" onClick={() => go("project", { id: projectKey, tab: "board" })}>
             Back to board
-          </ActionButton>
+          </button>
         </div>
       </section>
     </div>

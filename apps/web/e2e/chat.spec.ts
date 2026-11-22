@@ -188,8 +188,9 @@ test("the + menu opens and cancels without touching the draft", async ({ page })
 
   // A typed @ still opens the same list, and a pick removes the trigger.
   await box.fill("Ship it @");
-  await expect(page.getByRole("listbox")).toBeVisible();
-  await page.getByRole("option", { name: "Plan", exact: true }).click();
+  const suggestions = page.getByRole("listbox", { name: "Projects and modes" });
+  await expect(suggestions).toBeVisible();
+  await suggestions.getByRole("option", { name: "Plan", exact: true }).click();
   await expect(box).toHaveText("Ship it ");
   await expectComposerMode(page, "Plan");
 });
@@ -228,7 +229,7 @@ test("general chat excludes project context", async ({ page }) => {
   await addProject(page, "Alpha", "ALP");
   await openChat(page);
   await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await page.getByRole("radio", { name: "General", exact: true }).first().check();
+  await page.getByRole("listbox", { name: "Chat context" }).getByRole("option", { name: "General", exact: true }).click();
   await expect(page.getByText("All projects", { exact: true })).toHaveCount(0);
   await page.getByLabel("Message", { exact: true }).fill("Hello Nova");
   await page.getByLabel("Message", { exact: true }).press("Enter");
@@ -241,11 +242,11 @@ test("Chat and Code are separate pages, Code right below Chat in the sidebar", a
   await addProject(page, "Kumove", "KUM");
   await openChat(page);
   const side = page.getByRole("navigation", { name: "Main" });
-  const items = await side.locator("a.astryx-side-nav-item").allInnerTexts();
+  const items = await side.locator(".sitem").allInnerTexts();
   const chatAt = items.findIndex((t) => t.trim() === "Chat");
   expect(items[chatAt + 1]?.trim()).toBe("Code");
   await expect(page.getByRole("navigation", { name: "Sessions" })).toHaveCount(0); // Chat lists conversations only
-  await side.getByRole("link", { name: "Code", exact: true }).click();
+  await side.getByRole("button", { name: "Code", exact: true }).click();
   await expect(page).toHaveURL(/\/codes$/);
   await expect(page.getByRole("heading", { name: "Start a session" })).toBeVisible();
   await expect(page.getByRole("button", { name: "New session" })).toBeVisible();

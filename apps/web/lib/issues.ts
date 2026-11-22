@@ -2,7 +2,7 @@
 // refreshes the board, backlog, epics, and any open issue after a change.
 import type { Schemas } from "@dotrix/api-client";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@dotrix/ui/lib/toast";
+import { toast } from "../src/ui/toast";
 
 import { api, errorMessage, unwrap } from "./api";
 export type Issue = Schemas["IssueRead"];
@@ -138,7 +138,7 @@ function useIssueMutation<Vars, Result = unknown>(scope: Scope | undefined, fn: 
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: Vars) => fn(scope!, vars),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: async () => {
       if (!scope) return;
       await queryClient.invalidateQueries({ queryKey: issueKeys.all(scope) });

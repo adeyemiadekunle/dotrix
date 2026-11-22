@@ -1,6 +1,6 @@
 // shadcn/ui's pagination (https://ui.shadcn.com/docs/components/pagination), with buttons rather
 // than links, for pages a single-page app loads itself.
-import { CaretLeftIcon, CaretRightIcon, DotsThreeIcon } from "@phosphor-icons/react";
+import { ChevronLeftIcon, ChevronRightIcon, EllipsisIcon } from "lucide-react";
 import * as React from "react";
 
 import { buttonVariants } from "@dotrix/ui/components/button";
@@ -36,7 +36,7 @@ function PaginationButton({ className, isActive, ...props }: PaginationButtonPro
 function PaginationPrevious({ className, ...props }: React.ComponentProps<"button">) {
   return (
     <PaginationButton aria-label="Previous page" className={cn("aspect-auto! w-auto gap-1 px-2.5!", className)} {...props}>
-      <CaretLeftIcon />
+      <ChevronLeftIcon />
       <span className="hidden sm:block">Previous</span>
     </PaginationButton>
   );
@@ -46,7 +46,7 @@ function PaginationNext({ className, ...props }: React.ComponentProps<"button">)
   return (
     <PaginationButton aria-label="Next page" className={cn("aspect-auto! w-auto gap-1 px-2.5!", className)} {...props}>
       <span className="hidden sm:block">Next</span>
-      <CaretRightIcon />
+      <ChevronRightIcon />
     </PaginationButton>
   );
 }
@@ -54,7 +54,7 @@ function PaginationNext({ className, ...props }: React.ComponentProps<"button">)
 function PaginationEllipsis({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span aria-hidden data-slot="pagination-ellipsis" className={cn("flex size-8 items-center justify-center text-muted-foreground", className)} {...props}>
-      <DotsThreeIcon />
+      <EllipsisIcon />
     </span>
   );
 }

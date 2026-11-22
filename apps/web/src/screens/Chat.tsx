@@ -1,21 +1,21 @@
-import { Code as InlineCode } from "@dotrix/ui/astryx";
+import { useAtPicker } from "../components/AtPicker";
+import { ActionButton } from "@dotrix/ui/components/action-button";
+import { Suggestions } from "@dotrix/ui/components/ai-elements/suggestion";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
 import {
-  ChatLayout,
-  ChatMessageList,
-  ChatMessage,
-  ChatMessageBubble,
   ChatComposer,
   ChatComposerInput,
+  ChatLayout,
+  ChatMessage,
+  ChatMessageBubble,
+  ChatMessageList,
   ChatSendButton,
-  type ChatComposerInputHandle,
+  ComplexSelector,
+  DesignButton,
+  InlineCode,
   Lightbox,
   Selector,
-  ComplexSelector,
-  type ComplexSelectorHandle,
-  Button as DesignButton,
-} from "@dotrix/ui/astryx";
-import { ActionButton } from "@dotrix/ui/components/action-button";
+} from "./chat-ui";
 // dotrix's workspace Chat: conversations grouped by project (and
 // "General"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
@@ -83,7 +83,7 @@ import { openPop, openTask } from "../core/actions";
 import { desktop, desktopBrowser, useBrowserSettings, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
-import { MOD, ago, greeting } from "../core/utils";
+import { ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
 import { D, S, canSee, me, proj, projByKey, render, task, who } from "../data/store";
@@ -98,7 +98,7 @@ import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
 import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
-import { CODING_VIEWS, CodingPanes, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, CodingPanes, useActivePane, type CodingView } from "../components/SidePanel";
 import { BackgroundTasks, KaiBackground } from "../components/BackgroundTasks";
 import { SessionDetails, modeName } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
@@ -251,7 +251,7 @@ const WAITING: CodingSession["status"][] = ["awaiting_approval", "changes_ready"
 export function SessionHeader({ className = "", children, ...props }: ComponentProps<"div">) {
   return (
     <div {...props} className={`row cs-head ${className}`}>
-      <SessionListToggle />
+      <SessionListToggle restoreOnly />
       {children}
     </div>
   );
@@ -279,12 +279,13 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
             )}
             {title}
           </span>
-          <span className="cs-row-meta">
-            <span className="mono">{cs.issue_key}</span>
-            <span>· {ago(ms(cs.updated_at))}</span>
-            {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
+          <span className="cs-row-foot">
+            <span className="cs-row-meta">
+              <span>{ago(ms(cs.updated_at))}</span>
+              {cs.pr_number && <span>· PR #{cs.pr_number}</span>}
+            </span>
+            <span className={`badge ${c}`}>{label}</span>
           </span>
-          <span className={`badge ${c}`}>{label}</span>
         </span>
       </button>
       <ActionButton
@@ -958,8 +959,18 @@ function Composer({
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
-  const ref = useRef<ChatComposerInputHandle>(null);
-  const picker = useRef<ComplexSelectorHandle>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const atPicker = useAtPicker({
+    text,
+    setText,
+    ref,
+    projects: contexts,
+    project: context,
+    onProject: setContext,
+    modes: setMode ? modeOptions : undefined,
+    mode,
+    onMode: setMode,
+  });
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -971,7 +982,7 @@ function Composer({
     return () => cancelAnimationFrame(frame);
   }, [composerMenuOpen]);
   const a = useAgents().items.find((x) => x.handle === agent);
-  // "+" (or typing "@") offers the projects (in a new chat) and the work modes; Nova always answers.
+  // "+" offers the projects (in a new chat) and the work modes; Nova always answers.
   const choices = useMemo(
     () => [
       ...(contexts && setContext ? contexts.map(([id, label]) => ({ id: `project:${id}`, label, auxiliaryData: { group: "Projects" } })) : []),
@@ -984,18 +995,6 @@ function Composer({
     else if (id.startsWith("mode:")) setMode?.(id.slice(5) as WorkMode);
     return "";
   };
-  const triggers = [
-    {
-      character: "@",
-      searchSource: {
-        search: (query: string) => choices.filter((choice) => choice.label.toLowerCase().includes(query.toLowerCase())),
-        bootstrap: () => choices,
-      },
-      onSelect: (item: { id: string }) => choose(item.id),
-      menuLabel: contexts ? "Projects and modes" : "Modes",
-    },
-  ];
-
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
@@ -1007,6 +1006,7 @@ function Composer({
       await onSend(q, agent);
       setAgent?.("auto");
       setText("");
+      atPicker.close();
     } catch {
       // The mutation reports the error; keep the person's draft for retry.
     } finally {
@@ -1015,6 +1015,7 @@ function Composer({
   };
   return (
     <div ref={wrapper} className={`dotrix-composer-wrap ${composerMenuOpen ? "menu-open" : ""}`} style={{ position: "relative" }}>
+      {atPicker.menu}
       <ChatComposer
         className={`dotrix-composer compact-composer ${text ? "has-draft" : ""}`}
         onSubmit={() => {
@@ -1024,22 +1025,23 @@ function Composer({
         isDisabled={disabled || submitting}
         input={
           <ChatComposerInput
-            handleRef={ref}
+            textareaRef={ref}
             value={text}
-            onChange={setText}
+            onChange={(event) => atPicker.onChange(event.currentTarget)}
             placeholder={placeholder}
             label="Message"
-            triggers={triggers}
             pasteAsToken={false}
             hasHistory={false}
             onKeyDown={(event) => {
-              // Astryx's default Enter clears synchronously. Dotrix clears only
+              if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && atPicker.onKeyDown(event)) return;
+              // Enter sends through Dotrix's own path, which clears only
               // after the server accepts the message, retaining failed drafts.
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                 event.preventDefault();
                 void send();
               }
             }}
+            status={submitting ? "sending" : disabled ? "waiting" : "ready"}
             isDisabled={submitting || disabled}
             onSubmit={() => {
               void send();
@@ -1049,7 +1051,6 @@ function Composer({
         footerActions={
           <>
             <ComplexSelector
-              handleRef={picker}
               label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
               isLabelHidden
               value=""
@@ -1147,6 +1148,7 @@ function Composer({
                 onSend={() => {
                   void send();
                 }}
+                status={submitting ? "sending" : disabled ? "waiting" : "ready"}
                 isDisabled={!text.trim() || S.ui.offline || disabled || submitting}
               />
             )}
@@ -1337,7 +1339,7 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
             </div>
           }
         >
-          <ChatMessageList>
+          <ChatMessageList followKey={last?.id}>
             <div className="chat-col">
               {runs.map((r) => (
                 <div key={r.id}>
@@ -1425,7 +1427,7 @@ function NewChat({
   return (
     <div className="conv new-conversation">
       <div className="session-start-header">
-        <SessionListToggle />
+        <SessionListToggle restoreOnly />
         <ActionButton className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
           <Ic n="arrow-left" s={16} />
         </ActionButton>
@@ -1453,14 +1455,21 @@ function NewChat({
           />
         </div>
         <div className="ns-bottom">
-          <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12, justifyContent: "center" }}>
-            {sugg.map(([i, s]) => (
-              <ActionButton key={s} className="btn btn-secondary btn-sm" onClick={() => start(s!, agent)} disabled={unavailable}>
-                <Ic n={i!} s={13} />
-                {s}
-              </ActionButton>
-            ))}
-          </div>
+          <Suggestions
+            className="mb-3 justify-center"
+            items={sugg.map(([i, s]) => ({
+              key: s!,
+              value: s!,
+              content: (
+                <>
+                  <Ic n={i!} s={13} />
+                  {s}
+                </>
+              ),
+            }))}
+            onSelect={(value) => start(value, agent)}
+            disabled={unavailable}
+          />
           <Composer
             key={q}
             placeholder={pid ? `Ask anything about ${ps.find((p) => p.id === pid)?.name ?? "this project"}` : "Ask Nova anything"}
@@ -1605,7 +1614,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   return (
     <div className="ns">
       <div className="session-start-header">
-        <SessionListToggle />
+        <SessionListToggle restoreOnly />
       </div>
       <div className="ns-mid">
         <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
@@ -1836,7 +1845,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 </ActionButton>
               </span>
             )}
-
             <span className="sp" />
           </div>
           {menuOpen && (
@@ -2206,19 +2214,27 @@ export function Session({ cs }: { cs: CodingSession }) {
     go("codes", {}, { search: query.toString(), replace: true });
     setLastPanes(next.join(","));
   };
-  const openPane = (view: CodingView, extra: Record<string, string> = {}) => setPanes(panes.includes(view) ? panes : [...panes, view], extra);
+  const [activePane, setActivePane] = useActivePane(panes);
+  const openPane = (view: CodingView, extra: Record<string, string> = {}) => {
+    setActivePane(view);
+    setPanes(panes.includes(view) ? panes : [...panes, view], extra);
+  };
   const closePane = (view: CodingView) => setPanes(panes.filter((v) => v !== view));
   const togglePane = (view: CodingView) => (panes.includes(view) ? closePane(view) : openPane(view));
   // The address always says which panes are open (the list beside the session folds for them: screens/Coding.tsx).
   useEffect(() => {
     if (panes.length && !search.has("panel")) setPanes(panes);
   });
-  // The session's details: a column beside it on wide screens (hidden by its button), a popover on narrow ones.
+  // The session's details (its context, tools, background tasks, usage): on wide screens a column beside the
+  // session, between it and any open panes, hidden by its button (with panes open it starts hidden, so they
+  // get the room, and the button brings it back); a popover on narrow screens.
   const [detailsHidden, setDetailsHidden] = useStoredFlag("dotrix.coding.detailsHidden");
+  const [detailsBesidePanes, setDetailsBesidePanes] = useState(false);
   const [detailsPop, setDetailsPop] = useState(false);
   const wide = useWide("(min-width: 1280px)");
-  const detailsColumn = wide && !detailsHidden && panes.length === 0;
-  const toggleDetails = () => (wide && panes.length === 0 ? setDetailsHidden(!detailsHidden) : setDetailsPop(!detailsPop));
+  const detailsColumn = wide && (panes.length ? detailsBesidePanes : !detailsHidden);
+  const toggleDetails = () =>
+    !wide ? setDetailsPop(!detailsPop) : panes.length ? setDetailsBesidePanes(!detailsBesidePanes) : setDetailsHidden(!detailsHidden);
   /** A file the session changed, opened in Files (in the latest turn that changed it, or the latest). */
   const openPath = (path: string, turnId?: string) => {
     const owner = turnId ?? [...turns].reverse().find((t) => t.files_changed.some((f) => fileOf(f) === path))?.id ?? latest?.id;
@@ -2396,67 +2412,29 @@ export function Session({ cs }: { cs: CodingSession }) {
             </span>
           )}
           <span className="sp" />
-          {/* As Claude Code's session bar: the details, then each pane (several can be open, stacked), then the menu of panes. */}
-          <div className="cs-views" role="group" aria-label="Session panes">
-            <button
-              className={`cs-view ${detailsOn ? "on" : ""}`}
-              data-details
-              onClick={toggleDetails}
-              aria-pressed={detailsOn}
-              aria-label="Session details"
-              data-tip="Details"
-            >
-              <Ic n="list-bullets" s={16} />
-            </button>
-            {PANES.filter((v) => v.id === "changes" || v.id === "files").map((v) => (
-              <button
-                key={v.id}
-                className={`cs-view ${panes.includes(v.id) ? "on" : ""}`}
-                onClick={() => togglePane(v.id)}
-                aria-pressed={panes.includes(v.id)}
-                aria-label={v.label}
-                data-tip={v.id === "changes" ? `${v.label}  ${MOD}⇧D` : v.label}
-              >
-                <Ic n={v.id === "changes" ? "plus-minus" : "folder-simple"} s={16} />
-              </button>
-            ))}
-            <div className="cs-title-wrap">
-              <button
-                className={`cs-view ${menu === "panes" ? "on" : ""}`}
-                data-menu
-                onClick={() => setMenu(menu === "panes" ? null : "panes")}
-                aria-haspopup="menu"
-                aria-expanded={menu === "panes"}
-                aria-label="Panes"
-                data-tip={menu === "panes" ? undefined : "Panes"}
-              >
-                <Ic n="dots-three" s={18} />
-              </button>
-              {menu === "panes" && (
-                <div className="pop cs-menu right" role="menu" aria-label="Panes">
-                  {PANES.map((v) => (
-                    <button key={v.id} role="menuitemcheckbox" aria-checked={panes.includes(v.id)} onClick={() => togglePane(v.id)}>
-                      <Ic n={v.icon} s={14} />
-                      <span className="grow">{v.label}</span>
-                      {v.id === "changes" && <kbd>{MOD}⇧D</kbd>}
-                      {v.id === "terminal" && <kbd>Ctrl `</kbd>}
-                      {panes.includes(v.id) && <Ic n="check" s={14} />}
-                    </button>
-                  ))}
-                  {panes.length > 0 && (
-                    <>
-                      <hr />
-                      <button role="menuitem" onClick={() => (setMenu(null), setPanes([]))}>
-                        <Ic n="x" s={14} />
-                        <span className="grow">Close all panes</span>
-                        <kbd>{MOD}\</kbd>
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <button
+            className={`cs-view ${detailsOn ? "on" : ""}`}
+            data-details
+            onClick={toggleDetails}
+            aria-pressed={detailsOn}
+            aria-label="Session details"
+            data-tip="Details"
+          >
+            <Ic n="list-bullets" s={16} />
+          </button>
+          {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
+          <button
+            className={`cs-view ${panes.length ? "on" : ""}`}
+            onClick={() => {
+              setPanes(panes.length ? [] : ["changes"]);
+              setMenu(null);
+            }}
+            aria-pressed={panes.length > 0}
+            aria-label={panes.length ? "Hide the panes" : "Show the panes"}
+            data-tip={panes.length ? "Hide panes" : "Show panes"}
+          >
+            <Ic n="panel-right" s={16} />
+          </button>
         </SessionHeader>
         {shot && (
           <Lightbox
@@ -2577,7 +2555,11 @@ export function Session({ cs }: { cs: CodingSession }) {
                     {latest?.can_stop && (latest.status === "running" || latest.status === "queued") && !ask.trim() ? (
                       <ChatSendButton isStopShown isDisabled={stop.isPending} onStop={() => stop.mutate(latest.id)} aria-label="Stop coding turn" />
                     ) : (
-                      <ChatSendButton isDisabled={(busy && !working) || !ask.trim() || follow.isPending || sendInput.isPending} onSend={send} />
+                      <ChatSendButton
+                        status={sendInput.isPending || follow.isPending ? "sending" : busy && !working ? "waiting" : "ready"}
+                        isDisabled={(busy && !working) || !ask.trim() || follow.isPending || sendInput.isPending}
+                        onSend={send}
+                      />
                     )}
                   </>
                 }
@@ -2601,7 +2583,7 @@ export function Session({ cs }: { cs: CodingSession }) {
             </div>
           }
         >
-          <ChatMessageList>
+          <ChatMessageList followKey={latest?.id ?? cs.session_id}>
             <div className="chat-col kt-col">
               {turns.map((turn) => (
                 <Fragment key={turn.id}>
@@ -2832,22 +2814,24 @@ export function Session({ cs }: { cs: CodingSession }) {
           </ChatMessageList>
         </ChatLayout>
       </div>
+      {detailsColumn && (
+        <aside className="cs-details" aria-label="Session details">
+          {details}
+        </aside>
+      )}
       {panes.length > 0 && (
         <CodingPanes
           scope={scope}
           cs={cs}
+          active={activePane}
           views={panes}
+          onSelect={setActivePane}
           onOpen={openPane}
           onClose={closePane}
           onCloseAll={() => setPanes([])}
           onAskFix={setAsk}
           fixLabel={`Ask ${CODING_AGENT.name} to fix`}
         />
-      )}
-      {detailsColumn && (
-        <aside className="cs-details" aria-label="Session details">
-          {details}
-        </aside>
       )}
     </div>
   );
@@ -2926,14 +2910,14 @@ function DemoConversation({ id }: { id: string }) {
       <SessionHeader>
         <b className="trunc">{thread.title}</b>
       </SessionHeader>
-      <div className="chat-scroll">
+      <ChatMessageList>
         <div className="chat-col">
           <p className="muted">Sample conversation · Sign in to work with Nova.</p>
           {thread.messages.map((message) => (
             <Message key={message.id} m={message} projectId={thread.project} />
           ))}
         </div>
-      </div>
+      </ChatMessageList>
     </>
   );
 }
@@ -2976,8 +2960,8 @@ function Conversations({ search }: { search: URLSearchParams }) {
           style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
         >
           <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
-            <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={220} max={480} onResize={setListW} />
-            <div style={{ padding: "18px 16px 8px" }} className="row">
+            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
+            <div style={{ height: 44, padding: "0 16px" }} className="row">
               <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
               <span className="sp" />
               <SessionListToggle />

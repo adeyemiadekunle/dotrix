@@ -91,11 +91,9 @@ test("a conversation stopped at its model's limit offers to continue from the In
 
 test("a project's files live under Knowledge, and old Files links open them there", async ({ page }) => {
   await page.goto("/w/dotrix/p/WEB/files");
-  await expect(page.getByRole("navigation", { name: "Knowledge", exact: true }).getByRole("button", { name: /^Files/ })).toHaveAttribute(
-    "aria-current",
-    "true",
-  );
+  const knowledgeTabs = page.getByRole("tablist", { name: "Knowledge", exact: true });
+  await expect(knowledgeTabs.getByRole("tab", { name: /^Files/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByPlaceholder("Search files")).toBeVisible();
-  await page.getByRole("navigation", { name: "Knowledge", exact: true }).getByRole("button", { name: "Documents", exact: true }).click();
+  await knowledgeTabs.getByRole("tab", { name: "Documents", exact: true }).click();
   await expect(page.getByPlaceholder("Find a document")).toBeVisible();
 });

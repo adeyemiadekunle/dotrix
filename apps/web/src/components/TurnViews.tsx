@@ -1,11 +1,9 @@
-import { SelectionInput } from "@dotrix/ui/components/selection-input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // A coding turn's work as the side panel shows it (components/SidePanel.tsx): its diff, the repository's
 // files as the turn leaves it, and the commands it ran. Desktop turns show the live worktree on this computer.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
-import { TreeList } from "@dotrix/ui/astryx";
-import type { TreeListItemData } from "@dotrix/ui/astryx";
+import { ActionButton } from "@dotrix/ui/components/action-button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@dotrix/ui/components/collapsible";
 import { languageOf, useHighlight, type HighlightToken } from "@dotrix/ui/hooks/use-highlight";
 
 import { useCodingEvents, useCodingFile, useCodingTree, type CodingRun } from "@/lib/coding";
@@ -47,9 +45,9 @@ export function ChangesView({
   return error ? (
     <p className="muted">
       The changes couldn't be loaded.{" "}
-      <ActionButton className="btn btn-sm btn-ghost" onClick={onRetry}>
+      <button className="btn btn-sm btn-ghost" onClick={onRetry}>
         Try again
-      </ActionButton>
+      </button>
     </p>
   ) : (
     <ChangeList files={files} loading={loading} turn={run} notes={notes} onNote={onNote} />
@@ -97,9 +95,9 @@ export function TerminalView({ scope, run, enabled = true }: { scope: Scope | un
     return (
       <p className="muted">
         The commands couldn't be loaded.{" "}
-        <ActionButton className="btn btn-sm btn-ghost" onClick={() => void events.refetch()}>
+        <button className="btn btn-sm btn-ghost" onClick={() => void events.refetch()}>
           Try again
-        </ActionButton>
+        </button>
       </p>
     );
   return (
@@ -290,7 +288,7 @@ export function ChangeList({
 }
 
 /** A line's text, coloured when its tokens are known. */
-function HighlightedLine({ text, tokens }: { text: string; tokens?: HighlightToken[] }) {
+function Code({ text, tokens }: { text: string; tokens?: HighlightToken[] }) {
   if (!tokens?.length || tokens.map((t) => t.content).join("") !== text) return <>{text || " "}</>;
   return (
     <>
@@ -333,17 +331,11 @@ function Hunks({ hunks, path, notes = [], onNote }: { hunks: DiffHunk[]; path?: 
             return (
               <Fragment key={j}>
                 <div className={`kp-line ${l.kind}`} role="row">
-                  <span role="cell" className="kp-no">
-                    {l.old ?? ""}
-                  </span>
-                  <span role="cell" className="kp-no">
-                    {l.new ?? ""}
-                  </span>
-                  <span role="cell" className="kp-sign">
-                    {l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}
-                  </span>
-                  <span role="cell" className="kp-text">
-                    <HighlightedLine text={l.text} tokens={tokens} />
+                  <span className="kp-no">{l.old ?? ""}</span>
+                  <span className="kp-no">{l.new ?? ""}</span>
+                  <span className="kp-sign">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>
+                  <span className="kp-text">
+                    <Code text={l.text} tokens={tokens} />
                   </span>
                 </div>
                 {l.kind !== "del" &&
@@ -471,9 +463,9 @@ function Files({
     return (
       <p className="muted">
         {tree.error instanceof Error ? tree.error.message : "The files can't be read here."}{" "}
-        <ActionButton className="btn btn-sm btn-ghost" onClick={() => void tree.refetch()}>
+        <button className="btn btn-sm btn-ghost" onClick={() => void tree.refetch()}>
           Try again
-        </ActionButton>
+        </button>
       </p>
     );
   return (
@@ -487,7 +479,7 @@ function Files({
       )}
       {worktree && run.status !== "running" && run.status !== "queued" && <WorktreeBranch key={worktree} worktree={worktree} />}
       <label className="row faint" style={{ gap: 6, fontSize: 12, marginBottom: 6 }}>
-        <SelectionInput aria-label="Changed only ( )" type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
+        <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
         Changed only ({root.changed})
         <span className="sp" />
         <span className="mono">{run.base_sha.slice(0, 7)}</span>
@@ -499,23 +491,48 @@ function Files({
 }
 
 export function FileTree({ nodes, onOpen, expanded = false }: { nodes: TreeNode[]; onOpen: (path: string) => void; expanded?: boolean }) {
-  const item = (node: TreeNode): TreeListItemData => ({
-    id: node.path,
-    label: node.name,
-    startContent: <Ic n={node.file ? fileIcon(node.path) : "folder"} s={15} />,
-    endContent:
-      node.file && node.file.status !== "unchanged" ? (
-        <span className={`kp-st ${node.file.status}`} aria-label={node.file.status}>
-          {node.file.status === "added" ? "A" : node.file.status === "deleted" ? "D" : "M"}
-        </span>
-      ) : node.changed > 0 ? (
-        <span className="faint">{node.changed}</span>
-      ) : undefined,
-    isExpanded: expanded || node.changed > 0,
-    children: node.file ? undefined : node.children.map(item),
-    onClick: node.file ? () => onOpen(node.path) : undefined,
-  });
-  return <TreeList items={nodes.map(item)} density="compact" className="mono" aria-label="Files" />;
+  return (
+    <div className="kp-tree mono" role="tree" aria-label="Files">
+      {nodes.map((node) => (
+        <Node key={node.path} node={node} depth={0} onOpen={onOpen} expanded={expanded} />
+      ))}
+    </div>
+  );
+}
+
+/** A folder opens and closes as a Collapsible (shadcn's AI Elements File Tree); changed folders start open. */
+function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number; onOpen: (path: string) => void; expanded: boolean }) {
+  const [open, setOpen] = useState(expanded || node.changed > 0);
+  const pad = { paddingLeft: 6 + depth * 14 };
+  if (node.file) {
+    const st = node.file.status;
+    return (
+      <button role="treeitem" className={`kp-node file ${st}`} style={pad} onClick={() => onOpen(node.path)} title={node.path}>
+        <Ic n={fileIcon(node.path)} s={13} cls="kp-file-icon" />
+        <span className="trunc grow">{node.name}</span>
+        {st !== "unchanged" && (
+          <span className={`kp-st ${st}`} aria-label={st}>
+            {st === "added" ? "A" : st === "deleted" ? "D" : "M"}
+          </span>
+        )}
+      </button>
+    );
+  }
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} role="group">
+      <CollapsibleTrigger role="treeitem" className="kp-node kp-folder" style={pad} title={node.path}>
+        <Ic n="chevron-right" s={12} cls="kp-chev" />
+        <Ic n={open ? "folder-open" : "folder"} s={12} />
+        <span className="trunc grow">{node.name}</span>
+        {node.changed > 0 && <span className="faint">{node.changed}</span>}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {node.children.map((c) => (
+          <Node key={c.path} node={c} depth={depth + 1} onOpen={onOpen} expanded={expanded} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
 }
 
 const STATUS_SAID: Record<string, string> = { added: "Added", deleted: "Deleted", modified: "Modified" };
@@ -555,9 +572,9 @@ function FileView({
   return (
     <div className="kp-fileview">
       <div className="kp-file-bar">
-        <ActionButton className="ibtn ibtn-sm" onClick={onBack} aria-label="Back to the files">
+        <button className="ibtn ibtn-sm" onClick={onBack} aria-label="Back to the files">
           <Ic n="arrow-left" s={13} />
-        </ActionButton>
+        </button>
         <Ic n={fileIcon(path)} s={14} cls="kp-file-icon" />
         <span className="kp-crumbs mono" title={path}>
           {parts.map((part, i) => (
@@ -574,18 +591,18 @@ function FileView({
         )}
         <span className="sp" />
         {worktree && <WorktreeButtons worktree={worktree} />}
-        <ActionButton className="ibtn ibtn-sm" onClick={copyPath} aria-label="Copy the path" data-tip="Copy path">
+        <button className="ibtn ibtn-sm" onClick={copyPath} aria-label="Copy the path" data-tip="Copy path">
           <Ic n="copy" s={13} />
-        </ActionButton>
+        </button>
       </div>
       {file.isLoading ? (
         <p className="muted">Loading…</p>
       ) : file.error ? (
         <p className="muted">
           {file.error instanceof Error ? file.error.message : "This file can't be read."}{" "}
-          <ActionButton className="btn btn-sm btn-ghost" onClick={() => void file.refetch()}>
+          <button className="btn btn-sm btn-ghost" onClick={() => void file.refetch()}>
             Try again
-          </ActionButton>
+          </button>
         </p>
       ) : file.data?.binary ? (
         <p className="muted">A binary file: not shown.</p>
@@ -602,11 +619,11 @@ function FileView({
               className={`kp-src-line ${i + 1 === initialLine ? "kp-line-reference" : ""}`}
               role="row"
             >
-              <span role="rowheader" className="kp-no">
+              <span className="kp-no" role="rowheader">
                 {i + 1}
               </span>
-              <span role="cell" className="kp-text">
-                <HighlightedLine text={l} tokens={tokens?.[i]} />
+              <span className="kp-text" role="cell">
+                <Code text={l} tokens={tokens?.[i]} />
               </span>
             </div>
           ))}

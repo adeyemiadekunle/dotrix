@@ -186,7 +186,7 @@ const FILE_ICONS: Record<string, string> = {
   swift: "file-code",
 };
 
-/** A file's icon from its extension (Phosphor's file-* names), as Claude Code's tree marks each file's kind. */
+/** A file's icon from its extension (dotrix's file-* names, aliased to Lucide in icons-plugin.ts), as Claude Code's tree marks each file's kind. */
 export function fileIcon(path: string): string {
   const name = path.split("/").pop()?.toLowerCase() ?? "";
   if (name.endsWith(".lock") || name === "pnpm-lock.yaml" || name === "package-lock.json") return "file-lock";

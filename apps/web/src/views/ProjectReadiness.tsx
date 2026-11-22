@@ -1,4 +1,3 @@
-import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useQuery } from "@tanstack/react-query";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
 import { projectDiscussionHref, projectImplementationHref, projectStart } from "../core/projectSetup";
@@ -111,9 +110,9 @@ export function ProjectReadiness({
                 </details>
               </>
             )}
-            <ActionButton className="btn btn-ghost btn-sm" disabled={readiness.isFetching} onClick={() => void readiness.refetch()}>
+            <button className="btn btn-ghost btn-sm" disabled={readiness.isFetching} onClick={() => void readiness.refetch()}>
               Refresh saved readiness
-            </ActionButton>
+            </button>
           </>
         )}
       </div>

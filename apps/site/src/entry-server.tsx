@@ -2,12 +2,7 @@
 import { renderToString } from "react-dom/server";
 
 import { App } from "./App";
-import { DesignProvider } from "@dotrix/ui/theme";
 
 export function render(): string {
-  return renderToString(
-    <DesignProvider>
-      <App />
-    </DesignProvider>,
-  );
+  return renderToString(<App />);
 }

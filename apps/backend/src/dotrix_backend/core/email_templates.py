@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from .email import EmailMessage
 
 PRODUCT = "dotrix"
-BRAND = "#15110c"  # Astryx website theme: primary ink in light mode
+BRAND = "#15110c"  # brand ink in light mode
 
 
 @dataclass(frozen=True)

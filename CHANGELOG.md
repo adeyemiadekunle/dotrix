@@ -11,6 +11,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- On phones, the bottom navigation no longer covers Code’s Stop button or review actions. File previews expose line numbers to assistive technology.
+
+- Restored Chat’s project and mode picker, keyboard navigation in Inbox and Juno’s review, and accessible labels for Settings switches and notifications. Opening a file or changes brings its Code tab forward.
+
 - Code no longer lists **Terminal** as available for a local turn whose computer may have no sandbox. A local turn runs commands only inside Docker Sandboxes, or Linux namespaces for fx and Claude Code, which the platform can't see before the runner starts it, so Terminal now says so. Codex keeps it, in its own workspace sandbox. Found testing on a Mac, where fx is refused.
 - A turn that failed, stopped or was interrupted before using any tools no longer says "Worked on it": it says "Failed before any steps" (or stopped, or interrupted).
 

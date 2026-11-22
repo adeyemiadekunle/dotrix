@@ -1,8 +1,3 @@
-import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
-import { SelectionInput } from "@dotrix/ui/components/selection-input";
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { Dialog } from "@dotrix/ui/astryx";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // Modals, same markup. Each
 // open modal is an entry in S.ui.modals; its form lives on the entry.
 import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
@@ -34,7 +29,20 @@ export function ModalLayer() {
   return (
     <>
       {S.ui.modals.map((m, i) => (
-        <ModalBody key={i} m={m} />
+        <div key={i}>
+          <div className="scrim enter" onClick={closeModal} style={{ zIndex: 60 + i * 2 }} />
+          <div
+            className="modal-wrap"
+            style={{ zIndex: 61 + i * 2 }}
+            onMouseDown={(e) => e.target === e.currentTarget && closeModal()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") closeModal();
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.currentTarget.querySelector("[data-submit]") as HTMLButtonElement | null)?.click();
+            }}
+          >
+            <ModalBody m={m} />
+          </div>
+        </div>
       ))}
     </>
   );
@@ -51,31 +59,22 @@ function H({ title, sub, id }: { title: ReactNode; sub?: ReactNode; id: string }
           </div>
         )}
       </div>
-      <ActionButton className="ibtn ibtn-sm" onClick={closeModal} aria-label="Close">
+      <button className="ibtn ibtn-sm" onClick={closeModal} aria-label="Close">
         <Ic n="x" s={16} />
-      </ActionButton>
+      </button>
     </div>
   );
 }
 function Wrap({ cls = "", m, children }: { cls?: string; m: Modal; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    (el?.querySelector<HTMLElement>("[autofocus]") ?? el?.querySelector<HTMLElement>("input,textarea,button"))?.focus();
+  }, []);
   return (
-    <Dialog
-      isOpen
-      onOpenChange={(open) => {
-        if (!open) closeModal();
-      }}
-      purpose="form"
-      padding={0}
-      width={cls === "lg" ? 720 : cls === "sm" ? 420 : 560}
-      maxHeight="90dvh"
-      className={`dotrix-modal ${cls}`}
-      aria-labelledby={`mt-${m.type}`}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.currentTarget.querySelector("[data-submit]") as HTMLButtonElement | null)?.click();
-      }}
-    >
+    <div ref={ref} className={`modal enter ${cls}`} role="dialog" aria-modal="true" aria-labelledby={`mt-${m.type}`}>
       {children}
-    </Dialog>
+    </div>
   );
 }
 
@@ -249,8 +248,7 @@ function TaskModal({ m }: { m: Modal }) {
           <label className="sr" htmlFor="f-title">
             Task name
           </label>
-          <DesignInput
-            aria-label="Task name"
+          <input
             className={`input input-lg ${err ? "is-error" : ""}`}
             id="f-title"
             value={f.title}
@@ -271,8 +269,7 @@ function TaskModal({ m }: { m: Modal }) {
           <label className="sr" htmlFor="f-desc">
             Description
           </label>
-          <DesignTextarea
-            aria-label="Description"
+          <textarea
             className="textarea"
             id="f-desc"
             value={f.desc}
@@ -325,23 +322,16 @@ function TaskModal({ m }: { m: Modal }) {
             <div key={s.id} className="subt" style={{ padding: "0 4px" }}>
               <Ic n="circle" s={13} />
               <span className="s">{s.title}</span>
-              <ActionButton
-                type="button"
-                className="ibtn ibtn-xs x"
-                style={{ opacity: 1 }}
-                onClick={() => (f.subtasks.splice(i, 1), render())}
-                aria-label="Remove"
-              >
+              <button type="button" className="ibtn ibtn-xs x" style={{ opacity: 1 }} onClick={() => (f.subtasks.splice(i, 1), render())} aria-label="Remove">
                 <Ic n="x" s={12} />
-              </ActionButton>
+              </button>
             </div>
           ))}
           <div className="inwrap">
             <Ic n="plus" s={14} />
-            <DesignInput
+            <input
               className="input"
               id="f-sub"
-              style={{ width: "100%" }}
               value={sub}
               onChange={(e) => setSub(e.target.value)}
               onKeyDown={(e) => {
@@ -354,8 +344,7 @@ function TaskModal({ m }: { m: Modal }) {
                   }
                 }
               }}
-              placeholder="Add a subtask"
-              aria-label="Add a subtask and press Enter"
+              placeholder="Add a subtask and press Enter"
             />
           </div>
         </div>
@@ -372,9 +361,9 @@ function TaskModal({ m }: { m: Modal }) {
                   <span className="faint" style={{ fontSize: 11.5 }}>
                     {x.size}
                   </span>
-                  <ActionButton type="button" className="ibtn ibtn-xs" onClick={() => (f.files.splice(i, 1), render())} aria-label="Remove">
+                  <button type="button" className="ibtn ibtn-xs" onClick={() => (f.files.splice(i, 1), render())} aria-label="Remove">
                     <Ic n="x" s={12} />
-                  </ActionButton>
+                  </button>
                 </div>
               ))}
             </div>
@@ -397,14 +386,7 @@ function TaskModal({ m }: { m: Modal }) {
       <div className="modal-f">
         {!m.edit && (
           <label className="row" style={{ gap: 8, fontSize: 12.5, color: "var(--text-2)", cursor: "pointer" }}>
-            <SelectionInput
-              aria-label="Create more"
-              type="checkbox"
-              className="toggle"
-              id="f-more"
-              checked={Boolean(f.more)}
-              onChange={(e) => set("more", e.target.checked)}
-            />
+            <input type="checkbox" className="toggle" id="f-more" checked={Boolean(f.more)} onChange={(e) => set("more", e.target.checked)} />
             Create more
           </label>
         )}
@@ -412,12 +394,12 @@ function TaskModal({ m }: { m: Modal }) {
         <span className="faint hide-m" style={{ fontSize: 11.5 }}>
           <kbd>{MOD}</kbd> <kbd>↵</kbd>
         </span>
-        <ActionButton className="btn btn-secondary" onClick={closeModal}>
+        <button className="btn btn-secondary" onClick={closeModal}>
           Cancel
-        </ActionButton>
-        <ActionButton className="btn btn-primary" data-submit onClick={submit}>
+        </button>
+        <button className="btn btn-primary" data-submit onClick={submit}>
           {m.edit ? "Save changes" : "Create task"}
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -500,13 +482,7 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
         specialist tasks keep their selected model. Each person needs a personal key for the model providers their agents use.
       </p>
       <label className="field" style={{ display: "flex", gap: 8 }}>
-        <SelectionInput
-          aria-label="Automatic model routing"
-          type="checkbox"
-          checked={form.routing}
-          aria-describedby={`${listId}-routing-help`}
-          onChange={(e) => set({ routing: e.target.checked })}
-        />
+        <input type="checkbox" checked={form.routing} aria-describedby={`${listId}-routing-help`} onChange={(e) => set({ routing: e.target.checked })} />
         Automatic model routing
       </label>
       <p className="muted" id={`${listId}-routing-help`} style={{ fontSize: 12.5 }}>
@@ -523,21 +499,13 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
         <label className="label" htmlFor={`${listId}-model`}>
           Project model
         </label>
-        <DesignInput
-          aria-label="Project model"
-          className="input"
-          id={`${listId}-model`}
-          list={listId}
-          value={form.model}
-          onChange={(e) => set({ model: e.target.value })}
-        />
+        <input className="input" id={`${listId}-model`} list={listId} value={form.model} onChange={(e) => set({ model: e.target.value })} />
       </div>
       <div className="field">
         <label className="label" htmlFor={`${listId}-specialist`}>
           Specialist model
         </label>
-        <DesignInput
-          aria-label="Specialist model"
+        <input
           className="input"
           id={`${listId}-specialist`}
           list={listId}
@@ -551,9 +519,9 @@ function ProjectAgentModels({ projectId, control }: { projectId: string; control
           {error}
         </div>
       )}
-      <ActionButton type="button" className="btn btn-secondary btn-sm" disabled={busy || !changed} onClick={() => void save()}>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={busy || !changed} onClick={() => void save()}>
         {busy ? "Saving…" : "Save agent models"}
-      </ActionButton>
+      </button>
     </fieldset>
   );
 }
@@ -627,8 +595,7 @@ function ProjectModal({ m }: { m: Modal }) {
             <label className="label" htmlFor="p-name">
               Project name
             </label>
-            <DesignInput
-              aria-label="Project name"
+            <input
               className={`input ${err ? "is-error" : ""}`}
               id="p-name"
               value={f.name}
@@ -649,8 +616,7 @@ function ProjectModal({ m }: { m: Modal }) {
           <label className="label" htmlFor="p-desc">
             Description
           </label>
-          <DesignTextarea
-            aria-label="Description"
+          <textarea
             className="textarea"
             id="p-desc"
             rows={2}
@@ -718,7 +684,7 @@ function ProjectModal({ m }: { m: Modal }) {
             <label className="label" htmlFor="p-due">
               Target date
             </label>
-            <DesignInput aria-label="Target date" type="date" className="input" id="p-due" value={f.due || ""} onChange={(e) => set("due", e.target.value)} />
+            <input type="date" className="input" id="p-due" value={f.due || ""} onChange={(e) => set("due", e.target.value)} />
           </div>
         </div>
         {!m.edit && (
@@ -746,12 +712,12 @@ function ProjectModal({ m }: { m: Modal }) {
       </form>
       <div className="modal-f">
         <span className="sp" />
-        <ActionButton className="btn btn-secondary" onClick={closeModal}>
+        <button className="btn btn-secondary" onClick={closeModal}>
           Cancel
-        </ActionButton>
-        <ActionButton className="btn btn-primary" data-submit disabled={saving} onClick={() => void submit()}>
+        </button>
+        <button className="btn btn-primary" data-submit disabled={saving} onClick={() => void submit()}>
           {m.edit ? "Save changes" : "Create project"}
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -815,8 +781,7 @@ function ShareModal({ m }: { m: Modal }) {
             <label className="sr" htmlFor="share-in">
               Invite by email
             </label>
-            <DesignInput
-              aria-label="Invite by email"
+            <input
               className="input"
               id="share-in"
               placeholder="Add people by name or email"
@@ -830,9 +795,9 @@ function ShareModal({ m }: { m: Modal }) {
               <option key={x}>{x}</option>
             ))}
           </select>
-          <ActionButton className="btn btn-primary" type="submit">
+          <button className="btn btn-primary" type="submit">
             Invite
-          </ActionButton>
+          </button>
         </form>
         {q && (
           <div className="panel" style={{ padding: 4 }}>
@@ -951,14 +916,14 @@ function ShareModal({ m }: { m: Modal }) {
         </div>
       </div>
       <div className="modal-f">
-        <ActionButton className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/overview`)}>
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/overview`)}>
           <Ic n="link" s={14} />
           Copy link
-        </ActionButton>
+        </button>
         <span className="sp" />
-        <ActionButton className="btn btn-primary" onClick={closeModal}>
+        <button className="btn btn-primary" onClick={closeModal}>
           Done
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -1008,8 +973,7 @@ function LiveShareModal({ m }: { m: Modal }) {
             <label className="sr" htmlFor="share-in">
               Add people
             </label>
-            <DesignInput
-              aria-label="Add people"
+            <input
               className="input"
               id="share-in"
               placeholder="Add people in this workspace by name or email"
@@ -1063,13 +1027,13 @@ function LiveShareModal({ m }: { m: Modal }) {
                 </div>
               </div>
               {r.added && admin && (
-                <ActionButton
+                <button
                   className="btn btn-ghost btn-sm"
                   disabled={busy}
                   onClick={() => act(() => projectMemberSet(p.id, r.user_id, false), `${r.display_name} no longer sees ${p.name}`)}
                 >
                   Remove
-                </ActionButton>
+                </button>
               )}
             </div>
           ))}
@@ -1104,14 +1068,14 @@ function LiveShareModal({ m }: { m: Modal }) {
         </div>
       </div>
       <div className="modal-f">
-        <ActionButton className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/overview`)}>
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/p/${p.key}/overview`)}>
           <Ic n="link" s={14} />
           Copy link
-        </ActionButton>
+        </button>
         <span className="sp" />
-        <ActionButton className="btn btn-primary" onClick={closeModal}>
+        <button className="btn btn-primary" onClick={closeModal}>
           Done
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -1223,7 +1187,7 @@ function InviteModal() {
         )}
       </form>
       <div className="modal-f">
-        <ActionButton
+        <button
           className="btn btn-ghost"
           disabled={personal}
           onClick={() =>
@@ -1236,14 +1200,14 @@ function InviteModal() {
         >
           <Ic n="link" s={14} />
           Copy invite link
-        </ActionButton>
+        </button>
         <span className="sp" />
-        <ActionButton className="btn btn-secondary" onClick={closeModal}>
+        <button className="btn btn-secondary" onClick={closeModal}>
           Cancel
-        </ActionButton>
-        <ActionButton className="btn btn-primary" data-submit onClick={submit} disabled={personal}>
+        </button>
+        <button className="btn btn-primary" data-submit onClick={submit} disabled={personal}>
           Send invites
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -1279,26 +1243,18 @@ function ConfirmModal({ m }: { m: Modal }) {
             <label className="label" htmlFor="confirm-in" style={{ fontWeight: 400, color: "var(--text-2)" }}>
               Type <b style={{ color: "var(--text)", fontWeight: 600 }}>{needs}</b> to confirm
             </label>
-            <DesignInput
-              aria-label="Type to confirm"
-              className="input"
-              id="confirm-in"
-              autoComplete="off"
-              autoFocus
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
+            <input className="input" id="confirm-in" autoComplete="off" autoFocus value={text} onChange={(e) => setText(e.target.value)} />
           </div>
         )}
       </div>
       <div className="modal-f">
         <span className="sp" />
-        <ActionButton className="btn btn-secondary" onClick={closeModal} autoFocus={!needs}>
+        <button className="btn btn-secondary" onClick={closeModal} autoFocus={!needs}>
           Cancel
-        </ActionButton>
-        <ActionButton className={`btn ${m.danger ? "btn-danger" : "btn-primary"}`} data-submit onClick={run} disabled={!ok}>
+        </button>
+        <button className={`btn ${m.danger ? "btn-danger" : "btn-primary"}`} data-submit onClick={run} disabled={!ok}>
           {m.ok as string}
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -1323,17 +1279,17 @@ function PromptModal({ m }: { m: Modal }) {
           <label className="label" htmlFor="prompt-in">
             {m.label as string}
           </label>
-          <DesignInput className="input" id="prompt-in" value={v} onChange={(e) => setV(e.target.value)} autoFocus />
+          <input className="input" id="prompt-in" value={v} onChange={(e) => setV(e.target.value)} autoFocus />
         </div>
       </form>
       <div className="modal-f">
         <span className="sp" />
-        <ActionButton className="btn btn-secondary" onClick={closeModal}>
+        <button className="btn btn-secondary" onClick={closeModal}>
           Cancel
-        </ActionButton>
-        <ActionButton className="btn btn-primary" data-submit onClick={run}>
+        </button>
+        <button className="btn btn-primary" data-submit onClick={run}>
           {(m.ok as string) || "Save"}
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -1434,14 +1390,14 @@ function FilePreviewModal({ m }: { m: Modal }) {
         )}
       </div>
       <div className="modal-f">
-        <ActionButton className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/files/${f.id}`)}>
+        <button className="btn btn-secondary" onClick={() => void copy(`${location.origin}/w/${currentSlug()}/files/${f.id}`)}>
           <Ic n="link" s={14} />
           Copy link
-        </ActionButton>
+        </button>
         <span className="sp" />
-        <ActionButton className="btn btn-primary" onClick={closeModal}>
+        <button className="btn btn-primary" onClick={closeModal}>
           Close
-        </ActionButton>
+        </button>
       </div>
     </>
   );
@@ -1472,15 +1428,7 @@ function SaveViewModal({ m }: { m: Modal }) {
           <label className="label" htmlFor="sv-name">
             View name
           </label>
-          <DesignInput
-            aria-label="View name"
-            className="input"
-            id="sv-name"
-            placeholder="e.g. Design review queue"
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <input className="input" id="sv-name" placeholder="e.g. Design review queue" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="field">
           <label className="label" htmlFor="sv-type">
@@ -1504,12 +1452,12 @@ function SaveViewModal({ m }: { m: Modal }) {
       </form>
       <div className="modal-f">
         <span className="sp" />
-        <ActionButton className="btn btn-secondary" onClick={closeModal}>
+        <button className="btn btn-secondary" onClick={closeModal}>
           Cancel
-        </ActionButton>
-        <ActionButton className="btn btn-primary" data-submit onClick={submit}>
+        </button>
+        <button className="btn btn-primary" data-submit onClick={submit}>
           Save view
-        </ActionButton>
+        </button>
       </div>
     </>
   );

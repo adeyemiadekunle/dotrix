@@ -14,10 +14,11 @@ import { isLive, live } from "../data/live";
 import { D, S, render } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { Message, NewSession, Pending, Session, SessionRow, SessionHeader, openCoding } from "./Chat";
+import { ChatMessageList } from "./chat-ui";
 
 import { buildTree, parseDiff } from "../core/kaiWork";
 import { ChangeList, CommandList, FileTree } from "../components/TurnViews";
-import { PanelFrame, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, PaneTabs, PanelFrame, useActivePane, type CodingView } from "../components/SidePanel";
 import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
 import { demoCodingSessions } from "../core/demoSessions";
 
@@ -55,8 +56,8 @@ export function Coding() {
           style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
         >
           <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
-            <Splitter dir="col" className="edge-r" label="Resize the list" size={listW} min={240} max={480} onResize={setListW} />
-            <div style={{ padding: "18px 16px 8px" }} className="row">
+            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
+            <div style={{ height: 44, padding: "0 16px" }} className="row">
               <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Code</h1>
               <span className="sp" />
               <SessionListToggle />
@@ -121,10 +122,15 @@ export function Coding() {
 
 /** The sample session's panes: recorded excerpts only, so no Browser. */
 type DemoView = Exclude<CodingView, "browser">;
+const DEMO_VIEWS = CODING_VIEWS.filter((view): view is (typeof CODING_VIEWS)[number] & { id: DemoView } => view.id !== "browser");
 
 function DemoSession({ id }: { id: string }) {
   const session = D().coding.find((item) => item.id === id);
-  const [views, setViews] = useState<DemoView[]>([]);
+  const [openViews, setOpenViews] = useState<DemoView[]>([]);
+  const [activeView, setActiveView] = useActivePane(openViews);
+  const [expanded, setExpanded] = useState(false);
+  const [paneW, setPaneW] = useStoredSize("dotrix.demo.panes.width", 460, 320, 1100);
+  const closeView = (view: DemoView) => setOpenViews((current) => current.filter((item) => item !== view));
   const [opened, setOpened] = useState<string | null>(null);
   const turn = session ? session.turns.length - 1 : 0;
   if (!session) return <Pending text="This sample session is no longer available." back={toList()} />;
@@ -143,6 +149,7 @@ function DemoSession({ id }: { id: string }) {
   const title = session.title ?? D().tasks.find((item) => item.id === session.task)?.title ?? "Coding session";
   const active = session.turns[turn];
   const labels: Record<DemoView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review" };
+  const showPanel = openViews.length > 0;
   return (
     <div style={{ display: "flex", height: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
@@ -152,22 +159,18 @@ function DemoSession({ id }: { id: string }) {
           </ActionButton>
           <b className="trunc cs-demo-title">{title}</b>
           <span className="sp" />
-          <div className="cs-views" role="group" aria-label="Session panes">
-            {(Object.keys(labels) as DemoView[]).map((view) => (
-              <button
-                key={view}
-                className={`cs-view ${views.includes(view) ? "on" : ""}`}
-                aria-label={labels[view]}
-                title={labels[view]}
-                aria-pressed={views.includes(view)}
-                onClick={() => setViews((current) => (current.includes(view) ? current.filter((item) => item !== view) : [...current, view]))}
-              >
-                <Ic n={{ changes: "plus-minus", files: "folder-simple", terminal: "terminal", review: "shield-check" }[view]} s={16} />
-              </button>
-            ))}
-          </div>
+          {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
+          <button
+            className={`cs-view ${showPanel ? "on" : ""}`}
+            onClick={() => setOpenViews(showPanel ? [] : ["changes"])}
+            aria-pressed={showPanel}
+            aria-label={showPanel ? "Hide the panes" : "Show the panes"}
+            data-tip={showPanel ? "Hide panes" : "Show panes"}
+          >
+            <Ic n="panel-right" s={16} />
+          </button>
         </SessionHeader>
-        <div className="chat-scroll">
+        <ChatMessageList>
           <div className="chat-col">
             <p className="muted">Sample session · Sign in to work with Kai.</p>
             {session.turns.map((item, index) => (
@@ -182,46 +185,56 @@ function DemoSession({ id }: { id: string }) {
               </div>
             ))}
           </div>
-        </div>
+        </ChatMessageList>
       </div>
-      {views.length > 0 && (
-        <aside className="side-panel panes" style={{ width: 460 }} aria-label="Session panes">
-          {views.map((view) => (
+      {showPanel && activeView && (
+        <aside className={`side-panel panes ${expanded ? "wide" : ""}`} style={expanded ? undefined : { width: paneW }} aria-label="Session panes">
+          {!expanded && <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setPaneW((w) => w - delta)} />}
+          <PaneTabs
+            items={DEMO_VIEWS}
+            open={openViews}
+            active={activeView}
+            idPrefix="demo-panes"
+            onSelect={setActiveView}
+            onClose={closeView}
+            onAdd={(view) => setOpenViews((current) => (current.includes(view) ? current : [...current, view]))}
+            onCloseAll={() => setOpenViews([])}
+            expanded={expanded}
+            onExpand={() => setExpanded((current) => !current)}
+          />
+          <div className="ptabs-panel" role="tabpanel" id="demo-panes-panel" aria-labelledby={`demo-panes-tab-${activeView}`}>
             <PanelFrame
-              key={view}
-              label={labels[view]}
-              title={<b>{labels[view]}</b>}
+              label={labels[activeView]}
+              title={activeView === "terminal" ? <span className="faint">Recorded sample commands</span> : null}
               widthKey="dotrix.demo.panes.width"
-              stacked
-              onClose={() => setViews((current) => current.filter((item) => item !== view))}
-              tools={<span className="badge">Recorded excerpts</span>}
+              tabbed
+              onClose={() => closeView(activeView)}
             >
-              {view === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
-              {view === "files" && (
-                <>
-                  <p className="faint">
-                    Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
-                  </p>
-                  {opened ? (
-                    <>
-                      <ActionButton className="btn btn-ghost" onClick={() => setOpened(null)}>
-                        Back to the files
-                      </ActionButton>
-                      <p className="mono">{opened}</p>
-                      {files.some((file) => file.path === opened) ? (
-                        <ChangeList files={files.filter((file) => file.path === opened)} turn={{ status: session.status, turn: turn + 1 }} loading={false} />
-                      ) : (
-                        <p className="muted">This sample includes the file path; its contents were not recorded.</p>
-                      )}
-                    </>
-                  ) : (
-                    <FileTree nodes={tree.children} onOpen={setOpened} />
-                  )}
-                </>
-              )}
-              {view === "terminal" && (
-                <>
-                  <p className="faint">Recorded sample commands</p>
+              <div className="side-panel-body">
+                {activeView === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
+                {activeView === "files" && (
+                  <>
+                    <p className="faint">
+                      Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
+                    </p>
+                    {opened ? (
+                      <>
+                        <ActionButton className="btn btn-ghost" onClick={() => setOpened(null)}>
+                          Back to the files
+                        </ActionButton>
+                        <p className="mono">{opened}</p>
+                        {files.some((file) => file.path === opened) ? (
+                          <ChangeList files={files.filter((file) => file.path === opened)} turn={{ status: session.status, turn: turn + 1 }} loading={false} />
+                        ) : (
+                          <p className="muted">This sample includes the file path; its contents were not recorded.</p>
+                        )}
+                      </>
+                    ) : (
+                      <FileTree nodes={tree.children} onOpen={setOpened} />
+                    )}
+                  </>
+                )}
+                {activeView === "terminal" && (
                   <CommandList
                     working={false}
                     entries={(session.terminal ?? []).map((command, index) => ({
@@ -232,11 +245,11 @@ function DemoSession({ id }: { id: string }) {
                       at: new Date(active?.at ?? session.at).toISOString(),
                     }))}
                   />
-                </>
-              )}
-              {view === "review" && <p className="muted">No saved Juno review for this sample session.</p>}
+                )}
+                {activeView === "review" && <p className="muted">No saved Juno review for this sample session.</p>}
+              </div>
             </PanelFrame>
-          ))}
+          </div>
         </aside>
       )}
     </div>

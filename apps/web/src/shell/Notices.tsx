@@ -1,4 +1,3 @@
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // Corner notices (after Orbit's): only what needs a person, with the action in the notice. An
 // agent's changes waiting for approval, a plan to steer, a coding turn waiting to start or with
 // checked changes to push, or one that couldn't finish. On Home only (elsewhere they'd cover the
@@ -166,10 +165,11 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
 export function Notices({ inPanel = false }: { inPanel?: boolean }) {
   const { route } = useRoute();
   const ref = useRef<HTMLDivElement>(null);
+  const narrow = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches; // a phone: one banner
   const liveNotifs = useLiveNotifications(live.ws?.id, isLive());
   const all = notices(liveNotifs);
   useSystemNotices(all, !isLive() || liveNotifs !== undefined);
-  const list = inPanel ? all : route === "home" ? all.slice(0, 1) : [];
+  const list = route === "home" ? all.slice(0, narrow ? 1 : 2) : [];
   // Toasts sit above floating notices (both live bottom right).
   useEffect(() => {
     if (inPanel) {
@@ -214,17 +214,17 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
               done={() => shut(n.key)}
             />
           ) : n.act ? (
-            <ActionButton className="btn btn-sm btn-primary" onClick={n.act.run}>
+            <button className="btn btn-sm btn-primary" onClick={n.act.run}>
               {n.act.label}
-            </ActionButton>
+            </button>
           ) : (
-            <ActionButton className="btn btn-sm btn-secondary" onClick={n.open}>
+            <button className="btn btn-sm btn-secondary" onClick={n.open}>
               Open
-            </ActionButton>
+            </button>
           )}
-          <ActionButton className="ibtn ibtn-xs" onClick={() => shut(n.key)} aria-label={`Close the notice from ${n.name}`}>
+          <button className="ibtn ibtn-xs" onClick={() => shut(n.key)} aria-label={`Close the notice from ${n.name}`}>
             <Ic n="x" s={13} />
-          </ActionButton>
+          </button>
         </div>
       ))}
     </div>
@@ -242,12 +242,12 @@ function Decide({ approve, reject, done }: { approve: () => Promise<boolean>; re
   };
   return (
     <>
-      <ActionButton className="btn btn-sm btn-secondary" disabled={busy} onClick={() => run(reject)}>
+      <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => run(reject)}>
         Reject
-      </ActionButton>
-      <ActionButton className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(approve)}>
+      </button>
+      <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(approve)}>
         Approve
-      </ActionButton>
+      </button>
     </>
   );
 }
@@ -269,9 +269,9 @@ function CodingNoticeActions({
   const r = useCodingRun({ workspaceId, projectId }, runId).data;
   if (!r || !(r.status === "awaiting_approval" || r.status === "changes_ready") || !r.can_decide)
     return (
-      <ActionButton className="btn btn-sm btn-secondary" onClick={open}>
+      <button className="btn btn-sm btn-secondary" onClick={open}>
         Open
-      </ActionButton>
+      </button>
     );
   return <Decide approve={() => codingRunDecided(projectId, runId, true)} reject={() => codingRunDecided(projectId, runId, false)} done={done} />;
 }
@@ -294,9 +294,9 @@ function ChangeNoticeActions({
   const pending = (approvals.data ?? []).filter((a) => a.run_id === runId && a.status === "pending");
   if (!pending.length)
     return (
-      <ActionButton className="btn btn-sm btn-secondary" onClick={open}>
+      <button className="btn btn-sm btn-secondary" onClick={open}>
         Open
-      </ActionButton>
+      </button>
     );
   return <Decide approve={() => runChangesDecided(projectId, runId, true)} reject={() => runChangesDecided(projectId, runId, false)} done={done} />;
 }

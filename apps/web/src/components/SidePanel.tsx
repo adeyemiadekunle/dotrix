@@ -3,7 +3,7 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review (and, in the desktop app, a Browser), picked by the buttons in the
 // session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
 // A turn picker and a close button in its header; on narrow screens the panel floats over the page.
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { Run } from "@/lib/agent";
@@ -20,7 +20,7 @@ import { go, useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
 import { me } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
-import { TabList, Tab } from "@dotrix/ui/astryx";
+import { tabKeys } from "../ui/tabs";
 import { toast } from "../ui/toast";
 import { desktopBrowser } from "../core/desktop";
 import { BrowserPane } from "./BrowserPane";
@@ -39,6 +39,7 @@ export function PanelFrame({
   onClose,
   closeLabel = "Close the panel",
   stacked = false,
+  tabbed = false,
   expanded = false,
   onExpand,
   children,
@@ -50,6 +51,9 @@ export function PanelFrame({
   onClose: () => void;
   closeLabel?: string;
   stacked?: boolean;
+  /** One tab of the panes' tab strip (PaneTabs): the tab names it and closes it, so no header of its own,
+   *  only a toolbar line when the pane has something to say (the turn's branch, its tools). */
+  tabbed?: boolean;
   expanded?: boolean;
   onExpand?: () => void;
   children: ReactNode;
@@ -58,21 +62,34 @@ export function PanelFrame({
   const closeButton = useRef<HTMLButtonElement>(null);
   // Floating over the page on narrow screens: focus moves in, and Escape closes it.
   useEffect(() => {
-    if (stacked || !narrowPanel()) return;
+    if (stacked || tabbed || !narrowPanel()) return;
     const previous = document.activeElement;
     closeButton.current?.focus();
     return () => {
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
-  }, [stacked]);
+  }, [stacked, tabbed]);
   useEffect(() => {
-    if (stacked) return;
+    if (stacked || tabbed) return;
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape" && narrowPanel()) onClose();
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, [onClose, stacked]);
+  }, [onClose, stacked, tabbed]);
+  if (tabbed)
+    return (
+      <section className="pane pane-tabbed" aria-label={label}>
+        {(title || tools) && (
+          <div className="side-panel-head pane-toolbar">
+            {title}
+            <span className="sp" />
+            {tools}
+          </div>
+        )}
+        {children}
+      </section>
+    );
   const head = (
     <div className="side-panel-head">
       {title}
@@ -102,19 +119,206 @@ export function PanelFrame({
     );
   return (
     <aside className="side-panel" style={{ width }} aria-label={label}>
-      <Splitter dir="col" className="side-panel-split" label="Resize the panel" size={width} min={300} max={960} onResize={setWidth} reversed />
+      <Splitter dir="col" className="side-panel-split" label="Resize the panel" onDrag={(delta) => setWidth((w) => w - delta)} />
       {head}
       {children}
     </aside>
   );
 }
 
-/** Codes' panes: the views a session has open (Changes, Files, Terminal, Review), stacked in one resizable
- *  column, as Claude Code stacks its panes; one can be expanded to the whole column. */
+/** A tab strip over the panes, as a browser's: one tab per open pane (its icon, name, and a close button;
+ *  a middle click closes it too), a + menu for the panes not open, and at the end, expand and close all.
+ *  The arrow keys, Home and End move between tabs, as WAI-ARIA's tabs pattern has them. */
+export function PaneTabs<V extends string>({
+  items,
+  open,
+  active,
+  idPrefix,
+  onSelect,
+  onClose,
+  onAdd,
+  onCloseAll,
+  expanded,
+  onExpand,
+}: {
+  items: { id: V; label: string; icon: string }[];
+  open: V[];
+  active: V | null;
+  idPrefix: string;
+  onSelect: (view: V) => void;
+  onClose: (view: V) => void;
+  onAdd: (view: V) => void;
+  onCloseAll: () => void;
+  expanded: boolean;
+  onExpand: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const strip = useRef<HTMLDivElement>(null);
+  const addWrap = useRef<HTMLDivElement>(null);
+  const closed = items.filter((item) => !open.includes(item.id));
+  const item = (view: V) => items.find((candidate) => candidate.id === view);
+  // The + menu closes on a click outside it and on Escape, as the app's other menus do.
+  useEffect(() => {
+    if (!adding) return;
+    const outside = (event: PointerEvent) => {
+      if (!addWrap.current?.contains(event.target as Node)) setAdding(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setAdding(false);
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [adding]);
+  // Expanded over Code, Escape restores the panes (an open + menu takes Escape first).
+  useEffect(() => {
+    if (!expanded) return;
+    const restore = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        onExpand();
+      }
+    };
+    document.addEventListener("keydown", restore);
+    return () => document.removeEventListener("keydown", restore);
+  }, [expanded, onExpand]);
+  const focusTab = (view: V) => {
+    onSelect(view);
+    requestAnimationFrame(() => strip.current?.querySelector<HTMLButtonElement>(`#${idPrefix}-tab-${view}`)?.focus());
+  };
+  const move = (event: ReactKeyboardEvent, view: V) => {
+    const index = open.indexOf(view);
+    const next =
+      event.key === "ArrowRight"
+        ? open[(index + 1) % open.length]
+        : event.key === "ArrowLeft"
+          ? open[(index - 1 + open.length) % open.length]
+          : event.key === "Home"
+            ? open[0]
+            : event.key === "End"
+              ? open.at(-1)
+              : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    focusTab(next);
+  };
+  return (
+    <div className="ptabs">
+      <div ref={strip} className="ptabs-list" role="tablist" aria-label="Panes">
+        {open.map((view) => {
+          const on = view === active;
+          const label = item(view)?.label ?? view;
+          return (
+            <div
+              key={view}
+              className={`ptab ${on ? "on" : ""}`}
+              onAuxClick={(event) => {
+                if (event.button === 1) {
+                  event.preventDefault();
+                  onClose(view);
+                }
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                id={`${idPrefix}-tab-${view}`}
+                aria-selected={on}
+                aria-controls={`${idPrefix}-panel`}
+                tabIndex={on ? 0 : -1}
+                className="ptab-main"
+                onClick={() => onSelect(view)}
+                onKeyDown={(event) => move(event, view)}
+                title={label}
+              >
+                {item(view) && <Ic n={item(view)!.icon} s={14} />}
+                <span className="ptab-label">{label}</span>
+              </button>
+              <button type="button" className="ptab-x" tabIndex={on ? 0 : -1} aria-label={`Close ${label}`} onClick={() => onClose(view)}>
+                <Ic n="x" s={12} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {closed.length > 0 && (
+        <div ref={addWrap} className="ptabs-add">
+          <ActionButton
+            className="ibtn ibtn-sm"
+            onClick={() => setAdding((current) => !current)}
+            aria-haspopup="menu"
+            aria-expanded={adding}
+            aria-label="Open a pane"
+            data-tip={adding ? undefined : "Open a pane"}
+          >
+            <Ic n="plus" s={14} />
+          </ActionButton>
+          {adding && (
+            <div className="pop cs-menu ptabs-menu" role="menu" aria-label="Open a pane">
+              {closed.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAdding(false);
+                    onAdd(candidate.id);
+                  }}
+                >
+                  <Ic n={candidate.icon} s={14} />
+                  <span className="grow">{candidate.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <span className="sp" />
+      <ActionButton
+        className="ibtn ibtn-sm"
+        onClick={onExpand}
+        aria-pressed={expanded}
+        aria-label={expanded ? "Restore the panes" : "Expand the panes over Code"}
+        data-tip={expanded ? "Restore" : "Expand"}
+      >
+        <Ic n={expanded ? "arrows-in" : "arrows-out"} s={14} />
+      </ActionButton>
+      <ActionButton className="ibtn ibtn-sm" onClick={onCloseAll} aria-label="Close all panes" data-tip="Close all">
+        <Ic n="x" s={14} />
+      </ActionButton>
+    </div>
+  );
+}
+
+/** The tab to show: the one picked while it's open, else the pane opened most recently (a file link or
+ *  the session header opens one: it comes to the front, as a browser's new tab does), else the first. */
+export function useActivePane<V extends string>(open: V[]): [V | null, (view: V) => void] {
+  const [picked, setPicked] = useState<V | null>(open.at(-1) ?? null);
+  const seen = useRef(open);
+  useEffect(() => {
+    const added = open.filter((view) => !seen.current.includes(view));
+    seen.current = open;
+    if (added.length) setPicked(added.at(-1)!);
+  }, [open]);
+  const active = picked && open.includes(picked) ? picked : (open.at(-1) ?? null);
+  return [active, setPicked];
+}
+
+/** Codes' panes: the views a session has open (Changes, Files, Terminal, Review, and in the desktop app,
+ *  Browser), as tabs in one column resizable by its left edge; it can be expanded over most of the session. */
 export function CodingPanes({
   scope,
   cs,
+  active,
   views,
+  onSelect,
   onOpen,
   onClose,
   onCloseAll,
@@ -123,7 +327,9 @@ export function CodingPanes({
 }: {
   scope: Scope | undefined;
   cs: CodingSession;
+  active: CodingView | null;
   views: CodingView[];
+  onSelect: (view: CodingView) => void;
   onOpen: (view: CodingView, extra?: Record<string, string>) => void;
   onClose: (view: CodingView) => void;
   onCloseAll: () => void;
@@ -131,8 +337,8 @@ export function CodingPanes({
   fixLabel: string;
 }) {
   const [width, setWidth] = useStoredSize("dotrix.coding.panes.width", 560, 320, 1100);
-  const [expanded, setExpanded] = useState<CodingView | null>(null);
-  const shown = expanded && views.includes(expanded) ? [expanded] : views;
+  const [expanded, setExpanded] = useState(false);
+  const panelId = useId().replace(/:/g, "");
   // Over the page on narrow screens: Escape closes the panes.
   const closeAll = useRef(onCloseAll);
   closeAll.current = onCloseAll;
@@ -141,54 +347,55 @@ export function CodingPanes({
   useEffect(() => {
     if (!narrowPanel()) return;
     const previous = document.activeElement;
-    column.current?.querySelector<HTMLButtonElement>('button[aria-label^="Close"]')?.focus();
+    column.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus();
     return () => {
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
   useEffect(() => {
+    // Expanded, PaneTabs takes Escape to restore; otherwise, over the page on narrow screens, it closes them.
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && narrowPanel()) closeAll.current();
+      if (event.key === "Escape" && !expanded && !event.defaultPrevented && narrowPanel()) closeAll.current();
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, []);
+  }, [expanded]);
+  if (!views.length || !active) return null;
   return (
-    <aside ref={column} className="side-panel panes" style={{ width }} aria-label="Session panes">
-      <Splitter dir="col" className="side-panel-split" label="Resize the panes" size={width} min={320} max={1100} onResize={setWidth} reversed />
-      {shown.map((view) =>
-        view === "browser" ? (
-          <BrowserPane
-            key={view}
-            sessionId={cs.session_id}
-            stacked
-            expanded={expanded === view}
-            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
-            onClose={() => {
-              if (expanded === view) setExpanded(null);
-              onClose(view);
-            }}
-          />
+    <aside ref={column} className={`side-panel panes ${expanded ? "wide" : ""}`} style={expanded ? undefined : { width }} aria-label="Session panes">
+      {!expanded && <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setWidth((w) => w - delta)} />}
+      <PaneTabs
+        items={CODING_VIEWS}
+        open={views}
+        active={active}
+        idPrefix={panelId}
+        onSelect={onSelect}
+        onClose={onClose}
+        onAdd={(view) => onOpen(view)}
+        onCloseAll={onCloseAll}
+        expanded={expanded}
+        onExpand={() => setExpanded((current) => !current)}
+      />
+      <div className="ptabs-panel" role="tabpanel" id={`${panelId}-panel`} aria-labelledby={`${panelId}-tab-${active}`}>
+        {active === "browser" ? (
+          <BrowserPane key={active} sessionId={cs.session_id} stacked tabbed expanded={false} onClose={() => onClose(active)} />
         ) : (
           <CodingPanel
-            key={view}
+            key={active}
             scope={scope}
             cs={cs}
-            view={view}
+            view={active}
             onView={(next, extra) => onOpen(next, extra)}
-            onClose={() => {
-              if (expanded === view) setExpanded(null);
-              onClose(view);
-            }}
+            onClose={() => onClose(active)}
             onAskFix={onAskFix}
             onCloseAll={onCloseAll}
             fixLabel={fixLabel}
             stacked
-            expanded={expanded === view}
-            onExpand={views.length > 1 ? () => setExpanded(expanded === view ? null : view) : undefined}
+            tabbed
+            expanded={false}
           />
-        ),
-      )}
+        )}
+      </div>
     </aside>
   );
 }
@@ -259,6 +466,7 @@ function CodingPanel({
   onAskFix,
   fixLabel,
   stacked = false,
+  tabbed = false,
   expanded = false,
   onExpand,
   onCloseAll,
@@ -271,6 +479,7 @@ function CodingPanel({
   onAskFix?: (message: string) => void;
   fixLabel: string;
   stacked?: boolean;
+  tabbed?: boolean;
   expanded?: boolean;
   onExpand?: () => void;
   onCloseAll?: () => void;
@@ -337,21 +546,25 @@ function CodingPanel({
       onClose={onClose}
       closeLabel={`Close ${current.label}`}
       stacked={stacked}
+      tabbed={tabbed}
       expanded={expanded}
       onExpand={onExpand}
       title={
-        <span className="side-panel-title">
-          <Ic n={current.icon} s={14} />
-          {view === "changes" && turn?.base_branch ? (
-            // Where the turn's changes go, as Claude Code's diff header says it: base → branch.
-            <b className="mono side-panel-branch" title={`${turn.base_branch} → ${turn.branch ?? cs.branch ?? "a new branch"}`}>
-              {turn.base_branch} <span className="faint">→</span> {turn.branch ?? cs.branch ?? "new branch"}
-            </b>
-          ) : (
-            <b>{current.label}</b>
-          )}
-          {view === "terminal" && <span className="faint">Recorded output · read-only</span>}
-        </span>
+        // In a tab, the tab names the pane: the toolbar keeps only what it adds (the branch, the terminal's note).
+        tabbed && !(view === "changes" && turn?.base_branch) && view !== "terminal" ? null : (
+          <span className="side-panel-title">
+            {!tabbed && <Ic n={current.icon} s={14} />}
+            {view === "changes" && turn?.base_branch ? (
+              // Where the turn's changes go, as Claude Code's diff header says it: base → branch.
+              <b className="mono side-panel-branch" title={`${turn.base_branch} → ${turn.branch ?? cs.branch ?? "a new branch"}`}>
+                {turn.base_branch} <span className="faint">→</span> {turn.branch ?? cs.branch ?? "new branch"}
+              </b>
+            ) : tabbed ? null : (
+              <b>{current.label}</b>
+            )}
+            {view === "terminal" && <span className="faint">Recorded output · read-only</span>}
+          </span>
+        )
       }
     >
       <div className="side-panel-body">
@@ -514,26 +727,24 @@ function ReviewPanel({
           ))}
         </select>
       )}
-      <TabList
-        role="tablist"
-        className="work-panel-nav"
-        aria-label="Review details"
-        value={detailTab}
-        onChange={(value) => setTab(value as typeof detailTab)}
-        size="sm"
-      >
+      <div className="tabs work-panel-nav" role="tablist" aria-label="Review details" onKeyDown={tabKeys}>
         {(["summary", "findings", "evidence"] as const).map((value) => (
-          <Tab
+          <button
             key={value}
             id={`${id}-${value}-tab`}
-            value={value}
-            onFocus={() => setTab(value)}
-            label={value[0].toUpperCase() + value.slice(1)}
-            endContent={value === "findings" && findings.length ? String(findings.length) : undefined}
+            type="button"
+            role="tab"
+            aria-selected={detailTab === value}
             aria-controls={`${id}-panel`}
-          />
+            className={`tab ${detailTab === value ? "on" : ""}`}
+            tabIndex={detailTab === value ? 0 : -1}
+            onClick={() => setTab(value)}
+          >
+            {value[0].toUpperCase() + value.slice(1)}
+            {value === "findings" && findings.length ? <span className="cnt">{findings.length}</span> : null}
+          </button>
         ))}
-      </TabList>
+      </div>
       <div className="review-panel-body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${detailTab}-tab`}>
         {failed && (
           <p className="muted">

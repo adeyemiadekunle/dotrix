@@ -1,7 +1,3 @@
-import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
-import { Stepper, Step as ProgressStep } from "@dotrix/ui/astryx";
-import { Input as DesignInput } from "@dotrix/ui/components/input";
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // Setting up: one decision per screen, with progress dots and Skip wherever a step is optional.
 // Your profile (and, only if you want one, an organisation), how you want to start (an idea, a new
 // codebase, or an existing repository), the project, GitHub (not for an idea), your AI provider,
@@ -267,7 +263,7 @@ export function Onboarding() {
           {errorMessage(workspaces.error ?? profile.error)}
         </p>
         <div className="onb2-acts">
-          <ActionButton
+          <button
             className="btn btn-primary onb2-btn"
             onClick={() => {
               void workspaces.refetch();
@@ -275,7 +271,7 @@ export function Onboarding() {
             }}
           >
             Try again
-          </ActionButton>
+          </button>
         </div>
       </Frame>
     );
@@ -322,18 +318,22 @@ export function Onboarding() {
   // Where to create the project: shown only when there's a choice to make.
   const choosable = workspaces.data?.filter((item) => item.role === "owner" || item.role === "admin") ?? [];
   const dots = (
-    <Stepper
-      activeStep={Math.max(0, at)}
-      label="Onboarding progress"
-      density="compact"
-      horizontalOptions={{ minimumStepWidth: 100, collapsedVariant: "withLabel" }}
-    >
-      {flowSteps.map((item, index) => (
-        <ProgressStep key={item} step={index} label={stepNames[item]} />
-      ))}
-    </Stepper>
+    <nav aria-label="Onboarding progress" className="onb2-dots">
+      <ol>
+        {flowSteps.map((item, index) => (
+          <li key={item} aria-current={item === current ? "step" : undefined} className={index < at ? "done" : index === at ? "on" : ""}>
+            <span className="sr-only">
+              {stepNames[item]}
+              {index < at ? " completed" : ""}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <span className="sr-only">
+        Step {at + 1} of {flowSteps.length}: {stepNames[current]}
+      </span>
+    </nav>
   );
-
   return (
     <Frame art={current} projectKey={project?.key ?? key} dots={dots}>
       {back && (
@@ -359,7 +359,7 @@ export function Onboarding() {
                   <span className="onb2-avatar" aria-hidden>
                     {(typedName.trim()[0] ?? "?").toUpperCase()}
                   </span>
-                  <DesignInput
+                  <input
                     className="input onb2-input"
                     value={typedName}
                     onChange={(event) => setDisplayName(event.target.value)}
@@ -373,7 +373,7 @@ export function Onboarding() {
               {chosenKind === "organization" ? (
                 <label className="field">
                   Organisation name
-                  <DesignInput
+                  <input
                     className="input onb2-input"
                     value={teamName}
                     onChange={(event) => setTeamName(event.target.value)}
@@ -405,16 +405,16 @@ export function Onboarding() {
               )}
             </fieldset>
             <div className="onb2-acts">
-              <ActionButton type="button" className="btn btn-ghost onb2-btn" disabled={busy} onClick={() => void chooseWorkspace("personal", false)}>
+              <button type="button" className="btn btn-ghost onb2-btn" disabled={busy} onClick={() => void chooseWorkspace("personal", false)}>
                 Skip
-              </ActionButton>
-              <ActionButton
+              </button>
+              <button
                 className="btn btn-primary onb2-btn"
                 type="submit"
                 disabled={busy || !typedName.trim() || (chosenKind === "organization" && !teamName.trim())}
               >
                 Continue
-              </ActionButton>
+              </button>
             </div>
           </form>
         ) : summaryWorkspace ? (
@@ -424,7 +424,7 @@ export function Onboarding() {
               sub={`${summaryWorkspace.name} · ${summaryWorkspace.kind === "organization" ? "Organisation" : "Personal"}. Continue to your first project.`}
             />
             <div className="onb2-acts">
-              <ActionButton
+              <button
                 className="btn btn-primary onb2-btn"
                 disabled={busy}
                 onClick={() => {
@@ -437,7 +437,7 @@ export function Onboarding() {
                 }}
               >
                 Continue
-              </ActionButton>
+              </button>
             </div>
           </>
         ) : (
@@ -452,7 +452,7 @@ export function Onboarding() {
               <a className="btn btn-ghost onb2-btn" href={ownSetupHref}>
                 Use my own workspace
               </a>
-              <ActionButton
+              <button
                 className="btn btn-primary onb2-btn"
                 disabled={workspaces.isFetching}
                 onClick={() => {
@@ -461,7 +461,7 @@ export function Onboarding() {
                 }}
               >
                 Refresh
-              </ActionButton>
+              </button>
             </div>
           </>
         ))}
@@ -530,21 +530,15 @@ export function Onboarding() {
                 <div className="onb2-team">
                   <label className="field">
                     Team workspace name
-                    <DesignInput
-                      aria-label="Team workspace name"
-                      className="input onb2-input"
-                      value={teamName}
-                      onChange={(event) => setTeamName(event.target.value)}
-                      maxLength={100}
-                    />
+                    <input className="input onb2-input" value={teamName} onChange={(event) => setTeamName(event.target.value)} maxLength={100} />
                   </label>
                   {existingTeam && <p role="status">A team workspace with this name is already saved.</p>}
                   <div className="onb2-acts">
-                    <ActionButton type="button" className="btn btn-ghost onb2-btn" onClick={() => setCreatingTeam(false)}>
+                    <button type="button" className="btn btn-ghost onb2-btn" onClick={() => setCreatingTeam(false)}>
                       Cancel
-                    </ActionButton>
+                    </button>
                     {existingTeam ? (
-                      <ActionButton
+                      <button
                         type="button"
                         className="btn btn-secondary onb2-btn"
                         onClick={() => {
@@ -555,9 +549,9 @@ export function Onboarding() {
                         }}
                       >
                         Use saved team workspace
-                      </ActionButton>
+                      </button>
                     ) : null}
-                    <ActionButton
+                    <button
                       type="button"
                       className="btn btn-secondary onb2-btn"
                       disabled={!teamName.trim() || !!existingTeam}
@@ -578,7 +572,7 @@ export function Onboarding() {
                       }
                     >
                       Create team workspace
-                    </ActionButton>
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -588,9 +582,9 @@ export function Onboarding() {
               ))}
           </fieldset>
           <div className="onb2-acts">
-            <ActionButton className="btn btn-primary onb2-btn" type="submit" disabled={busy || !intention || !workspace || creatingTeam}>
+            <button className="btn btn-primary onb2-btn" type="submit" disabled={busy || !intention || !workspace || creatingTeam}>
               Continue
-            </ActionButton>
+            </button>
           </div>
         </form>
       )}
@@ -612,9 +606,9 @@ export function Onboarding() {
             <p role="status">Loading your saved project…</p>
           ) : project ? (
             <div className="onb2-acts">
-              <ActionButton className="btn btn-primary onb2-btn" onClick={() => move(intention === "idea" && !project.repo_url ? "model" : "github")}>
+              <button className="btn btn-primary onb2-btn" onClick={() => move(intention === "idea" && !project.repo_url ? "model" : "github")}>
                 Continue setup
-              </ActionButton>
+              </button>
             </div>
           ) : (
             <form
@@ -628,8 +622,7 @@ export function Onboarding() {
               <fieldset className="onb2-fields" disabled={busy}>
                 <label className="field">
                   Project name
-                  <DesignInput
-                    aria-label="Project name"
+                  <input
                     className="input onb2-input"
                     value={name}
                     maxLength={100}
@@ -648,7 +641,7 @@ export function Onboarding() {
                 </label>
                 <label className="field">
                   Project key
-                  <DesignInput
+                  <input
                     className="input onb2-input mono"
                     value={key}
                     aria-label="Project key"
@@ -666,8 +659,7 @@ export function Onboarding() {
                 {duplicateKey && <p role="alert">A project with this key is already saved. Continue setting it up below, or choose a different key.</p>}
                 <label className="field">
                   {intention === "new" ? "Project goal" : "Description (optional)"}
-                  <DesignTextarea
-                    aria-label={intention === "new" ? "Project goal" : "Description (optional)"}
+                  <textarea
                     className="textarea onb2-input"
                     required={intention === "new"}
                     value={description}
@@ -692,7 +684,7 @@ export function Onboarding() {
                 )}
               </fieldset>
               <div className="onb2-acts">
-                <ActionButton
+                <button
                   className="btn btn-primary onb2-btn"
                   disabled={
                     busy ||
@@ -707,7 +699,7 @@ export function Onboarding() {
                   type="submit"
                 >
                   {busy ? "Creating project…" : "Create project"}
-                </ActionButton>
+                </button>
               </div>
               {!!projects.data?.length && (
                 <label className="field onb2-resume">
@@ -837,21 +829,21 @@ export function Onboarding() {
           {project?.repo_url && <p role="status">Connected: {project.repo_url}</p>}
           <div className="onb2-acts">
             {project?.repo_url ? (
-              <ActionButton className="btn btn-primary onb2-btn" disabled={busy} onClick={() => move("model")}>
+              <button className="btn btn-primary onb2-btn" disabled={busy} onClick={() => move("model")}>
                 Continue
-              </ActionButton>
+              </button>
             ) : (
               <>
-                <ActionButton className="btn btn-ghost onb2-btn" disabled={busy} onClick={() => move("model")} aria-label="Continue with documents only">
+                <button className="btn btn-ghost onb2-btn" disabled={busy} onClick={() => move("model")} aria-label="Continue with documents only">
                   Skip
-                </ActionButton>
+                </button>
                 {repoId ? (
-                  <ActionButton className="btn btn-primary onb2-btn" disabled={busy} onClick={() => void connectRepo()}>
+                  <button className="btn btn-primary onb2-btn" disabled={busy} onClick={() => void connectRepo()}>
                     Use repository
-                  </ActionButton>
+                  </button>
                 ) : (
                   github.data?.install_url && (
-                    <ActionButton
+                    <button
                       className="btn btn-primary onb2-btn"
                       disabled={busy}
                       onClick={() => {
@@ -861,7 +853,7 @@ export function Onboarding() {
                     >
                       <Ic n="github" s={16} />
                       Connect GitHub App
-                    </ActionButton>
+                    </button>
                   )
                 )}
               </>
@@ -910,7 +902,7 @@ export function Onboarding() {
             <label className="field">
               Model API key
               <span className="onb2-name">
-                <DesignInput
+                <input
                   className="input onb2-input"
                   type="password"
                   value={apiKey}
@@ -920,13 +912,13 @@ export function Onboarding() {
                   spellCheck={false}
                   onChange={(event) => setApiKey(event.target.value)}
                 />
-                <ActionButton
+                <button
                   className="btn btn-secondary onb2-btn"
                   disabled={busy || !access.data?.can_store_keys || apiKey.trim().length < 20}
                   onClick={() => void saveKey()}
                 >
                   {busy ? "Saving…" : "Save personal key"}
-                </ActionButton>
+                </button>
               </span>
             </label>
             {!!access.data?.models.length && (
@@ -964,13 +956,13 @@ export function Onboarding() {
           )}
           <div className="onb2-acts">
             {access.data?.ready ? (
-              <ActionButton className="btn btn-primary onb2-btn" disabled={busy || !modelReady} onClick={() => move("ready")}>
+              <button className="btn btn-primary onb2-btn" disabled={busy || !modelReady} onClick={() => move("ready")}>
                 Continue
-              </ActionButton>
+              </button>
             ) : (
-              <ActionButton className="btn btn-ghost onb2-btn" disabled={busy} onClick={() => move("ready")} aria-label="Set up models later">
+              <button className="btn btn-ghost onb2-btn" disabled={busy} onClick={() => move("ready")} aria-label="Set up models later">
                 Skip
-              </ActionButton>
+              </button>
             )}
           </div>
         </>
@@ -1004,9 +996,9 @@ export function Onboarding() {
                 {discussionStart === "idea" ? "Explore with Nova" : discussionStart === "new" ? "Plan with Nova" : "Discuss with Nova"}
               </a>
             ) : (
-              <ActionButton className="btn btn-secondary onb2-btn" disabled={busy} onClick={() => move("model")}>
+              <button className="btn btn-secondary onb2-btn" disabled={busy} onClick={() => move("model")}>
                 Set up Nova
-              </ActionButton>
+              </button>
             )}
             {project?.repo_url && intention === "existing" && (
               <a className="btn btn-secondary onb2-btn" href={`/w/${workspace!.slug}/p/${project.key}/knowledge?view=coverage`}>

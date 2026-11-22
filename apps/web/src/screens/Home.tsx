@@ -1,4 +1,3 @@
-import { ActionButton } from "@dotrix/ui/components/action-button";
 // Home, with dotrix's "Waiting for a decision": what the
 // agents ask you to approve or steer, first in the right column. The workspace's Overview and
 // Activity pages folded into this: its stats, workload, and milestones sit here, and the
@@ -20,7 +19,7 @@ import { STATUSES } from "../core/constants";
 import { MiniRow } from "../components/TaskList";
 import { sortTasks, viewOf } from "../shell/viewEngine";
 import { Av, AvStack, Empty, PIcon, PStatus, PrIcon, ProgBar, StIcon } from "../ui/helpers";
-import { TabList, Tab } from "@dotrix/ui/astryx";
+import { tabKeys } from "../ui/tabs";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 
@@ -54,7 +53,7 @@ function AgentItem({ n }: { n: Notif }) {
         <div className="trunc muted" style={{ fontSize: 12.5 }}>
           {n.snippet}
         </div>
-        <div className="row faint" style={{ gap: 6, marginTop: 3, fontSize: 12 }}>
+        <div className="row faint" style={{ gap: 6, marginTop: 3, fontSize: 11.5 }}>
           {p && (
             <>
               <span className="pdot" style={css({ "--c": pColor(p), width: 6, height: 6 })} />
@@ -78,9 +77,9 @@ function DecisionPanel({ waiting }: { waiting: Notif[] }) {
         <h2>Waiting for a decision</h2>
         <span className="badge amber">{waiting.length}</span>
         <div className="acts">
-          <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+          <button className="btn btn-sm btn-ghost" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
             View all
-          </ActionButton>
+          </button>
         </div>
       </div>
       <div className="panel-b" style={{ paddingBottom: 6 }}>
@@ -169,21 +168,21 @@ export function Home() {
         </div>
         <div className="acts">
           {canInvite() && !personal && (
-            <ActionButton className="btn btn-secondary hide-m" onClick={invite}>
+            <button className="btn btn-secondary hide-m" onClick={invite}>
               <Ic n="user-plus" s={14} />
               Invite member
-            </ActionButton>
+            </button>
           )}
           {allowed("projects:manage") && (
-            <ActionButton className="btn btn-secondary hide-m" onClick={newProject}>
+            <button className="btn btn-secondary hide-m" onClick={newProject}>
               <Ic n="folder-plus" s={14} />
               New project
-            </ActionButton>
+            </button>
           )}
-          <ActionButton className="btn btn-primary" onClick={() => newTask()}>
+          <button className="btn btn-primary" onClick={() => newTask()}>
             <Ic n="plus" s={14} />
             New task
-          </ActionButton>
+          </button>
         </div>
       </div>
       {waiting.length > 0 && (
@@ -233,28 +232,31 @@ export function Home() {
             <div className="panel-h">
               <h2 id="h-mytasks">{personal ? "Tasks" : "My tasks"}</h2>
               <div className="acts">
-                <TabList role="tablist" aria-label={personal ? "Tasks" : "My tasks"} value={tab} onChange={(value) => setTab(value as typeof tab)} size="sm">
+                <div className="seg" role="tablist" aria-label={personal ? "Tasks" : "My tasks"} onKeyDown={tabKeys}>
                   {(
                     [
                       ["upcoming", "Upcoming"],
                       ["overdue", "Overdue"],
                       ["completed", "Completed"],
                     ] as const
-                  ).map(([key, label]) => (
-                    <Tab
-                      key={key}
-                      id={`home-tab-${key}`}
-                      value={key}
-                      onFocus={() => setTab(key)}
-                      label={label}
-                      endContent={<span className="faint">{lists[key].length}</span>}
+                  ).map(([k, n]) => (
+                    <button
+                      key={k}
+                      id={`home-tab-${k}`}
+                      role="tab"
+                      aria-selected={tab === k}
                       aria-controls="home-task-panel"
-                    />
+                      tabIndex={tab === k ? 0 : -1}
+                      className={tab === k ? "on" : ""}
+                      onClick={() => setTab(k)}
+                    >
+                      {n} <span className="faint">{lists[k].length}</span>
+                    </button>
                   ))}
-                </TabList>
-                <ActionButton className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip={`Open ${tasksLabel()}`} aria-label={`Open ${tasksLabel()}`}>
+                </div>
+                <button className="ibtn ibtn-sm" onClick={() => go("mytasks")} data-tip={`Open ${tasksLabel()}`} aria-label={`Open ${tasksLabel()}`}>
                   <Ic n="arrow-up-right" s={15} />
-                </ActionButton>
+                </button>
               </div>
             </div>
             <div id="home-task-panel" role="tabpanel" aria-labelledby={`home-tab-${tab}`}>
@@ -285,9 +287,9 @@ export function Home() {
             <div className="panel-h">
               <h2>Project progress</h2>
               <div className="acts">
-                <ActionButton className="btn btn-sm btn-ghost" onClick={() => go("projects")}>
+                <button className="btn btn-sm btn-ghost" onClick={() => go("projects")}>
                   All projects
-                </ActionButton>
+                </button>
               </div>
             </div>
             {tableOverflow && (
@@ -333,7 +335,7 @@ export function Home() {
                         <td>
                           <span className="row">
                             <ProgBar v={pr} cls={p.status === "risk" ? "red" : ""} />
-                            <span className="num faint" style={{ fontSize: 12, width: 30 }}>
+                            <span className="num faint" style={{ fontSize: 11.5, width: 30 }}>
                               {pr}%
                             </span>
                           </span>
@@ -360,7 +362,7 @@ export function Home() {
           <section className="panel">
             <div className="panel-h">
               <h2>Tasks by status</h2>
-              <span className="faint" style={{ fontSize: 12 }}>
+              <span className="faint" style={{ fontSize: 11.5 }}>
                 {all.length} across {activeP.length} projects
               </span>
             </div>
@@ -400,7 +402,7 @@ export function Home() {
             <div className="panel-b" style={{ paddingBottom: 6 }}>
               {ms.length > 0 && (
                 <div style={{ marginBottom: 10 }}>
-                  <div className="row" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
+                  <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
                     Milestones
                     <span className="faint" style={{ fontWeight: 500 }}>
                       {ms.length}
@@ -426,7 +428,7 @@ export function Home() {
               )}
               {dls.map((g) => (
                 <div key={g.lab} style={{ marginBottom: 10 }}>
-                  <div className="row" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
+                  <div className="row" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>
                     {g.lab}
                     <span className="faint" style={{ fontWeight: 500 }}>
                       {g.ts.length}
@@ -443,7 +445,7 @@ export function Home() {
                         </div>
                       ))}
                       {g.ts.length > 4 && (
-                        <div className="faint" style={{ fontSize: 12, paddingLeft: 16 }}>
+                        <div className="faint" style={{ fontSize: 11.5, paddingLeft: 16 }}>
                           +{g.ts.length - 4} more
                         </div>
                       )}
@@ -463,7 +465,7 @@ export function Home() {
               <div className="panel-h">
                 <h2>Workload</h2>
                 <div className="acts">
-                  <span className="faint" style={{ fontSize: 12 }}>
+                  <span className="faint" style={{ fontSize: 11.5 }}>
                     Open tasks per person
                   </span>
                 </div>

@@ -2,7 +2,7 @@
 // classified without running anything, and each required domain's coverage or named gap.
 import type { Schemas } from "@dotrix/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "@dotrix/ui/lib/toast";
+import { toast } from "../src/ui/toast";
 
 import { api, errorMessage, unwrap } from "./api";
 import type { Scope } from "./issues";
@@ -40,8 +40,8 @@ export function useTakeInventory(scope: Scope | undefined) {
   return useMutation({
     mutationFn: () =>
       unwrap(api.POST("/v1/workspaces/{workspace_id}/projects/{project_id}/repository/knowledge/inventory", { params: { path: path(scope!) } })),
-    onSuccess: (s) => toast.success(`Inventory of ${s.repo_full_name} at ${s.commit_sha.slice(0, 7)}: ${s.path_count} paths`),
-    onError: (e) => toast.error(errorMessage(e)),
+    onSuccess: (s) => toast(`Inventory of ${s.repo_full_name} at ${s.commit_sha.slice(0, 7)}: ${s.path_count} paths`),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: key(scope) }),
   });
 }
@@ -76,7 +76,7 @@ export function useExplainRepository(scope: Scope | undefined, opened: (threadId
         }),
       ),
     onSuccess: (run) => opened(run.thread_id),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => toast(errorMessage(e), { kind: "err" }),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: key(scope) }),
   });
 }
