@@ -1,3 +1,4 @@
+import { SelectField } from "@dotrix/ui/components/select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
@@ -75,40 +76,42 @@ export function GitHubIssueImport({ scope, projectKey }: { scope: Scope | undefi
           ) : (
             <>
               <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-                <label>
-                  GitHub state{" "}
-                  <select
+                <div className="row" style={{ gap: 8 }}>
+                  <span>GitHub state</span>
+                  <SelectField
+                    size="sm"
                     aria-label="GitHub state"
-                    className="input"
                     disabled={busy}
                     value={state}
-                    onChange={(e) => {
-                      setState(e.target.value as typeof state);
+                    onValueChange={(value) => {
+                      setState(value as typeof state);
                       setPage(1);
                       reset();
                     }}
-                  >
-                    <option value="all">All</option>
-                    <option value="open">Open</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </label>
-                <label>
-                  Open issues become{" "}
-                  <select
+                    options={[
+                      { value: "all", label: "All" },
+                      { value: "open", label: "Open" },
+                      { value: "closed", label: "Closed" },
+                    ]}
+                  />
+                </div>
+                <div className="row" style={{ gap: 8 }}>
+                  <span>Open issues become</span>
+                  <SelectField
+                    size="sm"
                     aria-label="Open issues become"
-                    className="input"
                     disabled={busy}
                     value={openStatus}
-                    onChange={(e) => {
-                      setOpenStatus(e.target.value as typeof openStatus);
+                    onValueChange={(value) => {
+                      setOpenStatus(value as typeof openStatus);
                       reset();
                     }}
-                  >
-                    <option value="backlog">Backlog</option>
-                    <option value="todo">To do</option>
-                  </select>
-                </label>
+                    options={[
+                      { value: "backlog", label: "Backlog" },
+                      { value: "todo", label: "To do" },
+                    ]}
+                  />
+                </div>
                 <span>Page {page}</span>
                 <button
                   className="btn btn-sm btn-secondary"

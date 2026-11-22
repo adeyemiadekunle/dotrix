@@ -125,12 +125,24 @@
     box-shadow: inset 2px 0 var(--acc);
   }
   .kp-no {
-    width: 3.2em;
+    width: 2.5em;
     flex-shrink: 0;
     padding-right: 6px;
     text-align: right;
     color: var(--text-4);
     user-select: none;
+  }
+  .kp-changes.wrap .kp-diff {
+    overflow-x: hidden;
+  }
+  .kp-changes.wrap .kp-line {
+    white-space: pre-wrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .kp-changes.wrap .kp-text {
+    min-width: 0;
+    flex: 1;
   }
   .kp-sign {
     width: 1.2em;
@@ -533,7 +545,7 @@
 
 .ap-team-note {
   padding: 0 12px;
-  color: var(--muted);
+  color: var(--text-3);
   font-size: 11px;
 }
 .work-panel-head {
@@ -549,7 +561,8 @@
 .work-panel-head > .i {
   color: var(--text-3);
 }
-.work-panel-head select {
+.work-panel-head select,
+.work-panel-head [data-slot="select-trigger"] {
   width: auto;
 }
 .work-tabs {
@@ -561,7 +574,6 @@
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
-  scrollbar-width: thin;
 }
 .work-tabs button {
   position: relative;
@@ -613,7 +625,8 @@
   gap: 8px;
   margin-bottom: 8px;
 }
-.review-panel > select {
+.review-panel > select,
+.review-panel > [data-slot="select-trigger"] {
   margin-bottom: 12px;
   width: 100%;
 }
@@ -702,10 +715,7 @@
 }
 /* Chat's composer runs along the bottom: the launcher sits above it, beside the conversation. */
 :root:has(.chat-main .compact-composer) {
-  --launcher-b: calc(94px + var(--bottomnav-h, 0px));
-}
-:root:has(.chat-main .compact-composer .composer-textarea:focus) {
-  --launcher-b: calc(176px + var(--bottomnav-h, 0px));
+  --launcher-b: calc(136px + var(--bottomnav-h, 0px));
 }
 .agents-launcher {
   position: fixed;
@@ -790,24 +800,34 @@
 }
 .ap-row {
   display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--r);
+}
+.ap-row-hit {
+  display: flex;
   gap: 10px;
   align-items: flex-start;
   width: 100%;
   text-align: left;
-  padding: 8px;
-  border-radius: var(--r);
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.ap-row-hit:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
 }
 .ap-acts {
   display: flex;
   gap: 4px;
   margin-top: 6px;
-}
-.ap-row {
-  cursor: pointer;
-}
-.ap-row:focus-visible {
-  outline: 2px solid var(--acc);
-  outline-offset: -2px;
+  padding-left: 36px;
 }
 .ap-row:hover {
   background: var(--surface-3);
@@ -1683,6 +1703,16 @@ body.resizing-row * {
 .cs-row .cs-more[aria-expanded="true"] {
   opacity: 1;
 }
+@media (hover: none) {
+  .cs-row .cs-more {
+    opacity: 1;
+  }
+}
+@media (max-width: 900px) {
+  .cs-row .cs-more {
+    opacity: 0.72;
+  }
+}
 .cs-pin {
   display: inline-block;
   margin-right: 4px;
@@ -2423,7 +2453,7 @@ section.side-panel-body[hidden] {
   padding: 0;
   display: flex;
   flex-direction: column;
-  width: var(--code-panes-width, min(440px, 42%));
+  width: var(--code-panes-width, min(520px, 42%));
   /* Leave room for the session beside the docked panes. */
   max-width: calc(100% - 360px);
   border-left: 1px solid var(--border);
@@ -2468,6 +2498,11 @@ section.side-panel-body[hidden] {
 .ptabs-add {
   align-self: center;
 }
+.ptabs > .ibtn[data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
 .ptabs-list {
   display: flex;
   align-items: flex-end;
@@ -2483,8 +2518,8 @@ section.side-panel-body[hidden] {
   position: relative;
   display: flex;
   align-items: center;
-  flex: 0 1 auto;
-  min-width: 72px;
+  flex: 0 0 auto;
+  min-width: 88px;
   max-width: 180px;
   height: 32px;
   border: 1px solid transparent;
@@ -2567,26 +2602,39 @@ section.side-panel-body[hidden] {
   min-width: 0;
 }
 .ptabs-content-body[inert] {
-  visibility: hidden;
+  opacity: 0.65;
 }
 .ptabs-panel[data-inactive] {
   position: absolute;
   inset: 0;
   visibility: hidden;
 }
-.ptabs-chooser {
+.ptabs-chooser-veil {
   position: absolute;
   inset: 0;
+  z-index: 14;
+}
+.ptabs-chooser {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  width: min(240px, calc(100% - 16px));
+  max-height: calc(100% - 12px);
   overflow: auto;
-  padding: 20px;
+  padding: 10px;
   display: grid;
   align-content: start;
-  gap: 8px;
-  background: var(--bg);
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  z-index: 15;
 }
 .ptabs-chooser h2 {
-  margin: 0 0 6px;
-  font-size: var(--fs-md);
+  margin: 0 2px 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
 }
 .ptabs-chooser .btn {
   justify-content: flex-start;
@@ -2978,7 +3026,8 @@ section.side-panel-body[hidden] {
 }
 /* Narrow screens: the panes float over the session, under its bar, so the bar's buttons stay in reach. */
 @media (max-width: 900px) {
-  .code-pane-resize {
+  .code-pane-resize,
+  .ptabs-expand {
     display: none;
   }
   .side-panel.panes {
@@ -3160,8 +3209,12 @@ section.side-panel-body[hidden] {
   color: var(--text-2);
   font-size: 12px;
 }
-.chat-delivery-row select {
-  max-width: 210px;
+.chat-delivery-row select,
+.chat-delivery-row [data-slot="select-trigger"] {
+  width: auto;
+  height: 28px;
+  max-width: 220px;
+  font-size: 12px;
 }
 .chat-delivery-help {
   color: var(--text-3);
@@ -3276,7 +3329,7 @@ section.side-panel-body[hidden] {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 48px 16px 24px;
+  padding: 28px 16px 16px;
 }
 .ns-title {
   margin: 0;
@@ -3289,21 +3342,51 @@ section.side-panel-body[hidden] {
   display: grid;
   gap: 10px;
   width: min(440px, 100%);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
-.ns-source label {
+.ns-source label,
+.ns-source .ns-field {
   display: grid;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.ns-source .ns-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
 }
 .ns-source input,
-.ns-source select {
+.ns-source select,
+.ns-source [data-slot="select-trigger"] {
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+}
+[data-slot="select-trigger"] .picon,
+[data-slot="select-item"] .picon {
+  --sz: 18px;
+  background: transparent;
+  color: var(--pc, var(--c));
+}
+[data-slot="select-trigger"] .picon svg,
+[data-slot="select-item"] .picon svg {
+  color: inherit;
+}
+.ns-sample-note {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 12px;
+}
+.ns-sample-note a {
+  color: var(--acc);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .ns-bottom {
   width: 100%;
@@ -3924,6 +4007,13 @@ section.side-panel-body[hidden] {
   border-radius: var(--r-lg);
   font-size: var(--fs-md);
 }
+.onb2-input[data-slot="select-trigger"] {
+  height: 44px;
+  min-height: 44px;
+  border-radius: var(--r-lg);
+  font-size: var(--fs-md);
+  padding: 0 14px;
+}
 textarea.onb2-input {
   padding-top: 10px;
 }
@@ -4392,7 +4482,8 @@ textarea.onb2-input {
       border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
-    .set-section-picker > select {
+    .set-section-picker > select,
+    .set-section-picker > [data-slot="select-trigger"] {
       width: 100%;
       min-height: 40px;
     }
@@ -4436,9 +4527,32 @@ textarea.onb2-input {
 /* These existing domain rules predate layers; keep their responsive overrides beside them. */
 .cs-row > .sitem {
   height: auto;
-  padding: 10px 30px 10px 8px;
+  padding: 10px 32px 10px 8px;
   align-items: flex-start;
   width: 100%;
+}
+.cs-plan-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}
+.cs-ci-pill.passed {
+  color: var(--green);
+}
+.cs-ci-pill.failed {
+  color: var(--red);
+}
+@media (min-width: 901px) {
+  .cs-back {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .cs-head:has(.cs-back) .session-list-toggle,
+  .session-start-header:has(.chat-new-back) .session-list-toggle {
+    display: none;
+  }
 }
 /* The session bar lines up with the sidebar's top row and the lists' headers: 44px, content centred. */
 .cs-head {
@@ -4446,16 +4560,10 @@ textarea.onb2-input {
   height: auto;
   padding-block: 0;
 }
-.dotrix-composer .composer-textarea {
-  width: 100%;
-  min-height: 64px;
-  padding: 8px 4px;
-  border: 0;
-  background: transparent;
-  font: inherit;
-  color: inherit;
-  resize: none;
-  outline: none;
+@media (max-width: 640px) {
+  .cs-head {
+    padding-block: 6px;
+  }
 }
 .agents-launcher.inline {
   position: static;
@@ -4518,11 +4626,6 @@ textarea.onb2-input {
 .workspace-switcher-name {
   flex: 1;
 }
-.dotrix-composer-wrap.menu-open {
-  /* Keep room below the footer action so its menu need not flip above it. */
-  padding-bottom: calc(min(320px, 40dvh) + 48px);
-}
-
 .composer-model {
   display: inline-flex;
   min-width: 0;
@@ -4579,90 +4682,349 @@ textarea.onb2-input {
   }
 }
 
-/* The composer input and footer form a pill at rest and separate rows while editing. */
-/* Reserve the first editing row below, so focus changes cannot move a clicked conversation action. */
-.compact-composer > div {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 8px;
-  padding: 8px;
+/* Shared Chat & Code composer: always-2-row editor, calm toolbar pills, and single-scroll + options popover. */
+.dotrix-composer,
+.compact-composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 6px 20px -12px rgba(0, 0, 0, 0.14);
+  overflow: visible;
+  transition:
+    border-color var(--dur),
+    box-shadow var(--dur);
 }
-.compact-composer > div > div:first-child {
-  grid-column: 2;
-  grid-row: 1;
+.dotrix-composer:focus-within,
+.compact-composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    0 6px 20px -12px rgba(0, 0, 0, 0.12);
+}
+.cmp-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 0;
+}
+.cmp-header .cmp-chip {
+  max-width: 100%;
+  background: var(--surface-2);
+  border-color: var(--border);
+  font-size: 12px;
+}
+.cmp-body {
+  padding: 12px 14px 4px;
   min-width: 0;
-  align-self: center;
 }
-.compact-composer > div > div:last-child {
-  display: contents;
+.cmp-header + .cmp-body {
+  padding-top: 8px;
 }
-.compact-composer > div > div:last-child > div:first-child {
-  grid-column: 1;
-  grid-row: 1;
-}
-.compact-composer > div > div:last-child > div:last-child {
-  grid-column: 3;
-  grid-row: 1;
-  min-width: 0;
-}
-.compact-composer:has(.composer-textarea:focus) > div {
-  padding: 8px;
-  row-gap: 12px;
-}
-.compact-composer:has(.composer-textarea:focus) > div > div:first-child {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  padding: 4px;
-  min-height: 32px;
-}
-.compact-composer:has(.composer-textarea:focus) > div > div:last-child > div:first-child {
-  grid-column: 1;
-  grid-row: 2;
-}
-.compact-composer:has(.composer-textarea:focus) > div > div:last-child > div:last-child {
-  grid-column: 2 / -1;
-  grid-row: 2;
-  justify-content: flex-end;
-}
-.compact-composer .composer-textarea {
-  min-height: 24px;
+.dotrix-composer .composer-textarea {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  max-height: 200px;
   padding: 0;
-  line-height: 24px;
-}
-.compact-composer .composer-model {
-  max-width: min(200px, 32vw);
-}
-.composer-options-menu {
-  display: grid;
-  gap: 4px;
-  padding: 8px;
-  min-width: 200px;
-  max-height: min(320px, 40dvh);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--text);
+  resize: none;
+  outline: none;
   overflow-y: auto;
 }
-.composer-menu-option {
-  justify-content: flex-start;
+.dotrix-composer .composer-textarea::placeholder {
+  color: var(--text-3);
 }
-.composer-menu-note,
-.composer-menu-heading {
-  padding: 6px 8px;
-  font-size: 12px;
+.dotrix-composer .composer-textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.cmp-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  min-width: 0;
+  overflow: visible;
+}
+.cmp-toolbar-left,
+.cmp-footer-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: visible;
+}
+.cmp-toolbar-left {
+  flex: 1;
+}
+.dotrix-composer .cmp-controls-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.dotrix-composer .cmp-plus-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
   color: var(--text-2);
+  flex-shrink: 0;
+}
+.dotrix-composer .cmp-plus-btn:hover:not(:disabled),
+.dotrix-composer .cmp-plus-btn[aria-expanded="true"] {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.cmp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  min-width: 0;
+  transition:
+    background var(--dur),
+    border-color var(--dur),
+    color var(--dur);
+}
+.cmp-status-pill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmp-status-pill:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.cmp-status-pill:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.cmp-status-pill.accent {
+  border-color: color-mix(in srgb, var(--acc) 28%, var(--border));
+  background: color-mix(in srgb, var(--acc) 8%, transparent);
+  color: var(--acc);
+}
+.cmp-status-pill.amber {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  color: var(--amber);
+}
+.cmp-status-pill.mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.cmp-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  flex-shrink: 0;
+}
+.cmp-status-badge > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmp-status-badge.accent {
+  border-color: color-mix(in srgb, var(--acc) 22%, transparent);
+  background: color-mix(in srgb, var(--acc) 9%, transparent);
+  color: var(--acc);
+}
+.cmp-status-badge.amber {
+  border-color: color-mix(in srgb, var(--amber) 28%, transparent);
+  background: color-mix(in srgb, var(--amber) 11%, transparent);
+  color: var(--amber);
+}
+.cmp-status-badge.mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.cmp-approval-wrap {
+  display: inline-flex;
+  min-width: 0;
+}
+.dotrix-composer .cmp-approval-trigger {
+  height: 28px;
+  padding: 0 8px;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 148px;
+}
+.dotrix-composer .cmp-approval-trigger:hover:not(:disabled),
+.dotrix-composer .cmp-approval-trigger[data-state="open"] {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.dotrix-composer .cmp-approval-trigger.amber {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  color: var(--amber);
+}
+.dotrix-composer .cmp-approval-trigger.amber:hover:not(:disabled),
+.dotrix-composer .cmp-approval-trigger.amber[data-state="open"] {
+  border-color: color-mix(in srgb, var(--amber) 50%, var(--border));
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+  color: var(--amber);
+}
+.compact-composer .composer-model {
+  max-width: min(200px, 36vw);
+}
+.dotrix-composer .cmp-model-static {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dotrix-composer .kt-send {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+}
+@container (max-width: 440px) {
+  .cmp-pill-label-compact {
+    display: none;
+  }
+  .cmp-toolbar {
+    gap: 6px;
+  }
+  .cmp-toolbar-left,
+  .cmp-footer-left {
+    gap: 3px;
+  }
+  .dotrix-composer .cmp-plus-btn {
+    width: 26px;
+    height: 26px;
+  }
+  .cmp-status-pill,
+  .cmp-status-badge {
+    height: 26px;
+    padding: 0 6px;
+    font-size: 11px;
+    gap: 3px;
+  }
+  .cmp-status-pill > span,
+  .cmp-status-badge > span {
+    max-width: 60px;
+  }
+  .dotrix-composer .cmp-approval-trigger {
+    height: 26px;
+    padding: 0 6px;
+    font-size: 11px;
+    gap: 3px;
+    max-width: 106px;
+  }
+  .compact-composer .composer-model {
+    max-width: min(104px, 30vw);
+  }
+  .dotrix-composer .composer-model [data-slot="select-trigger"],
+  .dotrix-composer .composer-model .cmp-select-trigger {
+    height: 26px;
+    padding: 0 6px;
+    font-size: 11.5px;
+  }
+  .dotrix-composer .kt-send {
+    width: 28px;
+    height: 28px;
+  }
+}
+@media (max-width: 480px) {
+  .cmp-pill-label-compact {
+    display: none;
+  }
+  .cmp-toolbar {
+    gap: 6px;
+  }
+  .cmp-toolbar-left,
+  .cmp-footer-left {
+    gap: 3px;
+  }
+  .dotrix-composer .cmp-plus-btn {
+    width: 26px;
+    height: 26px;
+  }
+  .cmp-status-pill,
+  .cmp-status-badge {
+    height: 26px;
+    padding: 0 6px;
+    font-size: 11px;
+    gap: 3px;
+  }
+  .cmp-status-pill > span,
+  .cmp-status-badge > span {
+    max-width: 60px;
+  }
+  .dotrix-composer .cmp-approval-trigger {
+    height: 26px;
+    padding: 0 6px;
+    font-size: 11px;
+    gap: 3px;
+    max-width: 106px;
+  }
+  .compact-composer .composer-model {
+    max-width: min(104px, 30vw);
+  }
+  .dotrix-composer .composer-model [data-slot="select-trigger"],
+  .dotrix-composer .composer-model .cmp-select-trigger {
+    height: 26px;
+    padding: 0 6px;
+    font-size: 11.5px;
+  }
+  .dotrix-composer .kt-send {
+    width: 28px;
+    height: 28px;
+  }
 }
 .dotrix-composer-wrap {
   position: relative;
-}
-.dotrix-inline-picker .select {
-  width: auto;
-  height: 26px;
-  padding: 0 24px 0 8px;
-  font-size: 12px;
-}
-.compact-composer:not(:has(.composer-textarea:focus)) [aria-hidden="true"]:not(svg) {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 /* Keep the main view in the flexible column when the list is display:none. */
 .chat-main {
@@ -4676,53 +5038,251 @@ textarea.onb2-input {
 .new-conversation {
   flex-direction: column;
 }
-/* Reserve the first editing row on start screens so blur cannot move a choice during its click. */
-.ns-bottom .dotrix-composer-wrap,
-.dotrix-chat-layout .dotrix-composer-wrap {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  min-height: 112px;
-}
 .code-start .ns-mid {
   padding-block: 24px 16px;
 }
 .code-start .ns-bottom {
   flex-shrink: 0;
 }
-.code-start .dotrix-composer-wrap {
-  min-height: 0;
+
+@keyframes cmpPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
-.compact-composer {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-lg);
+:root[data-motion="reduce"] .cmp-menu-pop {
+  animation-name: fadeOnly !important;
+  animation-duration: 0.12s !important;
+}
+.cmp-menu-pop {
+  min-width: 248px;
+  max-width: min(296px, calc(100vw - 24px));
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--surface);
-}
-.compact-composer .composer-textarea {
-  display: block;
-  max-height: 24px;
-}
-.compact-composer:has(.composer-textarea:focus) {
-  background: transparent;
-}
-.compact-composer .composer-textarea:focus {
-  min-height: 56px;
-  max-height: 200px;
-}
-.dotrix-chat-layout .kt-input.dotrix-composer-wrap {
-  min-height: 144px;
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: cmpPopIn 140ms var(--ease);
 }
 .composer-options-menu {
-  max-width: min(320px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  max-height: min(360px, 50dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color-scheme: light dark;
+}
+[data-theme="dark"] .composer-options-menu,
+[data-theme="dark"] .cmp-select-scroll {
+  color-scheme: dark;
 }
 .composer-environment-options {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.composer-menu-heading {
+  padding: 6px 8px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.composer-menu-note {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.composer-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--divider);
+  flex-shrink: 0;
+}
+.composer-options-menu .composer-menu-option {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  justify-content: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--text);
+}
+.composer-options-menu .composer-menu-option:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.composer-options-menu .composer-menu-option[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--acc) 9%, transparent);
+  color: var(--text);
+  font-weight: 500;
+}
+.composer-menu-check {
+  margin-left: auto;
+  color: var(--acc);
+  flex-shrink: 0;
+}
+.composer-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 3px 4px 3px 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.composer-menu-row-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.composer-menu-row [data-slot="select-trigger"],
+.composer-menu-row .cmp-select-trigger {
+  min-width: 116px;
+  max-width: 156px;
+}
+.composer-options-menu .cmp-chip {
+  max-width: 100%;
+  justify-content: space-between;
 }
 
-.composer-menu-option[aria-pressed="true"] {
-  background-color: var(--surface-2);
+.cmp-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition:
+    background var(--dur),
+    border-color var(--dur),
+    box-shadow var(--dur);
+}
+.cmp-select-trigger.sm {
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+.cmp-select-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--border-strong) 55%, var(--text-3));
+  background: color-mix(in srgb, var(--surface-2) 45%, var(--surface));
+}
+.cmp-select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.cmp-select-trigger[aria-expanded="true"]:not(.ghost) {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.cmp-select-trigger.ghost {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.cmp-select-trigger.ghost:hover:not(:disabled),
+.cmp-select-trigger.ghost[aria-expanded="true"] {
+  background: var(--surface-2);
+  border-color: transparent;
+}
+.cmp-select-chev {
+  flex-shrink: 0;
+  color: var(--text-3);
+  transition: transform 150ms var(--ease);
+}
+.cmp-select-trigger[aria-expanded="true"] .cmp-select-chev {
+  transform: rotate(180deg);
+}
+.cmp-select-pop {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: popIn 140ms var(--ease);
+}
+.cmp-select-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.cmp-select-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.cmp-select-search input::placeholder {
+  color: var(--text-3);
+}
+.cmp-select-scroll {
+  padding: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color-scheme: light dark;
+}
+.cmp-select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur);
+}
+.cmp-select-item:hover,
+.cmp-select-item.hl {
+  background: var(--surface-2);
+}
+.cmp-select-item[aria-selected="true"] {
+  background: color-mix(in srgb, var(--acc) 8%, transparent);
+  font-weight: 500;
 }
 
 /* What a command Kai left running printed once it finished (the end of it). */

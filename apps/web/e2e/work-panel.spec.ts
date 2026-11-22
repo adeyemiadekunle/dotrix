@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { pickSelect } from "./helpers";
 
 const date = "2026-01-01T00:00:00Z";
 const path = "src/components/Navigation.tsx";
@@ -467,10 +468,12 @@ test("Code starts from a repository and branch without picking an issue", async 
   );
   const send = page.getByRole("button", { name: "Start coding", exact: true });
   const repository = page.getByRole("combobox", { name: "Repository", exact: true });
-  await repository.selectOption("p2");
+  await repository.click();
+  await page.getByRole("option", { name: "Docs project · No repository" }).click();
   await expect(page.getByRole("link", { name: "Connect repository" })).toHaveAttribute("href", /project=p2.*step=github/);
   await expect(send).toBeDisabled();
-  await repository.selectOption("p1", { timeout: 10_000 });
+  await repository.click();
+  await page.getByRole("option", { name: "https://github.com/example/project · Test project" }).click();
   const bounds = (await repository.boundingBox())!;
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   await expect(send).toBeDisabled();
@@ -616,7 +619,7 @@ test("while Kai works, a message steers the turn or waits for the next, and one 
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0]).toMatchObject({ kind: "steer", message: "Use the refunds table" });
   await expect(page.getByText("Waiting for Kai's next step")).toBeVisible();
-  await page.getByLabel("Delivery action").selectOption("queue");
+  await pickSelect(page, page.getByLabel("Delivery action"), "Queue for the next turn");
   await expect(box).toHaveAttribute("placeholder", "Queue a message for Kai's next turn");
   await box.fill("Then update the changelog");
   await box.press("Enter");

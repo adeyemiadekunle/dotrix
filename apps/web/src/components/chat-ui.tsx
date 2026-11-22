@@ -1,8 +1,21 @@
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { ChatScroller } from "@dotrix/ui/components/chat-scroller";
 import type { PromptStatus } from "@dotrix/ui/components/prompt-input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { Ic } from "../core/icons";
 
@@ -66,7 +79,9 @@ export function Selector({
   value,
   onChange,
   options,
+  hasSearch,
   size,
+  variant = "default",
 }: {
   label: string;
   isLabelHidden?: boolean;
@@ -74,27 +89,206 @@ export function Selector({
   onChange: (value: string) => void;
   options: SelectorSection[];
   hasSearch?: boolean;
-  size?: string;
+  size?: "sm" | "default" | "lg" | string;
+  variant?: "default" | "ghost";
 }) {
-  const sections = options.map((section) => (Array.isArray(section) ? { title: undefined, options: section } : section));
+  const sections = useMemo(() => options.map((section) => (Array.isArray(section) ? { title: undefined, options: section } : section)), [options]);
+  const allOptions = useMemo(() => sections.flatMap((section) => section.options), [sections]);
+  const searchable = Boolean(hasSearch && allOptions.length > 8);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlighted, setHighlighted] = useState(0);
+  const [coords, setCoords] = useState<CSSProperties>({});
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+
+  const filteredSections = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sections;
+    return sections
+      .map((section) => ({
+        ...section,
+        options: section.options.filter((option) => option.label.toLowerCase().includes(q) || option.value.toLowerCase().includes(q)),
+      }))
+      .filter((section) => section.options.length > 0);
+  }, [query, sections]);
+
+  const flatFiltered = useMemo(() => filteredSections.flatMap((section) => section.options), [filteredSections]);
+  const selectedLabel = allOptions.find((option) => option.value === value)?.label ?? value;
+
+  const updatePlacement = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const above = spaceBelow < 220 && spaceAbove > spaceBelow;
+    const maxWidth = window.innerWidth - 16;
+    const width = Math.min(Math.max(rect.width, 220), maxWidth);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    setCoords({
+      position: "fixed",
+      left,
+      minWidth: width,
+      maxWidth: Math.min(340, maxWidth),
+      maxHeight: Math.min(320, Math.max(120, above ? spaceAbove : spaceBelow)),
+      zIndex: 140,
+      ...(above ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!searchable || !open) return;
+    updatePlacement();
+    requestAnimationFrame(() => searchRef.current?.focus());
+    const onDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (triggerRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      setOpen(false);
+      setQuery("");
+    };
+    const onResize = () => updatePlacement();
+    document.addEventListener("pointerdown", onDown);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onResize, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onResize, true);
+    };
+  }, [open, searchable, updatePlacement]);
+
+  if (!searchable) {
+    return (
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger size={size === "sm" ? "sm" : size === "lg" ? "lg" : "default"} variant={variant} aria-label={label}>
+          <SelectValue placeholder={label} />
+        </SelectTrigger>
+        <SelectContent aria-label={label}>
+          {sections.map((section, index) => (
+            <SelectGroup key={section.title ?? index}>
+              {index > 0 && <SelectSeparator />}
+              {section.title && <SelectLabel>{section.title}</SelectLabel>}
+              {section.options.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  const pickOption = (option: SelectorOption) => {
+    onChange(option.value);
+    setOpen(false);
+    setQuery("");
+    triggerRef.current?.focus();
+  };
+
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger size={size === "sm" ? "sm" : "default"} aria-label={label}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent aria-label={label}>
-        {sections.map((section, index) => (
-          <SelectGroup key={section.title ?? index}>
-            {section.title && <SelectLabel>{section.title}</SelectLabel>}
-            {section.options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        data-size={size === "sm" ? "sm" : size === "lg" ? "lg" : "default"}
+        data-variant={variant}
+        className={`cmp-select-trigger ${variant === "ghost" ? "ghost" : ""} ${size === "sm" ? "sm" : ""}`}
+        onClick={() => {
+          setOpen((current) => !current);
+          setQuery("");
+          setHighlighted(0);
+        }}
+      >
+        <span className="trunc">{selectedLabel}</span>
+        <Ic n="chevron-down" s={13} cls="cmp-select-chev" />
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={popRef}
+            id={listId}
+            role="listbox"
+            aria-label={label}
+            data-dotrix-select-listbox=""
+            className="cmp-select-pop"
+            style={coords}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+                setQuery("");
+                triggerRef.current?.focus();
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                if (flatFiltered.length) setHighlighted((current) => (current + 1) % flatFiltered.length);
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                if (flatFiltered.length) setHighlighted((current) => (current - 1 + flatFiltered.length) % flatFiltered.length);
+              } else if (event.key === "Enter") {
+                event.preventDefault();
+                const picked = flatFiltered[highlighted];
+                if (picked) pickOption(picked);
+              }
+            }}
+          >
+            <div className="cmp-select-search">
+              <Ic n="search" s={13} />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setHighlighted(0);
+                }}
+                placeholder="Search…"
+                aria-label={`Search ${label}`}
+              />
+            </div>
+            <div className="cmp-select-scroll">
+              {filteredSections.length > 0 ? (
+                filteredSections.map((section, sectionIndex) => (
+                  <div key={section.title ?? sectionIndex} role="group">
+                    {sectionIndex > 0 && <div className="composer-menu-sep" />}
+                    {section.title && <div className="composer-menu-heading">{section.title}</div>}
+                    {section.options.map((option) => {
+                      const flatIdx = flatFiltered.indexOf(option);
+                      const selected = option.value === value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          className={`cmp-select-item ${flatIdx === highlighted ? "hl" : ""}`}
+                          onMouseEnter={() => setHighlighted(flatIdx)}
+                          onClick={() => pickOption(option)}
+                        >
+                          <span className="trunc">{option.label}</span>
+                          {selected && <Ic n="check" s={14} cls="composer-menu-check" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))
+              ) : (
+                <div className="composer-menu-note">No matches</div>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -107,21 +301,34 @@ type ComplexSelectorProps = {
   isDisabled?: boolean;
   onOpenChange?: (open: boolean) => void;
   renderTrigger: (props: ComponentProps<"button"> & { role?: string }) => ReactNode;
+  afterTrigger?: (toggle: () => void, open: boolean) => ReactNode;
   children: ReactNode | ((value: string, change: (value: string) => void, close: () => void) => ReactNode);
 };
 
-export function ComplexSelector({ label, value, placement = "below", isDisabled, onOpenChange, renderTrigger, children }: ComplexSelectorProps) {
+export function ComplexSelector({ label, value, placement = "below", isDisabled, onOpenChange, renderTrigger, afterTrigger, children }: ComplexSelectorProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement>(null);
   const close = useCallback(() => {
     setOpen(false);
     onOpenChange?.(false);
   }, [onOpenChange]);
+  const toggle = useCallback(() => {
+    if (isDisabled) return;
+    const next = !open;
+    setOpen(next);
+    onOpenChange?.(next);
+  }, [isDisabled, onOpenChange, open]);
   useEffect(() => {
     if (!open) return;
     const onDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Element) || root.current?.contains(target)) return;
+      if (target.closest('[data-radix-popper-content-wrapper], [data-slot="select-content"], [data-dotrix-select-listbox]')) {
+        return;
+      }
+      if (document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) {
+        return;
+      }
       const listbox = target.closest('[role="listbox"]');
       if (
         listbox?.id &&
@@ -132,7 +339,9 @@ export function ComplexSelector({ label, value, placement = "below", isDisabled,
       close();
     };
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape" && !document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) {
+        close();
+      }
     };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
@@ -142,7 +351,7 @@ export function ComplexSelector({ label, value, placement = "below", isDisabled,
     };
   }, [close, open]);
   return (
-    <span ref={root} style={{ position: "relative", display: "inline-flex" }}>
+    <span ref={root} className="cmp-selector-root" style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4 }}>
       {renderTrigger({
         type: "button",
         role: "button",
@@ -150,18 +359,15 @@ export function ComplexSelector({ label, value, placement = "below", isDisabled,
         "aria-haspopup": "dialog",
         "aria-expanded": open,
         disabled: isDisabled,
-        onClick: () => {
-          if (isDisabled) return;
-          setOpen(!open);
-          onOpenChange?.(!open);
-        },
+        onClick: toggle,
       })}
+      {afterTrigger?.(toggle, open)}
       {open && (
         <div
-          className="pop floating"
+          className="cmp-menu-pop"
           role="dialog"
           aria-label={label}
-          style={{ position: "absolute", [placement === "above" ? "bottom" : "top"]: "calc(100% + 6px)", left: 0, zIndex: 70, minWidth: 200 }}
+          style={{ position: "absolute", [placement === "above" ? "bottom" : "top"]: "calc(100% + 8px)", left: 0, zIndex: 75 }}
         >
           {typeof children === "function" ? children(value, () => undefined, close) : children}
         </div>
@@ -219,6 +425,7 @@ export function CodingOptions({
   onOpenChange,
   placement = "below",
   focusInput,
+  afterTrigger,
   children,
 }: {
   mode: "plan" | "build";
@@ -228,6 +435,7 @@ export function CodingOptions({
   onOpenChange?: (open: boolean) => void;
   placement?: "above" | "below";
   focusInput: () => void;
+  afterTrigger?: (toggle: () => void, open: boolean) => ReactNode;
   children?: (close: () => void) => ReactNode;
 }) {
   return (
@@ -239,8 +447,18 @@ export function CodingOptions({
       alignment="start"
       isDisabled={disabled}
       onOpenChange={onOpenChange}
+      afterTrigger={afterTrigger}
       renderTrigger={(props) => (
-        <DesignButton {...props} role="button" label="Code options" variant="ghost" size="sm" isIconOnly icon={<Ic n="plus" s={20} />} />
+        <DesignButton
+          {...props}
+          role="button"
+          label="Code options"
+          className="cmp-plus-btn"
+          variant="ghost"
+          size="sm"
+          isIconOnly
+          icon={<Ic n="plus" s={16} />}
+        />
       )}
     >
       {(_value, _change, close) => (
@@ -250,10 +468,15 @@ export function CodingOptions({
             <DesignButton
               key={value}
               className="composer-menu-option"
-              label={value === "plan" ? "Plan (read only)" : "Build"}
+              label={
+                <>
+                  <span>{value === "plan" ? "Plan (read only)" : "Build"}</span>
+                  {mode === value && <Ic n="check" s={14} cls="composer-menu-check" />}
+                </>
+              }
               variant="ghost"
               aria-pressed={mode === value}
-              icon={<Ic n={mode === value ? "check" : value === "plan" ? "list-checks" : "hammer"} s={16} />}
+              icon={<Ic n={value === "plan" ? "list-checks" : "hammer"} s={15} />}
               isDisabled={disabled || (value === "plan" && local)}
               onClick={() => {
                 setMode(value);
@@ -298,6 +521,10 @@ export function ChatComposerInput({
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
+    if (!value) {
+      el.style.height = "";
+      return;
+    }
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [textareaRef, value]);
@@ -323,12 +550,13 @@ export function ChatComposerInput({
 export function ChatComposer({
   className,
   onSubmit,
+  header,
   input,
   footerActions,
   sendActions,
   sendButton,
   children,
-  value: _value,
+  value,
   isDisabled: _isDisabled,
   isStopShown: _isStopShown,
   ...props
@@ -336,6 +564,7 @@ export function ChatComposer({
   value?: string;
   isDisabled?: boolean;
   isStopShown?: boolean;
+  header?: ReactNode;
   input?: ReactNode;
   footerActions?: ReactNode;
   sendActions?: ReactNode;
@@ -344,20 +573,19 @@ export function ChatComposer({
   return (
     <form
       {...props}
-      className={["dotrix-composer", "compact-composer", className].filter(Boolean).join(" ")}
+      className={["dotrix-composer", "compact-composer", value ? "has-text" : "", className].filter(Boolean).join(" ")}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit?.(event);
       }}
     >
-      <div>
-        <div>{input}</div>
-        <div>
-          <div>{footerActions}</div>
-          <div className="cmp-controls cmp-controls-right">
-            {sendActions}
-            {sendButton}
-          </div>
+      {header && <div className="cmp-header">{header}</div>}
+      <div className="cmp-body">{input}</div>
+      <div className="cmp-toolbar">
+        <div className="cmp-toolbar-left">{footerActions}</div>
+        <div className="cmp-controls cmp-controls-right">
+          {sendActions}
+          {sendButton}
         </div>
       </div>
       {children}

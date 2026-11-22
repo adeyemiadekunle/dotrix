@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { pickSelect, signUp } from "./helpers";
 
 test("project agent models can be saved and reset", async ({ page }) => {
   await signUp(page);
@@ -66,7 +66,7 @@ test("a missing provider preserves workspace navigation and requires a key for a
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connect a model to continue" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect and continue" })).toBeDisabled();
-  await page.getByLabel("Model provider").selectOption("xai");
+  await pickSelect(page, page.getByLabel("Model provider"), "xAI (Grok)");
   const fakeKey = "test-provider-key-for-setup-only";
   await page.getByLabel("Model API key").fill(fakeKey);
   const saved = page.waitForResponse((r) => r.url().endsWith("/me/model-keys/xai") && r.request().method() === "PUT");
@@ -80,10 +80,10 @@ test("a missing provider preserves workspace navigation and requires a key for a
   await page.goto(`/w/${slug}/settings/my-models`);
   await expect(page.getByText("xAI (Grok)", { exact: true })).toBeVisible();
   await expect(page.getByText(fakeKey, { exact: true })).toHaveCount(0);
-  await page.getByLabel("Kai's coding engine").selectOption("opencode");
+  await pickSelect(page, page.getByLabel("Kai's coding engine"), /OpenCode/);
   await expect(page.getByText("Coding engine saved")).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Kai's coding engine")).toHaveValue("opencode");
+  await expect(page.getByLabel("Kai's coding engine")).toHaveAttribute("data-value", "opencode");
 });
 
 test("every user connects a personal key without shared-key controls", async ({ page }) => {

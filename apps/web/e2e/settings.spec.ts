@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { PASSWORD, signUp } from "./helpers";
+import { PASSWORD, pickSelect, signUp } from "./helpers";
 
 // Settings in a real workspace: each section reads and saves through the API.
 
@@ -75,13 +75,13 @@ test("change your password (a wrong current one is refused), and choose which no
   await expect(page.getByText("Password updated")).toBeVisible();
 
   await settings(page, "notif-email");
-  await page.getByLabel("Email me", { exact: true }).selectOption("daily");
+  await pickSelect(page, page.getByLabel("Email me", { exact: true }), "Daily digest");
   await settings(page, "notif-mentions");
   await page.getByLabel("Mentions", { exact: true }).uncheck();
   await page.reload();
   await expect(page.getByLabel("Mentions", { exact: true })).not.toBeChecked();
   await settings(page, "notif-email");
-  await expect(page.getByLabel("Email me", { exact: true })).toHaveValue("daily");
+  await expect(page.getByLabel("Email me", { exact: true })).toHaveAttribute("data-value", "daily");
 });
 
 test("tokens under Sessions: the CLI's sign-in is listed, a new one is shown once, both revoke; the old Devices address opens Sessions", async ({ page }) => {
@@ -133,13 +133,13 @@ test("agents: an owner lets one write documents without asking, and the workspac
   await signUp(page);
   await settings(page, "agents");
   await page.locator("#main-content .mini", { hasText: "@product" }).click();
-  await page.getByLabel("Write documents without asking", { exact: true }).selectOption("allow");
+  await pickSelect(page, page.getByLabel("Write documents without asking", { exact: true }), "Allow");
   await expect(page.getByText("Changes go through without anyone approving them.")).toBeVisible();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("region", { name: "Notifications" }).getByText(/Saved as version \d+/)).toBeVisible();
   await page.reload();
   await page.locator("#main-content .mini", { hasText: "@product" }).click();
-  await expect(page.getByLabel("Write documents without asking", { exact: true })).toHaveValue("allow");
+  await expect(page.getByLabel("Write documents without asking", { exact: true })).toHaveAttribute("data-value", "allow");
 
   await settings(page, "agents");
   await page.getByLabel("Pause changes without approval", { exact: true }).check();
@@ -163,12 +163,12 @@ test("legacy model settings connects only your own key, and an agent can use a s
   // Echo (documentation) doesn't need the biggest model.
   await settings(page, "agents");
   await page.locator("#main-content .mini", { hasText: "@documentation" }).click();
-  await page.getByLabel("Model", { exact: true }).selectOption("anthropic:claude-haiku-5-5");
+  await pickSelect(page, page.getByLabel("Model", { exact: true }), /Haiku 5\.5|claude-haiku-5-5/i);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("region", { name: "Notifications" }).getByText(/Saved as version \d+/)).toBeVisible();
   await page.reload();
   await page.locator("#main-content .mini", { hasText: "@documentation" }).click();
-  await expect(page.getByLabel("Model", { exact: true })).toHaveValue("anthropic:claude-haiku-5-5");
+  await expect(page.getByLabel("Model", { exact: true })).toHaveAttribute("data-value", "anthropic:claude-haiku-5-5");
 
   await settings(page, "my-models");
   await page.locator(".srow-wrap", { hasText: "Anthropic" }).getByRole("button", { name: "Remove" }).click();
@@ -186,10 +186,10 @@ test("your own models and agents: a key of your own, a default model, and how yo
   await page.getByRole("button", { name: "Save key" }).click();
   await expect(page.getByRole("region", { name: "Notifications" }).getByText("Your Anthropic key is saved")).toBeVisible();
   await expect(anthropic.getByText(/key ending ME42/)).toBeVisible();
-  await page.getByLabel("Your default model", { exact: true }).selectOption("anthropic:claude-haiku-5-5");
+  await pickSelect(page, page.getByLabel("Your default model", { exact: true }), "claude-haiku-5-5");
   await expect(page.getByRole("region", { name: "Notifications" }).getByText("Default model saved")).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Your default model", { exact: true })).toHaveValue("anthropic:claude-haiku-5-5");
+  await expect(page.getByLabel("Your default model", { exact: true })).toHaveAttribute("data-value", "anthropic:claude-haiku-5-5");
 
   await settings(page, "my-agents");
   await page.getByLabel("How you like Lyra to work", { exact: true }).fill("Short stories, British English.");

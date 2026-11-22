@@ -344,7 +344,7 @@ export function Home() {
                         <td className="num" style={{ color: ov ? "var(--red)" : "var(--text-3)" }}>
                           {ov}
                         </td>
-                        <td style={{ textAlign: "left" }} className="num muted">
+                        <td style={{ textAlign: "left", whiteSpace: "nowrap" }} className="num muted">
                           {fmtDate(p.due)}
                         </td>
                         {!personal && (

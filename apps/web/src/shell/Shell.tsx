@@ -17,7 +17,7 @@ import { isMine, tasksLabel } from "../core/features";
 import { Av } from "../ui/helpers";
 import { PopLayer } from "../overlays/PopLayer";
 import { Toasts } from "../ui/toast";
-import { AgentsLauncher, AgentsPanel, agentsShown, inCodeTab } from "./AgentsPanel";
+import { AgentsLauncher, AgentsPanel, agentsShown, inSessionArea } from "./AgentsPanel";
 import { desktopApp } from "../core/desktop";
 import { UpdateBar, openWhatsNew, useKaiBrowserNotice, useWhatsNewAfterUpdate } from "./DesktopApp";
 import { Notices } from "./Notices";
@@ -157,7 +157,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <AgentsPanel />
           </>
         )}
-        {!inCodeTab() && <AgentsLauncher />}
+        {!inSessionArea() && <AgentsLauncher />}
         <BottomNav openNavigation={openNavigation} />
       </div>
       <PopLayer />
@@ -207,6 +207,7 @@ function SItem({
       }}
       data-tip={sideCollapsed() ? label : undefined}
       data-tip-pos="right"
+      aria-label={sideCollapsed() ? label : undefined}
       aria-current={active ? "page" : undefined}
     >
       <Ic n={icon} s={16} />
@@ -261,7 +262,11 @@ function Sidebar() {
               <Ic n="chevrons-up-down" s={13} />
             </span>
           </button>
-          {!sideCollapsed() && (
+          {sideCollapsed() ? (
+            <button className="ibtn ibtn-sm side-expand-btn" onClick={toggleSide} data-tip="Expand sidebar  [" data-tip-pos="right" aria-label="Expand sidebar">
+              <Ic n="panel-left" s={15} />
+            </button>
+          ) : (
             // In the drawer (narrow screens) it closes the drawer; collapsing to icons is for wide screens.
             <button
               className="ibtn ibtn-sm"
@@ -309,6 +314,7 @@ function Sidebar() {
                   }}
                   data-tip={sideCollapsed() ? p.name : undefined}
                   data-tip-pos="right"
+                  aria-label={sideCollapsed() ? p.name : undefined}
                 >
                   <span
                     className="pico"
@@ -379,12 +385,24 @@ function Sidebar() {
       </div>
       <div className="side-bot">
         {desktopApp() && (
-          <button className="sitem" onClick={openWhatsNew} data-tip={sideCollapsed() ? "What's new" : undefined} data-tip-pos="right">
+          <button
+            className="sitem"
+            onClick={openWhatsNew}
+            data-tip={sideCollapsed() ? "What's new" : undefined}
+            data-tip-pos="right"
+            aria-label={sideCollapsed() ? "What's new" : undefined}
+          >
             <Ic n="gift" s={16} />
             <span>What&apos;s new</span>
           </button>
         )}
-        <button className="sitem" onClick={(e) => openPop(e.currentTarget, "help")} data-tip={sideCollapsed() ? "Help" : undefined} data-tip-pos="right">
+        <button
+          className="sitem"
+          onClick={(e) => openPop(e.currentTarget, "help")}
+          data-tip={sideCollapsed() ? "Help" : undefined}
+          data-tip-pos="right"
+          aria-label={sideCollapsed() ? "Help & resources" : undefined}
+        >
           <Ic n="circle-help" s={16} />
           <span>Help &amp; resources</span>
         </button>
@@ -395,6 +413,7 @@ function Sidebar() {
           style={{ height: 36 }}
           data-tip={sideCollapsed() ? "Profile" : undefined}
           data-tip-pos="right"
+          aria-label={sideCollapsed() ? `Account menu for ${S.prefs.name}` : undefined}
         >
           <Av id={d.me} cls="presence" tip={false} />
           <span className="trunc" style={{ color: "var(--text)", fontWeight: 500 }}>

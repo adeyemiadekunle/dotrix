@@ -1,6 +1,7 @@
 // Modals, same markup. Each
 // open modal is an entry in S.ui.modals; its form lives on the entry.
 import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { SelectField } from "@dotrix/ui/components/select";
 
 import { applyPatch, copy, createTask, openPop, openTask } from "../core/actions";
 import { allowed } from "../core/can";
@@ -36,7 +37,7 @@ export function ModalLayer() {
             style={{ zIndex: 61 + i * 2 }}
             onMouseDown={(e) => e.target === e.currentTarget && closeModal()}
             onKeyDown={(e) => {
-              if (e.key === "Escape") closeModal();
+              if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) closeModal();
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.currentTarget.querySelector("[data-submit]") as HTMLButtonElement | null)?.click();
             }}
           >
@@ -670,15 +671,16 @@ function ProjectModal({ m }: { m: Modal }) {
             <label className="label" htmlFor="p-lead">
               Lead
             </label>
-            <select className="select" id="p-lead" value={f.lead} onChange={(e) => set("lead", e.target.value)}>
-              {D()
+            <SelectField
+              id="p-lead"
+              aria-label="Lead"
+              className="w-full"
+              value={f.lead}
+              onValueChange={(value) => set("lead", value)}
+              options={D()
                 .members.filter((x) => x.status === "active")
-                .map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                  </option>
-                ))}
-            </select>
+                .map((x) => ({ value: x.id, label: x.name }))}
+            />
           </div>
           <div className="field" style={{ flex: 1, minWidth: 150 }}>
             <label className="label" htmlFor="p-due">
@@ -790,11 +792,13 @@ function ShareModal({ m }: { m: Modal }) {
               autoFocus
             />
           </div>
-          <select className="select" style={{ width: 132 }} aria-label="Permission" value={perm} onChange={(e) => setPerm(e.target.value)}>
-            {PERMS.map((x) => (
-              <option key={x}>{x}</option>
-            ))}
-          </select>
+          <SelectField
+            aria-label="Permission"
+            style={{ width: 132 }}
+            value={perm}
+            onValueChange={setPerm}
+            options={PERMS.map((x) => ({ value: x, label: x }))}
+          />
           <button className="btn btn-primary" type="submit">
             Invite
           </button>
@@ -857,13 +861,12 @@ function ShareModal({ m }: { m: Modal }) {
                     Full access
                   </span>
                 ) : (
-                  <select
-                    className="select"
-                    style={{ width: "auto", height: 26, fontSize: 12, borderColor: "transparent", backgroundColor: "transparent" }}
+                  <SelectField
+                    size="sm"
+                    variant="ghost"
                     value={pm}
                     aria-label={`Permission for ${x.name}`}
-                    onChange={(e) => {
-                      const v = e.target.value;
+                    onValueChange={(v) => {
                       if (v === "__remove") {
                         const snap = snapshot();
                         mutate(() => (p.members = p.members.filter((y) => y !== id)));
@@ -873,12 +876,8 @@ function ShareModal({ m }: { m: Modal }) {
                         toast(`${x.name}: ${v}`, { ms: 1800 });
                       }
                     }}
-                  >
-                    {PERMS.map((qq) => (
-                      <option key={qq}>{qq}</option>
-                    ))}
-                    <option value="__remove">Remove access</option>
-                  </select>
+                    options={[...PERMS.map((qq) => ({ value: qq, label: qq })), { value: "__remove", label: "Remove access" }]}
+                  />
                 )}
               </div>
             );
@@ -893,21 +892,23 @@ function ShareModal({ m }: { m: Modal }) {
               <Ic n={p.access === "private" ? "lock" : "building-2"} s={14} />
             </span>
             <div className="grow">
-              <select
-                className="select"
-                style={{ height: 28, width: "auto", borderColor: "transparent", paddingLeft: 4, fontWeight: 500 }}
+              <SelectField
+                size="sm"
+                variant="ghost"
+                className="font-medium"
                 value={p.access}
                 aria-label="General access"
-                onChange={(e) =>
+                onValueChange={(value) =>
                   mutate(() => {
-                    p.access = e.target.value;
-                    p.private = e.target.value === "private";
+                    p.access = value;
+                    p.private = value === "private";
                   })
                 }
-              >
-                <option value="private">Only people invited</option>
-                <option value="workspace">Everyone at {D().ws.name}</option>
-              </select>
+                options={[
+                  { value: "private", label: "Only people invited" },
+                  { value: "workspace", label: `Everyone at ${D().ws.name}` },
+                ]}
+              />
               <div className="faint" style={{ fontSize: 11.5, paddingLeft: 4 }}>
                 {p.access === "private" ? "Only people listed above can open this project." : "Anyone in the workspace can view and comment."}
               </div>
@@ -1047,17 +1048,19 @@ function LiveShareModal({ m }: { m: Modal }) {
               <Ic n={p.private ? "lock" : "building-2"} s={14} />
             </span>
             <div className="grow">
-              <select
-                className="select"
-                style={{ height: 28, width: "auto", borderColor: "transparent", paddingLeft: 4, fontWeight: 500 }}
+              <SelectField
+                size="sm"
+                variant="ghost"
+                className="font-medium"
                 value={p.private ? "private" : "workspace"}
                 aria-label="General access"
                 disabled={!admin}
-                onChange={(e) => setAccess(e.target.value === "private")}
-              >
-                <option value="private">Only people added</option>
-                <option value="workspace">Everyone at {D().ws.name}</option>
-              </select>
+                onValueChange={(value) => setAccess(value === "private")}
+                options={[
+                  { value: "private", label: "Only people added" },
+                  { value: "workspace", label: `Everyone at ${D().ws.name}` },
+                ]}
+              />
               <div className="faint" style={{ fontSize: 11.5, paddingLeft: 4 }}>
                 {p.private
                   ? "Owners, admins, and the people added. Taking someone off unassigns their issues here."
@@ -1163,11 +1166,14 @@ function InviteModal() {
             <label className="label" htmlFor="inv-role">
               Role
             </label>
-            <select className="select" id="inv-role" value={role} onChange={(e) => setRole(e.target.value)}>
-              {["Member", "Admin", "Guest"].map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </select>
+            <SelectField
+              id="inv-role"
+              aria-label="Role"
+              className="w-full"
+              value={role}
+              onValueChange={setRole}
+              options={["Member", "Admin", "Guest"].map((r) => ({ value: r, label: r }))}
+            />
           </div>
         </div>
         {personal ? (
@@ -1434,10 +1440,17 @@ function SaveViewModal({ m }: { m: Modal }) {
           <label className="label" htmlFor="sv-type">
             Layout
           </label>
-          <select className="select" id="sv-type" value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="list">List</option>
-            <option value="board">Board</option>
-          </select>
+          <SelectField
+            id="sv-type"
+            aria-label="Layout"
+            className="w-full"
+            value={type}
+            onValueChange={setType}
+            options={[
+              { value: "list", label: "List" },
+              { value: "board", label: "Board" },
+            ]}
+          />
         </div>
         {nf ? (
           <div className="hint">

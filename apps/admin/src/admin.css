@@ -645,6 +645,10 @@ body {
   align-items: center;
   gap: 8px;
 }
+.dt-size .input,
+.dt-size [data-slot="select-trigger"] {
+  min-width: 72px;
+}
 .dt-size .input {
   width: 72px;
   height: var(--h-sm);

@@ -1,4 +1,5 @@
 import { ActionButton } from "@dotrix/ui/components/action-button";
+import { SelectField } from "@dotrix/ui/components/select";
 // The right side panel beside one of Kai's sessions in Code.
 // It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review (and, in the desktop app, a Browser), picked by the buttons in the
 // session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
@@ -198,7 +199,11 @@ export function PaneTabs({
   const focusTab = (view: CodingPaneId) => {
     setAdding(false);
     onSelect(view);
-    requestAnimationFrame(() => strip.current?.querySelector<HTMLButtonElement>(`#${idPrefix}-tab-${view}`)?.focus());
+    requestAnimationFrame(() => {
+      const tab = strip.current?.querySelector<HTMLButtonElement>(`#${idPrefix}-tab-${view}`);
+      tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      tab?.focus();
+    });
   };
   const move = (event: ReactKeyboardEvent, view: CodingPaneId) => {
     const index = open.indexOf(view);
@@ -271,7 +276,7 @@ export function PaneTabs({
         </ActionButton>
         <span className="sp" />
         <ActionButton
-          className="ibtn ibtn-sm"
+          className="ibtn ibtn-sm ptabs-expand"
           onClick={onExpand}
           aria-pressed={expanded}
           aria-label={expanded ? "Restore the panes" : "Expand the panes over Code"}
@@ -288,24 +293,31 @@ export function PaneTabs({
           {children}
         </div>
         {adding && (
-          <section className="ptabs-chooser" id={`${idPrefix}-chooser`} aria-labelledby={`${idPrefix}-chooser-title`}>
-            <h2 id={`${idPrefix}-chooser-title`}>Open a pane</h2>
-            {items.map((candidate, index) => (
-              <ActionButton
-                key={candidate.id}
-                ref={index === 0 ? firstChoice : undefined}
-                className="btn btn-secondary"
-                onClick={() => {
-                  setAdding(false);
-                  onAdd(candidate.id);
-                  requestAnimationFrame(() => strip.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus());
-                }}
-              >
-                <Ic n={candidate.icon} s={16} />
-                {candidate.label}
-              </ActionButton>
-            ))}
-          </section>
+          <>
+            <span className="ptabs-chooser-veil" aria-hidden onClick={() => setAdding(false)} />
+            <section className="ptabs-chooser" id={`${idPrefix}-chooser`} aria-labelledby={`${idPrefix}-chooser-title`}>
+              <h2 id={`${idPrefix}-chooser-title`}>Open a pane</h2>
+              {items.map((candidate, index) => (
+                <ActionButton
+                  key={candidate.id}
+                  ref={index === 0 ? firstChoice : undefined}
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setAdding(false);
+                    onAdd(candidate.id);
+                    requestAnimationFrame(() => {
+                      const activeTab = strip.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+                      activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+                      activeTab?.focus();
+                    });
+                  }}
+                >
+                  <Ic n={candidate.icon} s={16} />
+                  {candidate.label}
+                </ActionButton>
+              ))}
+            </section>
+          </>
         )}
       </div>
     </>
@@ -799,14 +811,18 @@ function ReviewPanel({
         <b>Juno · Review</b>
       </div>
       {reviews.length > 1 && (
-        <select className="input" aria-label="Review" value={run?.id ?? ""} onChange={(event) => onSelectReview(event.target.value)}>
-          {!run && <option value="">Select a review</option>}
-          {reviews.map((review) => (
-            <option key={review.id} value={review.id}>
-              {text(review.review_context?.issue_key) || "Review"} · {new Date(review.created_at).toLocaleString()}
-            </option>
-          ))}
-        </select>
+        <SelectField
+          size="sm"
+          aria-label="Review"
+          className="w-full mb-3"
+          value={run?.id ?? ""}
+          onValueChange={onSelectReview}
+          placeholder="Select a review"
+          options={reviews.map((review) => ({
+            value: review.id,
+            label: `${text(review.review_context?.issue_key) || "Review"} · ${new Date(review.created_at).toLocaleString()}`,
+          }))}
+        />
       )}
       <div className="tabs work-panel-nav" role="tablist" aria-label="Review details" onKeyDown={tabKeys}>
         {(["summary", "findings", "evidence"] as const).map((value) => (

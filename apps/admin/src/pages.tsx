@@ -11,6 +11,7 @@ import {
   TriangleAlertIcon,
   CircleXIcon,
 } from "lucide-react";
+import { SelectField } from "@dotrix/ui/components/select";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PaginationState } from "@tanstack/react-table";
 import { useState, type ReactNode } from "react";
@@ -899,12 +900,17 @@ export function AuditPage() {
           onChange={(e) => filter(setWorkspace)(e.target.value.trim())}
           aria-label="Filter by workspace"
         />
-        <select className="input" value={actor} onChange={(e) => filter(setActor)(e.target.value)} aria-label="Filter by who acted">
-          <option value="">Anyone</option>
-          <option value="user">People</option>
-          <option value="agent">Agents</option>
-          <option value="system">System</option>
-        </select>
+        <SelectField
+          aria-label="Filter by who acted"
+          value={actor}
+          onValueChange={(value) => filter(setActor)(value)}
+          options={[
+            { value: "", label: "Anyone" },
+            { value: "user", label: "People" },
+            { value: "agent", label: "Agents" },
+            { value: "system", label: "System" },
+          ]}
+        />
         <input className="input" type="date" value={since} max={until || undefined} onChange={(e) => filter(setSince)(e.target.value)} aria-label="From date" />
         <input
           className="input"
@@ -1009,10 +1015,15 @@ export function AdminsPage({ meId }: { meId: string }) {
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             required
           />
-          <select className="input" aria-label="Role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as AdminRole })}>
-            <option value="viewer">Viewer: reads only</option>
-            <option value="owner">Owner: manages admins</option>
-          </select>
+          <SelectField
+            aria-label="Role"
+            value={form.role}
+            onValueChange={(value) => setForm({ ...form, role: value as AdminRole })}
+            options={[
+              { value: "viewer", label: "Viewer: reads only" },
+              { value: "owner", label: "Owner: manages admins" },
+            ]}
+          />
           <button type="submit" className="btn btn-primary" disabled={invite.isPending}>
             {invite.isPending ? "Inviting…" : "Send invite"}
           </button>

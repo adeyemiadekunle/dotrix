@@ -2,6 +2,7 @@
 // time (S.ui.pop), placed under what opened it and kept on screen; Escape or a click outside
 // closes it. Picks apply to a task, or to the open New task form ("__form").
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { SelectField } from "@dotrix/ui/components/select";
 
 import {
   applyPatch,
@@ -966,17 +967,25 @@ function FilterBuilder({ p }: { p: P }) {
               <div key={i}>
                 <div className="frow">
                   <span className="conj">{i ? "and" : "Where"}</span>
-                  <select className="select" aria-label="Field" value={f.f} onChange={(e) => viewChange(k, () => ((f.f = e.target.value), (f.v = [])))}>
-                    {Object.entries(FIELDS).map(([kk, x]) => (
-                      <option key={kk} value={kk}>
-                        {x.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select className="select" aria-label="Operator" value={f.op} onChange={(e) => viewChange(k, () => (f.op = e.target.value as "is" | "not"))}>
-                    <option value="is">is</option>
-                    <option value="not">is not</option>
-                  </select>
+                  <SelectField
+                    size="sm"
+                    className="w-full"
+                    aria-label="Field"
+                    value={f.f}
+                    onValueChange={(value) => viewChange(k, () => ((f.f = value), (f.v = [])))}
+                    options={Object.entries(FIELDS).map(([kk, x]) => ({ value: kk, label: x.name }))}
+                  />
+                  <SelectField
+                    size="sm"
+                    className="w-full"
+                    aria-label="Operator"
+                    value={f.op}
+                    onValueChange={(value) => viewChange(k, () => (f.op = value as "is" | "not"))}
+                    options={[
+                      { value: "is", label: "is" },
+                      { value: "not", label: "is not" },
+                    ]}
+                  />
                   <button className="valbtn" aria-expanded={open} onClick={() => ((p.edit = open ? undefined : i), render())}>
                     <span className="trunc grow">{names.length ? names.join(", ") : <span className="faint">Select…</span>}</span>
                     <Ic n="chevron-down" s={12} />
@@ -1146,9 +1155,14 @@ export function PopLayer() {
   useEffect(() => {
     if (!p) return;
     const down = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest('[data-radix-popper-content-wrapper], [data-slot="select-content"], [data-dotrix-select-listbox]')) return;
+      if (document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) return;
       if (ref.current && !ref.current.contains(e.target as Node)) closePop();
     };
-    const key = (e: KeyboardEvent) => e.key === "Escape" && closePop();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) closePop();
+    };
     // after the click that opened it
     const t = setTimeout(() => document.addEventListener("mousedown", down), 0);
     document.addEventListener("keydown", key);

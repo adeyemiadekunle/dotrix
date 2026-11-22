@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 
 import { api, authPost, unwrap } from "@/lib/api";
 import { ActionButton } from "@dotrix/ui/components/action-button";
+import { SelectField } from "@dotrix/ui/components/select";
 import { go, useRoute } from "../core/nav";
 import { myKeySaved, myModels } from "../data/account";
 import { isLive, live } from "../data/live";
@@ -77,16 +78,16 @@ export function ModelGate({ children }: { children: ReactNode }) {
         {d && !d.can_store_keys && <p role="alert">Ask the platform administrator to enable encrypted key storage.</p>}
         {allowed && (
           <form onSubmit={(e) => void connect(e)} style={{ display: "grid", gap: 12 }}>
-            <label>
-              Provider
-              <select className="select" value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="Model provider">
-                {(providers.data?.keys ?? []).map((p) => (
-                  <option key={p.provider} value={p.provider}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="field">
+              <span className="label">Provider</span>
+              <SelectField
+                aria-label="Model provider"
+                className="w-full"
+                value={provider}
+                onValueChange={setProvider}
+                options={(providers.data?.keys ?? []).map((p) => ({ value: p.provider, label: p.label }))}
+              />
+            </div>
             <label>
               API key
               <input

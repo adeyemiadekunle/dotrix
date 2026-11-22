@@ -1,3 +1,4 @@
+import { SelectField } from "@dotrix/ui/components/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
@@ -116,26 +117,24 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
             <p>Share an agreed outcome with people who can access this project. Only the content below is published; your conversation stays private.</p>
             {!preview ? (
               <>
-                <label className="field">
-                  Destination
-                  <select
+                <div className="field">
+                  <span className="label">Destination</span>
+                  <SelectField
                     aria-label="Destination"
-                    className="input"
+                    className="w-full"
                     value={destination}
-                    onChange={(e) => {
-                      setDestination(e.target.value as Draft["destination"]);
+                    onValueChange={(value) => {
+                      setDestination(value as Draft["destination"]);
                       setSupersedesPath("");
                     }}
-                  >
-                    {destinations
+                    options={destinations
                       .filter((d) => (d === "task" ? canWriteTasks : canWriteDocs))
-                      .map((d) => (
-                        <option key={d} value={d}>
-                          {d === "task" ? "Task" : d[0].toUpperCase() + d.slice(1)}
-                        </option>
-                      ))}
-                  </select>
-                </label>
+                      .map((d) => ({
+                        value: d,
+                        label: d === "task" ? "Task" : d[0].toUpperCase() + d.slice(1),
+                      }))}
+                  />
+                </div>
                 <label className="field">
                   Outcome title
                   <input className="input" maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -151,42 +150,43 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
                     onChange={(e) => setContent(e.target.value)}
                   />
                 </label>
-                <label className="field">
-                  Link shared document (optional)
-                  <select aria-label="Link shared document" className="input" value={relatedPath} onChange={(e) => setRelatedPath(e.target.value)}>
-                    <option value="">No document link</option>
-                    {sharedFiles.map((file) => (
-                      <option key={file.path} value={file.path}>
-                        {file.path}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  Link existing task (optional)
-                  <select aria-label="Link existing task" className="input" value={relatedIssue} onChange={(e) => setRelatedIssue(e.target.value)}>
-                    <option value="">No task link</option>
-                    {(issues.data ?? []).map((issue) => (
-                      <option key={issue.key} value={issue.key}>
-                        {issue.key} — {issue.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="field">
+                  <span className="label">Link shared document (optional)</span>
+                  <SelectField
+                    aria-label="Link shared document"
+                    className="w-full"
+                    value={relatedPath}
+                    onValueChange={setRelatedPath}
+                    options={[{ value: "", label: "No document link" }, ...sharedFiles.map((file) => ({ value: file.path, label: file.path }))]}
+                  />
+                </div>
+                <div className="field">
+                  <span className="label">Link existing task (optional)</span>
+                  <SelectField
+                    aria-label="Link existing task"
+                    className="w-full"
+                    value={relatedIssue}
+                    onValueChange={setRelatedIssue}
+                    options={[
+                      { value: "", label: "No task link" },
+                      ...(issues.data ?? []).map((issue) => ({ value: issue.key, label: `${issue.key} — ${issue.title}` })),
+                    ]}
+                  />
+                </div>
                 {destination === "decisions" && (
-                  <label className="field">
-                    Supersede decision (optional)
-                    <select aria-label="Supersede decision" className="input" value={supersedesPath} onChange={(e) => setSupersedesPath(e.target.value)}>
-                      <option value="">A separate new decision</option>
-                      {sharedFiles
-                        .filter((file) => file.path.startsWith("decisions/"))
-                        .map((file) => (
-                          <option key={file.path} value={file.path}>
-                            {file.path}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
+                  <div className="field">
+                    <span className="label">Supersede decision (optional)</span>
+                    <SelectField
+                      aria-label="Supersede decision"
+                      className="w-full"
+                      value={supersedesPath}
+                      onValueChange={setSupersedesPath}
+                      options={[
+                        { value: "", label: "A separate new decision" },
+                        ...sharedFiles.filter((file) => file.path.startsWith("decisions/")).map((file) => ({ value: file.path, label: file.path })),
+                      ]}
+                    />
+                  </div>
                 )}
                 {(document.isError || predecessor.isError || files.isError || issues.isError) && (
                   <p role="alert">Could not load shared context. Reload it before selecting a link.</p>

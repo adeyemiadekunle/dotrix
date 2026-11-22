@@ -1,5 +1,6 @@
 // Projects. The workspace Overview folded into Home.
 
+import { SelectField } from "@dotrix/ui/components/select";
 import { openPop } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { allowed } from "../core/can";
@@ -280,38 +281,25 @@ export function Projects() {
             aria-label="Search projects"
           />
         </div>
-        <select
-          className="select"
-          style={{ height: 26, width: "auto", fontSize: 12 }}
-          value={st}
-          onChange={(e) => set("projStatus", e.target.value)}
+        <SelectField
+          size="sm"
           aria-label="Filter by status"
-        >
-          <option value="all">All statuses</option>
-          {Object.entries(PSTAT).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="select"
-          style={{ height: 26, width: "auto", fontSize: 12 }}
-          value={sort}
-          onChange={(e) => set("projSort", e.target.value)}
+          value={st}
+          onValueChange={(value) => set("projStatus", value)}
+          options={[{ value: "all", label: "All statuses" }, ...Object.entries(PSTAT).map(([k, v]) => ({ value: k, label: v.name }))]}
+        />
+        <SelectField
+          size="sm"
           aria-label="Sort"
-        >
-          {[
+          value={sort}
+          onValueChange={(value) => set("projSort", value)}
+          options={[
             ["recent", "Recently active"],
             ["name", "Name"],
             ["due", "Due date"],
             ["progress", "Progress"],
-          ].map(([k, n]) => (
-            <option key={k} value={k}>
-              Sort: {n}
-            </option>
-          ))}
-        </select>
+          ].map(([k, n]) => ({ value: k, label: `Sort: ${n}` }))}
+        />
         <span className="sp" />
         <div className="seg" role="tablist" aria-label="Layout">
           {(

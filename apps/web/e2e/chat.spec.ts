@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectComposerMode, signUp } from "./helpers";
+import { expectComposerMode, pickSelect, signUp } from "./helpers";
 
 // Chat on the API: conversations in a project and across projects, and Kai's coding sessions in the same list.
 // The e2e backend runs the agents on a rule-based model: "Create issue: <title>" asks to create
@@ -32,7 +32,6 @@ async function openChat(page: Page, search = "") {
 }
 
 async function pickChatOption(page: Page, label: "Approvals", name: string | RegExp) {
-  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   const picker = page.getByRole("combobox", { name: label, exact: true });
   await picker.click();
   // Each picker under the message box keeps its own list.
@@ -42,14 +41,13 @@ async function pickChatOption(page: Page, label: "Approvals", name: string | Reg
   await option.click();
   await expect(picker).toContainText(selected);
   await expect(menu).toBeHidden();
-  await page.keyboard.press("Escape");
   return selected;
 }
 
 // Every mode lives in the + menu; the selected mode is marked when it is reopened.
 async function pickMode(page: Page, name: "Discuss" | "Plan" | "Build" | "Review") {
-  const plus = page.getByRole("button", { name: /^(Project and mode|Mode)$/ });
-  const menu = page.getByRole("dialog", { name: /^(Project and mode|Mode)$/ });
+  const plus = page.getByRole("button", { name: /^(Chat options|Project and mode|Mode)$/ });
+  const menu = page.getByRole("dialog", { name: /^(Chat options|Project and mode|Mode)$/ });
   if (!(await menu.isVisible())) await plus.click();
   await menu.getByRole("button", { name, exact: true }).click();
   await expect(menu).toBeHidden();
@@ -71,10 +69,10 @@ test("fx works in every mode", async ({ page }) => {
     }),
   );
   await openChat(page, "?project=KUM");
-  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
+  await page.getByRole("button", { name: /^(Chat options|Project and mode|Mode)$/ }).click();
   await expect(page.getByRole("combobox", { name: "Chat runtime", exact: true })).toBeVisible();
   await pickMode(page, "Plan");
-  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
+  await page.getByRole("button", { name: /^(Chat options|Project and mode|Mode)$/ }).click();
   await page.getByRole("combobox", { name: "Chat runtime", exact: true }).click();
   await page.getByRole("option", { name: "fx", exact: true }).click();
   await expect(page.getByRole("dialog").getByRole("button", { name: "Plan", exact: true })).toHaveAttribute("aria-pressed", "true"); // the mode you picked stays
@@ -134,9 +132,7 @@ test("in Accept edits what you ask for goes through, approved by you", async ({ 
   await signUp(page);
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM");
-  await page.getByRole("button", { name: /^(Project and mode|Mode)$/ }).click();
   await expect(page.getByRole("combobox", { name: "Approvals", exact: true })).toContainText("Accept edits");
-  await page.keyboard.press("Escape"); // your own workspace's default
   await page.getByLabel("Message", { exact: true }).fill("Create issue: Add search");
   await page.getByLabel("Message", { exact: true }).press("Enter");
   await expect(page.getByText(/Done\./)).toBeVisible();
@@ -153,8 +149,8 @@ test("a specialist mention keeps Nova as the adviser", async ({ page }) => {
   await addProject(page, "Kumove", "KUM");
   await openChat(page, "?project=KUM&agent=research");
 
-  await expect(page.getByRole("button", { name: "Project and mode" })).toBeVisible();
-  await page.getByRole("button", { name: "Project and mode", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Chat options", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Chat options", exact: true }).click();
   await expect(page.getByRole("button", { name: "Remove request to involve Vega" })).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByLabel("Message", { exact: true }).fill("Who else ships multi-zone?");
@@ -169,8 +165,8 @@ test("the + menu opens and cancels without touching the draft", async ({ page })
   await openChat(page, "?project=KUM");
 
   const box = page.getByLabel("Message", { exact: true });
-  const plus = page.getByRole("button", { name: "Project and mode" });
-  const menu = page.getByRole("dialog", { name: /^(Project and mode|Mode)$/ });
+  const plus = page.getByRole("button", { name: "Chat options", exact: true });
+  const menu = page.getByRole("dialog", { name: /^(Chat options|Project and mode|Mode)$/ });
 
   await plus.click();
   await expect(menu).toBeVisible();
@@ -229,6 +225,7 @@ test("general chat excludes project context", async ({ page }) => {
   await addProject(page, "Alpha", "ALP");
   await openChat(page);
   await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("combobox", { name: "Chat context", exact: true }).click();
   await page.getByRole("listbox", { name: "Chat context" }).getByRole("option", { name: "General", exact: true }).click();
   await expect(page.getByText("All projects", { exact: true })).toHaveCount(0);
   await page.getByLabel("Message", { exact: true }).fill("Hello Nova");
@@ -309,7 +306,7 @@ test("active project chat can queue, cancel, and steer without losing a failed d
   });
   try {
     await page.goto(location);
-    await expect(page.getByLabel("Delivery action", { exact: true })).toHaveValue("queue");
+    await expect(page.getByLabel("Delivery action", { exact: true })).toHaveAttribute("data-value", "queue");
     const box = page.getByLabel("Message", { exact: true });
     const stop = page.getByRole("button", { name: "Stop" });
     await expect(stop).toBeVisible();
@@ -322,7 +319,7 @@ test("active project chat can queue, cancel, and steer without losing a failed d
     await expect(page.getByText("Compare the alternatives afterward")).toBeVisible();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.getByText("Compare the alternatives afterward")).toBeHidden();
-    await page.getByLabel("Delivery action", { exact: true }).selectOption("steer");
+    await pickSelect(page, page.getByLabel("Delivery action", { exact: true }), "Steer this turn");
     reject = true;
     await box.fill("Only consider self-hosted options");
     await box.press("Enter");
@@ -377,7 +374,7 @@ test("selected chat outcomes preview project visibility, retry safely and retain
   await page.reload();
   await expect(page.getByRole("button", { name: "Open shared requirements", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Share to project…", exact: true }).click();
-  await panel.getByLabel("Destination", { exact: true }).selectOption("task");
+  await pickSelect(page, panel.getByLabel("Destination", { exact: true }), "Task");
   await panel.getByLabel("Outcome title", { exact: true }).fill("Implement database");
   await panel.getByLabel("Selected content", { exact: true }).fill("Add the schema. Acceptance: migrations run. Hosting remains open.");
   await panel.getByRole("button", { name: "Preview publication", exact: true }).click();
@@ -411,12 +408,13 @@ test("decision publication pins the reviewed predecessor and shares versioned su
   await page.getByLabel("Message", { exact: true }).press("Enter");
   await page.getByRole("button", { name: "Share to project…", exact: true }).click();
   const panel = page.getByRole("region", { name: "Publish selected outcome", exact: true });
-  await panel.getByLabel("Destination", { exact: true }).selectOption("decisions");
+  await pickSelect(page, panel.getByLabel("Destination", { exact: true }), "Decisions");
   await panel.getByLabel("Outcome title", { exact: true }).fill("Replacement choice");
   await panel.getByLabel("Selected content", { exact: true }).fill("Replacement rationale and scope");
-  await expect(panel.getByLabel("Supersede decision", { exact: true }).locator('option[value="decisions/original.md"]')).toHaveCount(1);
-  await panel.getByLabel("Supersede decision", { exact: true }).selectOption("decisions/original.md");
-  await panel.getByLabel("Link existing task", { exact: true }).selectOption("DEC-1");
+  await panel.getByLabel("Supersede decision", { exact: true }).click();
+  await expect(page.getByRole("option", { name: "decisions/original.md", exact: true })).toHaveCount(1);
+  await page.getByRole("option", { name: "decisions/original.md", exact: true }).click();
+  await pickSelect(page, panel.getByLabel("Link existing task", { exact: true }), /^DEC-1\b/);
   await panel.getByRole("button", { name: "Preview publication", exact: true }).click();
   await expect(panel).toContainText("Human rationale v1");
   await expect(panel).toContainText("The previous decision's text is retained");

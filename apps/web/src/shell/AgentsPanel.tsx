@@ -19,10 +19,10 @@ function toggleAgents() {
   S.ui.agentsSheet = !S.ui.agentsSheet;
   render();
 }
-/** Codes: the right side holds the session's own panels, so no agents panel or launcher there
- * (the bell and the corner notices still say what needs you). */
-export const inCodeTab = () => /^\/w\/[^/]+\/codes\/?$/.test(location.pathname);
-export const agentsShown = () => !inCodeTab() && S.ui.agentsSheet;
+/** Chat and Codes already focus on active session/conversation surfaces, so keep the floating launcher off them
+ * (the bell and corner notices still surface approvals waiting). */
+export const inSessionArea = () => /^\/w\/[^/]+\/(?:chat|codes)\/?$/.test(location.pathname);
+export const agentsShown = () => !inSessionArea() && S.ui.agentsSheet;
 
 const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: "Working", blocked: "Blocked", idle: "Idle" };
 
@@ -39,52 +39,38 @@ function openWork(p: Presence) {
 
 function Row({ p }: { p: Presence }) {
   return (
-    <div
-      className={`ap-row st-${p.state}`}
-      role="button"
-      tabIndex={0}
-      onClick={() => openWork(p)}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openWork(p))}
-    >
-      <Face c={p.c} size={26} mood={p.mood} />
-      <span className="ap-main">
-        <span className="ap-top">
-          <b>{p.name}</b>
-          <span className="ap-role">{p.role}</span>
-          <span className="sp" />
-          <span className="ap-state">
-            <i />
-            {LABEL[p.state]}
+    <div className={`ap-row st-${p.state}`}>
+      <button type="button" className="ap-row-hit" onClick={() => openWork(p)}>
+        <Face c={p.c} size={26} mood={p.mood} />
+        <span className="ap-main">
+          <span className="ap-top">
+            <b>{p.name}</b>
+            <span className="ap-role">{p.role}</span>
+            <span className="sp" />
+            <span className="ap-state">
+              <i />
+              {LABEL[p.state]}
+            </span>
           </span>
+          <span className="ap-now">{p.now}</span>
+          {p.state === "working" && <span className="ap-bar" aria-hidden />}
         </span>
-        <span className="ap-now">{p.now}</span>
-        {p.state === "working" && <span className="ap-bar" aria-hidden />}
-        {p.approve && (
-          <span className="ap-acts">
-            {p.reject && (
-              <button
-                className="btn btn-sm btn-secondary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  p.reject!();
-                }}
-              >
-                Reject
-              </button>
-            )}
-            <button
-              className="btn btn-sm btn-primary"
-              onClick={(e) => {
-                e.stopPropagation();
-                p.approve!();
-              }}
-            >
-              Approve
+      </button>
+      {p.approve && (
+        <div className="ap-acts">
+          {p.reject && (
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => p.reject!()}>
+              Reject
             </button>
-            <button className="btn btn-sm btn-ghost">Open</button>
-          </span>
-        )}
-      </span>
+          )}
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => p.approve!()}>
+            Approve
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => openWork(p)}>
+            Open
+          </button>
+        </div>
+      )}
     </div>
   );
 }

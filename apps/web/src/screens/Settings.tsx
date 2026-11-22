@@ -2,7 +2,7 @@ import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
 import { SelectionInput } from "@dotrix/ui/components/selection-input";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
 import { ActionButton } from "@dotrix/ui/components/action-button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
+import { SelectField } from "@dotrix/ui/components/select";
 // Settings: a left nav of sections, each a set of rows.
 // dotrix adds the agents' sections (owners and admins): Agents, Rules and skills, Automations,
 // GitHub, What members can do, Audit log; and Devices and tokens (the CLI) under Security.
@@ -173,22 +173,16 @@ const NTog = ({ k, def = false }: { k: string; def?: boolean }) => (
 );
 function Sel({ k, opts, v }: { k: string; opts: (string | [string, string])[]; v: unknown }) {
   return (
-    <select
-      className="select"
-      style={{ width: "auto", minWidth: 180 }}
-      value={String(v)}
-      onChange={(e) => setP(k, k === "weekStart" ? +e.target.value : e.target.value)}
+    <SelectField
       aria-label={k}
-    >
-      {opts.map((o) => {
+      value={String(v)}
+      onValueChange={(next) => setP(k, k === "weekStart" ? +next : next)}
+      style={{ width: "auto", minWidth: 180, maxWidth: "100%" }}
+      options={opts.map((o) => {
         const [val, n] = Array.isArray(o) ? o : [o, o];
-        return (
-          <option key={val} value={val}>
-            {n}
-          </option>
-        );
+        return { value: val, label: n };
       })}
-    </select>
+    />
   );
 }
 function Seg({ k, opts }: { k: "side" | "density"; opts: string[] }) {
@@ -550,21 +544,17 @@ function LiveAgent({ handle }: { handle: string }) {
         </SRow>
       ) : (
         <SRow t="Model" d="Which model this agent uses. Specialists use the project's specialist model when unset.">
-          <select
-            className="select"
-            style={{ width: "auto", minWidth: 180 }}
+          <SelectField
+            style={{ width: "auto", minWidth: 180, maxWidth: "100%" }}
             value={v.model ?? ""}
-            onChange={(e) => set({ model: e.target.value || null })}
+            onValueChange={(value) => set({ model: value || null })}
             aria-label="Model"
-          >
-            <option value="">Project or conversation default</option>
-            {(ms.data ?? []).map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-            {v.model && !(ms.data ?? []).some((m) => m.id === v.model) && <option value={v.model}>{v.model}</option>}
-          </select>
+            options={[
+              { value: "", label: "Project or conversation default" },
+              ...(ms.data ?? []).map((m) => ({ value: m.id, label: m.name })),
+              ...(v.model && !(ms.data ?? []).some((m) => m.id === v.model) ? [{ value: v.model, label: v.model }] : []),
+            ]}
+          />
         </SRow>
       )}
       {handle !== "coding-agent" && (
@@ -614,19 +604,17 @@ function LiveAgent({ handle }: { handle: string }) {
                 const risky = !cat.data!.low_risk_actions.includes(act);
                 return (
                   <SRow key={act} t={t.label} d={rule === "allow" && risky ? "Changes go through without anyone approving them." : undefined}>
-                    <select
-                      className="select"
-                      style={{ width: "auto" }}
+                    <SelectField
+                      style={{ width: "auto", minWidth: 140, maxWidth: "100%" }}
                       value={rule}
-                      onChange={(e) => set({ autonomy: { ...v.autonomy, [act]: e.target.value as "allow" | "ask" | "block" } })}
+                      onValueChange={(value) => set({ autonomy: { ...v.autonomy, [act]: value as "allow" | "ask" | "block" } })}
                       aria-label={`${t.label} without asking`}
-                    >
-                      <option value="ask">Ask first</option>
-                      <option value="allow" disabled={!owner}>
-                        Allow
-                      </option>
-                      <option value="block">Block</option>
-                    </select>
+                      options={[
+                        { value: "ask", label: "Ask first" },
+                        { value: "allow", label: "Allow", disabled: !owner },
+                        { value: "block", label: "Block" },
+                      ]}
+                    />
                   </SRow>
                 );
               })}
@@ -690,6 +678,11 @@ function Agents() {
           {kaiGuidance && <span className="badge">Customised</span>}
         </h2>
         <p className="muted">Implements instructed work through Nova in Build mode.</p>
+        <SRow t="Coding tool and model" d="Kai uses your coding preferences and credentials.">
+          <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "my-models" })}>
+            Your models
+          </ActionButton>
+        </SRow>
         <div className="sblock">
           <h2>Built-in instructions</h2>
           <DesignTextarea
@@ -757,17 +750,16 @@ function Agents() {
           {sel.customised && <span className="badge">Customised</span>}
         </div>
         <SRow t="Model" d="Which model this agent uses; the project's model when unset.">
-          <select
-            className="select"
-            style={{ width: "auto", minWidth: 180 }}
+          <SelectField
+            style={{ width: "auto", minWidth: 180, maxWidth: "100%" }}
             value={sel.model ?? ""}
-            onChange={(e) => mutate(() => ((sel.model = e.target.value || undefined), (sel.customised = true)))}
-          >
-            <option value="">Project default</option>
-            {["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"].map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
+            aria-label="Model"
+            onValueChange={(value) => mutate(() => ((sel.model = value || undefined), (sel.customised = true)))}
+            options={[
+              { value: "", label: "Project default" },
+              ...["Gemini 3.8 Flash", "Claude Sonnet 5.5", "Claude Opus 5.5", "GPT-5.5"].map((m) => ({ value: m, label: m })),
+            ]}
+          />
         </SRow>
         <SRow t="Tools" d="From the catalogue. Writes wait for approval unless an owner allows them.">
           <span className="row" style={{ gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -785,23 +777,23 @@ function Agents() {
           </p>
           {Object.values(ACTION_OF).map(([act, what]) => (
             <SRow key={act} t={what[0]!.toUpperCase() + what.slice(1)}>
-              <select
-                className="select"
-                style={{ width: "auto" }}
+              <SelectField
+                style={{ width: "auto", minWidth: 140, maxWidth: "100%" }}
                 value={sel.allows?.includes(act) ? "allow" : "ask"}
-                onChange={(e) =>
+                onValueChange={(value) =>
                   mutate(
                     () => (
-                      (sel.allows = e.target.value === "allow" ? [...(sel.allows ?? []), act] : (sel.allows ?? []).filter((x) => x !== act)),
+                      (sel.allows = value === "allow" ? [...(sel.allows ?? []), act] : (sel.allows ?? []).filter((x) => x !== act)),
                       (sel.customised = sel.builtIn || undefined)
                     ),
                   )
                 }
                 aria-label={`${what} without asking`}
-              >
-                <option value="ask">Ask first</option>
-                <option value="allow">Allow</option>
-              </select>
+                options={[
+                  { value: "ask", label: "Ask first" },
+                  { value: "allow", label: "Allow" },
+                ]}
+              />
             </SRow>
           ))}
         </div>
@@ -866,7 +858,21 @@ function Agents() {
       <UnattendedPause />
       <div className="panel" style={{ overflow: "hidden" }}>
         {agents.map((a) => (
-          <div key={a.handle} className="mini" style={{ minHeight: 52 }} onClick={() => ((S.ui.agentSel = a.handle), render())}>
+          <div
+            key={a.handle}
+            className="mini"
+            style={{ minHeight: 52 }}
+            role="button"
+            tabIndex={0}
+            onClick={() => ((S.ui.agentSel = a.handle), render())}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                S.ui.agentSel = a.handle;
+                render();
+              }
+            }}
+          >
             <Face c={a.c} size={26} mood={moodOf(a.handle)} />
             <div className="grow" style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 500 }}>
@@ -964,18 +970,14 @@ function ApprovalCap({ role }: { role: string | undefined }) {
           : `${CAPS[Math.max(at, 0)][2]} Only people who may approve agent changes go above Manual; closing issues, merging, and agent rules always need a person.`
       }
     >
-      <Select value={cap} disabled={paused} onValueChange={(v) => (isLive() ? void approvalCap(v as "manual" | "accept_edits" | "auto") : setDemo(v))}>
-        <SelectTrigger aria-label="Highest approval mode">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {CAPS.map(([v, l], i) => (
-            <SelectItem key={v} value={v} disabled={role !== "owner" && i > at}>
-              {l}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <SelectField
+        aria-label="Highest approval mode"
+        style={{ width: "auto", minWidth: 180, maxWidth: "100%" }}
+        value={cap}
+        disabled={paused}
+        onValueChange={(v) => (isLive() ? void approvalCap(v as "manual" | "accept_edits" | "auto") : setDemo(v))}
+        options={CAPS.map(([v, l], i) => ({ value: v, label: l, disabled: role !== "owner" && i > at }))}
+      />
     </SRow>
   );
 }
@@ -1114,10 +1116,12 @@ function CodeModeSettings() {
 }
 
 function MyModels() {
+  const [demoModel, setDemoModel] = useState<string | null>(null);
+  const [demoTool, setDemoTool] = useState<"codex" | "claude-code" | "opencode" | "fx" | null>("codex");
   const demo = {
     keys: DEMO_KEYS.map((k) => ({ ...k, connected: false, last4: null, limit_reached_at: null })),
-    default_model: null,
-    default_coding_tool: "codex" as const,
+    default_model: demoModel,
+    default_coding_tool: demoTool,
     models: DEMO_MODELS,
   };
   const loaded = useApi<{
@@ -1159,20 +1163,19 @@ function MyModels() {
           t="New conversations and coding sessions"
           d="The model your new conversations and Kai's new coding sessions start on, when you have its provider key."
         >
-          <select
-            className="select"
-            style={{ width: "auto", minWidth: 220 }}
+          <SelectField
+            style={{ width: "auto", minWidth: 220, maxWidth: "100%" }}
             value={d.default_model ?? ""}
-            onChange={(e) => (isLive() ? void save(myDefaultModelSaved(e.target.value || null), "Default model saved") : toast("Default model saved"))}
+            onValueChange={(value) => {
+              if (isLive()) void save(myDefaultModelSaved(value || null), "Default model saved");
+              else {
+                setDemoModel(value || null);
+                toast("Default model saved");
+              }
+            }}
             aria-label="Your default model"
-          >
-            <option value="">Each project&apos;s model</option>
-            {d.models.map((m) => (
-              <option key={m} value={m}>
-                {m.split(":")[1] ?? m}
-              </option>
-            ))}
-          </select>
+            options={[{ value: "", label: "Each project's model" }, ...d.models.map((m) => ({ value: m, label: m.split(":")[1] ?? m }))]}
+          />
         </SRow>
       </div>
       <div className="sblock">
@@ -1181,22 +1184,26 @@ function MyModels() {
           t="Runs the model you pick"
           d="Kai codes on the model you pick for a session (your default model to start). Auto runs Anthropic models on Claude Code, OpenAI's on Codex, and the rest on OpenCode. A preferred engine is used wherever it can run the model. Existing sessions keep theirs."
         >
-          <select
-            className="select"
+          <SelectField
+            style={{ width: "auto", minWidth: 220, maxWidth: "100%" }}
             aria-label="Kai's coding engine"
             value={d.default_coding_tool ?? ""}
-            onChange={(e) => {
-              const tool = e.target.value as "codex" | "claude-code" | "opencode" | "fx" | "";
+            onValueChange={(value) => {
+              const tool = value as "codex" | "claude-code" | "opencode" | "fx" | "";
               if (isLive()) void save(myCodingToolSaved(tool || null), "Coding engine saved");
-              else toast("Coding engine saved");
+              else {
+                setDemoTool(tool || null);
+                toast("Coding engine saved");
+              }
             }}
-          >
-            <option value="">Auto · follows the model</option>
-            <option value="codex">Codex · OpenAI</option>
-            <option value="claude-code">Claude Code · Anthropic</option>
-            <option value="opencode">OpenCode · any connected provider</option>
-            <option value="fx">fx · OpenAI-compatible providers</option>
-          </select>
+            options={[
+              { value: "", label: "Auto · follows the model" },
+              { value: "codex", label: "Codex · OpenAI" },
+              { value: "claude-code", label: "Claude Code · Anthropic" },
+              { value: "opencode", label: "OpenCode · any connected provider" },
+              { value: "fx", label: "fx · OpenAI-compatible providers" },
+            ]}
+          />
         </SRow>
       </div>
     </>
@@ -1245,20 +1252,13 @@ function MyAgentRow({
             Coding tool and model
           </ActionButton>
         ) : (
-          <select
-            className="select"
-            style={{ width: "auto", minWidth: 200 }}
+          <SelectField
+            style={{ width: "auto", minWidth: 200, maxWidth: "100%" }}
             value={model}
-            onChange={(e) => setModel(e.target.value)}
+            onValueChange={setModel}
             aria-label={`${a.name}'s model for you`}
-          >
-            <option value="">As the workspace set it</option>
-            {models.map((m) => (
-              <option key={m} value={m}>
-                {m.split(":")[1] ?? m}
-              </option>
-            ))}
-          </select>
+            options={[{ value: "", label: "As the workspace set it" }, ...models.map((m) => ({ value: m, label: m.split(":")[1] ?? m }))]}
+          />
         )}
         <span className="faint" style={{ fontSize: 12 }}>
           {text.length}/2000
@@ -1733,24 +1733,22 @@ function GitHubContent({
               }
               d={cur ? <span className="mono">{cur.full_name}</span> : p.repo ? <span className="mono">{p.repo}</span> : "No repository"}
             >
-              <select
-                className="select"
-                style={{ width: "auto", minWidth: 200 }}
+              <SelectField
+                style={{ width: "auto", minWidth: 200, maxWidth: "100%" }}
                 value={cur ? `${cur.installation_ref}:${cur.github_repo_id}` : ""}
                 disabled={!admin || busy === p.key || !options}
-                onChange={(e) => onConnect(p.id, p.key, e.target.value)}
+                onValueChange={(value) => onConnect(p.id, p.key, value)}
                 aria-label={`Repository for ${p.name}`}
-              >
-                <option value="">No repository</option>
-                {(options ?? [])
-                  .filter((r) => !r.project_key || r.project_key === p.key)
-                  .map((r) => (
-                    <option key={`${r.installation_ref}:${r.github_repo_id}`} value={`${r.installation_ref}:${r.github_repo_id}`}>
-                      {r.full_name}
-                      {r.private ? " (private)" : ""}
-                    </option>
-                  ))}
-              </select>
+                options={[
+                  { value: "", label: "No repository" },
+                  ...(options ?? [])
+                    .filter((r) => !r.project_key || r.project_key === p.key)
+                    .map((r) => ({
+                      value: `${r.installation_ref}:${r.github_repo_id}`,
+                      label: `${r.full_name}${r.private ? " (private)" : ""}`,
+                    })),
+                ]}
+              />
             </SRow>
           );
         })}
@@ -1811,22 +1809,18 @@ function CloudEnvironmentSettings({ projectId }: { projectId: string }) {
         <DesignInput value={data.name} maxLength={100} onChange={(e) => change({ name: e.target.value })} aria-label="Environment name" />
       </SRow>
       <SRow t="Coding image" d="Custom images must be approved by the server operator and pinned by digest. They run on Docker only.">
-        <select
+        <SelectField
           style={{ width: 240, maxWidth: "100%" }}
           title={data.image ?? "Platform coding image"}
-          className="select"
           aria-label="Environment coding image"
           value={data.image ?? ""}
-          onChange={(e) => change({ image: e.target.value || null })}
-        >
-          <option value="">Platform coding image</option>
-          {data.image && !(data.available_images ?? []).includes(data.image) && <option value={data.image}>No longer approved: {data.image}</option>}
-          {(data.available_images ?? []).map((image) => (
-            <option key={image} value={image}>
-              {image}
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => change({ image: value || null })}
+          options={[
+            { value: "", label: "Platform coding image" },
+            ...(data.image && !(data.available_images ?? []).includes(data.image) ? [{ value: data.image, label: `No longer approved: ${data.image}` }] : []),
+            ...(data.available_images ?? []).map((image) => ({ value: image, label: image })),
+          ]}
+        />
       </SRow>
       <div style={{ marginTop: 16 }}>
         <label htmlFor={`environment-setup-${projectId}`}>Setup script</label>
@@ -1921,14 +1915,13 @@ function SandboxNetworkSettings() {
       </div>
       <div className="sblock" style={{ marginTop: 0 }}>
         <SRow t="Applies to" d={scope ? "This project, on top of what every project may reach" : "Every project"}>
-          <select className="select" style={{ width: "auto", minWidth: 200 }} value={scope} onChange={(e) => pick(e.target.value)} aria-label="Applies to">
-            <option value="">Every project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <SelectField
+            style={{ width: "auto", minWidth: 200, maxWidth: "100%" }}
+            value={scope}
+            onValueChange={pick}
+            aria-label="Applies to"
+            options={[{ value: "", label: "Every project" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+          />
         </SRow>
       </div>
       {scope && isLive() && <CloudEnvironmentSettings key={scope} projectId={scope} />}
@@ -2333,17 +2326,17 @@ function LiveNotifs({ sec }: { sec: string }) {
             t="Email me"
             d="What you get in the app, by email too: as it happens (a run's changes together), a daily digest at 08:00 UTC of what's unread, or never."
           >
-            <select
-              className="select"
-              style={{ width: "auto", minWidth: 180 }}
+            <SelectField
+              style={{ width: "auto", minWidth: 180, maxWidth: "100%" }}
               value={v.email}
-              onChange={(e) => put({ email: e.target.value as NotifSettings["email"] })}
+              onValueChange={(value) => put({ email: value as NotifSettings["email"] })}
               aria-label="Email me"
-            >
-              <option value="immediately">As it happens</option>
-              <option value="daily">Daily digest</option>
-              <option value="off">Never</option>
-            </select>
+              options={[
+                { value: "immediately", label: "As it happens" },
+                { value: "daily", label: "Daily digest" },
+                { value: "off", label: "Never" },
+              ]}
+            />
           </SRow>
           <p className="faint" style={{ fontSize: 12.5, marginTop: 12 }}>
             Which kinds reach you follows Mentions, Task assignments, and Agents. Emails go only to a verified address.
@@ -2554,20 +2547,38 @@ function LivePermissions() {
   );
 }
 
+const SAMPLE_BROWSER_RUNNERS = [
+  { folder: "~/code/website-redesign", projectKey: "WEB" },
+  { folder: "~/code/mobile-app", projectKey: "MOB" },
+];
+
 /** The desktop app's Browser pane: on or off, Kai's use of it, and what its pages keep. Saved by the app, for this computer. */
 function BrowserSettingsPage() {
   const bridge = desktopBrowser();
-  const settings = useBrowserSettings();
-  if (!bridge) return <p className="muted">The Browser pane is part of the dotrix desktop app. Open Settings there to change it.</p>;
-  const change = (send: () => Promise<BrowserSettings>) => () =>
+  const liveSettings = useBrowserSettings();
+  const [sampleSettings, setSampleSettings] = useState<BrowserSettings>({
+    enabled: true,
+    keepCookies: false,
+    kaiAllowed: true,
+    partition: "persist:dotrix-browser",
+  });
+  const settings = bridge ? liveSettings : sampleSettings;
+  const change = (send: () => Promise<BrowserSettings>, patch: Partial<BrowserSettings>) => () => {
+    if (!bridge) {
+      setSampleSettings((current) => ({ ...current, ...patch }));
+      toast("Browser setting saved");
+      return;
+    }
     void send()
       .then(setBrowserSettings)
       .catch(() => toast("The setting couldn't be saved"));
+  };
   const on = settings?.enabled ?? false;
   return (
     <>
+      {!bridge && <p className="hint">Sample settings · Open Dotrix in the desktop app to use the Browser pane on this computer.</p>}
       <SRow t="Browser pane" d="Open your running app or any web page beside a coding session, in a profile apart from dotrix and your everyday browser.">
-        <Tog on={on} set={(v) => change(() => bridge.setEnabled(v))()} label="Browser pane" disabled={!settings} />
+        <Tog on={on} set={(v) => change(() => bridge!.setEnabled(v), { enabled: v })()} label="Browser pane" disabled={!settings} />
       </SRow>
       <SRow
         t={`Let ${CODING_AGENT.name} use the browser`}
@@ -2575,7 +2586,7 @@ function BrowserSettingsPage() {
       >
         <Tog
           on={on && (settings?.kaiAllowed ?? false)}
-          set={(v) => change(() => bridge.setKaiAllowed(v))()}
+          set={(v) => change(() => bridge!.setKaiAllowed(v), { kaiAllowed: v })()}
           label={`Let ${CODING_AGENT.name} use the browser`}
           disabled={!on}
         />
@@ -2583,7 +2594,7 @@ function BrowserSettingsPage() {
       <SRow t="Keep cookies after quitting" d="Off, pages in the pane are signed out each time you quit dotrix.">
         <Tog
           on={on && (settings?.keepCookies ?? false)}
-          set={(v) => change(() => bridge.setKeepCookies(v))()}
+          set={(v) => change(() => bridge!.setKeepCookies(v), { keepCookies: v })()}
           label="Keep cookies after quitting"
           disabled={!on}
         />
@@ -2591,12 +2602,16 @@ function BrowserSettingsPage() {
       <SRow t="Browsing data" d="Cookies, storage and cache saved by pages in the pane.">
         <ActionButton
           className="btn btn-sm"
-          onClick={() =>
+          onClick={() => {
+            if (!bridge) {
+              toast("Browsing data cleared");
+              return;
+            }
             void bridge.clear().then(
               () => toast("Browsing data cleared"),
               () => toast("The browsing data couldn't be cleared"),
-            )
-          }
+            );
+          }}
         >
           Clear browsing data
         </ActionButton>
@@ -2609,16 +2624,19 @@ function BrowserSettingsPage() {
 /** The command that starts each folder's app, for Kai to start in its worktree and open in the pane. */
 function AppCommands() {
   const bridge = desktopDevServers();
-  const runners = useDesktopRunners();
-  const [saved, setSaved] = useState<Record<string, DevCommand> | null>(null);
+  const liveRunners = useDesktopRunners();
+  const [saved, setSaved] = useState<Record<string, DevCommand> | null>(() =>
+    bridge ? null : { "~/code/website-redesign": { command: "pnpm dev", port: 3000 } },
+  );
   useEffect(() => {
+    if (!bridge) return;
     let live = true;
-    void bridge?.list().then((found) => live && setSaved(found));
+    void bridge.list().then((found) => live && setSaved(found));
     return () => {
       live = false;
     };
   }, [bridge]);
-  if (!bridge) return null;
+  const runners = bridge ? liveRunners : SAMPLE_BROWSER_RUNNERS;
   return (
     <div className="sblock">
       <h2>Start your app for {CODING_AGENT.name}</h2>
@@ -2638,7 +2656,18 @@ function AppCommands() {
             label={runner.projectKey}
             saved={saved?.[runner.folder] ?? null}
             loading={saved === null}
-            onSave={async (next) => setSaved(await bridge.save(runner.folder, next))}
+            onSave={async (next) => {
+              if (bridge) {
+                setSaved(await bridge.save(runner.folder, next));
+                return;
+              }
+              setSaved((current) => {
+                const copy = { ...(current ?? {}) };
+                if (next) copy[runner.folder] = next;
+                else delete copy[runner.folder];
+                return copy;
+              });
+            }}
           />
         ))
       )}
@@ -3250,9 +3279,7 @@ export function Settings() {
   const sec = personal() && TEAM_ONLY.has(renamed) ? "profile" : renamed;
   const admin = allowed("workspace:manage");
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
-  // The Browser pane is the desktop app's: its page is listed only there.
-  const shown = (k: string) =>
-    (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k)) && (k !== "browser" || Boolean(desktopBrowser()));
+  const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k));
   const page = SEC_PAGE[sec] ?? sec;
   const title = SET_NAV.flatMap((g) => g[1]).find((x) => x[0] === page);
   const lead = sec === "members" ? `${members.length} ${LEADS.members}` : LEADS[page];
@@ -3264,22 +3291,27 @@ export function Settings() {
   };
   return (
     <div className="set">
-      <label className="set-section-picker" htmlFor="settings-section">
+      <div className="set-section-picker">
         <span className="label">Settings section</span>
-        <select id="settings-section" className="select" value={page} onChange={(event) => openSection(event.target.value)}>
-          {groups.map(([group, items]) => (
-            <optgroup key={group} label={group}>
-              {items
+        <SelectField
+          id="settings-section"
+          aria-label="Settings section"
+          className="w-full"
+          value={page}
+          onValueChange={openSection}
+          options={groups
+            .map(([group, items]) => ({
+              label: group,
+              options: items
                 .filter(([key]) => shown(key))
-                .map(([key, name]) => (
-                  <option key={key} value={key}>
-                    {name}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
+                .map(([key, name]) => ({
+                  value: key,
+                  label: name,
+                })),
+            }))
+            .filter((g) => g.options.length > 0)}
+        />
+      </div>
       <nav className="set-nav" aria-label="Settings">
         {groups.map(([g, items]) => (
           <div key={g} style={{ display: "contents" }}>

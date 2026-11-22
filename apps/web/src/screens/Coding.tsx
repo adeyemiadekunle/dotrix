@@ -7,12 +7,32 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // URL: ?session=ID (a session, with &panel=, &turn=, &file=, &line=), ?new=1 (a new session, &issue=KEY), else the list.
 import { useRef, useState, type CSSProperties } from "react";
 
+import { APPROVAL_MODES, modelName, type ApprovalMode } from "@/lib/agent";
 import { useCodingSessions } from "@/lib/coding";
+import { approvalModes, defaultApproval } from "../core/can";
 import { Ic } from "../core/icons";
 import { useRoute } from "../core/nav";
+import { ago } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { D, S, render } from "../data/store";
-import { Message, NewSession, Pending, Session, SessionRow, SessionHeader, openCoding } from "./Chat";
+import { Splitter, useStoredSize } from "../ui/splitter";
+import { Checkpoint } from "../components/AgentTrace";
+import {
+  ApprovalPick,
+  ComposerModel,
+  SAMPLE_COMPOSER_MODELS,
+  copyText,
+  LineCounts,
+  Message,
+  NewSession,
+  Pending,
+  Session,
+  SessionRow,
+  SessionHeader,
+  STATUS,
+  openCoding,
+  useWide,
+} from "./Chat";
 import { ChatComposer, ChatComposerInput, ChatLayout, ChatMessageList, ChatSendButton, CodingOptions } from "../components/chat-ui";
 
 import { buildTree, parseDiff } from "../core/kaiWork";
@@ -34,6 +54,11 @@ import { demoCodingSessions } from "../core/demoSessions";
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
 const toList = (): [string, () => void] => ["Back to sessions", () => openCoding("")];
+const parseDemoPanes = (value: string | null): CodingPaneId[] =>
+  (value ?? "")
+    .split(",")
+    .filter((v): v is CodingPaneId => /^(changes|files|terminal|review|browser)$|^(terminal|browser)-[1-9]\d{0,5}$/.test(v))
+    .filter((v, i, all) => all.indexOf(v) === i);
 
 export function Coding() {
   const { search } = useRoute();
@@ -49,7 +74,9 @@ export function Coding() {
   const archivedCount = found.filter((c) => c.archived).length;
   const sessions = found.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
   const hasSel = Boolean(sessionId || search.get("new") || issue);
-  const crowded = Boolean(sessionId && search.get("panel")) && window.matchMedia("(max-width: 1799px)").matches;
+  const [listW, setListW] = useStoredSize("dotrix.coding.listWidth", 272, 220, 480);
+  const narrowForPanes = useWide("(max-width: 1799px)");
+  const crowded = Boolean(sessionId && search.get("panel")) && narrowForPanes;
   const sidebar = useSessionSidebar("coding", hasSel ? search.toString() : "", crowded);
   // One list, pinned first, then the latest; each row names its issue, so its project.
   const items = sessions
@@ -61,9 +88,10 @@ export function Coding() {
       <div className="page flush">
         <div
           className={`chat-grid ${hasSel ? "has-sel" : ""} ${sidebar.listOpen ? "list-open" : ""}`}
-          style={css({ "--list-w": sidebar.hidden ? "0px" : "272px" })}
+          style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
         >
           <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
+            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
             <div style={{ height: 44, padding: "0 16px" }} className="row">
               <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Code</h1>
               <span className="sp" />
@@ -161,23 +189,31 @@ function SampleBrowser() {
 }
 
 function DemoSession({ id }: { id: string }) {
+  const { search } = useRoute();
   const session = D().coding.find((item) => item.id === id);
-  const [openViews, setOpenViews] = useState<CodingPaneId[]>([]);
+  const [openViews, setOpenViews] = useState<CodingPaneId[]>(() => parseDemoPanes(search.get("panel")));
   const [activeView, setActiveView] = useActivePane(openViews);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<"build" | "plan">("build");
+  const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
+  const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
+  const modelOptions = SAMPLE_COMPOSER_MODELS.map((item): [string, string] => [item, modelName(item)]);
+  const [chosenModel, setModel] = useState<string>(SAMPLE_COMPOSER_MODELS[0] ?? "");
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const closeView = (view: CodingPaneId) => setOpenViews((current) => current.filter((item) => item !== view));
   const [opened, setOpened] = useState<string | null>(null);
   const turn = session ? session.turns.length - 1 : 0;
   if (!session) return <Pending text="This sample session is no longer available." back={toList()} />;
+  const [statusLabel, statusColor] = STATUS[session.status];
   // Seeded diffs are excerpts; parse each file independently so a truncated hunk cannot consume the next file.
   const files = Object.entries(session.diffs ?? {}).flatMap(([path, diff]) => {
     const status = session.files?.find((file) => file.path === path)?.status;
     const mode = status === "added" ? "new file mode 100644\n" : status === "deleted" ? "deleted file mode 100644\n" : "";
     return parseDiff(`diff --git a/${path} b/${path}\n${mode}--- a/${path}\n+++ b/${path}\n${diff}`);
   });
+  const totalAdded = files.reduce((sum, file) => sum + file.added, 0);
+  const totalRemoved = files.reduce((sum, file) => sum + file.removed, 0);
   const entries = (session.tree ?? session.files?.map((item) => item.path) ?? []).map((path) => ({
     path,
     status: session.files?.find((item) => item.path === path)?.status ?? "unchanged",
@@ -189,6 +225,7 @@ function DemoSession({ id }: { id: string }) {
   const labels: Record<CodingView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review", browser: "Browser" };
   const showPanel = openViews.length > 0;
   const activeType = activeView ? codingPaneType(activeView) : null;
+  const openChanges = () => setOpenViews((current) => (current.includes("changes") ? current : ["changes", ...current]));
   return (
     <div className="conv">
       <div className="conv-main">
@@ -197,7 +234,11 @@ function DemoSession({ id }: { id: string }) {
             <Ic n="arrow-left" s={16} />
           </ActionButton>
           <b className="trunc cs-demo-title">{title}</b>
+          <span className={`badge ${statusColor}`}>{statusLabel}</span>
           <span className="sp" />
+          {files.length > 0 && (
+            <LineCounts files={files.map((file) => ({ added: file.added, removed: file.removed }))} onClick={openChanges} tip="Open changes" />
+          )}
           {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
           <button
             className={`cs-view cs-pane-toggle ${showPanel ? "on" : ""}`}
@@ -213,6 +254,7 @@ function DemoSession({ id }: { id: string }) {
           composer={
             <div className="chat-input">
               <ChatComposer
+                value={draft}
                 input={
                   <ChatComposerInput
                     textareaRef={draftRef}
@@ -225,7 +267,17 @@ function DemoSession({ id }: { id: string }) {
                     placeholder="Draft a follow-up"
                   />
                 }
-                footerActions={<CodingOptions mode={mode} setMode={setMode} local={false} placement="above" focusInput={() => draftRef.current?.focus()} />}
+                footerActions={
+                  <div className="cmp-footer-left">
+                    <CodingOptions mode={mode} setMode={setMode} local={false} placement="above" focusInput={() => draftRef.current?.focus()} />
+                    <span className="cmp-status-badge accent" aria-label={`Coding mode: ${mode === "plan" ? "Plan" : "Build"}`} data-tip="Mode">
+                      <Ic n={mode === "plan" ? "list-checks" : "hammer"} s={12} />
+                      <span>{mode === "plan" ? "Plan" : "Build"}</span>
+                    </span>
+                    {approvals.length > 1 && <ApprovalPick value={approval} onChange={setApproval} options={approvals} />}
+                  </div>
+                }
+                sendActions={<ComposerModel model={chosenModel} models={modelOptions} onChange={setModel} empty="Sample model" />}
                 sendButton={<ChatSendButton isDisabled />}
               />
             </div>
@@ -243,10 +295,49 @@ function DemoSession({ id }: { id: string }) {
                     <Message
                       m={{ id: `${index}-agent`, role: "agent", by: "agent:coding-agent", at: item.at, text: item.summary, activity: item.events }}
                       projectId={session.project}
-                    />
+                    >
+                      <div className="kt-actions">
+                        <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(item.summary ?? "")} aria-label="Copy Kai's reply" data-tip="Copy">
+                          <Ic n="copy" s={13} />
+                        </ActionButton>
+                        <span className="faint">{ago(item.at)}</span>
+                        {index === session.turns.length - 1 && files.length > 0 && (
+                          <button className="kt-lines" onClick={openChanges} data-tip="Open these changes">
+                            <Ic n="git-compare" s={12} />
+                            {files.length} file{files.length > 1 ? "s" : ""}
+                            <span className="plus">+{totalAdded}</span>
+                            <span className="minus">−{totalRemoved}</span>
+                          </button>
+                        )}
+                      </div>
+                    </Message>
                   )}
                 </div>
               ))}
+              {session.commits?.map((commit, index) => (
+                <Checkpoint
+                  key={commit.sha}
+                  label={
+                    <span>
+                      Turn {index + 1} · <span className="mono">{commit.sha.slice(0, 7)}</span>
+                      {session.branch ? <span className="faint"> on {session.branch}</span> : null}
+                    </span>
+                  }
+                />
+              ))}
+              {session.status === "awaiting_approval" && (
+                <div className="change">
+                  <div className="change-h">
+                    <Ic n="shield-check" s={14} />
+                    <b style={{ fontWeight: 500 }}>Waiting for someone who may approve agent changes</b>
+                  </div>
+                  <div className="change-f">
+                    <span className="faint" style={{ fontSize: 12 }}>
+                      Sample session · <a href="/login">Sign in</a> to approve coding turns.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </ChatMessageList>
         </ChatLayout>
