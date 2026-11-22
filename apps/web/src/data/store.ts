@@ -102,8 +102,6 @@ export const S = {
     agentSel: null as string | null,
     // dotrix: chat
     chatBusy: null as string | null,
-    chatAgent: "auto",
-    chatModel: "Gemini 3.8 Flash",
     chatQ: "",
     codingQ: "",
     showArchivedSessions: false, // Coding lists its archived sessions instead
@@ -206,7 +204,8 @@ export function who(id: string | null | undefined): { id: string; name: string; 
   if (!id) return null;
   const m = mem(id);
   if (m) return { id, name: m.name, c: m.c, agent: false };
-  const a = (D().agents ?? []).find((x) => x.handle === id) ?? AGENTS.find((x) => x.handle === id);
+  // A real workspace's agents come from the API; the seed's team is the demo's fallback only.
+  const a = (D().agents ?? []).find((x) => x.handle === id) ?? (!liveData ? AGENTS.find((x) => x.handle === id) : undefined);
   if (a) return { id, name: a.name, c: a.c, agent: true };
   const tool = CODING_TOOLS.find((x) => x.id === id);
   if (tool) return { id, name: tool.name, c: tool.c, agent: true };

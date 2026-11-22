@@ -16,7 +16,7 @@ import {
   InlineCode,
   Lightbox,
   Selector,
-} from "./chat-ui";
+} from "../components/chat-ui";
 // dotrix's workspace Chat: conversations grouped by project (and
 // "General"), a new chat with project, agent, and model; replies with what the agent did
 // and the changes it proposes; and a card for each of Kai's sessions started from a conversation, linking to it in Codes.
