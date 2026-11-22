@@ -13,7 +13,7 @@ import { useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
 import { D, S, render } from "../data/store";
 import { Message, NewSession, Pending, Session, SessionRow, SessionHeader, openCoding } from "./Chat";
-import { ChatComposer, ChatComposerInput, ChatLayout, ChatMessageList, ChatSendButton, CodingOptions } from "./chat-ui";
+import { ChatComposer, ChatComposerInput, ChatLayout, ChatMessageList, ChatSendButton, CodingOptions } from "../components/chat-ui";
 
 import { buildTree, parseDiff } from "../core/kaiWork";
 import { ChangeList, CommandList, FileTree } from "../components/TurnViews";

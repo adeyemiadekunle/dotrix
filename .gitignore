@@ -53,3 +53,6 @@ dump.rdb
 
 # Independent frontend presentation checks
 **/.playwright-design-results/
+
+#dotrix-devs
+dotrix-devs/

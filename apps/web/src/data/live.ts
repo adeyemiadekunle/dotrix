@@ -197,7 +197,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     // workspaces here, and the bridge fills the rest as its queries land.
     live.dirReady = false;
     const data: Data = {
-      ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
+      ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Organisation", kind: ws.kind, url: ws.slug },
       workspaces: wss.map((w) => ({
         id: w.id,
         name: w.name,
