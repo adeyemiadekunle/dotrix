@@ -1,9 +1,19 @@
 import { ActionButton } from "@dotrix/ui/components/action-button";
-// The right side panel beside one of Kai's sessions in Codes, resizable by its left edge.
+// The right side panel beside one of Kai's sessions in Code.
 // It shows one of the selected turn's Changes, Files, Terminal, or Juno's Review (and, in the desktop app, a Browser), picked by the buttons in the
 // session header (as Claude Code's title bar opens its panes); Juno's findings also show on their lines in Changes.
 // A turn picker and a close button in its header; on narrow screens the panel floats over the page.
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  type CSSProperties,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { Run } from "@/lib/agent";
@@ -28,6 +38,7 @@ import { ChangesView, FilesView, TerminalView, type DiffNote } from "./TurnViews
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const narrowPanel = () => window.matchMedia("(max-width: 1200px)").matches;
+const narrowCodePanes = () => window.matchMedia("(max-width: 900px)").matches;
 
 /** The panel's frame: the drag edge, a one-line header (what it shows, the turn, close), and the body.
  *  Stacked (Codes' panes, several at once in one column), it has no edge of its own: the column has it. */
@@ -311,8 +322,36 @@ export function useActivePane<V extends string>(open: V[]): [V | null, (view: V)
   return [active, setPicked];
 }
 
+/** Shared dock for the sample and live Code panes. */
+export function CodePaneAside({ expanded, column, children }: { expanded: boolean; column?: RefObject<HTMLElement | null>; children: ReactNode }) {
+  const local = useRef<HTMLElement>(null);
+  const ref = column ?? local;
+  const [width, setWidth] = useStoredSize("dotrix.code.paneWidth", 0, 0, 1100);
+  return (
+    <aside
+      ref={ref}
+      className={`side-panel panes ${expanded ? "wide" : ""}`}
+      style={width ? ({ "--code-panes-width": `${width}px` } as CSSProperties) : undefined}
+      aria-label="Session panes"
+    >
+      {!expanded && (
+        <Splitter
+          dir="col"
+          className="code-pane-resize"
+          label="Resize the panes"
+          onDrag={(delta) => {
+            const pane = ref.current;
+            if (pane) setWidth(Math.max(220, pane.getBoundingClientRect().width - delta));
+          }}
+        />
+      )}
+      {children}
+    </aside>
+  );
+}
+
 /** Codes' panes: the views a session has open (Changes, Files, Terminal, Review, and in the desktop app,
- *  Browser), as tabs in one column resizable by its left edge; it can be expanded over most of the session. */
+ *  Browser), as tabs in one docked column that can expand over the session. */
 export function CodingPanes({
   scope,
   cs,
@@ -336,7 +375,6 @@ export function CodingPanes({
   onAskFix?: (message: string) => void;
   fixLabel: string;
 }) {
-  const [width, setWidth] = useStoredSize("dotrix.coding.panes.width", 560, 320, 1100);
   const [expanded, setExpanded] = useState(false);
   const panelId = useId().replace(/:/g, "");
   // Over the page on narrow screens: Escape closes the panes.
@@ -345,7 +383,7 @@ export function CodingPanes({
   const column = useRef<HTMLElement>(null);
   // Over the page on narrow screens: focus moves into the panes, and back to where it was when they close.
   useEffect(() => {
-    if (!narrowPanel()) return;
+    if (!narrowCodePanes()) return;
     const previous = document.activeElement;
     column.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus();
     return () => {
@@ -355,15 +393,14 @@ export function CodingPanes({
   useEffect(() => {
     // Expanded, PaneTabs takes Escape to restore; otherwise, over the page on narrow screens, it closes them.
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !expanded && !event.defaultPrevented && narrowPanel()) closeAll.current();
+      if (event.key === "Escape" && !expanded && !event.defaultPrevented && narrowCodePanes()) closeAll.current();
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
   }, [expanded]);
   if (!views.length || !active) return null;
   return (
-    <aside ref={column} className={`side-panel panes ${expanded ? "wide" : ""}`} style={expanded ? undefined : { width }} aria-label="Session panes">
-      {!expanded && <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setWidth((w) => w - delta)} />}
+    <aside ref={column} className={`side-panel panes ${expanded ? "wide" : ""}`} aria-label="Session panes">
       <PaneTabs
         items={CODING_VIEWS}
         open={views}
@@ -583,7 +620,7 @@ function CodingPanel({
               onAskFix
                 ? (message) => {
                     onAskFix(message);
-                    if (narrowPanel()) (onCloseAll ?? onClose)();
+                    if (narrowCodePanes()) (onCloseAll ?? onClose)();
                   }
                 : undefined
             }

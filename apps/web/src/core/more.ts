@@ -619,16 +619,23 @@ export function delView(id: string) {
 
 /* ---------- workspace, account, help ---------- */
 export function switchWs(id: string) {
-  const w = D().workspaces.find((x) => x.id === id)!;
+  const workspace = D().workspaces.find((item) => item.id === id);
   S.ui.pop = null;
-  if (w.slug) {
-    location.assign(`/w/${w.slug}`); // a real workspace: load it from the API
+  S.ui.palette = null;
+  if (!workspace || workspace.id === D().ws.id) {
+    render();
     return;
   }
-  D().ws = { ...w, url: w.name.toLowerCase().replace(/[^a-z0-9]+/g, ""), brand: Boolean(w.brand) };
-  save();
+  if (workspace.slug) {
+    render();
+    location.assign(`/w/${workspace.slug}`);
+    return;
+  }
+  mutate(() => {
+    D().ws = { ...workspace, url: workspace.name.toLowerCase().replace(/[^a-z0-9]+/g, ""), brand: Boolean(workspace.brand) };
+  });
   go("home");
-  toast(`Switched to ${w.name}`);
+  toast(`Switched to ${workspace.name}`);
 }
 export function signOut() {
   S.ui.pop = null;

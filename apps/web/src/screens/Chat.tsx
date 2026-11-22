@@ -10,6 +10,7 @@ import {
   ChatMessageBubble,
   ChatMessageList,
   ChatSendButton,
+  CodingOptions,
   ComplexSelector,
   DesignButton,
   InlineCode,
@@ -78,10 +79,11 @@ import { useCrossConversations, useCrossStream, useCrossThread, useSendCross, us
 import type { Scope } from "@/lib/issues";
 import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { LimitNotice } from "../components/LimitNotice";
-import { approvalModes, defaultApproval } from "../core/can";
+import { allowed, approvalModes, defaultApproval } from "../core/can";
 import { openPop, openTask } from "../core/actions";
 import { desktop, desktopBrowser, useBrowserSettings, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
+import { newProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
@@ -830,6 +832,8 @@ function WhereItCodes({
   );
 }
 
+const SAMPLE_COMPOSER_MODELS = ["openai:gpt-5.4", "anthropic:claude-sonnet-5-5"];
+
 /** New sessions choose a model; existing sessions keep the model admitted for their run. */
 function ComposerModel({
   model,
@@ -850,62 +854,6 @@ function ComposerModel({
         <DesignButton label={model ? modelName(model) : empty} aria-label="Model" variant="ghost" size="sm" isDisabled />
       )}
     </span>
-  );
-}
-
-function CodingOptions({
-  mode,
-  setMode,
-  local,
-  disabled = false,
-  onOpenChange,
-  focusInput,
-  children,
-}: {
-  mode: "plan" | "build";
-  setMode: (mode: "plan" | "build") => void;
-  local: boolean;
-  disabled?: boolean;
-  onOpenChange: (open: boolean) => void;
-  focusInput: () => void;
-  children?: (close: () => void) => React.ReactNode;
-}) {
-  return (
-    <ComplexSelector
-      label="Code options"
-      isLabelHidden
-      value=""
-      placement="below"
-      alignment="start"
-      isDisabled={disabled}
-      onOpenChange={onOpenChange}
-      renderTrigger={(props) => (
-        <DesignButton {...props} role="button" label="Code options" variant="ghost" size="sm" isIconOnly icon={<Ic n="plus" s={20} />} />
-      )}
-    >
-      {(_value, _change, close) => (
-        <div className="composer-options-menu">
-          <span className="composer-menu-heading">Mode</span>
-          {(["build", "plan"] as const).map((value) => (
-            <DesignButton
-              key={value}
-              className="composer-menu-option"
-              label={value === "plan" ? "Plan (read only)" : "Build"}
-              variant="ghost"
-              aria-pressed={mode === value}
-              icon={<Ic n={mode === value ? "check" : value === "plan" ? "list-checks" : "hammer"} s={16} />}
-              isDisabled={disabled || (value === "plan" && local)}
-              onClick={() => {
-                setMode(value);
-                close();
-                focusInput();
-              }}
-            />
-          ))}
-          {children?.(close)}
-        </div>
-      )}
-    </ComplexSelector>
   );
 }
 
@@ -932,6 +880,7 @@ function Composer({
   stopDisabled = false,
   modeOptions = WORK_MODES,
   disabled = false,
+  draftOnly = false,
 }: {
   placeholder: string;
   onSend: (text: string, agent: string) => unknown;
@@ -955,6 +904,7 @@ function Composer({
   stopDisabled?: boolean;
   modeOptions?: typeof WORK_MODES;
   disabled?: boolean;
+  draftOnly?: boolean;
 }) {
   const approvals = APPROVAL_MODES.filter(([v]) => approvalModes().includes(v));
   const [text, setText] = useState(initial);
@@ -971,16 +921,6 @@ function Composer({
     mode,
     onMode: setMode,
   });
-  const [composerMenuOpen, setComposerMenuOpen] = useState(false);
-  const wrapper = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!composerMenuOpen) return;
-    const frame = requestAnimationFrame(() => {
-      const scroller = wrapper.current?.closest(".ns");
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [composerMenuOpen]);
   const a = useAgents().items.find((x) => x.handle === agent);
   // "+" offers the projects (in a new chat) and the work modes; Nova always answers.
   const choices = useMemo(
@@ -1000,7 +940,7 @@ function Composer({
   }, [autoFocus]);
   const send = async () => {
     const q = text.trim();
-    if (!q || S.ui.offline || disabled || submitting) return;
+    if (!q || S.ui.offline || disabled || draftOnly || submitting) return;
     setSubmitting(true);
     try {
       await onSend(q, agent);
@@ -1014,10 +954,9 @@ function Composer({
     }
   };
   return (
-    <div ref={wrapper} className={`dotrix-composer-wrap ${composerMenuOpen ? "menu-open" : ""}`} style={{ position: "relative" }}>
+    <div className="dotrix-composer-wrap">
       {atPicker.menu}
       <ChatComposer
-        className={`dotrix-composer compact-composer ${text ? "has-draft" : ""}`}
         onSubmit={() => {
           void send();
         }}
@@ -1054,9 +993,8 @@ function Composer({
               label={contexts ? "Project and mode" : setMode ? "Mode" : "Chat options"}
               isLabelHidden
               value=""
-              placement="below"
+              placement="above"
               alignment="start"
-              onOpenChange={setComposerMenuOpen}
               renderTrigger={(triggerProps) => (
                 <DesignButton
                   {...triggerProps}
@@ -1149,7 +1087,7 @@ function Composer({
                   void send();
                 }}
                 status={submitting ? "sending" : disabled ? "waiting" : "ready"}
-                isDisabled={!text.trim() || S.ui.offline || disabled || submitting}
+                isDisabled={!text.trim() || S.ui.offline || disabled || draftOnly || submitting}
               />
             )}
             {onStop && <ChatSendButton isStopShown onStop={onStop} isDisabled={stopDisabled} aria-label="Stop run" />}
@@ -1410,11 +1348,16 @@ function NewChat({
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const runtimeOptions = useChatRuntimeOptions(scope).data;
   const availableModels = runtime === "fx" ? models.filter((m) => m.source === "personal" && runtimeOptions?.fx_providers.includes(m.provider)) : models;
-  const model = availableModels.some((m) => m.id === chosen) ? chosen! : (availableModels[0]?.id ?? "");
+  const liveChat = isLive();
+  const modelOptions = liveChat
+    ? availableModels.map((item): [string, string] => [item.id, modelName(item.id, item.name)])
+    : SAMPLE_COMPOSER_MODELS.map((id): [string, string] => [id, modelName(id)]);
+  const model = modelOptions.find(([id]) => id === chosen)?.[0] ?? modelOptions[0]?.[0] ?? "";
   const unavailable = runtime === "fx" && !model;
   const send = useSendMessage(scope);
   const sendCross = useSendCross(ws);
   const start = (text: string, a: string) => {
+    if (!liveChat) return;
     const body = { agent: a as AgentId, model: model || null };
     const started = pid
       ? send
@@ -1477,7 +1420,7 @@ function NewChat({
             setAgent={setAgent}
             model={model}
             setModel={setModel}
-            models={availableModels.map((m): [string, string] => [m.id, modelName(m.id, m.name)])}
+            models={modelOptions}
             context={pid}
             contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "General"]]}
             setContext={(value) => {
@@ -1493,7 +1436,8 @@ function NewChat({
             approval={pid ? approval : undefined}
             setApproval={pid ? setApproval : undefined}
             onSend={start}
-            autoFocus
+            autoFocus={Boolean(q)}
+            draftOnly={!liveChat}
             initial={q}
           />
           {unavailable && <p role="alert">Connect a compatible personal model in settings to use fx.</p>}
@@ -1522,8 +1466,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   const [menuBtn, setMenuBtn] = useState(false);
   const [hl, setHl] = useState(0);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const composerWrap = useRef<HTMLDivElement>(null);
-  const [optionsOpen, setOptionsOpen] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -1532,9 +1474,12 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   }, [note]);
   const t = mine.find((issue) => issue.id === tid) ?? task(tid);
   const ws = wsId();
-  const pid = t?.project ?? (isLive() ? projectId : "");
+  const liveSession = isLive();
+  const project = projects.find((item) => item.id === projectId);
+  const pid = t?.project ?? (liveSession && project?.repo ? project.id : "");
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const avail = useCodingAvailability(scope).data;
+  const workspaceModels = useModels(liveSession ? ws : undefined).data;
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   // On the platform, or on your own computer when one of yours runs `dotrix runner` for this project.
   const [where, setWhere] = useState<"cloud" | "local" | null>(null);
@@ -1542,9 +1487,11 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   // Kai codes on the model you pick here, your default model to start with. The engine that runs it follows from
   // the model (your preferred engine in Account → Your models, else the model's provider's own); on your own
   // computer, the tool signed in there decides.
-  const models = location === "cloud" ? (avail?.models ?? []) : [];
+  // The sample models demonstrate the control. A live project still supplies its coding allowlist.
+  const draftModels = liveSession ? (workspaceModels ?? []).filter((item) => item.source === "personal").map((item) => item.id) : SAMPLE_COMPOSER_MODELS;
+  const models = location === "cloud" ? (avail?.models ?? draftModels) : [];
   const model = location === "cloud" ? ((chosenModel && models.includes(chosenModel) ? chosenModel : avail?.default_model) ?? models[0] ?? null) : null;
-  const ready = location === "local" ? avail?.local_available && (avail.local_tools ?? []).length > 0 : avail?.available && !!model;
+  const ready = liveSession && (location === "local" ? avail?.local_available && (avail.local_tools ?? []).length > 0 : avail?.available && !!model);
   // In the desktop app, a folder of this computer's picked here starts its runner (core/desktop.ts).
   const here = desktop();
   const runners = useDesktopRunners();
@@ -1571,14 +1518,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   const start = useStartCoding(scope, t?.key ?? "", approval, location, null, model, codingMode);
   // The issue list opens two ways: typing "@" or "/" (menu is the query) or the Issue button (menuBtn); the button never touches the note.
   const menuOpen = menu !== null || menuBtn;
-  useEffect(() => {
-    if (!optionsOpen && !menuOpen) return;
-    const frame = requestAnimationFrame(() => {
-      const scroller = composerWrap.current?.closest(".ns");
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [optionsOpen, menuOpen]);
   const found = !menuOpen ? [] : mine.filter((x) => `${x.key} ${x.title}`.toLowerCase().includes((menu ?? "").toLowerCase())).slice(0, 8);
   const go_ = () => {
     if (!pid || (!t && !note.trim()) || !ready || start.isPending) return;
@@ -1612,14 +1551,14 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
     ref.current?.focus();
   };
   return (
-    <div className="ns">
+    <div className="ns code-start">
       <div className="session-start-header">
         <SessionListToggle restoreOnly />
       </div>
       <div className="ns-mid">
         <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
         <h2 className="ns-title">Start a session</h2>
-        {!t && isLive() && (
+        {!t && (
           <div className="ns-source">
             <label>
               Repository
@@ -1631,82 +1570,96 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 }}
               >
                 <option value="">Choose a repository</option>
-                {projects
-                  .filter((p) => p.repo)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.repo} · {p.name}
-                    </option>
-                  ))}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.repo ? `${p.repo} · ${p.name}` : `${p.name} · No repository`}
+                  </option>
+                ))}
               </select>
             </label>
-            {!!projectId && (
+            {project?.repo && (
               <label>
                 Starting branch
                 <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Repository default" maxLength={200} />
               </label>
             )}
+            {liveSession && project && !project.repo && !allowed("projects:manage") && <p className="faint">Ask a project admin to connect a repository.</p>}
+            {liveSession && project && !project.repo && ws && allowed("projects:manage") && (
+              <a
+                className="btn btn-secondary"
+                href={`/onboarding?${new URLSearchParams({ workspace: ws, project: project.id, mode: "project", step: "github" })}`}
+              >
+                <Ic n="github" s={16} /> Connect repository
+              </a>
+            )}
+            {liveSession && !projects.length && allowed("projects:manage") && (
+              <button type="button" className="btn btn-secondary" onClick={newProject}>
+                New project
+              </button>
+            )}
           </div>
         )}
-        {avail && (
-          <ChoiceCard
-            label="Choose environment"
-            choices={[
-              ...(avail.local_available || hereRunner || avail.local_runner
-                ? [
-                    {
-                      id: "local",
-                      label: (hereRunner ? hereRunner.folder.split(/[\\/]/).filter(Boolean).pop() : null) ?? avail?.local_runner ?? "Your computer",
-                      icon: <Ic n="laptop" s={16} />,
-                      group: "This computer",
-                      on: location === "local",
-                      disabled: !avail.local_available,
-                      note: avail.local_available ? undefined : hereRunner?.state === "failed" ? "Stopped" : "Starting…",
-                      tip:
-                        hereRunner?.isolation === "sbx"
-                          ? `In a Docker sandbox on this computer, on ${hereRunner.folder}: Kai may run commands there`
-                          : (hereRunner?.folder ?? "In a worktree of your checkout, with the coding tool signed in there"),
-                      onPick: () => setWhere("local"),
-                    } satisfies Choice,
-                  ]
-                : []),
-              {
-                id: "cloud",
-                label: "Cloud sandbox",
-                icon: <Ic n="cloud" s={16} />,
-                group: "Cloud",
-                on: location === "cloud",
-                note: avail.available ? undefined : "Off",
-                tip: avail.available ? "In a sandbox on the platform" : (avail.reason ?? undefined),
-                onPick: () => setWhere("cloud"),
-              },
-            ]}
-            extra={
-              here && slug && pkey
-                ? (close) => (
-                    <button
-                      type="button"
-                      className="cc-item"
-                      disabled={adding || hereRunner?.state === "starting"}
-                      onClick={() => {
-                        codeHere();
-                        setWhere("local");
-                        close();
-                      }}
-                    >
-                      <Ic n="folder-plus" s={16} />
-                      <span className="trunc grow">{hereRunner ? "Choose another folder" : "Add a folder"}</span>
-                    </button>
-                  )
-                : undefined
-            }
-          />
+        <ChoiceCard
+          label="Choose environment"
+          choices={[
+            ...(here || avail?.local_available || avail?.local_runner
+              ? [
+                  {
+                    id: "local",
+                    label: (hereRunner ? hereRunner.folder.split(/[\\/]/).filter(Boolean).pop() : null) ?? avail?.local_runner ?? "Your computer",
+                    icon: <Ic n="laptop" s={16} />,
+                    group: "This computer",
+                    on: location === "local",
+                    disabled: !here && !avail?.local_available,
+                    note: avail?.local_available ? undefined : hereRunner?.state === "failed" ? "Stopped" : hereRunner ? "Starting…" : undefined,
+                    tip:
+                      hereRunner?.isolation === "sbx"
+                        ? `In a Docker sandbox on this computer, on ${hereRunner.folder}: Kai may run commands there`
+                        : (hereRunner?.folder ?? "In a worktree of your checkout, with the coding tool signed in there"),
+                    onPick: () => setWhere("local"),
+                  } satisfies Choice,
+                ]
+              : []),
+            {
+              id: "cloud",
+              label: "Cloud sandbox",
+              icon: <Ic n="cloud" s={16} />,
+              group: "Cloud",
+              on: location === "cloud",
+              note: avail?.available === false ? "Off" : undefined,
+              tip: avail?.reason ?? "In a sandbox on the platform",
+              onPick: () => setWhere("cloud"),
+            },
+          ]}
+          extra={
+            here && slug && pkey
+              ? (close) => (
+                  <button
+                    type="button"
+                    className="cc-item"
+                    disabled={adding || hereRunner?.state === "starting"}
+                    onClick={() => {
+                      codeHere();
+                      setWhere("local");
+                      close();
+                    }}
+                  >
+                    <Ic n="folder-plus" s={16} />
+                    <span className="trunc grow">{hereRunner ? "Choose another folder" : "Add a folder"}</span>
+                  </button>
+                )
+              : undefined
+          }
+        />
+        {liveSession && location === "local" && here && slug && pkey && !avail?.local_available && (
+          <button type="button" className="btn btn-secondary" disabled={adding || hereRunner?.state === "starting"} onClick={codeHere}>
+            <Ic n="folder-plus" s={16} /> {hereRunner ? "Choose another folder" : "Add a folder"}
+          </button>
         )}
       </div>
       <div className="ns-bottom">
-        <div ref={composerWrap} className={`dotrix-composer-wrap ${optionsOpen || menuOpen ? "menu-open" : ""}`}>
+        <div className="dotrix-composer-wrap">
           <ChatComposer
-            className={`dotrix-composer compact-composer coding-start-composer ${note ? "has-draft" : ""}`}
             value={note}
             onSubmit={go_}
             input={
@@ -1716,14 +1669,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 ref={ref}
                 rows={1}
                 value={note}
-                autoFocus
-                placeholder={
-                  t
-                    ? `What should Kai do on ${t.key}?`
-                    : pid
-                      ? "What should Kai do?"
-                      : `Choose a repository or type @ to pick ${personal ? "an issue" : "one of your issues"}`
-                }
+                placeholder={t ? `What should Kai do on ${t.key}?` : "What should Kai do?"}
                 onChange={(e) => onText(e.target)}
                 onKeyDown={(e) => {
                   if (menuOpen && found.length) {
@@ -1754,13 +1700,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
               />
             }
             footerActions={
-              <CodingOptions
-                mode={codingMode}
-                setMode={setCodingMode}
-                local={location === "local"}
-                onOpenChange={setOptionsOpen}
-                focusInput={() => ref.current?.focus()}
-              >
+              <CodingOptions mode={codingMode} setMode={setCodingMode} local={location === "local"} placement="above" focusInput={() => ref.current?.focus()}>
                 {(close) => (
                   <>
                     <DesignButton
@@ -1812,18 +1752,20 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 model={model}
                 models={models.map((m): [string, string] => [m, modelName(m)])}
                 onChange={setChosenModel}
-                empty={location === "local" ? "Model managed locally" : !pid ? "Choose a repository or issue" : "No models connected"}
+                empty={location === "local" ? "Model managed locally" : "No models connected"}
               />
             }
             sendButton={
               <>
                 <span
                   data-tip={
-                    !pid
-                      ? "Choose a repository or issue"
-                      : !ready
-                        ? ((location === "local" ? avail?.local_reason : avail?.reason) ?? "Kai can't code here yet")
-                        : "Start coding"
+                    !liveSession
+                      ? "Sign in to start coding"
+                      : !pid
+                        ? "Choose a repository or issue"
+                        : !ready
+                          ? ((location === "local" ? avail?.local_reason : avail?.reason) ?? "Kai can't code here yet")
+                          : "Start coding"
                   }
                 >
                   <button className="kt-send" onClick={go_} disabled={!pid || (!t && !note.trim()) || !ready || start.isPending} aria-label="Start coding">
@@ -1862,7 +1804,16 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                 id="cs-issues"
                 role="listbox"
                 aria-label="Issues"
-                style={{ position: "absolute", bottom: 0, left: 0, right: 0, maxHeight: "min(320px, 40dvh)", maxWidth: 520, zIndex: 80 }}
+                style={{
+                  position: "absolute",
+                  bottom: "calc(100% + 6px)",
+                  left: 0,
+                  right: 0,
+                  overflowY: "auto",
+                  maxHeight: "min(320px, 40dvh)",
+                  maxWidth: 520,
+                  zIndex: 80,
+                }}
               >
                 {found.length ? (
                   found.map((x, i) => (
@@ -2424,7 +2375,7 @@ export function Session({ cs }: { cs: CodingSession }) {
           </button>
           {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
           <button
-            className={`cs-view ${panes.length ? "on" : ""}`}
+            className={`cs-view cs-pane-toggle ${panes.length ? "on" : ""}`}
             onClick={() => {
               setPanes(panes.length ? [] : ["changes"]);
               setMenu(null);
@@ -2503,7 +2454,6 @@ export function Session({ cs }: { cs: CodingSession }) {
                   }))}
               />
               <ChatComposer
-                className={`dotrix-composer compact-composer ${ask ? "has-draft" : ""}`}
                 value={ask}
                 isDisabled={busy && !working}
                 isStopShown={Boolean(latest?.can_stop && (latest.status === "running" || latest.status === "queued") && !ask.trim())}

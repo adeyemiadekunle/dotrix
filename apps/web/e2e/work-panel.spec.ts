@@ -433,6 +433,11 @@ test("Code starts from a repository and branch without picking an issue", async 
     false,
     () => true,
     async () => {
+      await page.route("**/v1/workspaces", (route) =>
+        route.fulfill({
+          json: [{ id: "w1", slug: "test-workspace", name: "Test workspace", kind: "personal", permissions: ["agents:code", "projects:manage"] }],
+        }),
+      );
       await page.route("**/v1/workspaces/w1/projects", (route) =>
         route.fulfill({
           json: [
@@ -446,6 +451,7 @@ test("Code starts from a repository and branch without picking an issue", async 
               created_at: date,
               updated_at: date,
             },
+            { id: "p2", key: "DOCS", name: "Docs project", status: "active", access: "open", created_at: date, updated_at: date },
           ],
         }),
       );
@@ -457,6 +463,9 @@ test("Code starts from a repository and branch without picking an issue", async 
   );
   const send = page.getByRole("button", { name: "Start coding", exact: true });
   const repository = page.getByRole("combobox", { name: "Repository", exact: true });
+  await repository.selectOption("p2");
+  await expect(page.getByRole("link", { name: "Connect repository" })).toHaveAttribute("href", /project=p2.*step=github/);
+  await expect(send).toBeDisabled();
   await repository.selectOption("p1", { timeout: 10_000 });
   const bounds = (await repository.boundingBox())!;
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
@@ -527,6 +536,7 @@ for (const width of [390, 1440]) {
     await page.getByRole("button", { name: "Code options", exact: true }).click();
     await page.getByRole("group", { name: "Where it codes", exact: true }).getByRole("button", { name: "Your computer", exact: true }).click();
     await expect(page.locator(".composer-model")).toContainText("Model managed locally");
+    await expect(page.getByRole("option", { name: "Your computer" })).toHaveAttribute("aria-selected", "true");
     await page.getByRole("button", { name: "Code options", exact: true }).click();
     await expect(page.getByRole("dialog").getByRole("button", { name: "Plan (read only)", exact: true })).toBeDisabled();
     await page.keyboard.press("Escape");

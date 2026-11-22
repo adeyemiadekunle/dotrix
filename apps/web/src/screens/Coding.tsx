@@ -5,20 +5,19 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // links back to it, and still shows as a card there. Stopping, archiving, or deleting a session here leaves the
 // conversation alone, and the other way round.
 // URL: ?session=ID (a session, with &panel=, &turn=, &file=, &line=), ?new=1 (a new session, &issue=KEY), else the list.
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import { useCodingSessions } from "@/lib/coding";
 import { Ic } from "../core/icons";
 import { useRoute } from "../core/nav";
 import { isLive, live } from "../data/live";
 import { D, S, render } from "../data/store";
-import { Splitter, useStoredSize } from "../ui/splitter";
 import { Message, NewSession, Pending, Session, SessionRow, SessionHeader, openCoding } from "./Chat";
-import { ChatMessageList } from "./chat-ui";
+import { ChatComposer, ChatComposerInput, ChatLayout, ChatMessageList, ChatSendButton, CodingOptions } from "./chat-ui";
 
 import { buildTree, parseDiff } from "../core/kaiWork";
 import { ChangeList, CommandList, FileTree } from "../components/TurnViews";
-import { CODING_VIEWS, PaneTabs, PanelFrame, useActivePane, type CodingView } from "../components/SidePanel";
+import { CODING_VIEWS, CodePaneAside, PaneTabs, PanelFrame, useActivePane, type CodingView } from "../components/SidePanel";
 import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
 import { demoCodingSessions } from "../core/demoSessions";
 
@@ -40,7 +39,6 @@ export function Coding() {
   const archivedCount = found.filter((c) => c.archived).length;
   const sessions = found.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
   const hasSel = Boolean(sessionId || search.get("new") || issue);
-  const [listW, setListW] = useStoredSize("dotrix.coding.listWidth", 272, 240, 480);
   const crowded = Boolean(sessionId && search.get("panel")) && window.matchMedia("(max-width: 1799px)").matches;
   const sidebar = useSessionSidebar("coding", hasSel ? search.toString() : "", crowded);
   // One list, pinned first, then the latest; each row names its issue, so its project.
@@ -53,10 +51,9 @@ export function Coding() {
       <div className="page flush">
         <div
           className={`chat-grid ${hasSel ? "has-sel" : ""} ${sidebar.listOpen ? "list-open" : ""}`}
-          style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
+          style={css({ "--list-w": sidebar.hidden ? "0px" : "272px" })}
         >
           <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
-            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
             <div style={{ height: 44, padding: "0 16px" }} className="row">
               <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Code</h1>
               <span className="sp" />
@@ -129,7 +126,9 @@ function DemoSession({ id }: { id: string }) {
   const [openViews, setOpenViews] = useState<DemoView[]>([]);
   const [activeView, setActiveView] = useActivePane(openViews);
   const [expanded, setExpanded] = useState(false);
-  const [paneW, setPaneW] = useStoredSize("dotrix.demo.panes.width", 460, 320, 1100);
+  const [draft, setDraft] = useState("");
+  const [mode, setMode] = useState<"build" | "plan">("build");
+  const draftRef = useRef<HTMLTextAreaElement>(null);
   const closeView = (view: DemoView) => setOpenViews((current) => current.filter((item) => item !== view));
   const [opened, setOpened] = useState<string | null>(null);
   const turn = session ? session.turns.length - 1 : 0;
@@ -151,8 +150,8 @@ function DemoSession({ id }: { id: string }) {
   const labels: Record<DemoView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review" };
   const showPanel = openViews.length > 0;
   return (
-    <div style={{ display: "flex", height: "100%", minWidth: 0 }}>
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+    <div className="conv">
+      <div className="conv-main">
         <SessionHeader>
           <ActionButton className="ibtn ibtn-sm cs-back" onClick={() => openCoding("")} aria-label="Back to sessions">
             <Ic n="arrow-left" s={16} />
@@ -161,7 +160,7 @@ function DemoSession({ id }: { id: string }) {
           <span className="sp" />
           {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
           <button
-            className={`cs-view ${showPanel ? "on" : ""}`}
+            className={`cs-view cs-pane-toggle ${showPanel ? "on" : ""}`}
             onClick={() => setOpenViews(showPanel ? [] : ["changes"])}
             aria-pressed={showPanel}
             aria-label={showPanel ? "Hide the panes" : "Show the panes"}
@@ -170,26 +169,50 @@ function DemoSession({ id }: { id: string }) {
             <Ic n="panel-right" s={16} />
           </button>
         </SessionHeader>
-        <ChatMessageList>
-          <div className="chat-col">
-            <p className="muted">Sample session · Sign in to work with Kai.</p>
-            {session.turns.map((item, index) => (
-              <div key={index}>
-                <Message m={{ id: `${index}-user`, role: "user", by: session.by, at: item.at, text: item.ask }} projectId={session.project} />
-                {item.summary && (
-                  <Message
-                    m={{ id: `${index}-agent`, role: "agent", by: "agent:coding-agent", at: item.at, text: item.summary, activity: item.events }}
-                    projectId={session.project}
+        <ChatLayout
+          composer={
+            <div className="chat-input">
+              <ChatComposer
+                input={
+                  <ChatComposerInput
+                    textareaRef={draftRef}
+                    value={draft}
+                    onChange={(event) => setDraft(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) event.preventDefault();
+                    }}
+                    label="Follow-up"
+                    placeholder="Draft a follow-up"
                   />
-                )}
-              </div>
-            ))}
-          </div>
-        </ChatMessageList>
+                }
+                footerActions={<CodingOptions mode={mode} setMode={setMode} local={false} placement="above" focusInput={() => draftRef.current?.focus()} />}
+                sendButton={<ChatSendButton isDisabled />}
+              />
+            </div>
+          }
+        >
+          <ChatMessageList>
+            <div className="chat-col">
+              <p className="muted">
+                Sample session · <a href="/login">Sign in to work with Kai.</a>
+              </p>
+              {session.turns.map((item, index) => (
+                <div key={index}>
+                  <Message m={{ id: `${index}-user`, role: "user", by: session.by, at: item.at, text: item.ask }} projectId={session.project} />
+                  {item.summary && (
+                    <Message
+                      m={{ id: `${index}-agent`, role: "agent", by: "agent:coding-agent", at: item.at, text: item.summary, activity: item.events }}
+                      projectId={session.project}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </ChatMessageList>
+        </ChatLayout>
       </div>
       {showPanel && activeView && (
-        <aside className={`side-panel panes ${expanded ? "wide" : ""}`} style={expanded ? undefined : { width: paneW }} aria-label="Session panes">
-          {!expanded && <Splitter dir="col" className="side-panel-split" label="Resize the panes" onDrag={(delta) => setPaneW((w) => w - delta)} />}
+        <CodePaneAside expanded={expanded}>
           <PaneTabs
             items={DEMO_VIEWS}
             open={openViews}
@@ -250,7 +273,7 @@ function DemoSession({ id }: { id: string }) {
               </div>
             </PanelFrame>
           </div>
-        </aside>
+        </CodePaneAside>
       )}
     </div>
   );
