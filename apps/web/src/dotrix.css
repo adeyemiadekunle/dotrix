@@ -2060,7 +2060,7 @@ section.side-panel-body[hidden] {
   border-left: 1px solid var(--border);
   background: var(--bg);
   overflow-y: auto;
-  padding: 12px;
+  padding: 0;
 }
 .cs-details-pop {
   position: absolute;
@@ -2072,49 +2072,49 @@ section.side-panel-body[hidden] {
   padding: 8px;
   z-index: 25;
 }
+/* A session's details (components/SessionDetails.tsx): flat sections with small headings and a hairline
+   between them, rows of icon and text, the long text folded or one line. */
 .sd {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 .sd-sec {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 6px 8px;
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-card);
+  padding: 14px 12px;
+}
+.sd-sec + .sd-sec {
+  border-top: 1px solid var(--border);
 }
 .cs-details-pop .sd-sec {
-  box-shadow: none;
-  background: none;
-  padding: 6px 4px;
-}
-.cs-details-pop .sd-sec + .sd-sec {
-  border-top: 1px solid var(--divider);
-  border-radius: 0;
+  padding: 10px 8px;
 }
 .sd-sec h3 {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 4px;
-  padding: 0 6px;
-  font-size: 12.5px;
+  margin: 0 0 6px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 .sd-count {
   font-weight: 500;
-  color: var(--text-3);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
 }
 .sd-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 30px;
+  gap: 8px;
+  min-height: 28px;
   padding: 0 6px;
+  margin: 0 -6px;
   border: 0;
   border-radius: var(--r-sm);
   background: none;
@@ -2136,9 +2136,19 @@ section.side-panel-body[hidden] {
 .sd-row a:hover {
   color: var(--acc);
 }
+/* The branch wraps rather than cutting off: it's the one name people copy. */
+.sd-branch {
+  align-items: flex-start;
+  padding-block: 6px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.sd-branch > svg {
+  margin-top: 2px;
+}
 .sd-link {
   cursor: pointer;
-  width: 100%;
+  width: calc(100% + 12px);
 }
 .sd-link:hover {
   background: var(--surface-2);
@@ -2150,7 +2160,7 @@ section.side-panel-body[hidden] {
 }
 .sd-more {
   align-self: flex-start;
-  margin: 2px 6px 0;
+  margin-top: 2px;
   padding: 0;
   border: 0;
   background: none;
@@ -2163,21 +2173,41 @@ section.side-panel-body[hidden] {
   color: var(--text);
 }
 .sd-empty {
-  margin: 0 6px 4px;
-  font-size: 12.5px;
-}
-.sd-usage {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  padding: 2px 6px 6px;
+  margin: 0;
   font-size: 12.5px;
   color: var(--text-3);
 }
-.sd-usage b {
-  color: var(--text);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+/* Where Kai works: a tile with the place and, under it, the computer or the sandbox's state. */
+.sd-env {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  min-width: 0;
+}
+.sd-env-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.sd-env-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.sd-env-text b {
+  font-weight: 500;
+}
+.sd-env-text .faint {
+  font-size: 12px;
 }
 .sd-state {
   width: 8px;
@@ -2193,11 +2223,142 @@ section.side-panel-body[hidden] {
 .sd-state.asleep {
   background: var(--amber);
 }
+/* Usage: three small figures side by side, then the model and approval mode. */
+.sd-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.sd-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.sd-stat b {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.sd-stat span {
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Tools: a dot for each (green when Kai has it), the reason an off one is off in one muted line. */
+.sd-tools {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sd-tools li {
+  display: flex;
+  flex-direction: column;
+  padding: 5px 0;
+}
+.sd-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.sd-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.sd-tools li.on .sd-dot {
+  background: var(--green);
+}
+.sd-tool-state {
+  font-size: 12px;
+  color: var(--text-4);
+}
+.sd-tools li.on .sd-tool-state {
+  color: var(--text-3);
+}
+.sd-why {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 2px 0 0 15px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-4);
+}
+/* Skills: folded under one line; each opens to its description and pinned version. */
+.sd-skills {
+  margin-top: 6px;
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+.sd-skills > summary,
+.sd-skill > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: var(--r-sm);
+}
+.sd-skills > summary::-webkit-details-marker,
+.sd-skill > summary::-webkit-details-marker {
+  display: none;
+}
+.sd-skills > summary > svg {
+  color: var(--text-3);
+  transition: transform 0.15s;
+}
+.sd-skills[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.sd-skills > summary:hover,
+.sd-skill > summary:hover {
+  color: var(--acc);
+}
+.sd-skill {
+  margin-left: 19px;
+}
+.sd-skill > summary {
+  min-height: 26px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  font-family: var(--mono);
+}
+.sd-skill[open] > summary {
+  color: var(--text);
+}
+.sd-skill p {
+  margin: 2px 0 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.sd-warn {
+  display: inline-flex;
+  color: var(--amber);
+}
+.sd-warn-text {
+  color: var(--amber) !important;
+}
 .sd-pr {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 6px;
 }
 .sd-pr-title {
   display: flex;
