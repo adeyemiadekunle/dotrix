@@ -2263,9 +2263,16 @@ section.side-panel-body[hidden] {
   background: var(--bg);
   overflow: hidden;
 }
-/* Expanded: the panes take most of the session, leaving the conversation a readable column. */
+/* Expanded: the panes lie over the whole Code area (the list and the session), under the app's
+   sidebar, as a maximised browser window; Escape or Restore brings the column back. */
 .side-panel.panes.wide {
-  width: max(560px, calc(100% - 420px));
+  position: absolute;
+  inset: 0;
+  top: 0;
+  width: auto;
+  z-index: 30;
+  border-left: none;
+  box-shadow: none;
 }
 .ptabs {
   display: flex;

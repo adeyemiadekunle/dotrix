@@ -164,6 +164,7 @@ export function PaneTabs<V extends string>({
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         event.stopPropagation();
         setAdding(false);
       }
@@ -175,6 +176,18 @@ export function PaneTabs<V extends string>({
       document.removeEventListener("keydown", escape, true);
     };
   }, [adding]);
+  // Expanded over Code, Escape restores the panes (an open + menu takes Escape first).
+  useEffect(() => {
+    if (!expanded) return;
+    const restore = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        onExpand();
+      }
+    };
+    document.addEventListener("keydown", restore);
+    return () => document.removeEventListener("keydown", restore);
+  }, [expanded, onExpand]);
   const focusTab = (view: V) => {
     onSelect(view);
     requestAnimationFrame(() => strip.current?.querySelector<HTMLButtonElement>(`#${idPrefix}-tab-${view}`)?.focus());
@@ -271,7 +284,7 @@ export function PaneTabs<V extends string>({
         className="ibtn ibtn-sm"
         onClick={onExpand}
         aria-pressed={expanded}
-        aria-label={expanded ? "Restore the panes' width" : "Expand the panes"}
+        aria-label={expanded ? "Restore the panes" : "Expand the panes over Code"}
         data-tip={expanded ? "Restore" : "Expand"}
       >
         <Ic n={expanded ? "arrows-in" : "arrows-out"} s={14} />
@@ -336,10 +349,9 @@ export function CodingPanes({
     };
   }, []);
   useEffect(() => {
+    // Expanded, PaneTabs takes Escape to restore; otherwise, over the page on narrow screens, it closes them.
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (expanded) setExpanded(false);
-      else if (narrowPanel()) closeAll.current();
+      if (event.key === "Escape" && !expanded && !event.defaultPrevented && narrowPanel()) closeAll.current();
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
