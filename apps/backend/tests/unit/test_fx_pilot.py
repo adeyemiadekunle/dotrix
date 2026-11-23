@@ -84,3 +84,19 @@ def test_a_later_artifact_upgrades_only_the_bindings_it_was_shown_to_resume(monk
     assert "libfx-0.0.17-test-chat-3" not in later  # its own version is current, not earlier
     # Without 0.0.16 in its list, a 0.0.16 binding is not upgraded: it fails closed for a compatible reader.
     assert not any(name.startswith("libfx-0.0.16") for name in fx_pilot._earlier_bindings("0.0.18-test"))
+
+
+def test_chat_default_runtime_setting_supports_rollback_to_deepagents():
+    from dotrix_backend.core.settings import Settings
+
+    base = Settings(
+        database_url="postgresql+asyncpg://localhost/unused",
+        jwt_secret="test-only-jwt-secret-not-used-anywhere-else",
+    )
+    assert base.chat_default_runtime == "fx"
+    rolled_back = Settings(
+        database_url="postgresql+asyncpg://localhost/unused",
+        jwt_secret="test-only-jwt-secret-not-used-anywhere-else",
+        chat_default_runtime="deepagents",
+    )
+    assert rolled_back.chat_default_runtime == "deepagents"

@@ -537,3 +537,41 @@ async def test_fx_run_keeps_its_scripts_choice_when_the_setting_changes_before_i
         assert done["status"] == "completed", done
         offered = [{tool["function"]["name"] for tool in request["tools"]} for request in requests]
         assert all(("run_script" in names) is at_start for names in offered), offered
+
+
+async def test_chat_rollback_routes_new_conversations_to_deepagents_while_keeping_fx_threads(
+    nova_pilot_world, db_client, monkeypatch, agent_script, outbox, storage, checkouts,  # noqa: F811
+):
+    """Switching `chat_default_runtime` to `deepagents` rolls back new interactive conversations while
+    existing `fx` conversations keep running on `fx`."""
+    from apps.backend.tests.integration.test_runtime_tools import model_server
+
+    async with fx_chat(nova_pilot_world, db_client, outbox, storage, checkouts, agent_script) as fx:
+        def factory(*args, **kwargs):
+            return agent_script.factory(*args, **kwargs)
+
+        monkeypatch.setattr(fx.runner, "model_factory", factory)
+        with model_server() as url:
+            monkeypatch.setitem(fx_pilot._FX_ENDPOINTS, "openai", url)
+            started = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "Start fx thread", "work_mode": "build",
+            })
+            assert started.status_code == 202, started.text
+            assert started.json()["chat_runtime"] == "fx"
+            fx_thread = started.json()["thread_id"]
+
+            fx.runner.settings = fx.runner.settings.model_copy(update={"chat_default_runtime": "deepagents"})
+
+            continued = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+                "message": "Continue existing fx thread", "thread_id": fx_thread, "work_mode": "build",
+            })
+            assert continued.status_code == 202, continued.text
+            assert continued.json()["chat_runtime"] == "fx"
+
+        agent_script.say("Rolled back to DeepAgents.")
+        rolled_back = await fx.client.post(f"{fx.base}/runs", headers=fx.headers, json={
+            "message": "Start conversation after rollback", "work_mode": "build",
+        })
+        assert rolled_back.status_code == 202, rolled_back.text
+        assert rolled_back.json()["chat_runtime"] == "deepagents"
+        assert rolled_back.json()["reply"] == "Rolled back to DeepAgents."

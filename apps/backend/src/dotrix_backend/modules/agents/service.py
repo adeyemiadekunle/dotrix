@@ -256,10 +256,12 @@ class AgentService:
             if runtime is None:
                 from .fx_pilot import fx_pilot_providers
 
+                default_runtime = getattr(getattr(self.runner, "settings", None), "chat_default_runtime", "fx")
                 provider = (model or "").partition(":")[0]
                 scripted = hasattr(self.runner.model_factory, "__self__")
                 if (
-                    interactive
+                    default_runtime == "fx"
+                    and interactive
                     and not scripted
                     and data.work_mode is not None
                     and provider in fx_pilot_providers()
