@@ -246,7 +246,8 @@ async def test_two_children_overlap_third_waits_and_completed_results_are_reused
             both_started.set()
         await asyncio.wait_for(both_started.wait(), 2)
 
-    runner = SimpleNamespace(session_factory=sessions, queue=None, stop_reasons=None, _dispatch=dispatch)
+    runner = SimpleNamespace(session_factory=sessions, queue=None, stop_reasons=None, _dispatch=dispatch,
+                           settings=SimpleNamespace(specialist_concurrency=2))
     service = DelegationService(runner)
     assert await service.submit(root.workspace_id, root.id, 1, "batch", batch("a", "b", "c", "d")) is None
     assert await service.submit(root.workspace_id, root.id, 1, "batch", batch("a", "b", "c", "d")) is None
@@ -273,6 +274,50 @@ async def test_two_children_overlap_third_waits_and_completed_results_are_reused
     await service.advance(root.workspace_id, root.id)
     await service.advance(root.workspace_id, root.id)
     assert len(started) == 5 and started[-1][1]["kind"] == "delegation_ready"
+
+
+async def test_four_read_children_overlap_and_partial_dependency_unblocks_when_allowed(nova_world, db_session):
+    root = await parent_run(db_session, nova_world)
+    started = []
+    four_started = asyncio.Event()
+
+    @asynccontextmanager
+    async def sessions():
+        yield db_session
+
+    async def dispatch(run_id, payload):
+        started.append((run_id, payload))
+        if len(started) >= 4:
+            four_started.set()
+        await asyncio.wait_for(four_started.wait(), 2)
+
+    runner = SimpleNamespace(session_factory=sessions, queue=None, stop_reasons=None, _dispatch=dispatch)
+    service = DelegationService(runner)
+    six = SpecialistBatch(tasks=[
+        {"key": "a", "agent": "research", "brief": "Investigate a", "expected_result": "Evidence"},
+        {"key": "b", "agent": "product", "brief": "Investigate b", "expected_result": "Evidence"},
+        {"key": "c", "agent": "architecture", "brief": "Investigate c", "expected_result": "Evidence"},
+        {"key": "d", "agent": "reviewer", "brief": "Investigate d", "expected_result": "Evidence",
+         "depends_on": ["a"], "allow_partial_dependencies": True},
+        {"key": "e", "agent": "documentation", "brief": "Investigate e", "expected_result": "Evidence"},
+        {"key": "f", "agent": "research", "brief": "Investigate f", "expected_result": "Evidence"},
+    ])
+    assert await service.submit(root.workspace_id, root.id, 1, "batch", six) is None
+    await service.wait(root.workspace_id, root.id, 1, {"interrupt": "batch"})
+    assert len(started) == 4
+    tasks = list(await db_session.scalars(select(AgentRun).where(AgentRun.parent_run_id == root.id).order_by(AgentRun.task_key)))
+    a, b, _c, d, _e, f = tasks
+    assert a.status is RunStatus.QUEUED and d.status is RunStatus.WAITING_DEPENDENCY and f.status is RunStatus.WAITING_DEPENDENCY
+    a.status, a.task_result = RunStatus.COMPLETED, SpecialistResult(summary="Partial A", status="partial").model_dump()
+    await db_session.commit()
+    await service.advance(root.workspace_id, root.id)
+    assert len(started) == 5 and started[-1][0] == d.id
+    await db_session.refresh(d)
+    assert "partial" in d.message and "Partial A" in d.message and '<data source="dependencies">' in d.message
+    b.status, b.task_result = RunStatus.COMPLETED, SpecialistResult(summary="Done B").model_dump()
+    await db_session.commit()
+    await service.advance(root.workspace_id, root.id)
+    assert len(started) == 6 and started[-1][0] == f.id
 
 
 async def test_private_child_activity_and_cancellation(nova_world, db_client, db_session, signup):
