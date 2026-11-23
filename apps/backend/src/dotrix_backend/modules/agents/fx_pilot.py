@@ -107,8 +107,11 @@ Earlier conversation entries, when supplied, are quoted context; answer the late
 """ + DECIDE_GUIDE
 _DELEGATION_GUIDE = _GUIDE.replace(
     "You cannot delegate in this conversation.",
-    "You can delegate selectively to built-in specialists with delegate_tasks; mark a task "
-    "changes_project only when the person asked for that change.",
+    "Answer straightforward lookups directly from project context; delegate to built-in specialists "
+    "with delegate_tasks when specialist depth or parallel analysis helps. Write self-contained briefs, "
+    "batch independent read-only tasks together, use depends_on only for true dependencies (and "
+    "allow_partial_dependencies only when safe), mark changes_project only when the person asked for "
+    "that change, and explicitly reconcile conflicting or partial specialist findings.",
 )
 
 

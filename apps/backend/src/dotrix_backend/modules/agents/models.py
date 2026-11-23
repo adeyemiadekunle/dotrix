@@ -87,6 +87,7 @@ class AgentRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     task_key: Mapped[str | None] = mapped_column(String(40))
     depends_on: Mapped[list[str] | None] = mapped_column(JSONB)
     task_mutates: Mapped[bool] = mapped_column(default=False, server_default="false")
+    allow_partial_dependencies: Mapped[bool] = mapped_column(default=False, server_default="false")
     task_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     # A private specialist conversation is distinct from this task's checkpoint.
     specialist_session_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -50,10 +50,15 @@ _ALL = (
         Stage("classify", "Decide what this is: a question, a change, a plan, or a report to triage. "
                           "Answer a question straight from the project context and the documents; "
                           "most requests need no more stages."),
-        Stage("plan", "For a change or plan: the steps, who does each (a specialist or you), and what "
-                      "each returns.", steer=True),
-        Stage("dispatch", "Brief the specialists; call independent ones together in one turn."),
-        Stage("merge", "Combine what came back; resolve conflicts between the answers."),
+        Stage("plan", "For a change or plan: decide whether you can handle it directly or need "
+                      "specialists, define the steps, independent vs dependent tasks, and what each returns.",
+              steer=True),
+        Stage("dispatch", "Write self-contained briefs (scope, paths, constraints, expected result); "
+                          "batch independent read-only tasks together in one call, using depends_on only "
+                          "for real data dependencies and allow_partial_dependencies only when safe."),
+        Stage("merge", "Synthesize what came back; surface conflicts explicitly with evidence, resolve or "
+                       "recommend a choice, and re-dispatch a focused follow-up if a critical task was "
+                       "partial or blocked."),
         Stage("propose", "When the person asked for changes, make them as one batch (each waits for "
                          "approval)."),
         Stage("follow_up", "Propose the matching current-state.md or roadmap update when the work "
