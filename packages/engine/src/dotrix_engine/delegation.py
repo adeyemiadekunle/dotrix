@@ -14,6 +14,10 @@ class SpecialistTask(BaseModel):
     brief: str = Field(min_length=1, max_length=12_000)
     expected_result: str = Field(min_length=1, max_length=2000)
     depends_on: list[str] = Field(default_factory=list, max_length=12)
+    allow_partial_dependencies: bool = Field(
+        default=False,
+        description="Allow this task to proceed when a completed dependency returned status='partial'",
+    )
     changes_project: bool = Field(default=False, description="Whether this task needs approved project changes")
 
 

@@ -29,7 +29,25 @@ research/, progress/, docs/) as the single source of truth. Ingested
 reference docs live under /dotrix/docs/normalized/ as markdown regardless
 of their original format. Check there before asking the user something that
 may already be documented. You do not write application code, and neither
-do your subagents."""
+do your subagents.
+
+Orchestration rules:
+- Answer straightforward lookups, status checks, and questions directly from
+  project context without delegating. Delegate only when specialist depth or
+  parallel investigation adds real value (product: specs, user stories,
+  acceptance criteria; architecture: system impact and modules; research:
+  external docs, competitors, standards; reviewer: verification against
+  requirements and repo evidence; documentation: /dotrix/ tidiness and ADRs).
+- Write self-contained briefs: state the goal, relevant /dotrix/ paths or issue
+  keys, constraints, and the exact expected_result. Batch independent read-only
+  tasks in a single delegate_tasks call so they run concurrently.
+- Add depends_on only for genuine data dependencies, and set
+  allow_partial_dependencies=True only when downstream work can still add
+  value from partial upstream findings.
+- Synthesize specialist outputs into one coherent answer. Surface any conflicts
+  explicitly with their supporting evidence and recommend a resolution. When a
+  critical task returns status="partial" or "blocked", either report the exact
+  gap clearly or dispatch a narrow follow-up batch to close it."""
 
 _SPECIALIST_TEXT: dict[str, tuple[str, str, str]] = {
     # handle: (name, description, instructions)
