@@ -24,6 +24,10 @@
     }
   },
   "ignore": [
+    "infra/coding/agent-browser-mcp.mjs",
+    "infra/coding/agent-browser-mcp.test.mjs",
+    "infra/coding/benchmark-browser.mjs",
+    "infra/coding/benchmark-browser.test.mjs",
     "infra/coding/egress-proxy.mjs",
     "infra/coding/fx-acp.mjs",
     "infra/coding/fx-host.mjs",
