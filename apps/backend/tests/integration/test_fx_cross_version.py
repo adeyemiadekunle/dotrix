@@ -175,3 +175,128 @@ async def test_a_cut_off_answer_is_never_repeated_as_complete(journal_world, mon
             assert len(requests) == calls
         finally:
             await second.close()
+
+
+async def test_a_saved_write_result_is_replayed_without_reexecuting_on_the_other_artifact(journal_world, monkeypatch):
+    """D7: a side-effecting write completed and journaled by the writer is never re-executed on the reader."""
+    import threading
+
+    from dotrix_engine.runtimes import RuntimeTool
+
+    run, _, _, _, journal = journal_world
+    result_saved = asyncio.Event()
+    original_append = journal.append
+
+    async def observe_append(**kwargs):
+        cursor = await original_append(**kwargs)
+        record = json.loads(kwargs["data"])
+        if any(event["type"] == "tool_result" for event in record.get("events", [])):
+            result_saved.set()
+        return cursor
+
+    monkeypatch.setattr(journal, "append", observe_append)
+    gate = threading.Event()
+    gate.set()
+    executions: list[str] = []
+
+    async def write_once(arguments, context):
+        executions.append(context.execution_id)
+        gate.clear()
+        return f"saved:{arguments['value']}:{len(executions)}"
+
+    config = AgentRuntimeConfig(
+        "project-manager",
+        "Record the value.",
+        (
+            RuntimeTool(
+                "write_once",
+                "Write value once",
+                {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]},
+                execute_scoped=write_once,
+                writes=True,
+            ),
+        ),
+    )
+    with model_server(gate=gate, tool_name="write_once", tool_args={"value": "d7"}, report_usage=True) as url:
+        first = await _runtime(monkeypatch, _WRITER, config, url, journal)
+        task = asyncio.create_task(first.prompt("journal-session", "Save it", message_id="turn-write-1"))
+        try:
+            await asyncio.wait_for(result_saved.wait(), 20)
+        finally:
+            first.process.kill()
+            gate.set()
+        with pytest.raises(RuntimeError):
+            await task
+        await first.close()
+
+        second = await _runtime(monkeypatch, _READER, config, url, journal)
+        try:
+            resumed = await asyncio.wait_for(second.resume("journal-session", rerun_tools=()), 30)
+            assert resumed.stop_reason == "end_turn"
+            assert "saved:d7:1" in resumed.text
+            assert len(executions) == 1
+        finally:
+            await second.close()
+
+
+async def test_correlation_id_survives_resume_across_artifacts(journal_world, monkeypatch):
+    """D3/D7: correlation_id passed on resume across artifacts is preserved on events and result."""
+    run, sessions, _, _, journal = journal_world
+    read = _read_tool(run, sessions)
+    intent_saved = asyncio.Event()
+    original_append = journal.append
+
+    async def observe_append(**kwargs):
+        cursor = await original_append(**kwargs)
+        record = json.loads(kwargs["data"])
+        if any(event["type"] == "tool_intent" and any(call["name"] == "read_section" for call in event["data"])
+               for event in record.get("events", [])):
+            intent_saved.set()
+        return cursor
+
+    monkeypatch.setattr(journal, "append", observe_append)
+    started = asyncio.Event()
+    recovered = False
+
+    async def interrupted_read(arguments, context):
+        if not recovered:
+            started.set()
+            await asyncio.Event().wait()
+        return await read.execute_scoped(arguments, context)
+
+    config = AgentRuntimeConfig(
+        "project-manager",
+        "Use the project knowledge tool.",
+        (replace(read, execute_scoped=interrupted_read),),
+    )
+    with model_server(report_usage=True) as url:
+        first = await _runtime(monkeypatch, _WRITER, config, url, journal)
+        task = asyncio.create_task(
+            first.prompt("journal-session", "Read the evidence", message_id="turn-corr-1", correlation_id="d7-corr-7")
+        )
+        try:
+            await asyncio.wait_for(started.wait(), 20)
+            await asyncio.wait_for(intent_saved.wait(), 20)
+        finally:
+            first.process.kill()
+        with pytest.raises(RuntimeError):
+            await task
+        await first.close()
+
+        recovered = True
+        events = []
+
+        async def on_event(ev):
+            events.append(ev)
+
+        second = await _runtime(monkeypatch, _READER, config, url, journal)
+        try:
+            resumed = await asyncio.wait_for(
+                second.resume("journal-session", rerun_tools=("read_section",), correlation_id="d7-corr-7", on_event=on_event),
+                30,
+            )
+            assert resumed.stop_reason == "end_turn" and "Private project evidence" in resumed.text
+            assert resumed.correlation_id == "d7-corr-7"
+            assert events and all(ev.correlation_id == "d7-corr-7" for ev in events)
+        finally:
+            await second.close()

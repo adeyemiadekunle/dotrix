@@ -564,3 +564,23 @@ def test_agent_browser_mcp_selector_and_step_descriptions() -> None:
     assert _describe_browser("browser_fill", {"ref": "@e3", "text": "ada"}) == "Filled in @e3"
     assert _describe_browser("browser_screenshot", {"filename": "proof.png"}) == "Took a screenshot"
     assert _describe_browser("browser_close", {}) == "Closed the browser"
+
+
+def test_coding_agent_legacy_rolls_back_defaults_while_allowing_explicit_fx() -> None:
+    from dotrix_backend.modules.coding.tools import engine_for, kai_models
+
+    settings = _settings(coding_agent="legacy", coding_fx_model="openai:gpt-6.1")
+    keys = {"anthropic", "openai", "xai"}
+    models = kai_models(settings, keys)
+    claude = next(m for m in models if m.startswith("anthropic:"))
+    gpt = next(m for m in models if m.startswith("openai:"))
+    grok = next(m for m in models if m.startswith("xai:"))
+
+    assert engine_for(settings, claude, keys) is CodingAgent.CLAUDE_CODE
+    assert engine_for(settings, gpt, keys) is CodingAgent.CODEX
+    assert engine_for(settings, grok, keys) is CodingAgent.OPENCODE
+    assert choose_agent(settings, {"openai"}) is CodingAgent.CODEX
+    assert choose_agent(settings, {"anthropic"}) is CodingAgent.CLAUDE_CODE
+    assert choose_agent(settings, {"xai"}) is CodingAgent.OPENCODE
+    assert engine_for(settings, claude, keys, "fx") is CodingAgent.FX
+    assert choose_agent(settings, {"openai"}, preferred="fx") is CodingAgent.FX

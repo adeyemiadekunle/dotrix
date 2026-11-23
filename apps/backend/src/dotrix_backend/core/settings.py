@@ -180,9 +180,10 @@ class Settings(DatabaseSettings):
     # then is deleted (0: never sleeps); at most this many sleep per workspace (the oldest goes first).
     coding_sleep_days: int = Field(default=7, ge=0, le=30)
     coding_sleep_max: int = Field(default=5, ge=0, le=50)
-    # Which tool codes: "auto" follows the person's keys (OpenAI: Codex, Anthropic: Claude Code,
-    # other supported providers: OpenCode); naming one needs their key for its provider.
-    coding_agent: Literal["auto", "claude-code", "codex", "opencode", "fx"] = "auto"  # Default, overridable per person/run.
+    # Default runtime for new interactive project Chat runs ("fx": Kai runtime; "deepagents": rollback).
+    chat_default_runtime: Literal["fx", "deepagents"] = "fx"
+    # Which tool codes: "auto" picks fx where supported; "legacy" rolls back defaults to Claude Code/Codex/OpenCode.
+    coding_agent: Literal["auto", "legacy", "claude-code", "codex", "opencode", "fx"] = "auto"  # Default, overridable per person/run.
     coding_claude_model: str | None = None  # Claude Code's default when unset
     coding_codex_model: str | None = None  # Codex's default when unset
     # OpenCode's model, as everywhere in dotrix ("anthropic:claude-sonnet-5-5"): its provider decides

@@ -956,10 +956,11 @@ def engine_for(
     settings: Settings, model: str, providers: frozenset[str] | set[str], preferred: str | None = None,
 ) -> CodingAgent | None:
     """The engine Kai codes on for a model: the person's preferred engine (Account → Your models) when it can
-    run that model, else the Kai runtime's fx, else the model's provider's own, else OpenCode."""
+    run that model, else the Kai runtime's fx (unless rolled back to legacy), else the provider's own, else OpenCode."""
     auto = AUTO_ENGINE.get(model.partition(":")[0], CodingAgent.OPENCODE)
-    for name in dict.fromkeys([preferred, settings.coding_agent, CodingAgent.FX, auto, CodingAgent.OPENCODE]):
-        if name in (None, "auto") or name not in set(CodingAgent):
+    fallbacks = [auto, CodingAgent.OPENCODE] if settings.coding_agent == "legacy" else [CodingAgent.FX, auto, CodingAgent.OPENCODE]
+    for name in dict.fromkeys([preferred, settings.coding_agent, *fallbacks]):
+        if name in (None, "auto", "legacy") or name not in set(CodingAgent):
             continue
         agent = CodingAgent(name)
         if model in models_for(settings, agent, providers):
@@ -971,10 +972,15 @@ def choose_agent(
     settings: Settings, providers: frozenset[str] | set[str] = frozenset(), *,
     preferred: str | None = None, preferred_model: str | None = None,
 ) -> CodingAgent | None:
-    """A compatible personal/server default, otherwise the Kai runtime's fx, then Codex, Claude Code, and OpenCode."""
-    order = [preferred, settings.coding_agent, CodingAgent.FX, CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
+    """A compatible personal/server default, otherwise fx (unless rolled back to legacy), then Codex, Claude Code, and OpenCode."""
+    fallbacks = (
+        [CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
+        if settings.coding_agent == "legacy"
+        else [CodingAgent.FX, CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
+    )
+    order = [preferred, settings.coding_agent, *fallbacks]
     for name in dict.fromkeys(order):
-        if name in (None, "auto") or name not in set(CodingAgent):
+        if name in (None, "auto", "legacy") or name not in set(CodingAgent):
             continue
         agent = CodingAgent(name)
         model = model_for(settings, agent, providers, preferred_model=preferred_model)

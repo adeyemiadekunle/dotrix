@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Added Phase 6 operator rollback switches (`DOTRIX_CHAT_DEFAULT_RUNTIME=deepagents` and `DOTRIX_CODING_AGENT=legacy`), the [Kai runtime rollback runbook](docs/runbooks/kai-runtime-rollback.md), and D7 durable/cross-version recovery tests for saved write replay, `correlationId` survival, and rollback thread preservation.
 - Added the category-based Skills Registry (`packages/engine/src/dotrix_engine/skill_bundles.py`, `skills.py`), `GET /v1/workspaces/{workspace_id}/skills/registry` endpoint, curated pinned skill bundles (Google Modern Web Guidance, Browser Exploratory Verification, and Anthropic Knowledge Work compatible pilots), and dedicated `/w/{workspace}/skills` UI page with category tabs, search, trust/origin filters, provenance, and workspace enablement controls.
 - Added the typed sandboxed `agent-browser` MCP adapter ([agent-browser-mcp.mjs](infra/coding/agent-browser-mcp.mjs)) with SSRF/metadata/private-network/path guards, `coding_browser_engine` backend wiring (`playwright` default or `agent-browser`), and the Playwright vs `agent-browser` seven-scenario benchmark harness ([benchmark-browser.mjs](infra/coding/benchmark-browser.mjs)).
 - Chat's fx runtime (`FxRuntime`, `fx_host/worker.mjs`, `fx_pilot.py`) now validates and propagates `correlationId` (`run_id`) onto SDK turns, streamed events, and turn results.

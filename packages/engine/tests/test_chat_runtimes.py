@@ -262,3 +262,149 @@ async def test_fx_runtime_validates_and_propagates_correlation_id(tmp_path):
             await runtime.close()
     finally:
         server.shutdown()
+
+
+async def test_fx_runtime_recovers_saved_write_once_and_preserves_correlation_id_across_restart():
+    """D7 durable recovery: a saved side-effecting tool result replays once without re-running on resume,
+    and `correlation_id` survives across process restart."""
+    import http.server
+    import shutil
+    import threading
+
+    from dotrix_engine.runtimes import FxRuntime, RuntimeJournalSnapshot, RuntimeTool
+    from dotrix_engine.runtimes.fx import installed_libfx_version, libfx_version
+
+    node = shutil.which("node")
+    if node is None or installed_libfx_version() != libfx_version():
+        pytest.skip("node or pinned libfx addon is not installed")
+
+    class MemoryJournal:
+        def __init__(self) -> None:
+            self.records: list[tuple[str, bytes]] = []
+            self.checkpoint: tuple[str, bytes] | None = None
+            self.keys: dict[str, str] = {}
+            self.result_saved = asyncio.Event()
+
+        async def load(self) -> RuntimeJournalSnapshot:
+            return RuntimeJournalSnapshot(checkpoint=self.checkpoint, records=tuple(self.records))
+
+        async def append(self, *, expected: str | None, idempotency_key: str, data: bytes) -> str:
+            if idempotency_key in self.keys:
+                return self.keys[idempotency_key]
+            current = self.records[-1][0] if self.records else None
+            if expected != current:
+                raise ValueError(f"Expected cursor {current}, got {expected}")
+            cursor = str(len(self.records) + 1)
+            self.records.append((cursor, data))
+            self.keys[idempotency_key] = cursor
+            payload = json.loads(data)
+            if any(ev.get("type") == "tool_result" for ev in payload.get("events", [])):
+                self.result_saved.set()
+            return cursor
+
+        async def save_checkpoint(self, *, through: str, data: bytes) -> None:
+            self.checkpoint = (through, data)
+
+    gate = threading.Event()
+    gate.set()
+
+    class Model(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            gate.wait(timeout=15)
+            tool_msg = next((m for m in reversed(body["messages"]) if m["role"] == "tool"), None)
+            if tool_msg is None:
+                delta = {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-write-1",
+                            "type": "function",
+                            "function": {"name": "write_note", "arguments": json.dumps({"text": "saved-once"})},
+                        }
+                    ],
+                }
+                finish = "tool_calls"
+            else:
+                delta, finish = {"role": "assistant", "content": f"Confirmed: {tool_msg['content']}"}, "stop"
+            base = {"id": "c-d7", "object": "chat.completion.chunk", "created": 1, "model": body["model"]}
+            chunks = [
+                {**base, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]},
+            ]
+            payload = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(payload.encode())
+
+    executions: list[str] = []
+
+    async def write_note(arguments: dict, context) -> str:
+        executions.append(context.execution_id)
+        gate.clear()  # Pause the follow-up model call so we kill the host right after journaling tool_result.
+        return f"wrote:{arguments['text']}:{len(executions)}"
+
+    config = AgentRuntimeConfig(
+        "nova",
+        "Record notes.",
+        (
+            RuntimeTool(
+                "write_note",
+                "Write a note once",
+                {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+                execute_scoped=write_note,
+                writes=True,
+            ),
+        ),
+    )
+    journal = MemoryJournal()
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Model)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/v1"
+        first = await FxRuntime.create(
+            config, model="test-model", base_url=url, api_key="synthetic",
+            journal=journal, engine_session="sess-d7-1",
+        )
+        task = asyncio.create_task(
+            first.prompt("sess-d7-1", "Save note", message_id="turn-d7-1", correlation_id="run-d7-99")
+        )
+        try:
+            await asyncio.wait_for(journal.result_saved.wait(), 20)
+        finally:
+            first.process.kill()
+            gate.set()
+        with pytest.raises(RuntimeError):
+            await task
+        await first.close()
+
+        assert len(executions) == 1
+        resumed_events = []
+
+        async def on_event(event):
+            resumed_events.append(event)
+
+        second = await FxRuntime.create(
+            config, model="test-model", base_url=url, api_key="synthetic",
+            journal=journal, engine_session="sess-d7-1",
+        )
+        try:
+            resumed = await asyncio.wait_for(
+                second.resume("sess-d7-1", rerun_tools=(), correlation_id="run-d7-99", on_event=on_event),
+                30,
+            )
+            assert resumed.stop_reason == "end_turn"
+            assert "wrote:saved-once:1" in resumed.text
+            assert resumed.correlation_id == "run-d7-99"
+            assert resumed_events and all(ev.correlation_id == "run-d7-99" for ev in resumed_events)
+            assert len(executions) == 1
+        finally:
+            await second.close()
+    finally:
+        gate.set()
+        server.shutdown()
