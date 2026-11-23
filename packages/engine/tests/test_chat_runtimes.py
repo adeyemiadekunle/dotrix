@@ -120,6 +120,7 @@ def test_the_kai_runtime_is_admitted_only_as_its_own_package(tmp_path):
 
     assert LIBFX_ARTIFACTS["0.0.17-kai.1"] == ("0.0.16",)
     assert LIBFX_ARTIFACTS["0.0.17-kai.2"] == ("0.0.17-kai.1", "0.0.16")
+    assert LIBFX_ARTIFACTS["0.0.17-kai.3"] == ("0.0.17-kai.2", "0.0.17-kai.1", "0.0.16")
     kai = "npm:@kunemi-group/kai@0.0.17-kai.1"
     assert libfx_version(_host(tmp_path / "kai", kai)) == "0.0.17-kai.1"
     assert installed_libfx_version(_host(tmp_path / "kai-installed", kai, installed="0.0.17-kai.1")) == "0.0.17-kai.1"
@@ -199,3 +200,65 @@ def test_the_fx_chat_host_uses_the_environment_s_proxy(tmp_path):
     # Either way the request reached the proxy, not the provider: provider.invalid has no address.
     assert done.stdout.strip() == "ok", done.stderr[-500:]
     assert seen in (["provider.invalid:80"], ["http://provider.invalid/v1/models"]), seen
+
+
+async def test_fx_runtime_validates_and_propagates_correlation_id(tmp_path):
+    import http.server
+    import shutil
+    import threading
+
+    from dotrix_engine.runtimes import FxRuntime
+    from dotrix_engine.runtimes.contracts import validate_correlation_id
+    from dotrix_engine.runtimes.fx import installed_libfx_version, libfx_version
+
+    validate_correlation_id("dotrix-run:42/step:1")
+    for bad in ("", "x" * 257, "a\nb", "a\x7fb"):
+        with pytest.raises(ValueError, match="Correlation ID"):
+            validate_correlation_id(bad)
+
+    node = shutil.which("node")
+    if node is None or installed_libfx_version() != libfx_version():
+        pytest.skip("node or pinned libfx addon is not installed")
+
+    class Model(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            base = {"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": body["model"]}
+            chunks = [
+                {**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ok"}, "finish_reason": None}]},
+                {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+            ]
+            payload = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(payload.encode())
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Model)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        config = AgentRuntimeConfig("nova", "Answer concisely.", ())
+        runtime = await FxRuntime.create(
+            config, model="test-model", base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            api_key="synthetic", engine_session="sess-corr-1", ephemeral_engine=True,
+        )
+        try:
+            with pytest.raises(ValueError, match="Correlation ID"):
+                await runtime.prompt("sess-corr-1", "Hi", correlation_id="bad\nvalue")
+            seen = []
+            async def on_event(event):
+                seen.append(event)
+            result = await runtime.prompt("sess-corr-1", "Hi", on_event=on_event, correlation_id="run-corr-42")
+            assert result.text == "ok"
+            assert result.correlation_id == "run-corr-42"
+            assert seen and all(ev.correlation_id == "run-corr-42" for ev in seen)
+
+            plain = await runtime.prompt("sess-corr-1", "Again")
+            assert plain.correlation_id is None
+        finally:
+            await runtime.close()
+    finally:
+        server.shutdown()

@@ -10804,7 +10804,7 @@ export interface components {
              * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model.
              */
             model?: string | null;
-            /** @description For a new project conversation: `deepagents` (default) or the opt-in read-only `fx` preview. A conversation keeps its runtime; omit on follow-up. */
+            /** @description For a new project conversation: `fx` (the default for compatible providers) or `deepagents`. A conversation keeps its runtime; omit on follow-up. */
             chat_runtime?: components["schemas"]["ChatRuntime"] | null;
             /** @description How you're working: `discuss` (advice), `plan` (a versioned plan for the conversation, `.../threads/{id}/plans`), `build` (what you asked for: code goes to Kai), `review` (what changed, with its evidence). Plan permits reads and private plan saves only; only `build` engages Kai. Omit for no mode (as before work modes: no plans or evidence tools) */
             work_mode?: components["schemas"]["WorkMode"] | null;

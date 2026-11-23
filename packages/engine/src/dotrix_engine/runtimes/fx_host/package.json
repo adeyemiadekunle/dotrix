@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "libfx": "npm:@kunemi-group/kai@0.0.17-kai.2"
+    "libfx": "npm:@kunemi-group/kai@0.0.17-kai.3"
   }
 }

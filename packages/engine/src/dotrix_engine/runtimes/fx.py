@@ -26,6 +26,7 @@ from .contracts import (
     RuntimeToolError,
     TurnResult,
     UnsupportedRuntimeOperation,
+    validate_correlation_id,
     validate_session,
 )
 
@@ -39,6 +40,7 @@ LIBFX_ARTIFACTS: dict[str, tuple[str, ...]] = {
     "0.0.16": (),
     "0.0.17-kai.1": ("0.0.16",),
     "0.0.17-kai.2": ("0.0.17-kai.1", "0.0.16"),
+    "0.0.17-kai.3": ("0.0.17-kai.2", "0.0.17-kai.1", "0.0.16"),
 }
 # The package each version comes from. fx's own releases are `libfx` on npm; the Kai runtime's
 # (adeyemiadekunle/kai-runtime) are `@kunemi-group/kai` on GitHub Packages, versioned
@@ -259,7 +261,7 @@ class FxRuntime:
         while (data := await queue.get()) is not None:
             try:
                 await handler(RuntimeEvent(data["type"], session, text=data.get("text", ""), tool=data.get("tool"),
-                                           message_id=data.get("messageId")))
+                                           message_id=data.get("messageId"), correlation_id=data.get("correlationId")))
             except Exception:
                 pass  # observers cannot change agent execution
 
@@ -358,20 +360,24 @@ class FxRuntime:
         return (await self._request({"op": "new_session"}))["sessionId"]
 
     async def prompt(self, session_id: str, message: str, *, on_event: EventHandler | None = None,
-                     message_id: str | None = None, rerun_tools: tuple[str, ...] = ()) -> TurnResult:
+                     message_id: str | None = None, rerun_tools: tuple[str, ...] = (),
+                     correlation_id: str | None = None) -> TurnResult:
         if self._closed:
             raise RuntimeError("Runtime is closed")
         validate_session(session_id, message)
         self._validate_local_session(session_id)
         if message_id is not None:
             validate_session(message_id, "message")
+        if correlation_id is not None:
+            validate_correlation_id(correlation_id)
         self._validate_rerun_tools(rerun_tools)
         return await self._turn(session_id, {"op": "prompt", "message": message, "messageId": message_id,
-                                              "rerunTools": list(rerun_tools)}, on_event)
+                                              "rerunTools": list(rerun_tools), "correlationId": correlation_id},
+                                on_event)
 
     async def resume(self, session_id: str, *, on_event: EventHandler | None = None,
                      rerun_tools: tuple[str, ...] = (), message_id: str | None = None,
-                     message: str | None = None) -> TurnResult:
+                     message: str | None = None, correlation_id: str | None = None) -> TurnResult:
         """Resume the turn a stopped process left open. With `message` and `message_id`, a session whose
         turn isn't open (it ended or handed off) enters that turn again by ID, like `prompt`."""
         if self._closed:
@@ -381,10 +387,13 @@ class FxRuntime:
         validate_session(session_id, "resume")
         if message_id is not None:
             validate_session(message_id, "message")
+        if correlation_id is not None:
+            validate_correlation_id(correlation_id)
         self._validate_local_session(session_id)
         self._validate_rerun_tools(rerun_tools)
         return await self._turn(session_id, {"op": "resume", "rerunTools": list(rerun_tools),
-                                              "messageId": message_id, "message": message}, on_event)
+                                              "messageId": message_id, "message": message,
+                                              "correlationId": correlation_id}, on_event)
 
     def _validate_local_session(self, session_id: str) -> None:
         if self._engine_session is not None and session_id != self._engine_session:
@@ -419,7 +428,8 @@ class FxRuntime:
         ) if source in usage} if usage else None)
         return TurnResult(text=result["text"], stop_reason=result["stopReason"], usage=normalized,
                           tools=tuple(result["tools"]), message_id=result.get("messageId"),
-                          repeated=result.get("repeated", False), handoff=result.get("handoff"))
+                          repeated=result.get("repeated", False), handoff=result.get("handoff"),
+                          correlation_id=result.get("correlationId"))
 
     async def steer(self, session_id: str, message: str, *, message_id: str | None = None) -> None:
         if self._closed or session_id not in self._active:

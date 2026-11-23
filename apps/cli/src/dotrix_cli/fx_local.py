@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import signal
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -152,11 +153,147 @@ def split_contract(brief: str) -> tuple[str, str | None]:
     return task.rstrip() + "\n", (CONTRACT_HEADING + "\n" + contract).strip()
 
 
+_MAX_SESSION_BYTES = 16 * 1024 * 1024
+_MAX_SESSION_FILES = 2_000
+
+
+def digest_of(contract: str | None) -> str | None:
+    if not contract or not contract.strip():
+        return None
+    return hashlib.sha256(contract.encode("utf-8")).hexdigest()
+
+
+def _check_private_dir(path: Path) -> None:
+    if path.is_symlink() or not path.is_dir():
+        raise ValueError("The saved local coding session state is invalid")
+    if os.name != "nt":
+        metadata = path.lstat()
+        if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+            raise ValueError("Make your local coding session state private before using it")
+
+
+def _read_regular_bytes(src: Path, budget: list[int]) -> bytes:
+    if src.is_symlink():
+        raise ValueError("The local coding session state must not contain symbolic links")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(src, flags)
+    try:
+        metadata = os.fstat(fd)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("The local coding session state contains an unsupported entry")
+        if budget[1] <= 0 or metadata.st_size > budget[0]:
+            raise ValueError("The local coding session state is too large")
+        budget[0] -= metadata.st_size
+        budget[1] -= 1
+        with os.fdopen(fd, "rb") as stream:
+            fd = -1
+            data = stream.read(metadata.st_size + 1)
+        if len(data) > metadata.st_size:
+            raise ValueError("The local coding session state changed while reading")
+        return data
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def _copy_file_safe(src: Path, dst: Path, budget: list[int]) -> None:
+    data = _read_regular_bytes(src, budget)
+    descriptor = os.open(dst, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+    dst.chmod(0o600)
+
+
+def _copy_tree_safe(src: Path, dst: Path, budget: list[int]) -> None:
+    if src.is_symlink() or not src.is_dir():
+        raise ValueError("The local coding session state must not contain symbolic links")
+    dst.mkdir(mode=0o700, parents=True, exist_ok=True)
+    dst.chmod(0o700)
+    with os.scandir(src) as entries:
+        for entry in entries:
+            child_src = Path(entry.path)
+            child_dst = dst / entry.name
+            if entry.is_symlink():
+                raise ValueError("The local coding session state must not contain symbolic links")
+            if entry.is_dir(follow_symlinks=False):
+                _copy_tree_safe(child_src, child_dst, budget)
+            elif entry.is_file(follow_symlinks=False):
+                _copy_file_safe(child_src, child_dst, budget)
+            else:
+                raise ValueError("The local coding session state contains an unsupported entry")
+
+
+def restore_session_state(profile: Path, state_dir: Path) -> None:
+    """Restore the session record and saved conversation from `state_dir` into `profile/.fx`."""
+    if not state_dir.exists():
+        return
+    _check_private_dir(state_dir)
+    fx_dir = profile / ".fx"
+    fx_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    budget = [_MAX_SESSION_BYTES, _MAX_SESSION_FILES]
+    record = state_dir / "dotrix-session.json"
+    if record.exists():
+        _copy_file_safe(record, fx_dir / "dotrix-session.json", budget)
+    sessions = state_dir / "sessions"
+    if sessions.exists():
+        _copy_tree_safe(sessions, fx_dir / "sessions", budget)
+
+
+def save_session_state(profile: Path, state_dir: Path) -> None:
+    """Persist the session record and conversation from `profile/.fx` to `state_dir`."""
+    fx_dir = profile / ".fx"
+    record = fx_dir / "dotrix-session.json"
+    sessions = fx_dir / "sessions"
+    if not record.exists() and not sessions.exists():
+        return
+    state_dir.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{state_dir.name}-", dir=state_dir.parent))
+    previous: Path | None = None
+    try:
+        staging.chmod(0o700)
+        budget = [_MAX_SESSION_BYTES, _MAX_SESSION_FILES]
+        if record.exists():
+            _copy_file_safe(record, staging / "dotrix-session.json", budget)
+        if sessions.exists():
+            _copy_tree_safe(sessions, staging / "sessions", budget)
+        if state_dir.is_symlink():
+            raise ValueError("The local coding session state directory must not be a link")
+        if state_dir.exists():
+            previous = Path(tempfile.mkdtemp(prefix=f".{state_dir.name}-old-", dir=state_dir.parent))
+            previous.rmdir()
+            os.replace(state_dir, previous)
+        os.replace(staging, state_dir)
+        staging = None  # type: ignore[assignment]
+        if previous is not None:
+            shutil.rmtree(previous, ignore_errors=True)
+            previous = None
+    except BaseException:
+        if previous is not None and not state_dir.exists():
+            with_restore = os.replace
+            try:
+                with_restore(previous, state_dir)
+            except OSError:
+                pass
+        raise
+    finally:
+        if staging is not None and staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        if previous is not None and previous.exists():
+            shutil.rmtree(previous, ignore_errors=True)
+
+
+class _RpcError(RuntimeError):
+    def __init__(self, code: Any, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 def emit(kind: str, **values: Any) -> None:
     print(json.dumps({"type": kind, **values}), flush=True)
 
 
-async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None = None) -> int:
+async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None = None,
+              *, resume: bool = False, pinned_digest: str | None = None) -> int:
     from .fx_native import available, launch
 
     if not NATIVE_FX_POLICY_VALIDATED or not available():
@@ -167,6 +304,33 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
         emit("error", message="The local coding tool is not installed")
         return 1
     brief, contract = split_contract(sys.stdin.read())
+    record_path = profile / ".fx" / "dotrix-session.json"
+    kept: dict[str, Any] = {}
+    if resume and record_path.exists():
+        if record_path.is_symlink() or not record_path.is_file():
+            emit("error", message="This coding session's saved state doesn't match the profile it was started with; start a new session")
+            return 1
+        try:
+            loaded = json.loads(record_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                kept = loaded
+        except (OSError, ValueError):
+            emit("error", message="This coding session's saved state couldn't be read; start a new session")
+            return 1
+    previous_session = kept.get("fxSession") if isinstance(kept.get("fxSession"), str) and kept.get("fxSession") else None
+    if previous_session is not None:
+        expected = kept.get("profileDigest")
+        recomputed = digest_of(kept.get("profile")) if isinstance(kept.get("profile"), str) else None
+        legacy = "profile" not in kept and expected is None
+        contract_digest = digest_of(contract)
+        if (
+            (not legacy and "profile" not in kept)
+            or (pinned_digest is not None and expected != pinned_digest)
+            or recomputed != expected
+            or (pinned_digest is None and contract is not None and contract_digest != expected)
+        ):
+            emit("error", message="This coding session's saved state doesn't match the profile it was started with; start a new session")
+            return 1
     root = Path.cwd().resolve()
     servers = []
     if browser is not None:
@@ -187,6 +351,7 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
     calls: dict[str, dict] = {}
     counter = 0
     session_id = None
+    replaying = False
     cancelled = False
     failure = None
     text: list[str] = []
@@ -232,10 +397,13 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
                 if "method" not in value and value.get("id") in pending:
                     future = pending.pop(value["id"])
                     if value.get("error"):
-                        future.set_exception(RuntimeError(str(value["error"].get("message", "The local turn failed"))))
+                        err = value["error"]
+                        future.set_exception(_RpcError(err.get("code"), str(err.get("message", "The local turn failed"))))
                     else:
                         future.set_result(value.get("result"))
                 elif value.get("method") == "session/update":
+                    if replaying:
+                        continue
                     update = value.get("params", {}).get("update") or {}
                     kind = update.get("sessionUpdate")
                     recovery = ((update.get("_meta") or {}).get("fx") or {}).get("modelResponseRecovery")
@@ -293,14 +461,43 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
         await request("initialize", {"protocolVersion": 1, "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False},
                                                                                   "terminal": False},
                                      "clientInfo": {"name": "dotrix", "version": "1"}})
-        # Kai's contract as the session's system profile (ACP's systemPrompt), as on a cloud turn. Each local turn
-        # starts a session of its own, so there's no saved profile to keep or check.
-        opened = {"cwd": str(root), "mcpServers": servers}
-        if contract:
-            opened["systemPrompt"] = [{"type": "text", "text": contract}]
-        session = await request("session/new", opened)
-        session_id = session["sessionId"]
+        # Kai's contract as the session's system profile (ACP's systemPrompt), as on a cloud turn. When resuming
+        # a managed local session, keep the original session and verify the profile digest before starting.
+        session_resumed = False
+        fresh = False
+        profile_digest = kept.get("profileDigest") if previous_session else None
+        if previous_session is not None:
+            replaying = True
+            try:
+                try:
+                    await request("session/resume", {"sessionId": previous_session, "cwd": str(root), "mcpServers": servers})
+                except _RpcError as exc:
+                    if exc.code != -32601:
+                        raise
+                    await request("session/load", {"sessionId": previous_session, "cwd": str(root), "mcpServers": servers})
+                session_id = previous_session
+                session_resumed = True
+            except _RpcError:
+                fresh = True
+            finally:
+                replaying = False
+        if not session_resumed:
+            opened = {"cwd": str(root), "mcpServers": servers}
+            if contract:
+                opened["systemPrompt"] = [{"type": "text", "text": contract}]
+            session = await request("session/new", opened)
+            session_id = session["sessionId"]
+            profile_digest = digest_of(contract)
+            record = {"fxSession": session_id, "profileDigest": profile_digest,
+                      **({"profile": contract} if contract and contract.strip() else {})}
+            descriptor = os.open(record_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(record, stream)
+            record_path.chmod(0o600)
         await request("session/set_mode", {"sessionId": session_id, "modeId": "ask"})
+        emit("started", resumed=session_resumed,
+             **({"profileDigest": profile_digest} if profile_digest else {}),
+             **({"fresh": True} if fresh else {}))
         inbox_open = False
         if steer_dir is not None:
             try:
@@ -381,8 +578,11 @@ def main() -> None:
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--browser-config", type=Path)
     parser.add_argument("--steer-dir", type=Path)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--profile-digest")
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(run(args.profile, args.browser_config, args.steer_dir)))
+    raise SystemExit(asyncio.run(run(args.profile, args.browser_config, args.steer_dir,
+                                    resume=args.resume, pinned_digest=args.profile_digest)))
 
 
 if __name__ == "__main__":

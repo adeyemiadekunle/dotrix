@@ -42,10 +42,11 @@ def _settings(**values) -> Settings:
     return Settings(**{**base, **values})  # type: ignore[arg-type]
 
 
-def test_fx_is_offered_but_never_the_automatic_choice() -> None:
+def test_fx_is_the_default_choice_for_supported_providers() -> None:
     on = _settings(coding_fx_model="openai:gpt-6.1")
     assert "openai:gpt-6.1" in fx_models(on, {"openai"})
-    assert choose_agent(on, {"openai"}) is CodingAgent.CODEX  # nobody asked for it
+    assert choose_agent(on, {"openai"}) is CodingAgent.FX
+    assert choose_agent(on, {"openai"}, preferred="codex") is CodingAgent.CODEX
     assert choose_agent(on, {"openai"}, preferred="fx") is CodingAgent.FX
     assert choose_agent(_settings(coding_agent="fx", coding_fx_model="openai:gpt-6.1"), {"openai"}) is CodingAgent.FX
 
@@ -144,8 +145,13 @@ FAKE_FX = textwrap.dedent('''
     waiting = None
     for line in sys.stdin:
         msg = json.loads(line)
-        log.write(json.dumps({"method": msg.get("method"), "params": msg.get("params")}) + "\\n"); log.flush()
+        log.write(json.dumps({"method": msg.get("method"), "params": msg.get("params"),
+                              **({"result": msg["result"]} if "result" in msg else {})}) + "\\n"); log.flush()
         method, mid = msg.get("method"), msg.get("id")
+        if method is None and mid == 999 and waiting is not None:
+            send({"jsonrpc": "2.0", "id": waiting, "result": {"stopReason": "end_turn"}})
+            waiting = None
+            continue
         if method == "initialize" and os.environ.get("FAKE_FX_INIT_FAILS"):  # its settings refused, say
             send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32600, "message": "base_url uses https, or http only for localhost"}})
             continue
@@ -196,6 +202,11 @@ FAKE_FX = textwrap.dedent('''
                 update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "send-1", "status": "completed"})
                 send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
                 continue
+            if "ask_perm" in msg["params"]["prompt"][0]["text"]:
+                waiting = mid
+                send({"jsonrpc": "2.0", "id": 999, "method": "session/request_permission",
+                      "params": {"sessionId": sid, "options": [{"optionId": "allow_1", "kind": "allow_once"}]}})
+                continue
             if "wait" in msg["params"]["prompt"][0]["text"]:
                 waiting = mid
                 update(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Working"}})
@@ -238,15 +249,25 @@ def _stop_host(home: Path) -> None:
     pid = home / ".dotrix-fx-host" / "pid"
     if not pid.exists():
         return
-    with contextlib.suppress(ProcessLookupError, ValueError):
+    with contextlib.suppress(ProcessLookupError, PermissionError, ValueError):
         number = int(pid.read_text())
-        os.killpg(number, signal.SIGTERM)
+        try:
+            os.killpg(number, signal.SIGTERM)
+        except ProcessLookupError:
+            os.kill(number, signal.SIGTERM)
         for _ in range(100):  # gone, with its socket, before the next turn looks for it (a zombie is gone too)
-            status = Path(f"/proc/{number}/status")
-            if not status.exists() or "\nState:\tZ" in status.read_text():
-                break
+            if Path("/proc").is_dir():
+                status = Path(f"/proc/{number}/status")
+                if not status.exists() or "\nState:\tZ" in status.read_text():
+                    break
+            else:
+                try:
+                    os.kill(number, 0)
+                except ProcessLookupError:
+                    break
             time.sleep(0.05)
     pid.unlink(missing_ok=True)
+    (home / ".dotrix-fx-host" / "host.sock").unlink(missing_ok=True)
 
 
 def _drive(env: dict[str, str], brief: str, *extra: str, keep_host: bool = False) -> list[dict]:
@@ -1138,3 +1159,29 @@ def test_kai_s_contract_asks_for_the_shell_s_own_background_mode():
 
     contract = kai_contract("You are Kai.")
     assert "never `&`, `nohup` or" in contract and "shell tool's own way" in contract
+
+
+def test_fx_plan_turn_filters_workers_sets_ask_mode_and_denies_mutations(fake_fx) -> None:
+    from dotrix_backend.modules.coding.brief import kai_contract
+    from dotrix_backend.modules.coding.runner import _profile
+
+    brief = "# Coding task\n\n" + kai_contract("You are Kai.")
+    tool = Fx(FX_PROVIDERS["openai"])
+    task, args = _profile(tool, brief, resumed=False, pinned=None, plan=True)
+    assert "How Kai works" not in task and "--plan" in args
+    workers_arg = json.loads(base64.b64decode(args[args.index("--workers") + 1]))
+    assert [w["name"] for w in workers_arg] == ["explorer", "reviewer"]
+
+    events = _drive(fake_fx, "Plan the fix ask_perm", *tool.profile_args(CONTRACT, None, plan=True))
+    assert events[-1]["type"] == "done" and events[-1]["stopReason"] == "end_turn"
+    calls = _calls(fake_fx)
+    set_mode = next(c for c in calls if c["method"] == "session/set_mode")
+    assert set_mode["params"]["modeId"] == "ask"
+    perm_reply = next(c for c in _logged(fake_fx) if "result" in c and c["method"] is None)
+    assert perm_reply["result"] == {"outcome": {"outcome": "cancelled"}}
+    home = Path(fake_fx["HOME"])
+    settings = json.loads((home / ".fx" / "settings.json").read_text())
+    assert settings["permission_mode"] == "ask"
+    assert settings["permission"]["edit"] == "deny" and settings["permission"]["bash"] == "deny" and settings["permission"]["shell"] == "deny"
+    assert settings["permission"]["read"] == "allow" and settings["permission"]["glob"] == "allow"
+    assert sorted(p.name for p in (home / ".fx" / "agents").iterdir()) == ["explorer", "reviewer"]

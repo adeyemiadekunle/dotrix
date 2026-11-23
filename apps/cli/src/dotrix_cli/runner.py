@@ -602,6 +602,7 @@ class LocalRunner:
     _browser_config: Path | None = None  # the turn in progress's MCP config for the Browser pane, removed when it ends
     _browser: tuple[str, str] | None = None  # the turn in progress has the Browser pane (its server's address and token)
     _fx_profile: Path | None = None
+    _fx_state_dir: Path | None = None
 
     def tools(self) -> list[str]:
         if self.tool:
@@ -669,8 +670,13 @@ class LocalRunner:
             self._browser_config = None
             self._browser = None
             if self._fx_profile is not None:
-                from dotrix_cli.fx_local import save_refreshed_auth
+                from dotrix_cli.fx_local import save_refreshed_auth, save_session_state
 
+                if self._fx_state_dir is not None:
+                    try:
+                        save_session_state(self._fx_profile, self._fx_state_dir)
+                    except (OSError, ValueError):
+                        self.echo("  Couldn't save the local coding session state for the next turn")
                 try:
                     save_refreshed_auth(self._fx_profile)
                 except (OSError, ValueError):
@@ -680,6 +686,7 @@ class LocalRunner:
                 else:
                     shutil.rmtree(self._fx_profile, ignore_errors=True)
             self._fx_profile = None
+            self._fx_state_dir = None
             self.notify({"event": "done", "run_id": claimed["run"]["run_id"]})
             await self.clean_worktrees()
         return True
@@ -928,8 +935,14 @@ class LocalRunner:
             self._browser = browser_tools() if name in TOOLS and not isolated else None
             if self._browser is not None and name in ("claude-code", "codex", "fx"):
                 self._browser_config = write_browser_config(*self._browser)
+            resuming_fx = False
             if name == "fx":
-                from .fx_local import NATIVE_FX_POLICY_VALIDATED, NATIVE_FX_REFUSAL, prepare_profile
+                from .fx_local import (
+                    NATIVE_FX_POLICY_VALIDATED,
+                    NATIVE_FX_REFUSAL,
+                    prepare_profile,
+                    restore_session_state,
+                )
                 from .fx_native import available as native_fx_available
 
                 if not NATIVE_FX_POLICY_VALIDATED or not native_fx_available():
@@ -941,6 +954,15 @@ class LocalRunner:
                 except (OSError, ValueError) as exc:
                     await report("failed", base_sha=base_sha, error=f"Couldn't prepare the local model profile: {exc}")
                     return
+                if managed is not None:
+                    self._fx_state_dir = tree.with_suffix(".fx-session")
+                    if run.get("turn", 1) > 1 and self._fx_state_dir.is_dir():
+                        try:
+                            restore_session_state(self._fx_profile, self._fx_state_dir)
+                            resuming_fx = True
+                        except (OSError, ValueError) as exc:
+                            await report("failed", base_sha=base_sha, error=f"Couldn't restore the local coding session: {exc}")
+                            return
             tool = Tool.named(name, isolated=isolated, browser=self._browser_config, profile=self._fx_profile, model=run.get("model"))
             if name == "fx":
                 # The turn's inbox for a person's messages while it works (the driver opens it, the heartbeat fills it).
@@ -949,7 +971,9 @@ class LocalRunner:
                 # One per lease attempt: a driver left over from an earlier attempt (a crashed runner) never reads
                 # or removes this attempt's inbox.
                 inbox = steer_root / f"{''.join(c for c in str(run['run_id']) if c.isalnum())[:64] or 'turn'}-{int(token)}"
-                tool = Tool(tool.name, [*tool.argv, "--steer-dir", str(inbox)])
+                resume_args = (["--resume", *(["--profile-digest", str(run["profile_digest"])] if run.get("profile_digest") else [])]
+                               if resuming_fx else [])
+                tool = Tool(tool.name, [*tool.argv, "--steer-dir", str(inbox), *resume_args])
         # A custom command stands in for the requested tool; its name is only a display label.
         environment_tool = run["tool"] if self.command else tool.name
         if self.sbx is not None:

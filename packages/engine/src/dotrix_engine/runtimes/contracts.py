@@ -11,6 +11,7 @@ ToolHandler = Callable[[JsonObject], Awaitable[Any]]
 ScopedToolHandler = Callable[[JsonObject, "RuntimeToolContext"], Awaitable[Any]]
 EventHandler = Callable[["RuntimeEvent"], Awaitable[None]]
 _SESSION_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_CORRELATION_ID = re.compile(r"^[^\x00-\x1f\x7f]{1,256}$")
 _AGENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -18,6 +19,11 @@ _TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 def validate_session(session_id: str, message: str) -> None:
     if not _SESSION_ID.fullmatch(session_id) or not message.strip():
         raise ValueError("Session ID must be 1–128 letters, digits, '.', '_' or '-'; message must be nonempty")
+
+
+def validate_correlation_id(correlation_id: str) -> None:
+    if not _CORRELATION_ID.fullmatch(correlation_id):
+        raise ValueError("Correlation ID must be 1–256 characters without control characters")
 
 
 class RuntimeToolError(Exception):
@@ -114,6 +120,7 @@ class RuntimeEvent:
     text: str = ""
     tool: str | None = None
     message_id: str | None = None
+    correlation_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -125,6 +132,7 @@ class TurnResult:
     message_id: str | None = None
     repeated: bool = False
     handoff: str | None = None
+    correlation_id: str | None = None
 
 
 class ConversationRuntime(Protocol):

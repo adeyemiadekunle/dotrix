@@ -39311,7 +39311,7 @@
                 "type": "null"
               }
             ],
-            "description": "For a new project conversation: `deepagents` (default) or the opt-in read-only `fx` preview. A conversation keeps its runtime; omit on follow-up."
+            "description": "For a new project conversation: `fx` (the default for compatible providers) or `deepagents`. A conversation keeps its runtime; omit on follow-up."
           },
           "work_mode": {
             "anyOf": [
