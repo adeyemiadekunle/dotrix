@@ -193,6 +193,7 @@ class Settings(DatabaseSettings):
     # Anthropic, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA).
     coding_fx_model: str | None = None
     coding_fx_driver: str = "/opt/dotrix/fx-acp.mjs"  # where the coding image puts the driver
+    coding_browser_engine: Literal["playwright", "agent-browser"] = "playwright"
     coding_timeout_minutes: int = Field(default=30, ge=1, le=240)
     # A working coding run's lease: its worker renews it every third of this. A run whose lease
     # lapses (the worker or its host died) needs recovery, found within about this long.

@@ -55,7 +55,7 @@ RUN --mount=type=secret,id=kai_packages_token,required=true set -eu; \
   mkdir -p /usr/local/share/doc/kai-cli && cp package/LICENSE package/THIRD_PARTY_NOTICES.md /usr/local/share/doc/kai-cli/; \
   cd / && rm -rf "$work"; \
   fx --version
-COPY fx-acp.mjs fx-host.mjs mcp-check.mjs /opt/dotrix/
+COPY fx-acp.mjs fx-host.mjs mcp-check.mjs agent-browser-mcp.mjs /opt/dotrix/
 
 # A browser for the agent (the platform passes it as an MCP server, `playwright-mcp`): Playwright's
 # Chromium, headless, in a shared folder the unprivileged user can run. It opens the app the agent

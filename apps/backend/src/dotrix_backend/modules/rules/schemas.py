@@ -32,3 +32,34 @@ class WorkspaceSkillRead(BaseModel):
     version: int
     updated_by_id: uuid.UUID | None
     updated_at: datetime
+
+
+class SkillCategoryRead(BaseModel):
+    id: str
+    label: str
+
+
+class SkillRegistryItemRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: str
+    tags: list[str]
+    agents: list[str]
+    required_tools: list[str]
+    trust: str
+    origin: str
+    enabled: bool
+    version: int
+    registry_version: str
+    sha256: str
+    source_repo: str | None = None
+    source_revision: str | None = None
+    license: str | None = None
+    content: str
+    updated_at: datetime | None = None
+
+
+class SkillRegistryRead(BaseModel):
+    categories: list[SkillCategoryRead]
+    items: list[SkillRegistryItemRead]

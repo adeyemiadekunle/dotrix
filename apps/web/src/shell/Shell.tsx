@@ -37,6 +37,7 @@ export const ROUTE_NAMES: Record<string, string> = {
   teams: "Teams",
   team: "Team",
   activity: "Activity",
+  skills: "Skills",
   settings: "Settings",
   archive: "Archive",
   chat: "Chat",
@@ -287,6 +288,7 @@ function Sidebar() {
         <SItem route="codes" label="Code" icon="code" />
         <SItem route="projects" label="Projects" icon="folder-kanban" />
         <SItem route="activity" label="Activity" icon="activity" />
+        <SItem route="skills" label="Skills" icon="scroll-text" />
         <div className="sgroup" id="side-projects">
           <div className="sgroup-h">
             <span>Projects</span>

@@ -1100,9 +1100,14 @@ class CodingWorker:
         checkpointer = asyncio.create_task(save_checkpoints()) if checkpoint is not None else None
         try:
             plan_extra = extra + (["--plan"] if getattr(tool, "takes_profile", False) and "--plan" not in extra else [])
+            browser_argv = (
+                tool.command(model, browser=True, browser_engine=self.settings.coding_browser_engine)
+                if browser
+                else tool.command(model, browser=False)
+            )
+            command = readonly_command(tool.command(model, browser=False) + plan_extra) if plan_mode else browser_argv + extra
             result = await box.exec(
-                readonly_command(tool.command(model, browser=False) + plan_extra) if plan_mode
-                else tool.command(model, browser=browser) + extra,
+                command,
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )

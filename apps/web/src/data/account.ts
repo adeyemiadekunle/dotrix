@@ -371,6 +371,9 @@ export const ruleSaved = (handle: string, content: string, base: number) =>
     api.PUT("/v1/workspaces/{workspace_id}/rules/{handle}", { params: { path: { workspace_id: live.ws!.id, handle } }, body: { content, base_version: base } }),
   );
 export const skills = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/skills", wsPath()));
+export type SkillRegistry = Schemas["SkillRegistryRead"];
+export type SkillRegistryItem = Schemas["SkillRegistryItemRead"];
+export const skillRegistry = () => unwrap(api.GET("/v1/workspaces/{workspace_id}/skills/registry", wsPath()));
 export const skillSaved = (name: string, content: string, base: number) =>
   unwrap(
     api.PUT("/v1/workspaces/{workspace_id}/skills/{name}", { params: { path: { workspace_id: live.ws!.id, name } }, body: { content, base_version: base } }),

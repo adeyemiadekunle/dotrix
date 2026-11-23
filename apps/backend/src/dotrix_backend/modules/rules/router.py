@@ -10,7 +10,7 @@ from dotrix_backend.core.openapi import errors
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
-from .schemas import WorkspaceRuleRead, WorkspaceRuleSave, WorkspaceSkillRead
+from .schemas import SkillRegistryRead, WorkspaceRuleRead, WorkspaceRuleSave, WorkspaceSkillRead
 from .service import WorkspaceRules, WorkspaceSkills
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["agents"], responses=errors(401, 404))
@@ -45,6 +45,12 @@ async def list_workspace_skills(member: Viewer, session: SessionDep) -> list[Wor
     """Skills every project's agents can use, by name. A project's own skill of the same name
     (agent-rules/skills/) wins over the workspace's."""
     return await WorkspaceSkills(session).list(member.workspace_id)
+
+
+@router.get("/skills/registry")
+async def get_workspace_skill_registry(member: Viewer, session: SessionDep) -> SkillRegistryRead:
+    """Category-based Skills Registry metadata across built-in skills, reviewed bundles, and workspace skills."""
+    return await WorkspaceSkills(session).registry(member.workspace_id)
 
 
 @router.put("/skills/{name}", responses=errors(403, 409, 422))

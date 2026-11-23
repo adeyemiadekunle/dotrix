@@ -54,6 +54,19 @@ BROWSER_MCP = {
         }
     }
 }
+AGENT_BROWSER_MCP = {
+    "mcpServers": {
+        BROWSER_SERVER: {
+            "command": "node",
+            "args": ["/opt/dotrix/agent-browser-mcp.mjs", "--output-dir", BROWSER_OUTPUT],
+        }
+    }
+}
+
+
+def browser_mcp(engine: str = "playwright") -> dict[str, Any]:
+    """Return the sandbox MCP server configuration for the configured browser engine."""
+    return AGENT_BROWSER_MCP if engine == "agent-browser" else BROWSER_MCP
 # fx 0.0.16 and Codex 0.169.0 go on silently when an MCP server doesn't start, so the image's mcp-check.mjs checks it
 # first and prints {"type":"warning","message":"The browser didn't start"} (fx-acp.mjs imports it; Codex runs it).
 MCP_CHECK = "/opt/dotrix/mcp-check.mjs"
@@ -149,7 +162,7 @@ class CodingTool(Protocol):
     resumes: bool  # its conversation carries over between turns (saved, and restored in a fresh sandbox)
     browser: bool  # it can use the sandbox's browser (Playwright MCP)
 
-    def command(self, model: str | None, browser: bool = False) -> list[str]: ...
+    def command(self, model: str | None, browser: bool = False, browser_engine: str = "playwright") -> list[str]: ...
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]: ...
     # Shell, run in the sandbox: the session's conversation as base64 on stdout, and back from stdin.
     def save_state(self, session: uuid.UUID) -> str: ...
@@ -192,16 +205,18 @@ def _relative(path: str) -> str:
 def _describe_browser(action: str, args: dict[str, Any]) -> str:
     target = _clip(str(args.get("element") or args.get("target") or args.get("ref") or ""), 80)
     match action:
-        case "browser_navigate":
+        case "browser_navigate" | "browser_open":
             return f"Opened {_clip(str(args.get('url', '')), 120)} in the browser"
-        case "browser_take_screenshot":
+        case "browser_take_screenshot" | "browser_screenshot":
             return "Took a screenshot"
         case "browser_snapshot":
             return "Read the page"
         case "browser_click":
             return f"Clicked {target}" if target else "Clicked in the page"
-        case "browser_type" | "browser_fill_form" | "browser_select_option":
+        case "browser_fill" | "browser_type" | "browser_fill_form" | "browser_select_option":
             return f"Filled in {target}" if target else "Filled in the page"
+        case "browser_close":
+            return "Closed the browser"
         case "browser_console_messages":
             return "Read the browser console"
         case "browser_wait_for":
@@ -284,7 +299,7 @@ class ClaudeCode(_NoUsageCommand):
     def model(self, settings: Settings) -> str | None:
         return settings.coding_claude_model
 
-    def command(self, model: str | None, browser: bool = False) -> list[str]:
+    def command(self, model: str | None, browser: bool = False, browser_engine: str = "playwright") -> list[str]:
         """`browser`: give it the browser (a sandbox with the coding image; not the local one)."""
         allowed = CLAUDE_TOOLS + (f",mcp__{BROWSER_SERVER}" if browser else "")
         argv = [
@@ -293,7 +308,7 @@ class ClaudeCode(_NoUsageCommand):
             "--disallowedTools", "WebFetch,WebSearch", "--strict-mcp-config",
         ]
         if browser:
-            argv += ["--mcp-config", json.dumps(BROWSER_MCP)]
+            argv += ["--mcp-config", json.dumps(browser_mcp(browser_engine))]
         return argv + (["--model", _bare(model)] if model else [])
 
     def parse(self, line: str, usage: Usage) -> Parsed:
@@ -390,7 +405,7 @@ class Codex(_NoUsageCommand):
     def model(self, settings: Settings) -> str | None:
         return settings.coding_codex_model
 
-    def command(self, model: str | None, browser: bool = False) -> list[str]:
+    def command(self, model: str | None, browser: bool = False, browser_engine: str = "playwright") -> list[str]:
         # `project_doc_max_bytes=0`: the repository's AGENTS.md is data, never Codex's instructions (it would
         # otherwise reach the model as `<INSTRUCTIONS>`; checked on 0.166.0 and 0.169.0 against a scripted model).
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral",
@@ -401,10 +416,11 @@ class Codex(_NoUsageCommand):
         # The browser as a Codex MCP server (`-c` takes TOML values, which these JSON strings and arrays are). Codex
         # calls it without asking (danger-full-access) and goes on silently if it doesn't start, so mcp-check.mjs says
         # so first; it never fails the turn, and a missing check (an older image) only goes unsaid.
-        server = BROWSER_MCP["mcpServers"][BROWSER_SERVER]
+        mcp = browser_mcp(browser_engine)
+        server = mcp["mcpServers"][BROWSER_SERVER]
         argv += ["-c", f"mcp_servers.{BROWSER_SERVER}.command={json.dumps(server['command'])}",
                  "-c", f"mcp_servers.{BROWSER_SERVER}.args={json.dumps(server['args'])}", "-"]
-        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(BROWSER_MCP), *argv]
+        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(mcp), *argv]
 
     def parse(self, line: str, usage: Usage) -> Parsed:
         out = Parsed()
@@ -547,7 +563,7 @@ class OpenCode:
         self.key_env, self.api_host = provider.key_env, provider.api_host
         self.provider_type = f"dotrix-opencode-{provider.opencode}"  # infra/coding/dotrix-opencode-*.yaml
 
-    def _env(self, model: str | None = None, *, browser: bool = False) -> list[str]:
+    def _env(self, model: str | None = None, *, browser: bool = False, browser_engine: str = "playwright") -> list[str]:
         """Its settings, before every command (`env …`): the same in each sandbox, OpenShell's too,
         which passes the sandbox nothing but the key. None of them is a secret."""
         config: dict[str, Any] = {
@@ -564,7 +580,7 @@ class OpenCode:
                 model.partition(":")[2]: {}
             }
         if browser:
-            server = BROWSER_MCP["mcpServers"][BROWSER_SERVER]
+            server = browser_mcp(browser_engine)["mcpServers"][BROWSER_SERVER]
             config["mcp"] = {BROWSER_SERVER: {"type": "local", "command": [server["command"], *server["args"]]}}
         return [
             f"OPENCODE_CONFIG_CONTENT={json.dumps(config, separators=(',', ':'))}",
@@ -576,13 +592,15 @@ class OpenCode:
     def _shell(self, args: str) -> str:
         return "env " + " ".join(shlex.quote(pair) for pair in self._env()) + f" opencode {args}"
 
-    def command(self, model: str | None, browser: bool = False) -> list[str]:
-        argv = ["env", *self._env(model, browser=browser), "opencode", "run", "--standalone", "--format", "json", "--auto"]
+    def command(self, model: str | None, browser: bool = False, browser_engine: str = "playwright") -> list[str]:
+        argv = ["env", *self._env(model, browser=browser, browser_engine=browser_engine),
+                "opencode", "run", "--standalone", "--format", "json", "--auto"]
         if model:
             argv += ["-m", f"{self.opencode_provider.opencode}/{model.partition(':')[2] or model}"]
         if not browser:
             return argv
-        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(BROWSER_MCP), *argv]
+        mcp = browser_mcp(browser_engine)
+        return ["sh", "-c", 'node "$1" --mcp-config "$2"; shift 2; exec "$@"', "sh", MCP_CHECK, json.dumps(mcp), *argv]
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["-s", opencode_session(session)]  # made the first time, continued after
@@ -748,10 +766,10 @@ class Fx:
     def _base_url(self) -> str:
         return FX_ENDPOINTS[self.provider]  # always the provider's own API
 
-    def command(self, model: str | None, browser: bool = False) -> list[str]:
+    def command(self, model: str | None, browser: bool = False, browser_engine: str = "playwright") -> list[str]:
         name = (model or "").partition(":")[2] or (model or "")
         argv = ["node", self.driver, "--base-url", self._base_url(), "--key-env", self.key_env, "--model", name]
-        return argv + (["--mcp-config", json.dumps(BROWSER_MCP)] if browser else [])
+        return argv + (["--mcp-config", json.dumps(browser_mcp(browser_engine))] if browser else [])
 
     def session_args(self, session: uuid.UUID, resumed: bool) -> list[str]:
         return ["--session", session.hex, *(["--resume"] if resumed else [])]
