@@ -113,7 +113,9 @@ class ScriptedSession(LocalSession):
             argv = argv[6:]  # MCP startup wrapper has a separate real-engine regression test
         if isinstance(self.agent, ScriptedOpenCode) and argv[:2] == ["sh", "-c"] and "node -e" in argv[2]:
             return ExecResult(code=0, stdout=self.agent.totals(), stderr="")  # its totals after the turn
-        if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv):
+        if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv) and not (
+            argv[0] == "node" and argv[1].endswith("fx-acp.mjs")
+        ):
             return await super().exec(argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
         self.agent.argv, self.agent.env = argv, dict(self.env)
         self.agent.briefs.append((stdin or b"").decode())
@@ -193,6 +195,7 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     app.state.runner.github = client
     github.branch_heads = _heads(origin)
     settings.coding_sandbox = "local"
+    settings.coding_agent = "claude-code"
     settings.encryption_key = SecretStr(Fernet.generate_key().decode())
     app.state.secrets = app.state.runner.secrets = Secrets.from_settings(settings)
     settings.github_app_id, settings.github_app_slug = "4242", "dotrix-test"
@@ -1064,11 +1067,12 @@ async def test_fx_is_offered_and_keeps_its_model(db_client: AsyncClient, coding)
     base = f"{ws}/projects/{kun['id']}"
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "fx"}, headers=ada.headers)).json()
     settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    settings.coding_agent = "auto"
     settings.coding_fx_model = "openai:gpt-6.1"
     on = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
     fx = next(t for t in on["tools"] if t["agent"] == "fx")
     assert fx["available"] and fx["model"] == "openai:gpt-6.1" and "openai:gpt-6.1" in fx["models"]
-    assert on["default_tool"] == "codex"  # never chosen for someone who didn't pick it
+    assert on["default_tool"] == "fx"
     wrong = await db_client.post(f"{base}/coding/issues/{task['key']}/runs",
                                  json={"agent": "fx", "model": "google_genai:gemini-3.8-flash"}, headers=ada.headers)
     assert wrong.status_code == 422
@@ -1079,12 +1083,16 @@ async def test_fx_is_offered_and_keeps_its_model(db_client: AsyncClient, coding)
 
 async def test_a_new_session_codes_on_your_model_and_the_engine_follows_it(db_client: AsyncClient, coding) -> None:
     ada, _, ws, kun, _, _ = coding
+    settings = db_client._transport.app.state.settings  # type: ignore[attr-defined]
+    settings.coding_agent = "auto"
     await _save_key(db_client, ada.headers, "openai", "test-openai-personal-provider-key")
     await _save_key(db_client, ada.headers, "xai", "test-xai-personal-provider-key")
+    await _save_key(db_client, ada.headers, "google_genai", "test-google-personal-provider-key")
     base = f"{ws}/projects/{kun['id']}"
     available = (await db_client.get(f"{base}/coding", headers=ada.headers)).json()
     grok = next(m for m in available["models"] if m.startswith("xai:"))
     gpt = next(m for m in available["models"] if m.startswith("openai:"))
+    gemini = next(m for m in available["models"] if m.startswith("google_genai:"))
     saved = await db_client.put("/v1/me/models", json={"default_model": grok}, headers=ada.headers)
     assert saved.status_code == 200, saved.text
     assert (await db_client.get(f"{base}/coding", headers=ada.headers)).json()["default_model"] == grok
@@ -1095,13 +1103,18 @@ async def test_a_new_session_codes_on_your_model_and_the_engine_follows_it(db_cl
         assert made.status_code == 201, made.text
         return made.json()
 
-    run = await start({})  # nothing picked: your default model, and the engine that runs it
-    assert (run["agent"], run["model"]) == ("opencode", grok)
+    run = await start({})  # nothing picked: your default model, and the engine that runs it (fx by default)
+    assert (run["agent"], run["model"]) == ("fx", grok)
     run = await start({"model": gpt})
-    assert (run["agent"], run["model"]) == ("codex", gpt)
+    assert (run["agent"], run["model"]) == ("fx", gpt)
+    run = await start({"model": gemini})
+    assert (run["agent"], run["model"]) == ("opencode", gemini)
     await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "opencode"}, headers=ada.headers)
     run = await start({"model": gpt})  # your preferred engine, where it can run the model
     assert (run["agent"], run["model"]) == ("opencode", gpt)
+    await db_client.put("/v1/me/coding-tool", json={"default_coding_tool": "codex"}, headers=ada.headers)
+    run = await start({"model": gpt})
+    assert (run["agent"], run["model"]) == ("codex", gpt)
     refused = await db_client.post(f"{base}/coding/issues/{(await db_client.post(f'{base}/issues', json={'type': 'task', 'title': 'x'}, headers=ada.headers)).json()['key']}/runs",
                                    json={"model": "openai:not-a-catalogue-model"}, headers=ada.headers)
     assert refused.status_code == 422  # not one of your models
@@ -2169,6 +2182,7 @@ async def first_pr_coding(db_client, github, nova_pilot_world, outbox, storage, 
     settings = old_app.state.settings
     github_client = old_app.dependency_overrides[get_github_app]()
     settings.coding_sandbox = "local"
+    settings.coding_agent = "claude-code"
     settings.encryption_key = SecretStr(Fernet.generate_key().decode())
     settings.github_app_id, settings.github_app_slug = "4242", "dotrix-test"
     settings.github_app_private_key = SecretStr(github_client.private_key)

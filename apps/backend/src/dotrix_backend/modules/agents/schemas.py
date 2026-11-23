@@ -38,7 +38,7 @@ class RunCreate(BaseModel):
     )
     chat_runtime: ChatRuntime | None = Field(
         default=None,
-        description="For a new project conversation: `deepagents` (default) or the opt-in read-only `fx` preview. "
+        description="For a new project conversation: `fx` (the default for compatible providers) or `deepagents`. "
         "A conversation keeps its runtime; omit on follow-up.",
     )
     work_mode: WorkMode | None = Field(

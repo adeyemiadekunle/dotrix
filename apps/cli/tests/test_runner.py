@@ -713,6 +713,63 @@ async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(t
         e["text"] == "Heard: Use the refunds table" for e in result["events"])
 
 
+async def test_managed_local_fx_turn_persists_session_and_resumes_on_follow_up(tmp_path: Path, monkeypatch) -> None:
+    import sys
+    from uuid import uuid4
+
+    session_id = str(uuid4())
+    claims = [
+        {"run": {"run_id": "run-1", "session_id": session_id, "project_id": "p", "lease_token": 1, "lease_seconds": 120,
+                 "issue_key": "KUN-9", "turn": 1, "title": "x", "base_branch": "main", "branch": None,
+                 "tool": "fx", "brief": "First turn", "managed_worktree": True}},
+        {"run": {"run_id": "run-2", "session_id": session_id, "project_id": "p", "lease_token": 2, "lease_seconds": 120,
+                 "issue_key": "KUN-9", "turn": 2, "title": "x", "base_branch": "main", "branch": None,
+                 "tool": "fx", "brief": "Second turn", "managed_worktree": True}},
+    ]
+    seen_args: list[list[str]] = []
+
+    seen_log = tmp_path / "seen.log"
+    fake_driver = (
+        "import json, pathlib, sys\n"
+        "argv = sys.argv[1:]\n"
+        "profile = pathlib.Path(argv[argv.index('--profile') + 1])\n"
+        "fx_dir = profile / '.fx'\n"
+        f"seen = {str(seen_log)!r}\n"
+        "with open(seen, 'a') as f: f.write(json.dumps(argv) + '\\n')\n"
+        "if '--resume' in argv:\n"
+        "    assert (fx_dir / 'sessions' / 's1.json').read_text() == 'turn-1'\n"
+        "    assert json.loads((fx_dir / 'dotrix-session.json').read_text())['fxSession'] == 's1'\n"
+        "else:\n"
+        "    (fx_dir / 'sessions').mkdir(parents=True, exist_ok=True)\n"
+        "    (fx_dir / 'sessions' / 's1.json').write_text('turn-1')\n"
+        "    (fx_dir / 'dotrix-session.json').write_text(json.dumps({'fxSession': 's1', 'profileDigest': None}))\n"
+        "print(json.dumps({'type': 'done', 'final': 'ok', 'stopReason': 'end_turn'}), flush=True)\n"
+    )
+
+    class Api:
+        async def post(self, path: str, body=None):
+            if path.endswith("/claim?managed_worktrees=true"):
+                return claims.pop(0) if claims else {"run": None}
+            return {"stop": False}
+
+    def fake_named(name, *, profile=None, **kwargs):
+        return Tool(name, [sys.executable, "-c", fake_driver, "--profile", str(profile)])
+
+    monkeypatch.setattr(Tool, "named", fake_named)
+    monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
+    monkeypatch.setattr("dotrix_cli.fx_local.NATIVE_FX_POLICY_VALIDATED", True)
+    monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: True)
+    monkeypatch.setattr("dotrix_cli.fx_local.prepare_profile", lambda p, *args, **kwargs: (p / ".fx").mkdir(parents=True, exist_ok=True))
+    runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"a\n"}), workspace_id="w", project_id="p",
+                         runner_id="r1", tool="fx", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None)
+    assert await runner.once() is True
+    assert (runner.worktrees / ".sessions" / "p" / f"{session_id}.fx-session" / "dotrix-session.json").is_file()
+    assert await runner.once() is True
+    seen_args = [json.loads(line) for line in (tmp_path / "seen.log").read_text().splitlines()]
+    assert "--resume" not in seen_args[0]
+    assert "--resume" in seen_args[1]
+
+
 async def test_managed_worktree_leaves_unpublished_and_interrupted_edits_in_place(tmp_path: Path) -> None:
     from uuid import uuid4
 

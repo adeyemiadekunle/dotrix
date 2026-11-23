@@ -783,14 +783,16 @@ class Fx:
     def steer_args(self, run: uuid.UUID) -> list[str]:
         return ["--steer-dir", run.hex]
 
-    def profile_args(self, contract: str, pinned: str | None) -> list[str]:
+    def profile_args(self, contract: str, pinned: str | None, *, plan: bool = False) -> list[str]:
         """The driver's arguments for Kai's profile: the contract and Kai's workers (`workers.WORKERS`), which a
         new session starts with, and the digest Dotrix recorded for this session, which a resumed one must match."""
-        from .workers import WORKERS
+        from .workers import READ, WORKERS
 
+        workers_list = [w for w in WORKERS if set(w["tools"]) <= set(READ)] if plan else list(WORKERS)
         encoded = base64.b64encode(contract.encode()).decode()
-        workers = base64.b64encode(json.dumps(list(WORKERS)).encode()).decode()
-        return ["--profile", encoded, "--workers", workers, *(["--profile-digest", pinned] if pinned else [])]
+        workers = base64.b64encode(json.dumps(workers_list).encode()).decode()
+        return ["--profile", encoded, "--workers", workers,
+                *(["--profile-digest", pinned] if pinned else []), *(["--plan"] if plan else [])]
 
     def save_state(self, session: uuid.UUID) -> str:  # its sessions and ours; the settings are written each turn
         return f'cd "$HOME" && [ -d {FX_DATA} ] && tar -cz --exclude={FX_DATA}/settings.json {FX_DATA} | base64 -w0'
@@ -825,7 +827,7 @@ class Fx:
                 if isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
                     out.profile_digest = digest
             case "text" if str(event.get("text", "")).strip():
-                out.steps.append(Step("text", _clip(str(event["text"]))))
+                out.steps.append(Step("text", str(event["text"]).strip()[:4_000]))
             case "warning" if str(event.get("message", "")).strip():  # the turn goes on: the browser didn't start
                 out.steps.append(Step("error", _clip(str(event["message"]))))
             case "background" if event.get("task") in ("command", "worker") and event.get("state") in BACKGROUND_STATES:
@@ -937,7 +939,8 @@ def models_for(settings: Settings, agent: CodingAgent, providers: frozenset[str]
     return [m for m in available_models(settings, *also, connected=set(providers)) if m.partition(":")[0] == native]
 
 
-# Which engine runs a model when the person hasn't set one that can: its provider's own, else OpenCode.
+# Which engine runs a model when the person hasn't set one that can: the Kai runtime's fx where it supports the
+# provider, else the provider's own (Claude Code for Anthropic, Codex for OpenAI), else OpenCode.
 AUTO_ENGINE = {"anthropic": CodingAgent.CLAUDE_CODE, "openai": CodingAgent.CODEX}
 
 
@@ -953,9 +956,9 @@ def engine_for(
     settings: Settings, model: str, providers: frozenset[str] | set[str], preferred: str | None = None,
 ) -> CodingAgent | None:
     """The engine Kai codes on for a model: the person's preferred engine (Account → Your models) when it can
-    run that model, else the model's provider's own (Claude Code for Anthropic, Codex for OpenAI), else OpenCode."""
+    run that model, else the Kai runtime's fx, else the model's provider's own, else OpenCode."""
     auto = AUTO_ENGINE.get(model.partition(":")[0], CodingAgent.OPENCODE)
-    for name in dict.fromkeys([preferred, settings.coding_agent, auto, CodingAgent.OPENCODE]):
+    for name in dict.fromkeys([preferred, settings.coding_agent, CodingAgent.FX, auto, CodingAgent.OPENCODE]):
         if name in (None, "auto") or name not in set(CodingAgent):
             continue
         agent = CodingAgent(name)
@@ -968,9 +971,8 @@ def choose_agent(
     settings: Settings, providers: frozenset[str] | set[str] = frozenset(), *,
     preferred: str | None = None, preferred_model: str | None = None,
 ) -> CodingAgent | None:
-    """A compatible personal/server default, otherwise Codex, Claude Code, then OpenCode. fx only when it's
-    asked for (a person's or the server's default)."""
-    order = [preferred, settings.coding_agent, CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
+    """A compatible personal/server default, otherwise the Kai runtime's fx, then Codex, Claude Code, and OpenCode."""
+    order = [preferred, settings.coding_agent, CodingAgent.FX, CodingAgent.CODEX, CodingAgent.CLAUDE_CODE, CodingAgent.OPENCODE]
     for name in dict.fromkeys(order):
         if name in (None, "auto") or name not in set(CodingAgent):
             continue

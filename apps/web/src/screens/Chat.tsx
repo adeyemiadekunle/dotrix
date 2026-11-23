@@ -1454,11 +1454,13 @@ function NewChat({
   const models = useModels(ws).data ?? [];
   const [chosen, setModel] = useState<string | null>(null);
   const [mode, setMode] = useState<WorkMode>(mode0 === "plan" ? "plan" : "discuss");
-  const [runtime, setRuntime] = useState<ChatRuntime>("deepagents");
+  const [chosenRuntime, setRuntime] = useState<ChatRuntime | null>(null);
   const [approval, setApproval] = useState<ApprovalMode>(defaultApproval());
   const scope = useMemo(() => (ws && pid ? { workspaceId: ws, projectId: pid } : undefined), [ws, pid]);
   const runtimeOptions = useChatRuntimeOptions(scope).data;
-  const availableModels = runtime === "fx" ? models.filter((m) => m.source === "personal" && runtimeOptions?.fx_providers.includes(m.provider)) : models;
+  const fxModels = models.filter((m) => m.source === "personal" && runtimeOptions?.fx_providers.includes(m.provider));
+  const runtime: ChatRuntime = !pid ? "deepagents" : (chosenRuntime ?? (runtimeOptions?.fx_available && fxModels.length > 0 ? "fx" : "deepagents"));
+  const availableModels = runtime === "fx" ? fxModels : models;
   const liveChat = isLive();
   const modelOptions = liveChat
     ? availableModels.map((item): [string, string] => [item.id, modelName(item.id, item.name)])
@@ -1500,7 +1502,7 @@ function NewChat({
                 value={pid}
                 onValueChange={(value) => {
                   setPid(value);
-                  if (!value) setRuntime("deepagents");
+                  if (!value) setRuntime(null);
                 }}
                 options={[
                   { value: "", label: "General", icon: <Ic n="layers" s={14} /> },
@@ -1542,7 +1544,7 @@ function NewChat({
             contexts={[...ps.map((p): [string, string] => [p.id, p.name]), ["", "General"]]}
             setContext={(value) => {
               setPid(value);
-              if (!value) setRuntime("deepagents");
+              if (!value) setRuntime(null);
             }}
             mode={mode}
             setMode={setMode}
@@ -2158,6 +2160,8 @@ function KaiTurn({
 }) {
   // output: under its command; background tasks: listed on their own (KaiBackground)
   const steps = turn.events.filter((e) => e.kind !== "text" && !e.kind.startsWith("output") && !e.kind.startsWith("background-"));
+  const liveText = !turn.summary ? turn.events.filter((e) => e.kind === "text" && e.text.trim()).at(-1)?.text : undefined;
+  const replyText = turn.summary || liveText;
   const working = turn.status === "running";
   const asked = turn.note || `Work on ${turn.issue_key}${issueTitle ? `: ${issueTitle}` : ""}`;
   const mine = turn.requested_by_id === D().me;
@@ -2175,7 +2179,7 @@ function KaiTurn({
           </ActionButton>
         </div>
       </div>
-      {(steps.length > 0 || turn.summary || turn.error) && (
+      {(steps.length > 0 || replyText || turn.error) && (
         <div className="kt-reply">
           <div className="kt-who">
             <Av id={CODING_AGENT.id} cls="sm" tip={false} />
@@ -2202,14 +2206,14 @@ function KaiTurn({
               </TraceCollapsible>
             </Trace>
           )}
-          {turn.summary && (
+          {replyText && (
             <div className="md">
               <Markdown
                 onCode={(code) =>
                   turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, "")) ? () => onPath(code.replace(/:\d+$/, ""), turn.id) : undefined
                 }
               >
-                {turn.summary}
+                {replyText}
               </Markdown>
             </div>
           )}

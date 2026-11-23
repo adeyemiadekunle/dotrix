@@ -233,7 +233,6 @@ class AgentService:
                 )
         else:
             model = data.model
-            runtime = data.chat_runtime or ChatRuntime.DEEPAGENTS
             if model is None and automation_id is None:
                 # Their own model for this agent, else their default, where they may use it.
                 user = await self.session.get(User, member.user_id)
@@ -253,6 +252,22 @@ class AgentService:
                     )
                 if available is not None and model not in available:
                     raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
+            runtime = data.chat_runtime
+            if runtime is None:
+                from .fx_pilot import fx_pilot_providers
+
+                provider = (model or "").partition(":")[0]
+                scripted = hasattr(self.runner.model_factory, "__self__")
+                if (
+                    interactive
+                    and not scripted
+                    and data.work_mode is not None
+                    and provider in fx_pilot_providers()
+                    and run_key.keys.get(provider)
+                ):
+                    runtime = ChatRuntime.FX
+                else:
+                    runtime = ChatRuntime.DEEPAGENTS
         selected_plan = None
         if data.plan_id is not None and (data.work_mode is not WorkMode.BUILD or data.thread_id is None):
             raise Unprocessable("A selected plan requires Build mode and its existing conversation")

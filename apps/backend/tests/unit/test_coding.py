@@ -121,19 +121,21 @@ def test_codex_events_become_steps_and_tokens() -> None:
 def test_tools_follow_only_the_persons_own_keys() -> None:
     legacy = _settings(openai_api_key=SecretStr("server"), anthropic_api_key=SecretStr("server"), server_model_keys=True)
     assert choose_agent(legacy) is None
-    assert choose_agent(legacy, {"openai"}) is CodingAgent.CODEX
-    assert choose_agent(legacy, {"anthropic"}) is CodingAgent.CLAUDE_CODE
-    assert choose_agent(legacy, {"openai", "anthropic"}) is CodingAgent.CODEX
-    assert choose_agent(legacy, {"openai"}, preferred="claude-code") is CodingAgent.CODEX
+    assert choose_agent(legacy, {"openai"}) is CodingAgent.FX
+    assert choose_agent(legacy, {"anthropic"}) is CodingAgent.FX
+    assert choose_agent(legacy, {"openai", "anthropic"}) is CodingAgent.FX
+    assert choose_agent(legacy, {"openai"}, preferred="claude-code") is CodingAgent.FX
+    assert choose_agent(legacy, {"openai"}, preferred="codex") is CodingAgent.CODEX
 
 
 def test_a_persons_default_needs_a_compatible_key_and_auto_supports_other_providers() -> None:
     both = _settings(openai_api_key=SecretStr("o"), anthropic_api_key=SecretStr("a"))
     assert choose_agent(both, {"anthropic", "openai"}, preferred="claude-code") is CodingAgent.CLAUDE_CODE
     assert choose_agent(both, {"anthropic", "openai"}, preferred="opencode") is CodingAgent.OPENCODE
-    assert choose_agent(_settings(), {"xai"}) is CodingAgent.OPENCODE
+    assert choose_agent(_settings(), {"xai"}) is CodingAgent.FX
     assert model_for(_settings(), CodingAgent.OPENCODE, {"xai"}) == "xai:grok-4.7"
-    assert choose_agent(_settings(), {"xai"}, preferred="codex") is CodingAgent.OPENCODE
+    assert choose_agent(_settings(), {"xai"}, preferred="codex") is CodingAgent.FX
+    assert choose_agent(_settings(), {"google_genai"}) is CodingAgent.OPENCODE
     assert choose_agent(_settings(openai_api_key=SecretStr("  "))) is None
     for provider in ("xai", "deepseek", "mistral", "groq", "openrouter", "nvidia"):
         spec = OPENCODE_PROVIDERS[provider]
@@ -344,7 +346,7 @@ def test_opencode_runs_on_the_provider_its_model_names() -> None:
 
 def test_opencode_uses_an_available_personal_provider_without_server_keys() -> None:
     model = {"coding_opencode_model": "openai:gpt-5.5"}
-    assert choose_agent(_settings(**model), {"openai"}) is CodingAgent.CODEX
+    assert choose_agent(_settings(**model), {"openai"}) is CodingAgent.FX
     assert choose_agent(_settings(coding_agent="opencode", **model), {"openai"}) is CodingAgent.OPENCODE
     assert choose_agent(_settings(coding_agent="opencode", **model), {"anthropic"}) is CodingAgent.OPENCODE
     assert choose_agent(_settings(coding_agent="opencode"), {"openai"}) is CodingAgent.OPENCODE
@@ -480,9 +482,9 @@ def test_a_run_uses_only_a_supplied_personal_key() -> None:
     assert run_key(claude, hosted, {}) is None
     # A tool can code where there's a key for its provider: the workspace's or the person's, or the server's.
     assert choose_agent(_settings()) is None
-    assert choose_agent(_settings(), {"anthropic"}) is CodingAgent.CLAUDE_CODE
-    assert choose_agent(_settings(), {"openai"}) is CodingAgent.CODEX
-    assert choose_agent(hosted) is None and choose_agent(hosted, {"anthropic"}) is CodingAgent.CLAUDE_CODE
+    assert choose_agent(_settings(), {"anthropic"}) is CodingAgent.FX
+    assert choose_agent(_settings(), {"openai"}) is CodingAgent.FX
+    assert choose_agent(hosted) is None and choose_agent(hosted, {"anthropic"}) is CodingAgent.FX
     opencode = _settings(coding_agent="opencode", coding_opencode_model="google_genai:gemini-3-pro")
     assert choose_agent(opencode, {"anthropic"}) is CodingAgent.OPENCODE
     assert choose_agent(opencode, {"google_genai"}) is CodingAgent.OPENCODE
@@ -493,21 +495,24 @@ def test_a_session_codes_on_its_model_and_the_engine_follows_it() -> None:
     from dotrix_backend.modules.coding.tools import engine_for, kai_models
 
     settings = _settings(coding_fx_model="openai:gpt-6.1")
-    keys = {"anthropic", "openai", "xai"}
+    keys = {"anthropic", "openai", "xai", "google_genai"}
     models = kai_models(settings, keys)
     claude = next(m for m in models if m.startswith("anthropic:"))
     gpt = next(m for m in models if m.startswith("openai:"))
     grok = next(m for m in models if m.startswith("xai:"))
-    # Nothing preferred: the model's provider's own engine, else OpenCode.
-    assert engine_for(settings, claude, keys) is CodingAgent.CLAUDE_CODE
-    assert engine_for(settings, gpt, keys) is CodingAgent.CODEX
-    assert engine_for(settings, grok, keys) is CodingAgent.OPENCODE
+    gemini = next(m for m in models if m.startswith("google_genai:"))
+    # Nothing preferred: the Kai runtime's fx where it supports the model, else OpenCode.
+    assert engine_for(settings, claude, keys) is CodingAgent.FX
+    assert engine_for(settings, gpt, keys) is CodingAgent.FX
+    assert engine_for(settings, grok, keys) is CodingAgent.FX
+    assert engine_for(settings, gemini, keys) is CodingAgent.OPENCODE
     # A preferred engine (Account → Your models) wins where it can run the model.
     assert engine_for(settings, gpt, keys, "opencode") is CodingAgent.OPENCODE
+    assert engine_for(settings, gpt, keys, "codex") is CodingAgent.CODEX
     assert engine_for(settings, grok, keys, "fx") is CodingAgent.FX
     assert engine_for(settings, claude, keys, "fx") is CodingAgent.FX  # through Anthropic's OpenAI-compatible endpoint
-    assert engine_for(settings, claude, keys) is CodingAgent.CLAUDE_CODE  # but Auto stays on Claude Code
-    assert engine_for(settings, claude, keys, "codex") is CodingAgent.CLAUDE_CODE
+    assert engine_for(settings, claude, keys, "claude-code") is CodingAgent.CLAUDE_CODE
+    assert engine_for(settings, claude, keys, "codex") is CodingAgent.FX
     assert "anthropic:x" not in kai_models(settings, {"openai"})
 
 

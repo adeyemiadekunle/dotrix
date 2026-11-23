@@ -13,6 +13,15 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - Added the category-based Skills Registry (`packages/engine/src/dotrix_engine/skill_bundles.py`, `skills.py`), `GET /v1/workspaces/{workspace_id}/skills/registry` endpoint, curated pinned skill bundles (Google Modern Web Guidance, Browser Exploratory Verification, and Anthropic Knowledge Work compatible pilots), and dedicated `/w/{workspace}/skills` UI page with category tabs, search, trust/origin filters, provenance, and workspace enablement controls.
 - Added the typed sandboxed `agent-browser` MCP adapter ([agent-browser-mcp.mjs](infra/coding/agent-browser-mcp.mjs)) with SSRF/metadata/private-network/path guards, `coding_browser_engine` backend wiring (`playwright` default or `agent-browser`), and the Playwright vs `agent-browser` seven-scenario benchmark harness ([benchmark-browser.mjs](infra/coding/benchmark-browser.mjs)).
+- Chat's fx runtime (`FxRuntime`, `fx_host/worker.mjs`, `fx_pilot.py`) now validates and propagates `correlationId` (`run_id`) onto SDK turns, streamed events, and turn results.
+- Managed local fx coding turns now persist `.fx` session state beside their managed worktree, resume the same conversation on follow-up turns (`--resume`), and verify `profile_digest` before starting the runtime.
+
+### Changed
+
+- Chat's fx host now pins `@kunemi-group/kai@0.0.17-kai.3` (matching the coding image's `0.0.17-kai.3`), with cross-version journal resumption from `0.0.17-kai.2`, `0.0.17-kai.1` and `0.0.16` (`LIBFX_ARTIFACTS`), and new runs bound as `libfx-0.0.17-kai.3-chat-3`.
+- The Kai runtime (`fx`) is now the default for new project Chat conversations (on compatible providers with a personal key; `deepagents` remains available and serves non-interactive, cross-project and non-fx providers) and for new Code sessions on every model `fx` can run (`engine_for`, `choose_agent`). Existing conversations and coding sessions retain their recorded runtime and engine.
+- Code Plan turns on fx now pass `--plan` to `fx-acp.mjs`, restricting workers to read-only profiles (`explorer`, `reviewer`), configuring read-only `fx` permissions (`modeId: "ask"`, denying `edit`, `bash`, `shell`), and cancelling any permission prompts alongside the Landlock read-only boundary.
+- Code turns now render Kai's streamed `text` events live while a turn is running (up to 4,000 characters on `fx` turns) and replace them with the final summary when the turn completes.
 
 ### Fixed
 

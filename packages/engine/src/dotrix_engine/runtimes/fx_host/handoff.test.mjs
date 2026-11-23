@@ -72,28 +72,39 @@ test("handoff resumes a saved delegation without creating a second batch", { tim
   let engine;
   try {
     engine = await createFxEngine(options);
-    const turn = engine.prompt("Ask the specialist to review the design.");
+    const turn = engine.prompt("Ask the specialist to review the design.", { correlationId: "dotrix-run:handoff-1" });
+    const firstEvents = [];
     const drain = (async () => {
-      for await (const event of turn) void event;
+      for await (const event of turn) firstEvents.push(event);
     })();
     await submitted;
     turn.cancel({ reason: "handoff" });
     await Promise.allSettled([drain, turn.result]);
     await engine.close();
     engine = undefined;
+    assert.ok(firstEvents.length > 0);
+    assert.ok(firstEvents.every((event) => event.correlationId === "dotrix-run:handoff-1"));
     assert.equal(batches.size, 1);
     for (const batch of batches.values()) batch.done = true;
 
     engine = await createFxEngine(options);
     const resumed = engine.resume({
+      correlationId: "dotrix-run:handoff-1",
       onAmbiguous(call) {
         if (call.name === "delegate_tasks" && batches.get(call.executionId)?.done) return "rerun";
       },
     });
+    const resumedEvents = [];
     let text = "";
-    for await (const event of resumed) if (event.type === "text_delta") text += event.delta;
+    for await (const event of resumed) {
+      resumedEvents.push(event);
+      if (event.type === "text_delta") text += event.delta;
+    }
     const outcome = await resumed.result;
     assert.equal(outcome.stopReason, "end_turn");
+    assert.equal(outcome.correlationId, "dotrix-run:handoff-1");
+    assert.ok(resumedEvents.length > 0);
+    assert.ok(resumedEvents.every((event) => event.correlationId === "dotrix-run:handoff-1"));
     assert.match(text, /specialist completed/i);
     assert.equal(batches.size, 1);
     assert.deepEqual(calls, ["delegate-call-1", "delegate-call-1"]);

@@ -654,7 +654,7 @@ class CodingWorker:
                 resumed = False
                 claude_session = uuid.uuid4()
             extra = tool.session_args(claude_session, resumed)
-            brief, profile_args = _profile(tool, brief, resumed, profile_digest)
+            brief, profile_args = _profile(tool, brief, resumed, profile_digest, plan=plan_mode)
             extra += profile_args
             started = datetime.now(UTC)
             summary, reported = await self._code(run_id, box, tool, model, claude_session, brief, extra,
@@ -1099,12 +1099,13 @@ class CodingWorker:
         steerer = asyncio.create_task(send_steers()) if steering else None
         checkpointer = asyncio.create_task(save_checkpoints()) if checkpoint is not None else None
         try:
+            plan_extra = extra + (["--plan"] if getattr(tool, "takes_profile", False) and "--plan" not in extra else [])
             browser_argv = (
                 tool.command(model, browser=True, browser_engine=self.settings.coding_browser_engine)
                 if browser
                 else tool.command(model, browser=False)
             )
-            command = readonly_command(tool.command(model, browser=False) + extra) if plan_mode else browser_argv + extra
+            command = readonly_command(tool.command(model, browser=False) + plan_extra) if plan_mode else browser_argv + extra
             result = await box.exec(
                 command,
                 stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
@@ -1858,7 +1859,9 @@ async def end_cut_off_runs(session: AsyncSession, settings: Settings, *, everyth
     return len(runs)
 
 
-def _profile(tool: CodingTool, brief: str, resumed: bool, pinned: str | None) -> tuple[str, list[str]]:
+def _profile(
+    tool: CodingTool, brief: str, resumed: bool, pinned: str | None, *, plan: bool = False,
+) -> tuple[str, list[str]]:
     """For an engine that takes a system profile (fx): the brief without Kai's contract, and the arguments that
     give the engine the contract. A new session starts with it; a resumed one keeps the profile it started with,
     which must match `pinned`. A session started before profiles, resumed, keeps its brief whole."""
@@ -1866,8 +1869,8 @@ def _profile(tool: CodingTool, brief: str, resumed: bool, pinned: str | None) ->
         return brief, []
     task, contract = split_contract(brief)
     if contract is None or (resumed and pinned is None):
-        return brief, []
-    return task, tool.profile_args(contract, pinned if resumed else None)
+        return brief, ["--plan"] if plan else []
+    return task, tool.profile_args(contract, pinned if resumed else None, **({"plan": True} if plan else {}))
 
 
 async def _session_row(session: AsyncSession, run: CodingRun) -> CodingSession:

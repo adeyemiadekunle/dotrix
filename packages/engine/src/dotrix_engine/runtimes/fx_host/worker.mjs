@@ -165,18 +165,22 @@ async function handle(command) {
   if (!agent && !engine) throw new Error("Runtime is not initialized");
   if (command.op === "new_session") return { sessionId: engine ? engineSession : await agent.newSessionId() };
   if (command.op === "prompt" || command.op === "resume") {
+    const correlationId = command.correlationId ?? undefined;
+    const withCorrelation = (payload, fromSdk = correlationId) =>
+      fromSdk !== undefined && fromSdk !== null ? { ...payload, correlationId: fromSdk } : payload;
     if (engine) {
       if (command.sessionId !== engineSession || activeTurn) throw new Error("Invalid engine session");
       handedOff = undefined;
       const onAmbiguous = (call) => ((command.rerunTools ?? []).includes(call.name) ? "rerun" : undefined);
-      const prompt = () => engine.prompt(command.message, { turnId: command.messageId ?? undefined, onAmbiguous });
+      const prompt = () => engine.prompt(command.message, { turnId: command.messageId ?? undefined, correlationId, onAmbiguous });
       // Resume the turn a dead process left open; with no open turn (it ended, or was handed off),
       // a resume that names its turn and message enters it again by ID, as a prompt would.
-      activeTurn = command.op === "prompt" ? prompt() : (engine.resume({ onAmbiguous }) ?? (command.message && command.messageId ? prompt() : null));
+      activeTurn =
+        command.op === "prompt" ? prompt() : (engine.resume({ correlationId, onAmbiguous }) ?? (command.message && command.messageId ? prompt() : null));
       if (!activeTurn) {
         const text = restoredAnswers.get(command.messageId);
         if (typeof text !== "string") throw new Error("No recoverable turn");
-        return { text, tools: [], stopReason: "end_turn", usage: null, repeated: true, messageId: command.messageId };
+        return withCorrelation({ text, tools: [], stopReason: "end_turn", usage: null, repeated: true, messageId: command.messageId });
       }
       const settled = activeTurn.result.then(
         (value) => ({ value }),
@@ -189,12 +193,12 @@ async function handle(command) {
           for await (const event of activeTurn) {
             if (event.type === "text_delta") {
               text += event.delta;
-              send({ kind: "event", id: command.id, event: { type: "text_delta", text: event.delta } });
+              send({ kind: "event", id: command.id, event: withCorrelation({ type: "text_delta", text: event.delta }, event.correlationId) });
             } else if (event.type === "reasoning_delta") {
-              send({ kind: "event", id: command.id, event: { type: "reasoning_delta", text: event.delta } });
+              send({ kind: "event", id: command.id, event: withCorrelation({ type: "reasoning_delta", text: event.delta }, event.correlationId) });
             } else if (event.type === "tool_start" || event.type === "tool_end") {
               if (event.type === "tool_start") tools.push(event.name);
-              send({ kind: "event", id: command.id, event: { type: event.type, tool: event.name } });
+              send({ kind: "event", id: command.id, event: withCorrelation({ type: event.type, tool: event.name }, event.correlationId) });
             }
           }
         } catch (error) {
@@ -209,16 +213,19 @@ async function handle(command) {
           text = restoredAnswers.get(command.messageId);
           repeated = true;
         }
-        return {
-          text,
-          tools,
-          stopReason: handedOff ? "handoff" : result.stopReason,
-          // Recovery may omit usage incurred before handoff or process death.
-          usage: repeated || restoredJournal ? null : (result?.usage ?? null),
-          repeated,
-          handoff: handedOff ?? null,
-          messageId: command.messageId ?? null,
-        };
+        return withCorrelation(
+          {
+            text,
+            tools,
+            stopReason: handedOff ? "handoff" : result.stopReason,
+            // Recovery may omit usage incurred before handoff or process death.
+            usage: repeated || restoredJournal ? null : (result?.usage ?? null),
+            repeated,
+            handoff: handedOff ?? null,
+            messageId: command.messageId ?? null,
+          },
+          result?.correlationId ?? correlationId,
+        );
       } finally {
         activeTurn = undefined;
       }
@@ -226,32 +233,32 @@ async function handle(command) {
     const session = agent.session(command.sessionId);
     const turn = command.op === "prompt" ? session.prompt(command.message, command.messageId ? { messageId: command.messageId } : {}) : session.resume();
     const accepted = await turn.accepted;
-    send({ kind: "event", id: command.id, event: { type: "turn_accepted", messageId: accepted.messageId } });
+    send({ kind: "event", id: command.id, event: withCorrelation({ type: "turn_accepted", messageId: accepted.messageId }) });
     let text = "";
     let tools = [];
     for await (const event of turn) {
       if (event.type === "text_delta") {
         text += event.delta;
-        send({ kind: "event", id: command.id, event: { type: "text_delta", text: event.delta } });
+        send({ kind: "event", id: command.id, event: withCorrelation({ type: "text_delta", text: event.delta }) });
       } else if (event.type === "reasoning_delta") {
-        send({ kind: "event", id: command.id, event: { type: "reasoning_delta", text: event.delta } });
+        send({ kind: "event", id: command.id, event: withCorrelation({ type: "reasoning_delta", text: event.delta }) });
       } else if (event.type === "tool_start" || event.type === "tool_end") {
         if (event.type === "tool_start") tools.push(event.name);
-        send({ kind: "event", id: command.id, event: { type: event.type, tool: event.name } });
+        send({ kind: "event", id: command.id, event: withCorrelation({ type: event.type, tool: event.name }) });
       }
     }
     const result = await turn.result;
     if (result.repeated && result.stopReason !== "error") {
       ({ text, tools } = await storedTurn(session, result.messageId));
     }
-    return {
+    return withCorrelation({
       text,
       tools,
       stopReason: result.stopReason,
       usage: result.usage ?? null,
       messageId: result.messageId ?? accepted.messageId,
       repeated: result.repeated === true,
-    };
+    });
   }
   if (command.op === "steer") {
     if (engine) {
