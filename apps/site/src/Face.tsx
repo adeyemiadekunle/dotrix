@@ -5,10 +5,10 @@ const MOUTH = "M13.6 19.6q2.4 1.8 4.8 0";
 export function Face({ c, size = 40 }: { c: string; size?: number }) {
   return (
     <svg className="face" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="15" fill={`color-mix(in srgb, ${c} 16%, #141414)`} />
-      <circle cx="16" cy="16" r="14.5" fill="none" stroke={`color-mix(in srgb, ${c} 60%, #141414)`} strokeWidth="1" />
-      <path d={EYES} fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" />
-      <path d={MOUTH} fill="none" stroke={c} strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="16" cy="16" r="15" fill={`color-mix(in srgb, ${c} 14%, var(--face-bg, #ffffff))`} />
+      <circle cx="16" cy="16" r="14.5" fill="none" stroke={`color-mix(in srgb, ${c} 42%, var(--face-bg, #ffffff))`} strokeWidth="1" />
+      <path d={EYES} fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" />
+      <path d={MOUTH} fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
