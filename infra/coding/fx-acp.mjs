@@ -254,7 +254,7 @@ for (const worker of workerProfiles ?? []) {
   const settings = { description: String(worker.description), tools: worker.tools.map(String) };
   if (Array.isArray(worker.mcp_servers)) settings.mcp_servers = worker.mcp_servers.map(String);
   // The worker's own limits on a turn (the Kai runtime's profile keys): whole numbers, or none.
-  for (const key of ["max_steps", "max_tokens"]) {
+  for (const key of ["max_steps", "max_tokens", "max_duration_seconds"]) {
     if (worker[key] === undefined) continue;
     if (!Number.isSafeInteger(worker[key]) || worker[key] < 1) fail("Kai's workers couldn't be set up");
     settings[key] = worker[key];

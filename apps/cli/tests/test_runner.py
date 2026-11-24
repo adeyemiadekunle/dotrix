@@ -227,10 +227,10 @@ async def test_what_the_agent_does_reaches_the_platform_within_seconds(tmp_path:
     origin = tmp_path / "origin"
     subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
     (origin / "a.txt").write_text("a\n")
-    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "-C", str(origin), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
     checkout = tmp_path / "checkout"
-    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "clone", "-q", str(origin), str(checkout)], check=True)
 
     started = time.monotonic()
     calls: list[tuple[float, str, dict]] = []
@@ -275,10 +275,10 @@ async def test_a_tool_that_fails_before_changing_anything_is_shown_as_failed(tmp
     origin = tmp_path / "origin"
     subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
     (origin / "a.txt").write_text("a\n")
-    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "-C", str(origin), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
     checkout = tmp_path / "checkout"
-    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "clone", "-q", str(origin), str(checkout)], check=True)
 
     results: list[dict] = []
     said: list[str] = []
@@ -348,10 +348,10 @@ async def test_stopping_the_runner_stops_the_tool_it_started(tmp_path: Path) -> 
     origin = tmp_path / "origin"
     subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
     (origin / "a.txt").write_text("a\n")
-    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "-C", str(origin), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
     checkout = tmp_path / "checkout"
-    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "clone", "-q", str(origin), str(checkout)], check=True)
     pid_file = tmp_path / "tool.pid"
 
     class Api:
@@ -407,9 +407,11 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(edited), "HEAD"], check=True)
     week_ago = time.time() - 7 * 86400
 
+    follow_kwargs = {"follow_symlinks": False} if os.utime in os.supports_follow_symlinks else {}
+
     def age(tree: Path) -> None:
         for path in [*tree.rglob("*"), tree]:
-            os.utime(path, (week_ago, week_ago), follow_symlinks=False)
+            os.utime(path, (week_ago, week_ago), **follow_kwargs)
 
     for tree in (old, busy, stray, edited):
         age(tree)
@@ -429,7 +431,7 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     assert managed.is_dir()
     assert (edited / "a.txt").read_text() == "edited by hand\n"
     listed = subprocess.run(["git", "-C", str(checkout), "worktree", "list"], capture_output=True, text=True).stdout
-    assert str(old) not in listed and str(recent) in listed
+    assert old.as_posix() not in listed and recent.as_posix() in listed
 
 
 def _checkout(tmp_path: Path, files: dict[str, bytes]) -> Path:
@@ -439,10 +441,10 @@ def _checkout(tmp_path: Path, files: dict[str, bytes]) -> Path:
     subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
     for name, data in files.items():
         (origin / name).write_bytes(data)
-    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "-C", str(origin), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(origin), "-c", "user.email=a@b.c", "-c", "user.name=A", "commit", "-qm", "1"], check=True)
     checkout = tmp_path / "checkout"
-    subprocess.run(["git", "clone", "-q", str(origin), str(checkout)], check=True)
+    subprocess.run(["git", "-c", "core.autocrlf=false", "clone", "-q", str(origin), str(checkout)], check=True)
     return checkout
 
 
@@ -844,7 +846,7 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
     tree.parent.mkdir(parents=True)
 
     def git_at(cwd, *args):
-        return subprocess.check_output(["git", "-C", str(cwd), *args])
+        return subprocess.check_output(["git", "-c", "core.autocrlf=false", "-C", str(cwd), *args])
 
     def command(action, *args):
         return CliRunner().invoke(cli.app, ["worktree", action, session_id, "--worktrees", str(root), *args])

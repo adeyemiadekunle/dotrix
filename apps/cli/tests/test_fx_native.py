@@ -1,5 +1,6 @@
 """Host relay authority and credential removal, independent of kernel availability."""
 import json
+import sys
 from pathlib import Path
 
 import httpx
@@ -96,19 +97,34 @@ def test_native_profile_refuses_ambiguous_model_connections(tmp_path, url):
         connection(tmp_path, {"KEY": "secret"})
 
 
+def _write_py_command(tmp_path: Path, name: str, body: str) -> Path:
+    import os
+
+    if os.name == "nt":
+        script_path = tmp_path / f"{name}.py"
+        script_path.write_text(body)
+        wrapper = tmp_path / f"{name}.cmd"
+        wrapper.write_text(f'@"{sys.executable}" "{script_path}" %*\r\n')
+        return wrapper
+    binary = tmp_path / name
+    binary.write_text(f"#!{sys.executable}\n{body}")
+    binary.chmod(0o755)
+    return binary
+
+
 @pytest.mark.parametrize(("answer", "allowed"), [
     ("print('false')", True),
     ("print('true')", False),  # the Kai runtime's fx, with the repository's configuration still on
     ("import sys; sys.stderr.write('fx config: unknown setting project_config'); sys.exit(2)", False),  # upstream fx 0.0.17
 ])
 def test_native_execution_runs_only_the_kai_runtime_s_fx_with_project_config_off(tmp_path: Path, answer, allowed):
-    import sys
-
     from dotrix_cli.fx_bridge import require_kai_fx
 
-    binary = tmp_path / "fx"
-    binary.write_text(f"#!{sys.executable}\nimport sys\nassert sys.argv[1:] == ['config', 'get', 'project_config']\n{answer}\n")
-    binary.chmod(0o755)
+    binary = _write_py_command(
+        tmp_path,
+        "fx",
+        f"import sys\nassert sys.argv[1:] == ['config', 'get', 'project_config']\n{answer}\n",
+    )
     if allowed:
         require_kai_fx(str(binary))
     else:
@@ -185,7 +201,6 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
 
     from dotrix_cli import fx_local, fx_native
 
-    fake_fx = tmp_path / "fx"
     log = tmp_path / "acp.log"
     script = (
         "import json, os, sys\n"
@@ -215,8 +230,7 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
         "              'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Done local.'}}}})\n"
         "        send({'jsonrpc': '2.0', 'id': mid, 'result': {'stopReason': 'end_turn', 'usage': {'inputTokens': 5, 'outputTokens': 2}}})\n"
     )
-    fake_fx.write_text(f"#!{sys.executable}\n{script}")
-    fake_fx.chmod(0o755)
+    fake_fx = _write_py_command(tmp_path, "fx", script)
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -226,17 +240,19 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
 
     launches = 0
 
+    import os
+
     @asynccontextmanager
     async def fake_launch(profile, binary, root, browser):
         nonlocal launches
         launches += 1
+        argv = [sys.executable, str(Path(binary).with_suffix(".py"))] if os.name == "nt" else [binary]
         proc = await asyncio.create_subprocess_exec(
-            binary, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, env={**os.environ},
         )
         yield proc, 0
 
-    import os
     monkeypatch.setattr(fx_native, "launch", fake_launch)
 
     contract = "# How Kai works\n\nYou are Kai."
@@ -283,3 +299,159 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
     assert await fx_local.run(profile2, resume=True, pinned_digest=digest) == 0
     out3 = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert out3[0] == {"type": "started", "resumed": False, "profileDigest": digest, "fresh": True}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="macOS Seatbelt profiles use POSIX paths")
+def test_macos_seatbelt_profile_denies_default_home_and_parent_git(tmp_path: Path):
+    from dotrix_cli.fx_native import macos_sandbox_profile
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    parent_repo = fake_home / "src-repo"
+    (parent_repo / ".git" / "worktrees" / "wt1").mkdir(parents=True)
+    worktree = fake_home / ".dotrix" / "worktrees" / "wt1"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text(f"gitdir: {parent_repo / '.git' / 'worktrees' / 'wt1'}\n")
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    temp_dir = tmp_path / "temp"
+    temp_dir.mkdir()
+    relay_sock = temp_dir / "relay.sock"
+    binary = tmp_path / "bin" / "fx"
+    binary.parent.mkdir()
+    binary.write_text("")
+    helper = tmp_path / "fx_bridge.py"
+    helper.write_text("")
+
+    sbpl = macos_sandbox_profile(worktree, profile, temp_dir, relay_sock, binary, helper, real_home=fake_home)
+    assert "(deny default)" in sbpl
+    deny_home_idx = sbpl.index(f'(deny file-read* (subpath "{fake_home.resolve()}"))')
+    deny_git_idx = sbpl.index(f'(deny file-read* (subpath "{(parent_repo / ".git").resolve()}"))')
+    allow_worktree_idx = sbpl.index(f'(allow file-read* (subpath "{worktree.resolve()}"))')
+    assert deny_home_idx < allow_worktree_idx
+    assert deny_git_idx < allow_worktree_idx
+    assert f'(allow file-write* (subpath "{worktree.resolve()}"))' in sbpl
+    assert f'(allow network-outbound (remote unix-socket (path-literal "{relay_sock.resolve()}")))' in sbpl
+    assert '(allow network-outbound (remote ip "localhost:*"))' in sbpl
+    assert '(allow network-outbound (local ip "localhost:*"))' not in sbpl
+    assert "(allow network*)" not in sbpl
+
+
+def test_macos_seatbelt_profile_rejects_unsafe_paths(tmp_path: Path):
+    from dotrix_cli.fx_native import macos_sandbox_profile
+
+    bad = tmp_path / 'bad"quote'
+    with pytest.raises(ValueError, match="Seatbelt"):
+        macos_sandbox_profile(bad, tmp_path, tmp_path, tmp_path / "s", tmp_path / "fx", tmp_path / "b.py")
+
+
+async def test_pipe_relay_round_trip():
+    import os
+    import struct
+
+    from dotrix_cli import fx_bridge
+
+    c2h_r, c2h_w = os.pipe()
+    h2c_r, h2c_w = os.pipe()
+    try:
+        relay = Relay(None, "https://model.example/v1", "host-secret", "chosen", None, pipe_fds=(c2h_r, h2c_w))
+        child_chan = fx_bridge._PipeChannel(h2c_r, c2h_w)
+
+        payload = json.dumps({"id": 7, "ok": True}).encode()
+        child_chan.write_all(struct.pack("!I", len(payload)) + payload)
+        size = struct.unpack("!I", await relay.receive(4))[0]
+        got = json.loads(await relay.receive(size))
+        assert got == {"id": 7, "ok": True}
+
+        await relay.send({"id": 7, "status": 200, "end": True})
+        reply = fx_bridge.frame_read(child_chan)
+        assert reply == {"id": 7, "status": 200, "end": True}
+    finally:
+        for fd in (c2h_r, c2h_w, h2c_r, h2c_w):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def test_win_sandbox_is_import_safe_and_formats_env():
+    import sys
+
+    from dotrix_cli import win_sandbox
+
+    block = win_sandbox._format_env_block({"B": "2", "A": "1"})
+    assert block == "A=1\0B=2\0\0"
+    if sys.platform != "win32":
+        assert win_sandbox.available() is False
+        with pytest.raises(RuntimeError, match="Windows"):
+            win_sandbox.launch_appcontainer(
+                python_exe=sys.executable, helper=Path("fx_bridge.py"), profile=Path("."),
+                binary=Path("fx"), root=Path("."), temp_dir=Path("."), env={},
+            )
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS Seatbelt live isolation test")
+def test_macos_seatbelt_live_isolation(tmp_path: Path):
+    import subprocess
+
+    from dotrix_cli.fx_native import _macos_available, macos_sandbox_profile
+
+    if not _macos_available():
+        pytest.skip("sandbox-exec cannot apply a profile in this environment")
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    secret = fake_home / "secret.txt"
+    secret.write_text("host-only-secret")
+    outside = tmp_path / "outside.txt"
+    worktree = fake_home / "worktree"
+    worktree.mkdir()
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    temp_dir = tmp_path / "temp"
+    temp_dir.mkdir()
+    relay_sock = temp_dir / "relay.sock"
+    binary = Path(sys.executable)
+    helper = Path(__file__).resolve()
+    sbpl = tmp_path / "test.sb"
+    sbpl.write_text(macos_sandbox_profile(worktree, profile, temp_dir, relay_sock, binary, helper, real_home=fake_home))
+
+    # 1. Writing inside worktree succeeds.
+    ok = subprocess.run(
+        ["/usr/bin/sandbox-exec", "-f", str(sbpl), sys.executable, "-c",
+         f"open({str(worktree / 'ok.txt')!r}, 'w').write('yes')"],
+        cwd=str(worktree), capture_output=True, text=True, timeout=15,
+    )
+    assert ok.returncode == 0, ok.stderr
+    assert (worktree / "ok.txt").read_text() == "yes"
+
+    # 2. Writing outside worktree fails closed.
+    deny_write = subprocess.run(
+        ["/usr/bin/sandbox-exec", "-f", str(sbpl), sys.executable, "-c",
+         f"open({str(outside)!r}, 'w').write('no')"],
+        cwd=str(worktree), capture_output=True, text=True, timeout=15,
+    )
+    assert deny_write.returncode != 0 and not outside.exists()
+
+    # 3. Reading host $HOME secret fails closed.
+    deny_read = subprocess.run(
+        ["/usr/bin/sandbox-exec", "-f", str(sbpl), sys.executable, "-c",
+         f"print(open({str(secret)!r}).read())"],
+        cwd=str(worktree), capture_output=True, text=True, timeout=15,
+    )
+    assert deny_read.returncode != 0 and "host-only-secret" not in deny_read.stdout
+
+    # 4. Outbound non-loopback networking fails closed.
+    deny_net = subprocess.run(
+        ["/usr/bin/sandbox-exec", "-f", str(sbpl), sys.executable, "-c",
+         "import socket; s = socket.socket(); s.settimeout(2); s.connect(('1.1.1.1', 80))"],
+        cwd=str(worktree), capture_output=True, text=True, timeout=15,
+    )
+    assert deny_net.returncode != 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows AppContainer live probe")
+def test_windows_appcontainer_available_on_windows():
+    from dotrix_cli import win_sandbox
+
+    assert isinstance(win_sandbox.available(), bool)

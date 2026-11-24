@@ -11,10 +11,10 @@ from __future__ import annotations
 
 READ = ["read_file", "glob_files", "grep_files", "read_tool_result"]
 
-# Each worker's own limits on a turn (the Kai runtime's `max_steps` and `max_tokens`, every request's input and
-# output together): a worker past one stops and reports, so a looping helper can't spend a person's key without
-# end. Starting values, to tune from real usage.
-READ_LIMITS = {"max_steps": 30, "max_tokens": 300_000}
+# Each worker's own limits on a turn (the Kai runtime's `max_steps`, `max_tokens`, and `max_duration_seconds`,
+# every request's input and output together plus wall-clock time): a worker past one stops and reports, so a
+# looping helper can't spend a person's key or stall without end. Starting values, to tune from real usage.
+READ_LIMITS = {"max_steps": 30, "max_tokens": 300_000, "max_duration_seconds": 300}
 
 WORKERS: tuple[dict, ...] = (
     {
@@ -34,6 +34,7 @@ WORKERS: tuple[dict, ...] = (
         "tools": ["shell", *READ],
         "max_steps": 50,
         "max_tokens": 500_000,
+        "max_duration_seconds": 600,
         "prompt": "You are one of Kai's workers. Run the checks Kai asked for (tests, linters, builds) the way this "
                   "project runs them, and report each command, whether it passed, and the output that explains any "
                   "failure. Don't edit, create or delete project files, don't install anything beyond what the "

@@ -1,7 +1,8 @@
-"""Inside the native namespace: relay two fixed HTTP services through a private Unix socket.
+"""Inside the native sandbox: relay two fixed HTTP services through a private host channel.
 
-Standard library only: this file is mounted read-only and run with the system Python.
-The engine never inherits the relay descriptor or the host's provider/browser credentials.
+Standard library only: this file is run with Python inside the OS sandbox (Linux Bubblewrap,
+macOS Seatbelt, or Windows AppContainer). The engine never inherits the relay descriptor or
+the host's provider/browser credentials.
 """
 import base64
 import http.server
@@ -17,19 +18,78 @@ import threading
 LIMIT = 24 * 1024 * 1024
 
 
-def frame_read(sock):
-    def read(size):
+class _SocketChannel:
+    def __init__(self, sock):
+        self._sock = sock
+
+    def read_exact(self, size):
         data = bytearray()
         while len(data) < size:
-            part = sock.recv(size - len(data))
+            part = self._sock.recv(size - len(data))
             if not part:
                 raise EOFError()
             data.extend(part)
         return bytes(data)
-    size = struct.unpack('!I', read(4))[0]
+
+    def write_all(self, data):
+        self._sock.sendall(data)
+
+    def close(self):
+        self._sock.close()
+
+
+class _PipeChannel:
+    def __init__(self, read_fd, write_fd):
+        self._read_fd = read_fd
+        self._write_fd = write_fd
+
+    def read_exact(self, size):
+        data = bytearray()
+        while len(data) < size:
+            part = os.read(self._read_fd, size - len(data))
+            if not part:
+                raise EOFError()
+            data.extend(part)
+        return bytes(data)
+
+    def write_all(self, data):
+        view = memoryview(data)
+        total = 0
+        while total < len(data):
+            written = os.write(self._write_fd, view[total:])
+            if written <= 0:
+                raise OSError('Short write on relay pipe')
+            total += written
+
+    def close(self):
+        for fd in (self._read_fd, self._write_fd):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def _open_channel(spec):
+    if spec.startswith('--pipe-fds='):
+        read_raw, write_raw = spec.split('=', 1)[1].split(':', 1)
+        read_val, write_val = int(read_raw), int(write_raw)
+        if os.name == 'nt':
+            import msvcrt
+            read_fd = msvcrt.open_osfhandle(read_val, os.O_RDONLY)
+            write_fd = msvcrt.open_osfhandle(write_val, os.O_WRONLY)
+            return _PipeChannel(read_fd, write_fd)
+        return _PipeChannel(read_val, write_val)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(spec)
+    return _SocketChannel(sock)
+
+
+def frame_read(channel):
+    header = channel.read_exact(4)
+    size = struct.unpack('!I', header)[0]
     if size > LIMIT:
         raise ValueError('Relay frame too large')
-    return json.loads(read(size))
+    return json.loads(channel.read_exact(size))
 
 
 def require_kai_fx(binary):
@@ -42,8 +102,7 @@ def require_kai_fx(binary):
 
 
 def main():
-    channel = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    channel.connect(sys.argv[1])
+    channel = _open_channel(sys.argv[1])
     profile, binary = sys.argv[2:4]
     claude = len(sys.argv) > 4 and sys.argv[4] == 'claude'
     pending, lock, sequence = {}, threading.Lock(), 0
@@ -87,7 +146,7 @@ def main():
                     pending[identity] = result
                     request = json.dumps({'id': identity, 'path': self.path, 'method': self.command,
                         'headers': dict(self.headers), 'body': base64.b64encode(body).decode()}).encode()
-                    channel.sendall(struct.pack('!I', len(request)) + request)
+                    channel.write_all(struct.pack('!I', len(request)) + request)
                 started = False
                 while True:
                     event = result.get(timeout=180)
@@ -115,7 +174,7 @@ def main():
 
         do_POST = do_GET = do_DELETE = handle_request
 
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', 31820), Handler)
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     if not claude:
@@ -133,16 +192,17 @@ def main():
             ANTHROPIC_API_KEY='dotrix-relay-placeholder', ANTHROPIC_MODEL=configured['model'],
             CLAUDE_CONFIG_DIR=os.path.join(profile, '.claude'), DISABLE_AUTOUPDATER='1',
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1', CLAUDE_CODE_DISABLE_CLAUDE_MDS='1')
-    if os.path.isdir('/opt/dotrix/repo.git'):
+    git_dir = os.environ.get('DOTRIX_SANDBOX_GIT_DIR') or '/opt/dotrix/repo.git'
+    if os.path.isdir(git_dir):
         root = os.getcwd()
         def git(*args):
-            subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', *args], check=True,
+            subprocess.run(['git', '-c', f'core.hooksPath={os.devnull}', *args], check=True,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        git('init', '--bare', '--template=', '/opt/dotrix/repo.git')
-        git('--git-dir=/opt/dotrix/repo.git', 'config', 'core.bare', 'false')
-        git('--git-dir=/opt/dotrix/repo.git', 'config', 'core.worktree', root)
-        git('--git-dir=/opt/dotrix/repo.git', 'add', '-A')
-        git('--git-dir=/opt/dotrix/repo.git', '-c', 'user.name=Dotrix', '-c', 'user.email=dotrix@localhost',
+        git('init', '--bare', '--template=', git_dir)
+        git(f'--git-dir={git_dir}', 'config', 'core.bare', 'false')
+        git(f'--git-dir={git_dir}', 'config', 'core.worktree', root)
+        git(f'--git-dir={git_dir}', 'add', '-A')
+        git(f'--git-dir={git_dir}', '-c', 'user.name=Dotrix', '-c', 'user.email=dotrix@localhost',
             'commit', '--allow-empty', '--no-verify', '-qm', 'Sandbox baseline')
     version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=15, check=True).stdout.strip()
     expected = '2.1.296' if claude else '0.0.17'
@@ -151,7 +211,7 @@ def main():
     if not claude:
         require_kai_fx(binary)
     print(json.dumps({'bridge_ready': True, 'port': server.server_port, 'version': expected}), flush=True)
-    # Do not pass the relay descriptor to fx. Namespace PID 1 exiting kills leftover commands.
+    # Do not pass the relay descriptor to fx. Exiting kills leftover commands via the OS sandbox boundary.
     raise SystemExit(subprocess.call([binary, *configured['argv']] if claude else [binary, 'acp'], close_fds=True))
 
 

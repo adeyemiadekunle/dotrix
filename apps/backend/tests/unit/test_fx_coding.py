@@ -745,7 +745,9 @@ def test_a_new_session_gets_kai_s_workers_as_fx_profiles_and_a_resumed_one_keeps
         assert "subagent" not in written["tools"] and "edit_file" not in written["tools"]
         assert "write_file" not in written["tools"] and "web_fetch" not in written["tools"]
         assert written.get("mcp_servers") == worker.get("mcp_servers")
-        assert (written["max_steps"], written["max_tokens"]) == (worker["max_steps"], worker["max_tokens"])
+        assert (written["max_steps"], written["max_tokens"], written["max_duration_seconds"]) == (
+            worker["max_steps"], worker["max_tokens"], worker["max_duration_seconds"],
+        )
         assert "permission_mode" not in written  # never more than Kai's own
         assert (agents / worker["name"] / "prompt.md").read_text().strip() == worker["prompt"]
 
@@ -775,7 +777,8 @@ def test_saved_workers_changed_since_the_session_started_never_run(fake_fx, drop
 
 @pytest.mark.parametrize("name, limits", [("main", {}), ("agent", {}), ("Bad Name", {}), ("../escape", {}),
                                           ("worker", {"max_steps": 0}), ("worker", {"max_tokens": "many"}),
-                                          ("worker", {"max_steps": 2.5})])
+                                          ("worker", {"max_steps": 2.5}), ("worker", {"max_duration_seconds": 0}),
+                                          ("worker", {"max_duration_seconds": "forever"})])
 def test_a_worker_that_would_replace_kai_leave_its_folder_or_set_a_bad_limit_is_refused(fake_fx, name, limits) -> None:
     bad = [{"name": name, "description": "x", "tools": ["read_file"], "prompt": "x", **limits}]
     args = _profile()
