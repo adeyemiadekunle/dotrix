@@ -323,10 +323,10 @@ export function ComplexSelector({ label, value, placement = "below", isDisabled,
     const onDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Element) || root.current?.contains(target)) return;
-      if (target.closest('[data-radix-popper-content-wrapper], [data-slot="select-content"], [data-dotrix-select-listbox]')) {
+      if (target.closest('[data-radix-popper-content-wrapper], [data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) {
         return;
       }
-      if (document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) {
+      if (document.querySelector('[data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) {
         return;
       }
       const listbox = target.closest('[role="listbox"]');
@@ -339,7 +339,7 @@ export function ComplexSelector({ label, value, placement = "below", isDisabled,
       close();
     };
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape" && !document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) {
+      if (event.key === "Escape" && !document.querySelector('[data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) {
         close();
       }
     };

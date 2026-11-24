@@ -20,10 +20,11 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
   const sd = t.subtasks.filter((s) => s.done).length;
   const p = proj(t.project);
   return (
-    <div
+    <article
       className={`kcard ${t.status === "done" ? "done" : ""}`}
       draggable
       data-drag-card={t.id}
+      aria-label={t.title}
       onClick={() => openTask(t.id)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -139,7 +140,7 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
           <Ic n="ellipsis" s={13} />
         </ActionButton>
       </div>
-    </div>
+    </article>
   );
 }
 

@@ -1156,12 +1156,12 @@ export function PopLayer() {
     if (!p) return;
     const down = (e: MouseEvent) => {
       const target = e.target as Element | null;
-      if (target?.closest('[data-radix-popper-content-wrapper], [data-slot="select-content"], [data-dotrix-select-listbox]')) return;
-      if (document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) return;
+      if (target?.closest('[data-radix-popper-content-wrapper], [data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) return;
+      if (document.querySelector('[data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) return;
       if (ref.current && !ref.current.contains(e.target as Node)) closePop();
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) closePop();
+      if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) closePop();
     };
     // after the click that opened it
     const t = setTimeout(() => document.addEventListener("mousedown", down), 0);

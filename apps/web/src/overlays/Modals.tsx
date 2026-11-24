@@ -38,7 +38,7 @@ export function ModalLayer() {
             style={{ zIndex: 61 + i * 2 }}
             onMouseDown={(e) => e.target === e.currentTarget && closeModal()}
             onKeyDown={(e) => {
-              if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) closeModal();
+              if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) closeModal();
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.currentTarget.querySelector("[data-submit]") as HTMLButtonElement | null)?.click();
             }}
           >

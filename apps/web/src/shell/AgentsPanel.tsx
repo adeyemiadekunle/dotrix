@@ -125,7 +125,7 @@ export function AgentsLauncher() {
       onClick={toggleAgents}
       aria-expanded={open}
       aria-controls="agents-panel"
-      aria-label={open ? "Close the agents panel" : waiting ? `Agents panel: ${waiting} waiting on you` : "Open agents panel"}
+      aria-label={open ? "Close the agents panel" : waiting ? `Agents: ${waiting} waiting on you` : "Agents"}
     >
       {open ? (
         <Ic n="x" s={18} />
