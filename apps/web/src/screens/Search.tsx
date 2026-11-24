@@ -1,4 +1,5 @@
 // Search results. dotrix adds the projects' documents.
+import { Tabs, TabsList, TabsTab } from "@ui-sdk/react/tabs";
 import type { CSSProperties, ReactNode } from "react";
 
 import { openTask } from "../core/actions";
@@ -70,6 +71,9 @@ export function Search() {
     ) : null;
   return (
     <div className="page" style={{ maxWidth: 860 }}>
+      <div className="ph" style={{ marginBottom: 14 }}>
+        <h1>Search</h1>
+      </div>
       <div className="inwrap" style={{ marginBottom: 14 }}>
         <Ic n="search" s={16} />
         <input
@@ -83,14 +87,24 @@ export function Search() {
           autoFocus
         />
       </div>
-      <div className="tabs" style={{ marginBottom: 18 }}>
-        {cats.map(([k, n]) => (
-          <button key={k} className={`tab ${cat === k ? "on" : ""}`} onClick={() => ((S.ui.searchCat = k), render())}>
-            {n}
-            <span className="cnt">{k === "all" ? total : r[k].length}</span>
-          </button>
-        ))}
-      </div>
+      <Tabs
+        value={cat}
+        onValueChange={(next) => {
+          if (next) {
+            S.ui.searchCat = next as typeof cat;
+            render();
+          }
+        }}
+      >
+        <TabsList className="tabs" style={{ marginBottom: 18 }} aria-label="Search categories">
+          {cats.map(([k, n]) => (
+            <TabsTab key={k} value={k} className={`tab ${cat === k ? "on" : ""}`}>
+              {n}
+              <span className="cnt">{k === "all" ? total : r[k].length}</span>
+            </TabsTab>
+          ))}
+        </TabsList>
+      </Tabs>
       {!q ? (
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           <span className="faint" style={{ fontSize: 12.5 }}>

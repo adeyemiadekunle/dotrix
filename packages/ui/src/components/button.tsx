@@ -1,4 +1,7 @@
+"use client";
+
 import * as React from "react";
+import { Button as UiButton, type ButtonActionDetails } from "@ui-sdk/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@dotrix/ui/lib/utils";
 import { Slot } from "radix-ui";
@@ -35,19 +38,36 @@ const buttonVariants = cva(
   },
 );
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
+type ButtonProps = Omit<React.ComponentProps<typeof UiButton>, "onClick" | "children"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
-  }) {
-  const Comp = asChild ? Slot.Root : "button";
+    children?: React.ReactNode;
+    onClick?: (event: React.MouseEvent<HTMLButtonElement>, details?: ButtonActionDetails) => unknown;
+  };
 
-  return <Comp data-slot="button" data-variant={variant} data-size={size} className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+function Button({ className, variant = "default", size = "default", asChild = false, children, onClick, render, ...props }: ButtonProps) {
+  const classes = cn(buttonVariants({ variant, size, className }));
+  const handleClick = onClick
+    ? (event: React.MouseEvent<HTMLElement>, details: ButtonActionDetails) =>
+        (onClick as (event: React.MouseEvent<HTMLElement>, details: ButtonActionDetails) => unknown)(event, details)
+    : undefined;
+
+  if (asChild) {
+    if (React.isValidElement(children)) {
+      return <UiButton data-variant={variant} data-size={size} className={classes} onClick={handleClick} render={children} {...props} />;
+    }
+    return (
+      <Slot.Root data-slot="button" data-variant={variant} data-size={size} className={classes} {...(props as React.ComponentProps<typeof Slot.Root>)}>
+        {children}
+      </Slot.Root>
+    );
+  }
+
+  return (
+    <UiButton data-variant={variant} data-size={size} className={classes} onClick={handleClick} render={render} {...props}>
+      {children}
+    </UiButton>
+  );
 }
 
 export { Button, buttonVariants };

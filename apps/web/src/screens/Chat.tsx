@@ -123,7 +123,7 @@ import {
   TraceList,
   type Usage,
 } from "../components/AgentTrace";
-import { Splitter, useStoredFlag, useStoredSize, useStoredText } from "../ui/splitter";
+import { Splitter, useStoredSize, useStoredText } from "../ui/splitter";
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@dotrix/ui/components/trace";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
@@ -216,9 +216,10 @@ const threadSearch = (r: Pick<Row, "id" | "projectKey">) => (r.projectKey ? `thr
 
 function ThreadRow({ row, on }: { row: Row; on: boolean }) {
   return (
-    <button
+    <ActionButton
       className={`sitem ${on ? "on" : ""}`}
       style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }}
+      aria-label={`${row.title} · ${ago(row.at)}`}
       onClick={() => open(threadSearch(row))}
     >
       <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
@@ -231,7 +232,7 @@ function ThreadRow({ row, on }: { row: Row; on: boolean }) {
         </span>
       </span>
       {row.waiting && <span className="sdot" style={{ background: "var(--amber)", marginTop: 6 }} aria-label="Waiting for a decision" />}
-    </button>
+    </ActionButton>
   );
 }
 
@@ -2287,7 +2288,8 @@ const paneList = (value: string | null, PANES: typeof CODING_VIEWS): CodingPaneI
 export function Session({ cs }: { cs: CodingSession }) {
   const ws = wsId();
   const scope = useMemo(() => (ws ? { workspaceId: ws, projectId: cs.project_id } : undefined), [ws, cs.project_id]);
-  const turns = useCodingSession(scope, cs.session_id).data ?? [];
+  const turnsQuery = useCodingSession(scope, cs.session_id);
+  const turns = turnsQuery.data ?? [];
   const latest = turns.at(-1);
   const [codingMode, setCodingMode] = useState<"plan" | "build">("build");
   // The open session is followed as it happens; its turns land in the query above.
@@ -2336,16 +2338,9 @@ export function Session({ cs }: { cs: CodingSession }) {
   useEffect(() => {
     if (panes.length && !search.has("panel")) setPanes(panes);
   });
-  // The session's details (its context, tools, background tasks, usage): on wide screens a column beside the
-  // session, between it and any open panes, hidden by its button (with panes open it starts hidden, so they
-  // get the room, and the button brings it back); a popover on narrow screens.
-  const [detailsHidden, setDetailsHidden] = useStoredFlag("dotrix.coding.detailsHidden");
-  const [detailsBesidePanes, setDetailsBesidePanes] = useState(false);
+  // The session's details (environment, background tasks, PR, outputs, usage): a popover anchored under its button across viewports.
   const [detailsPop, setDetailsPop] = useState(false);
-  const wide = useWide("(min-width: 1280px)");
-  const detailsColumn = wide && (panes.length ? detailsBesidePanes : !detailsHidden);
-  const toggleDetails = () =>
-    !wide ? setDetailsPop(!detailsPop) : panes.length ? setDetailsBesidePanes(!detailsBesidePanes) : setDetailsHidden(!detailsHidden);
+  const toggleDetails = () => setDetailsPop((open) => !open);
   /** A file the session changed, opened in Files (in the latest turn that changed it, or the latest). */
   const openPath = (path: string, turnId?: string) => {
     const owner = turnId ?? [...turns].reverse().find((t) => t.files_changed.some((f) => fileOf(f) === path))?.id ?? latest?.id;
@@ -2461,9 +2456,20 @@ export function Session({ cs }: { cs: CodingSession }) {
   }, [ask]);
   const shotSrc = (runId: string, index: number) => `/v1/workspaces/${ws}/projects/${cs.project_id}/coding/runs/${runId}/screenshots/${index}`;
   const details = (
-    <SessionDetails cs={cs} turns={turns} onOpenFile={openPath} onOpenChanges={openChanges} onShot={(src, name) => setShot({ src, name })} shotSrc={shotSrc} />
+    <SessionDetails
+      scope={scope}
+      cs={cs}
+      turns={turns}
+      onOpenFile={openPath}
+      onOpenChanges={openChanges}
+      onShot={(src, name) => setShot({ src, name })}
+      shotSrc={shotSrc}
+      onClose={() => setDetailsPop(false)}
+      onRefresh={() => void turnsQuery.refetch()}
+      refreshing={turnsQuery.isFetching}
+    />
   );
-  const detailsOn = detailsColumn || detailsPop;
+  const detailsOn = detailsPop;
   return (
     <div className="conv">
       <div className="conv-main">
@@ -2537,7 +2543,7 @@ export function Session({ cs }: { cs: CodingSession }) {
             onClick={toggleDetails}
             aria-pressed={detailsOn}
             aria-label="Session details"
-            data-tip="Details"
+            data-tip={detailsOn ? undefined : "Details"}
           >
             <Ic n="list-bullets" s={16} />
           </button>
@@ -2959,11 +2965,6 @@ export function Session({ cs }: { cs: CodingSession }) {
           </ChatMessageList>
         </ChatLayout>
       </div>
-      {detailsColumn && (
-        <aside className="cs-details" aria-label="Session details">
-          {details}
-        </aside>
-      )}
       {panes.length > 0 && (
         <CodingPanes
           scope={scope}

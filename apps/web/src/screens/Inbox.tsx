@@ -98,15 +98,19 @@ function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) =
         background: on ? "var(--surface-2)" : undefined,
       }}
       onClick={() => select(n.id)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && select(n.id)}
     >
       {!n.read && (
         <span style={{ position: "absolute", left: 6, top: 22, width: 6, height: 6, borderRadius: "50%", background: "var(--acc)" }} aria-label="Unread" />
       )}
       <NotifIcon n={n} />
-      <div className="grow" style={{ fontSize: 13, lineHeight: 1.45, minWidth: 0 }}>
+      <ActionButton
+        className="grow rounded-xs border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-primary"
+        style={{ fontSize: 13, lineHeight: 1.45, minWidth: 0, cursor: "pointer" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          select(n.id);
+        }}
+      >
         <div>
           <NotifText n={n} />
         </div>
@@ -124,7 +128,7 @@ function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) =
           <span>·</span>
           <span>{ago(n.at)}</span>
         </div>
-      </div>
+      </ActionButton>
       <ActionButton
         className="ibtn ibtn-xs"
         onClick={(e) => {
@@ -132,7 +136,7 @@ function Item({ n, on, select }: { n: Notif; on: boolean; select: (id: string) =
           toggleRead(n.id);
         }}
         data-tip={n.read ? "Mark as unread" : "Mark as read"}
-        aria-label={n.read ? "Mark as unread" : "Mark as read"}
+        aria-label={`${n.read ? "Mark as unread" : "Mark as read"}: ${who(n.by)?.name ? `${who(n.by)!.name} ` : ""}${n.text}`}
       >
         <Ic n={n.read ? "mail" : "mail-open"} s={13} />
       </ActionButton>
@@ -545,7 +549,7 @@ export function Inbox() {
             {ns.length ? (
               Object.entries(buckets).map(([b, list]) => (
                 <div key={b}>
-                  <div className="day-h" style={{ padding: "0 var(--gutter)" }}>
+                  <div className="day-h" style={{ padding: "10px var(--gutter) 4px" }}>
                     {b}
                   </div>
                   {list.map((n) => (

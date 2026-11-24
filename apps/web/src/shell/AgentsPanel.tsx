@@ -3,6 +3,7 @@
 // from the launcher at the bottom right (a chat button, with the faces of whoever needs you or is
 // working), on every page but Codes, never squeezing the page. A row opens where that agent's work
 // is: its conversation, its coding session, or a new chat with it.
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useEffect } from "react";
 
 import { Ic } from "../core/icons";
@@ -119,12 +120,12 @@ export function AgentsLauncher() {
     return () => window.removeEventListener("keydown", close);
   }, [open]);
   return (
-    <button
+    <ActionButton
       className={`agents-launcher ${open ? "on" : ""}`}
       onClick={toggleAgents}
       aria-expanded={open}
       aria-controls="agents-panel"
-      aria-label={open ? "Close the agents panel" : waiting ? `Agents: ${waiting} waiting on you` : "Agents"}
+      aria-label={open ? "Close the agents panel" : waiting ? `Agents panel: ${waiting} waiting on you` : "Open agents panel"}
     >
       {open ? (
         <Ic n="x" s={18} />
@@ -138,7 +139,7 @@ export function AgentsLauncher() {
         </span>
       )}
       {!open && waiting > 0 && <span className="al-count num">{waiting}</span>}
-    </button>
+    </ActionButton>
   );
 }
 

@@ -1,6 +1,7 @@
 // What an agent run waits on, from the API: changes to approve or reject, and checkpoints (a plan
 // to continue, change, or stop). A run resumes once, with every decision, so with several changes
 // waiting the choices are sent together when the last one is made.
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useState } from "react";
 
 import { useDecide, type Approval, type Decision, type Run } from "@/lib/agent";
@@ -127,9 +128,14 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
               <button className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
                 Cancel
               </button>
-              <button className="btn btn-sm btn-danger" onClick={() => onChoose({ decision: "reject", reason })} disabled={busy}>
+              <ActionButton
+                className="btn btn-sm btn-danger"
+                data-agent-confirm="Rejects the pending agent action"
+                onClick={() => onChoose({ decision: "reject", reason })}
+                disabled={busy}
+              >
                 Reject
-              </button>
+              </ActionButton>
             </>
           )}
         </div>

@@ -368,14 +368,24 @@ function Workspace() {
                 Workspace icon
               </div>
               <div className="swatches">
-                {["#2F2E2A", "#5A67D8", "#3B82C4", "#23918A", "#C54B78", "#C48A1E"].map((c) => (
-                  <button
+                {(
+                  [
+                    ["#2F2E2A", "Charcoal"],
+                    ["#5A67D8", "Indigo"],
+                    ["#3B82C4", "Blue"],
+                    ["#23918A", "Teal"],
+                    ["#C54B78", "Rose"],
+                    ["#C48A1E", "Amber"],
+                  ] as const
+                ).map(([c, label]) => (
+                  <ActionButton
                     key={c}
                     type="button"
                     className={`sw ${d.ws.c === c ? "on" : ""}`}
                     style={css({ "--c": c, width: 22, height: 22 })}
                     onClick={() => mutate(() => (d.ws.c = c))}
-                    aria-label={`Color ${c}`}
+                    aria-label={`Workspace color: ${label}`}
+                    aria-pressed={d.ws.c === c}
                   />
                 ))}
               </div>
@@ -450,6 +460,7 @@ function Workspace() {
           <ActionButton
             className="btn btn-danger-ghost"
             style={{ border: "1px solid color-mix(in srgb,var(--red) 35%,transparent)" }}
+            data-agent-confirm="Deletes the workspace and all of its data"
             onClick={() => toast("Deleting a workspace isn't available yet", { kind: "info" })}
           >
             Delete workspace
@@ -2089,14 +2100,24 @@ function Profile() {
             Avatar color
           </div>
           <div className="swatches">
-            {["#5A67D8", "#C54B78", "#3B82C4", "#23918A", "#C48A1E", "#8662C9"].map((c) => (
-              <button
+            {(
+              [
+                ["#5A67D8", "Indigo"],
+                ["#C54B78", "Rose"],
+                ["#3B82C4", "Blue"],
+                ["#23918A", "Teal"],
+                ["#C48A1E", "Amber"],
+                ["#8662C9", "Violet"],
+              ] as const
+            ).map(([c, label]) => (
+              <ActionButton
                 key={c}
                 type="button"
                 className={`sw ${me()!.c === c ? "on" : ""}`}
                 style={css({ "--c": c, width: 22, height: 22 })}
                 onClick={() => mutate(() => (me()!.c = c))}
-                aria-label="Color"
+                aria-label={`Avatar color: ${label}`}
+                aria-pressed={me()!.c === c}
               />
             ))}
           </div>
@@ -2439,6 +2460,7 @@ function LiveSessions() {
         <ActionButton
           className="btn btn-danger-ghost"
           disabled={r.data.length < 2}
+          data-agent-confirm="Signs out of all other active sessions"
           onClick={() =>
             otherSessionsSignedOut()
               .then(() => (r.reload(), toast("Signed out of every other browser and app")))
@@ -3177,6 +3199,7 @@ function Body({ sec }: { sec: string }) {
             <ActionButton
               className="btn btn-danger-ghost"
               disabled={d.sessions.length < 2}
+              data-agent-confirm="Signs out of all other active sessions"
               onClick={() => (mutate(() => (d.sessions = d.sessions.filter((x) => x.cur))), toast("Signed out of all other sessions"))}
             >
               Sign out of all other sessions

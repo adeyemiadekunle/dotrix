@@ -2,22 +2,15 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./styles.css";
 
-import { hydrateRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 
 import { App } from "./App";
 
-hydrateRoot(document.getElementById("root")!, <App />);
+const pathname = window.location.pathname;
+const route = pathname.replace(/\/+$/, "") || "/";
+if (route === "/terms") document.title = "Terms of Service · dotrix";
+else if (route === "/privacy") document.title = "Privacy Policy · dotrix";
 
-// Sections fade in as they come into view (CSS skips it for people who prefer less motion).
-const seen = new IntersectionObserver(
-  (entries) => {
-    for (const entry of entries) {
-      if (entry.isIntersecting) {
-        entry.target.classList.add("in");
-        seen.unobserve(entry.target);
-      }
-    }
-  },
-  { rootMargin: "0px 0px -10% 0px" },
-);
-document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
+const rootEl = document.getElementById("root")!;
+if (rootEl.firstElementChild) hydrateRoot(rootEl, <App pathname={pathname} />);
+else createRoot(rootEl).render(<App pathname={pathname} />);

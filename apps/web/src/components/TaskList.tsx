@@ -1,5 +1,6 @@
 // Shared task list: the editable cells, a row, the
 // grouped list with inline add and bulk selection, an activity line, and the small task row.
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { Fragment, useState, type CSSProperties, type MouseEvent, type ReactElement } from "react";
 
 import { openPop, openTask, toggleDone, updateTask } from "../core/actions";
@@ -34,38 +35,51 @@ export const LCOLS: Record<string, [string, string]> = {
 };
 export function CellStatus({ t }: { t: Task }) {
   return (
-    <button className="pillbtn" onClick={pop("status", t)} aria-label={`Status: ${ST[t.status].name}`}>
+    <ActionButton className="pillbtn" onClick={pop("status", t)} aria-label={`Status for ${t.key}: ${ST[t.status].name}`}>
       <StPill st={t.status} />
-    </button>
+    </ActionButton>
   );
 }
 export function CellAssignee({ t }: { t: Task }) {
   const w = who(t.assignee);
   return (
-    <button className={`pillbtn ${w ? "" : "empty"}`} onClick={pop("assignee", t)} aria-label="Assignee">
+    <ActionButton className={`pillbtn ${w ? "" : "empty"}`} onClick={pop("assignee", t)} aria-label={`Assignee for ${t.key}`}>
       <Av id={t.assignee} cls="sm" tip={false} />
       <span className="trunc">{w ? w.name : "Unassigned"}</span>
-    </button>
+    </ActionButton>
   );
 }
 export function CellPrio({ t }: { t: Task }) {
   return (
-    <button className={`pillbtn ${t.priority === "none" ? "empty" : ""}`} onClick={pop("priority", t)} aria-label="Priority">
+    <ActionButton
+      className={`pillbtn ${t.priority === "none" ? "empty" : ""}`}
+      onClick={pop("priority", t)}
+      aria-label={`Priority for ${t.key}: ${PR[t.priority].name}`}
+    >
       <PrPill p={t.priority} />
-    </button>
+    </ActionButton>
   );
 }
 export function CellDue({ t }: { t: Task }) {
   return (
-    <button className={`pillbtn ${t.due ? (isOver(t) ? "over" : "") : "empty"}`} onClick={pop("date", t, { field: "due" })} aria-label="Due date">
+    <ActionButton
+      className={`pillbtn ${t.due ? (isOver(t) ? "over" : "") : "empty"}`}
+      onClick={pop("date", t, { field: "due" })}
+      aria-label={`Due date for ${t.key}`}
+    >
       <Ic n="calendar" s={13} />
       {t.due ? <span className="num">{relDate(t.due)}</span> : <span>Set date</span>}
-    </button>
+    </ActionButton>
   );
 }
 function CellLabels({ t }: { t: Task }) {
   return (
-    <button className={`pillbtn ${t.labels.length ? "" : "empty"}`} onClick={pop("labels", t)} aria-label="Labels" style={{ gap: 4, overflow: "hidden" }}>
+    <ActionButton
+      className={`pillbtn ${t.labels.length ? "" : "empty"}`}
+      onClick={pop("labels", t)}
+      aria-label={`Labels for ${t.key}`}
+      style={{ gap: 4, overflow: "hidden" }}
+    >
       {t.labels.length ? (
         <>
           {t.labels.slice(0, 2).map((l) => (
@@ -83,16 +97,16 @@ function CellLabels({ t }: { t: Task }) {
           <span>Add</span>
         </>
       )}
-    </button>
+    </ActionButton>
   );
 }
 export function CellProject({ t }: { t: Task }) {
   const p = proj(t.project);
   return (
-    <button className="pillbtn" onClick={pop("project", t)} aria-label="Project">
+    <ActionButton className="pillbtn" onClick={pop("project", t)} aria-label={`Project for ${t.key}`}>
       <span className="pdot" style={css({ "--c": pColor(p) })} />
       <span className="trunc">{p?.name}</span>
-    </button>
+    </ActionButton>
   );
 }
 const CELL: Record<string, (p: { t: Task }) => ReactElement> = {
@@ -135,19 +149,19 @@ function TitleCell({ t }: { t: Task }) {
       }}
     >
       {t.subtasks.length ? (
-        <span
+        <ActionButton
           className="ibtn ibtn-xs"
           onClick={(e) => {
             e.stopPropagation();
             openRows[t.id] = !open;
             render();
           }}
-          aria-label={`${open ? "Hide" : "Show"} subtasks`}
+          aria-label={`${open ? "Hide" : "Show"} subtasks for ${t.key}`}
           aria-expanded={Boolean(open)}
           style={{ marginLeft: -4 }}
         >
           <Ic n={open ? "chevron-down" : "chevron-right"} s={13} />
-        </span>
+        </ActionButton>
       ) : (
         <span style={{ width: 18, flexShrink: 0 }} />
       )}
@@ -170,7 +184,17 @@ function TitleCell({ t }: { t: Task }) {
           aria-label="Task title"
         />
       ) : (
-        <span className="tt">{t.title}</span>
+        <ActionButton
+          className="tt rounded-xs border-0 bg-transparent p-0 text-left hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+          style={{ cursor: "pointer" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            openTask(t.id);
+          }}
+          aria-label={`Open ${t.key}: ${t.title}`}
+        >
+          {t.title}
+        </ActionButton>
       )}
       {t.recur && (
         <span className="meta-mini" data-tip={`Repeats ${t.recur.toLowerCase()}`}>
@@ -241,9 +265,13 @@ function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Task; cols
           );
         })}
         <div className="c-more">
-          <button className="ibtn ibtn-sm" onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })} aria-label="More actions">
+          <ActionButton
+            className="ibtn ibtn-sm"
+            onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id })}
+            aria-label={`More actions for ${t.key}`}
+          >
             <Ic n="ellipsis" s={15} />
-          </button>
+          </ActionButton>
         </div>
       </div>
       {openRows[t.id] && (
@@ -346,12 +374,24 @@ export function ListView({
               />
             )}
           </div>
-          <div onClick={() => sortBy("title")} style={{ cursor: "pointer" }}>
-            Task {v?.sort.f === "title" && <Ic n={v.sort.dir > 0 ? "arrow-up" : "arrow-down"} s={11} />}
+          <div>
+            <ActionButton
+              className="font-inherit inline-flex items-center gap-1 rounded-xs border-0 bg-transparent p-0 text-left text-inherit focus-visible:outline-2 focus-visible:outline-primary"
+              style={{ cursor: "pointer" }}
+              onClick={() => sortBy("title")}
+            >
+              Task {v?.sort.f === "title" && <Ic n={v.sort.dir > 0 ? "arrow-up" : "arrow-down"} s={11} />}
+            </ActionButton>
           </div>
           {cols.map((c) => (
-            <div key={c} onClick={() => sortBy(c === "labels" ? "manual" : c)} style={{ cursor: "pointer" }}>
-              {LCOLS[c]![0]} {v?.sort.f === c && <Ic n={v.sort.dir > 0 ? "arrow-up" : "arrow-down"} s={11} />}
+            <div key={c}>
+              <ActionButton
+                className="font-inherit inline-flex items-center gap-1 rounded-xs border-0 bg-transparent p-0 text-left text-inherit focus-visible:outline-2 focus-visible:outline-primary"
+                style={{ cursor: "pointer" }}
+                onClick={() => sortBy(c === "labels" ? "manual" : c)}
+              >
+                {LCOLS[c]![0]} {v?.sort.f === c && <Ic n={v.sort.dir > 0 ? "arrow-up" : "arrow-down"} s={11} />}
+              </ActionButton>
             </div>
           ))}
           <div />
@@ -364,24 +404,24 @@ export function ListView({
             <Fragment key={g.key}>
               {(groups.length > 1 || g.key !== "all") && (
                 <div className="grp">
-                  <button
+                  <ActionButton
                     className="ibtn ibtn-xs"
                     onClick={() => {
                       S.ui.collapsedGroups[gk] = !coll;
                       render();
                     }}
                     aria-expanded={!coll}
-                    aria-label="Toggle group"
+                    aria-label={`Toggle group ${g.name}`}
                   >
                     <Ic n={coll ? "chevron-right" : "chevron-down"} s={13} />
-                  </button>
+                  </ActionButton>
                   {g.html}
                   <span>{g.name}</span>
                   <span className="cnt">{g.tasks.length}</span>
                   {!noAdd && (
-                    <button className="ibtn ibtn-xs" onClick={() => startComposer(k, g.key, g.set || {})} aria-label={`Add task to ${g.name}`}>
+                    <ActionButton className="ibtn ibtn-xs" onClick={() => startComposer(k, g.key, g.set || {})} aria-label={`Quick add task to ${g.name}`}>
                       <Ic n="plus" s={13} />
-                    </button>
+                    </ActionButton>
                   )}
                 </div>
               )}
@@ -391,10 +431,10 @@ export function ListView({
                 (comp ? (
                   <Composer k={k} g={g} />
                 ) : (
-                  <button className="addrow" onClick={() => startComposer(k, g.key, g.set || {})}>
+                  <ActionButton className="addrow" onClick={() => startComposer(k, g.key, g.set || {})} aria-label={`Add task to ${g.name}`}>
                     <Ic n="plus" s={14} />
                     Add task
-                  </button>
+                  </ActionButton>
                 ))}
             </Fragment>
           );
@@ -493,9 +533,6 @@ export function MiniRow({ t, av = true, noProj }: { t: Task; av?: boolean; noPro
         e.preventDefault();
         openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id });
       }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && openTask(t.id)}
     >
       <input
         type="checkbox"
@@ -508,7 +545,16 @@ export function MiniRow({ t, av = true, noProj }: { t: Task; av?: boolean; noPro
       <span data-tip={ST[t.status].name}>
         <StIcon st={t.status} />
       </span>
-      <span className="tt">{t.title}</span>
+      <ActionButton
+        className="tt rounded-xs border-0 bg-transparent p-0 text-left hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+        style={{ cursor: "pointer" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          openTask(t.id);
+        }}
+      >
+        {t.title}
+      </ActionButton>
       {!noProj && (
         <span className="pj hide-m">
           <span className="pdot" style={css({ "--c": pColor(p) })} />

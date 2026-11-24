@@ -1,20 +1,48 @@
 "use client";
 
 import * as React from "react";
+import {
+  Select as UiSelect,
+  SelectContent as UiSelectContent,
+  SelectGroup as UiSelectGroup,
+  SelectGroupLabel as UiSelectGroupLabel,
+  SelectItem as UiSelectItem,
+  SelectItemIndicator as UiSelectItemIndicator,
+  SelectSeparator as UiSelectSeparator,
+  SelectTrigger as UiSelectTrigger,
+  SelectValue as UiSelectValue,
+  type ListData,
+} from "@ui-sdk/react/select";
 import { cn } from "@dotrix/ui/lib/utils";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { Select as SelectPrimitive } from "radix-ui";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
 
-function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />;
+type SelectProps = Omit<React.ComponentProps<typeof UiSelect<string, false>>, "onValueChange" | "multiple" | "value" | "defaultValue"> & {
+  value?: string | null;
+  defaultValue?: string | null;
+  onValueChange?: (value: string) => void;
+};
+
+function Select({ onValueChange, ...props }: SelectProps) {
+  return (
+    <UiSelect<string, false>
+      onValueChange={
+        onValueChange
+          ? (next) => {
+              if (next !== null) onValueChange(next);
+            }
+          : undefined
+      }
+      {...props}
+    />
+  );
 }
 
-function SelectGroup({ ...props }: React.ComponentProps<typeof SelectPrimitive.Group>) {
-  return <SelectPrimitive.Group data-slot="select-group" {...props} />;
+function SelectGroup({ ...props }: React.ComponentProps<typeof UiSelectGroup>) {
+  return <UiSelectGroup {...props} />;
 }
 
-function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.Value>) {
-  return <SelectPrimitive.Value data-slot="select-value" {...props} />;
+function SelectValue({ ...props }: React.ComponentProps<typeof UiSelectValue>) {
+  return <UiSelectValue {...props} />;
 }
 
 function SelectTrigger({
@@ -23,13 +51,13 @@ function SelectTrigger({
   variant = "default",
   children,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
+}: Omit<React.ComponentProps<typeof UiSelectTrigger>, "children"> & {
   size?: "sm" | "default" | "lg";
   variant?: "default" | "ghost";
+  children?: React.ReactNode;
 }) {
   return (
-    <SelectPrimitive.Trigger
-      data-slot="select-trigger"
+    <UiSelectTrigger
       data-size={size}
       data-variant={variant}
       className={cn(
@@ -38,17 +66,18 @@ function SelectTrigger({
         size === "default" && "h-8 rounded-[8px] px-3 text-[13.5px]",
         size === "lg" && "h-9 rounded-[10px] px-3.5 text-[14px]",
         variant === "default" &&
-          "border border-[var(--border-strong)] bg-[var(--surface)] shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-[color-mix(in_srgb,var(--border-strong)_55%,var(--text-3))] hover:bg-[color-mix(in_srgb,var(--surface-2)_45%,var(--surface))] data-[state=open]:border-[var(--acc)] data-[state=open]:ring-2 data-[state=open]:ring-[var(--accent-soft)]",
-        variant === "ghost" && "border border-transparent bg-transparent hover:bg-[var(--surface-2)] data-[state=open]:bg-[var(--surface-2)]",
+          "border border-[var(--border-strong)] bg-[var(--surface)] shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-[color-mix(in_srgb,var(--border-strong)_55%,var(--text-3))] hover:bg-[color-mix(in_srgb,var(--surface-2)_45%,var(--surface))] data-[open]:border-[var(--acc)] data-[open]:ring-2 data-[open]:ring-[var(--accent-soft)]",
+        variant === "ghost" && "border border-transparent bg-transparent hover:bg-[var(--surface-2)] data-[open]:bg-[var(--surface-2)]",
         className,
       )}
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-3.5 shrink-0 text-[var(--text-3)] transition-transform duration-150 group-data-[state=open]/select-trigger:rotate-180" />
-      </SelectPrimitive.Icon>
-    </SelectPrimitive.Trigger>
+      <ChevronDownIcon
+        aria-hidden="true"
+        className="size-3.5 shrink-0 text-[var(--text-3)] transition-transform duration-150 group-data-[open]/select-trigger:rotate-180"
+      />
+    </UiSelectTrigger>
   );
 }
 
@@ -60,89 +89,65 @@ function SelectContent({
   sideOffset = 6,
   collisionPadding = 8,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof UiSelectContent> & {
+  position?: "popper" | "item-aligned";
+}) {
   return (
-    <SelectPrimitive.Portal>
-      <SelectPrimitive.Content
-        data-slot="select-content"
-        className={cn(
-          "relative z-[140] max-h-[min(320px,var(--radix-select-content-available-height))] min-w-[8.5rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-[12px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] shadow-[var(--shadow-pop)] data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
-          className,
-        )}
-        position={position}
-        align={align}
-        sideOffset={sideOffset}
-        collisionPadding={collisionPadding}
-        {...props}
-      >
-        <SelectScrollUpButton />
-        <SelectPrimitive.Viewport className={cn("p-1.5", position === "popper" && "w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1")}>
-          {children}
-        </SelectPrimitive.Viewport>
-        <SelectScrollDownButton />
-      </SelectPrimitive.Content>
-    </SelectPrimitive.Portal>
-  );
-}
-
-function SelectLabel({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Label>) {
-  return (
-    <SelectPrimitive.Label
-      data-slot="select-label"
-      className={cn("px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-3)]", className)}
-      {...props}
-    />
-  );
-}
-
-function SelectItem({ className, children, ...props }: React.ComponentProps<typeof SelectPrimitive.Item>) {
-  return (
-    <SelectPrimitive.Item
-      data-slot="select-item"
+    <UiSelectContent
       className={cn(
-        "relative flex min-h-[30px] w-full cursor-pointer items-center gap-2 rounded-[7px] py-1.5 pr-8 pl-2.5 text-[13px] text-[var(--text)] outline-hidden transition-colors select-none hover:bg-[var(--surface-2)] focus:bg-[var(--surface-2)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[state=checked]:bg-[color-mix(in_srgb,var(--acc)_8%,transparent)] data-[state=checked]:font-medium [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-[var(--text-3)] *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative z-[140] max-h-[min(320px,var(--available-height))] min-w-[max(8.5rem,var(--anchor-width))] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-1.5 text-[var(--text)] shadow-[var(--shadow-pop)] data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[closed]:animate-out data-[closed]:fade-out-0 data-[closed]:zoom-out-95 data-[open]:animate-in data-[open]:fade-in-0 data-[open]:zoom-in-95",
+        className,
+      )}
+      align={align}
+      alignItemWithTrigger={position === "item-aligned"}
+      sideOffset={sideOffset}
+      collisionPadding={collisionPadding}
+      {...props}
+    >
+      {children}
+    </UiSelectContent>
+  );
+}
+
+function SelectLabel({ className, ...props }: React.ComponentProps<typeof UiSelectGroupLabel>) {
+  return <UiSelectGroupLabel className={cn("px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-3)]", className)} {...props} />;
+}
+
+function SelectItem({
+  className,
+  children,
+  ...props
+}: Omit<React.ComponentProps<typeof UiSelectItem<string>>, "children"> & {
+  children?: React.ReactNode;
+}) {
+  return (
+    <UiSelectItem
+      className={cn(
+        "relative flex min-h-[30px] w-full cursor-pointer items-center gap-2 rounded-[7px] py-1.5 pr-8 pl-2.5 text-[13px] text-[var(--text)] outline-hidden transition-colors select-none hover:bg-[var(--surface-2)] focus:bg-[var(--surface-2)] data-[highlighted]:bg-[var(--surface-2)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[selected]:bg-[color-mix(in_srgb,var(--acc)_8%,transparent)] data-[selected]:font-medium [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-[var(--text-3)] *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className,
       )}
       {...props}
     >
-      <span data-slot="select-item-indicator" className="absolute right-2.5 flex size-3.5 items-center justify-center">
-        <SelectPrimitive.ItemIndicator>
-          <CheckIcon className="size-3.5 text-[var(--acc)]" />
-        </SelectPrimitive.ItemIndicator>
+      {children}
+      <span className="pointer-events-none absolute right-2.5 flex size-3.5 items-center justify-center">
+        <UiSelectItemIndicator>
+          <CheckIcon aria-hidden="true" className="size-3.5 text-[var(--acc)]" />
+        </UiSelectItemIndicator>
       </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    </SelectPrimitive.Item>
+    </UiSelectItem>
   );
 }
 
-function SelectSeparator({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Separator>) {
-  return (
-    <SelectPrimitive.Separator data-slot="select-separator" className={cn("pointer-events-none -mx-1 my-1 h-px bg-[var(--divider)]", className)} {...props} />
-  );
+function SelectSeparator({ className, ...props }: React.ComponentProps<typeof UiSelectSeparator>) {
+  return <UiSelectSeparator className={cn("pointer-events-none -mx-1 my-1 h-px bg-[var(--divider)]", className)} {...props} />;
 }
 
-function SelectScrollUpButton({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
-  return (
-    <SelectPrimitive.ScrollUpButton
-      data-slot="select-scroll-up-button"
-      className={cn("flex cursor-default items-center justify-center py-1 text-[var(--text-3)]", className)}
-      {...props}
-    >
-      <ChevronUpIcon className="size-3.5" />
-    </SelectPrimitive.ScrollUpButton>
-  );
+function SelectScrollUpButton() {
+  return null;
 }
 
-function SelectScrollDownButton({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
-  return (
-    <SelectPrimitive.ScrollDownButton
-      data-slot="select-scroll-down-button"
-      className={cn("flex cursor-default items-center justify-center py-1 text-[var(--text-3)]", className)}
-      {...props}
-    >
-      <ChevronDownIcon className="size-3.5" />
-    </SelectPrimitive.ScrollDownButton>
-  );
+function SelectScrollDownButton() {
+  return null;
 }
 
 const EMPTY_SENTINEL = "__dotrix_select_empty__";
@@ -207,8 +212,17 @@ function SelectField({
   const hasEmptyOption = groups.some((g) => g.options.some((o) => o.value === ""));
   const mappedValue = value === "" && hasEmptyOption ? EMPTY_SENTINEL : value;
 
+  // Providing items on Select lets SelectValue and createAgent read choices while closed.
+  const listData: ListData<string> = groups.flatMap((group) =>
+    group.options.map((option) => ({
+      value: option.value === "" ? EMPTY_SENTINEL : option.value,
+      label: option.label,
+      disabled: option.disabled,
+    })),
+  );
+
   return (
-    <Select value={mappedValue} onValueChange={(next) => onValueChange(next === EMPTY_SENTINEL ? "" : next)} disabled={disabled}>
+    <Select items={listData} value={mappedValue} onValueChange={(next) => onValueChange(next === EMPTY_SENTINEL ? "" : next)} disabled={disabled}>
       <SelectTrigger id={id} size={size} variant={variant} aria-label={ariaLabel} title={title} data-value={value} className={className} style={style}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
@@ -222,6 +236,7 @@ function SelectField({
                 <SelectItem
                   key={option.value === "" ? EMPTY_SENTINEL : option.value}
                   value={option.value === "" ? EMPTY_SENTINEL : option.value}
+                  label={option.label}
                   disabled={option.disabled}
                 >
                   {option.icon}
