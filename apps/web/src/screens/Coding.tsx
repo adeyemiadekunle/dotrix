@@ -5,10 +5,10 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 // links back to it, and still shows as a card there. Stopping, archiving, or deleting a session here leaves the
 // conversation alone, and the other way round.
 // URL: ?session=ID (a session, with &panel=, &turn=, &file=, &line=), ?new=1 (a new session, &issue=KEY), else the list.
-import { useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { APPROVAL_MODES, modelName, type ApprovalMode } from "@/lib/agent";
-import { useCodingSessions } from "@/lib/coding";
+import { useCodingSessions, type CodingRun, type CodingSession } from "@/lib/coding";
 import { approvalModes, defaultApproval } from "../core/can";
 import { Ic } from "../core/icons";
 import { useRoute } from "../core/nav";
@@ -17,6 +17,7 @@ import { isLive, live } from "../data/live";
 import { D, S, render } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { Checkpoint } from "../components/AgentTrace";
+import { SessionDetails } from "../components/SessionDetails";
 import {
   ApprovalPick,
   ComposerModel,
@@ -36,7 +37,7 @@ import {
 import { ChatComposer, ChatComposerInput, ChatLayout, ChatMessageList, ChatSendButton, CodingOptions } from "../components/chat-ui";
 
 import { buildTree, parseDiff } from "../core/kaiWork";
-import { ChangeList, CommandList, FileTree } from "../components/TurnViews";
+import { ChangeList, CommandList, FilesEmpty, FileTree } from "../components/TurnViews";
 import {
   CODE_PANE_ITEMS,
   CodePaneAside,
@@ -203,6 +204,24 @@ function DemoSession({ id }: { id: string }) {
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const closeView = (view: CodingPaneId) => setOpenViews((current) => current.filter((item) => item !== view));
   const [opened, setOpened] = useState<string | null>(null);
+  const [detailsPop, setDetailsPop] = useState(false);
+  useEffect(() => {
+    setDetailsPop(false);
+  }, [id]);
+  useEffect(() => {
+    if (!detailsPop) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setDetailsPop(false);
+    const away = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".cs-details-pop, [data-details]")) setDetailsPop(false);
+    };
+    document.addEventListener("keydown", esc);
+    document.addEventListener("mousedown", away);
+    return () => {
+      document.removeEventListener("keydown", esc);
+      document.removeEventListener("mousedown", away);
+    };
+  }, [detailsPop]);
   const turn = session ? session.turns.length - 1 : 0;
   if (!session) return <Pending text="This sample session is no longer available." back={toList()} />;
   const [statusLabel, statusColor] = STATUS[session.status];
@@ -225,7 +244,113 @@ function DemoSession({ id }: { id: string }) {
   const labels: Record<CodingView, string> = { changes: "Changes", files: "Files", terminal: "Terminal", review: "Review", browser: "Browser" };
   const showPanel = openViews.length > 0;
   const activeType = activeView ? codingPaneType(activeView) : null;
-  const openChanges = () => setOpenViews((current) => (current.includes("changes") ? current : ["changes", ...current]));
+  const openChanges = () => {
+    setDetailsPop(false);
+    setOpenViews((current) => (current.includes("changes") ? current : ["changes", ...current]));
+    setActiveView("changes");
+  };
+  const openPath = (path: string) => {
+    setDetailsPop(false);
+    setOpened(path);
+    setOpenViews((current) => (current.includes("files") ? current : [...current, "files"]));
+    setActiveView("files");
+  };
+  const detailsOn = detailsPop;
+  const toggleDetails = () => setDetailsPop((open) => !open);
+  const demoProject = D().projects.find((item) => item.id === session.project);
+  const demoIssue = D().tasks.find((item) => item.id === session.task || item.key === session.task);
+  const demoCs: CodingSession = demoCodingSessions(D()).find((item) => item.session_id === session.id) ?? {
+    session_id: session.id,
+    project_id: session.project,
+    project_key: demoProject?.key ?? "WEB",
+    project_name: demoProject?.name ?? "Workspace",
+    issue_key: demoIssue?.key ?? session.task,
+    issue_title: demoIssue?.title ?? title,
+    agent: session.tool,
+    status: session.status,
+    turns: session.turns.length,
+    branch: session.branch ?? null,
+    pr_number: session.pr?.number ?? null,
+    pr_url: session.pr?.url ?? null,
+    pr_state: session.pr?.state ?? null,
+    state: session.state ?? "idle",
+    title,
+    pinned: Boolean(session.pinned),
+    archived: Boolean(session.archived),
+    location: "cloud",
+    sandbox: "warm",
+    started_at: new Date(session.at).toISOString(),
+    updated_at: new Date(session.at).toISOString(),
+  };
+  if (!demoCs.sandbox) demoCs.sandbox = "warm";
+  const demoTurns: CodingRun[] = session.turns.map((t, index) => {
+    const demoBgEvents =
+      index === session.turns.length - 1
+        ? (session.tasks ?? []).map((bg) => ({
+            kind: `background-${bg.status === "running" ? "running" : bg.status === "done" ? "done" : bg.status === "failed" ? "failed" : "stopped"}`,
+            text: `${bg.name} · ${bg.cmd}`,
+            ref: `command:${bg.id}`,
+            at: new Date(t.at).toISOString(),
+          }))
+        : [];
+    return {
+      id: `${session.id}-turn-${index}`,
+      project_id: demoCs.project_id,
+      issue_key: demoCs.issue_key,
+      agent: session.tool,
+      model: chosenModel,
+      session_id: session.id,
+      turn: index + 1,
+      origin: index === 0 ? "start" : "follow_up",
+      status: session.status,
+      work_mode: mode,
+      brief: t.ask,
+      note: null,
+      repo_full_name: session.repo ?? "",
+      base_branch: session.base?.branch ?? "main",
+      base_sha: session.base?.sha ?? null,
+      branch: session.branch ?? null,
+      commit_sha: session.commits?.[index]?.sha ?? session.commits?.[0]?.sha ?? null,
+      pr_number: session.pr?.number ?? null,
+      pr_url: session.pr?.url ?? null,
+      pr_state: session.pr?.state ?? null,
+      files_changed: index === session.turns.length - 1 ? (session.files ?? []).map((f) => ({ ...f })) : [],
+      events: demoBgEvents,
+      event_count: (t.events?.length ?? 0) + demoBgEvents.length,
+      summary: t.summary ?? null,
+      error: null,
+      input_tokens: null,
+      output_tokens: null,
+      cost_usd: null,
+      requested_by_id: session.by,
+      decided_by_id: null,
+      decision_reason: null,
+      review_run_id: null,
+      review_thread_id: null,
+      created_at: new Date(t.at).toISOString(),
+      decided_at: null,
+      started_at: new Date(t.at).toISOString(),
+      finished_at: new Date(t.at).toISOString(),
+      can_decide: false,
+      can_stop: false,
+      approval_mode: approval,
+      can_recover: false,
+      can_revert: false,
+      location: "cloud",
+      accepts_steering: false,
+    };
+  });
+  const details = (
+    <SessionDetails
+      cs={demoCs}
+      turns={demoTurns}
+      onOpenFile={openPath}
+      onOpenChanges={openChanges}
+      onShot={() => {}}
+      shotSrc={() => ""}
+      onClose={() => setDetailsPop(false)}
+    />
+  );
   return (
     <div className="conv">
       <div className="conv-main">
@@ -239,6 +364,16 @@ function DemoSession({ id }: { id: string }) {
           {files.length > 0 && (
             <LineCounts files={files.map((file) => ({ added: file.added, removed: file.removed }))} onClick={openChanges} tip="Open changes" />
           )}
+          <ActionButton
+            className={`cs-view ${detailsOn ? "on" : ""}`}
+            data-details
+            onClick={toggleDetails}
+            aria-pressed={detailsOn}
+            aria-label="Session details"
+            data-tip={detailsOn ? undefined : "Details"}
+          >
+            <Ic n="list-bullets" s={16} />
+          </ActionButton>
           {/* Last in the bar, where the session meets the panes: shows them (Changes first) or hides them all. */}
           <button
             className={`cs-view cs-pane-toggle ${showPanel ? "on" : ""}`}
@@ -250,6 +385,11 @@ function DemoSession({ id }: { id: string }) {
             <Ic n="panel-right" s={16} />
           </button>
         </SessionHeader>
+        {detailsPop && (
+          <div className="pop cs-details-pop" role="dialog" aria-label="Session details">
+            {details}
+          </div>
+        )}
         <ChatLayout
           composer={
             <div className="chat-input">
@@ -386,33 +526,43 @@ function DemoSession({ id }: { id: string }) {
                   tabbed
                   onClose={() => closeView(activeView)}
                 >
-                  <div className="side-panel-body">
+                  <div className={`side-panel-body ${activeType === "files" ? "is-files" : ""}`}>
                     {activeType === "changes" && <ChangeList files={files} turn={{ status: session.status, turn: turn + 1 }} loading={false} />}
                     {activeType === "files" && (
-                      <>
-                        <p className="faint">
-                          Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
-                        </p>
-                        {opened ? (
-                          <>
-                            <ActionButton className="btn btn-ghost" onClick={() => setOpened(null)}>
-                              Back to the files
-                            </ActionButton>
-                            <p className="mono">{opened}</p>
-                            {files.some((file) => file.path === opened) ? (
-                              <ChangeList
-                                files={files.filter((file) => file.path === opened)}
-                                turn={{ status: session.status, turn: turn + 1 }}
-                                loading={false}
-                              />
-                            ) : (
-                              <p className="muted">This sample includes the file path; its contents were not recorded.</p>
-                            )}
-                          </>
-                        ) : (
-                          <FileTree nodes={tree.children} onOpen={setOpened} />
-                        )}
-                      </>
+                      <div className="kp-files" data-open={Boolean(opened)}>
+                        <div className="kp-files-tree">
+                          <p className="faint kp-files-repo">
+                            Sample repository: {session.repo ?? "Not recorded"} · {session.branch ?? "No branch"}
+                          </p>
+                          <FileTree nodes={tree.children} onOpen={setOpened} activePath={opened} />
+                        </div>
+                        <div className="kp-files-viewer">
+                          {opened ? (
+                            <>
+                              <div className="kp-file-bar">
+                                <ActionButton className="ibtn ibtn-sm kp-files-back" onClick={() => setOpened(null)} aria-label="Back to the files">
+                                  <Ic n="arrow-left" s={13} />
+                                </ActionButton>
+                                <Ic n="file-code" s={14} cls="kp-file-icon" />
+                                <span className="kp-crumbs mono" title={opened}>
+                                  {opened}
+                                </span>
+                              </div>
+                              {files.some((file) => file.path === opened) ? (
+                                <ChangeList
+                                  files={files.filter((file) => file.path === opened)}
+                                  turn={{ status: session.status, turn: turn + 1 }}
+                                  loading={false}
+                                />
+                              ) : (
+                                <p className="muted">This sample includes the file path; its contents were not recorded.</p>
+                              )}
+                            </>
+                          ) : (
+                            <FilesEmpty />
+                          )}
+                        </div>
+                      </div>
                     )}
                     {activeType === "terminal" && (
                       <CommandList

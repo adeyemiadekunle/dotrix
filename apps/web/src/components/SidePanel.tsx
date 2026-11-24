@@ -138,6 +138,14 @@ export function PanelFrame({
   );
 }
 
+const PANE_DESCRIPTIONS: Record<CodingView, string> = {
+  changes: "Diffs and modified files",
+  files: "Browse repository files",
+  terminal: "Command output and logs",
+  review: "Code review and checks",
+  browser: "Preview running app",
+};
+
 /** A tab strip over the panes, as a browser's: one tab per open pane (its icon, name, and a close button;
  *  a middle click closes it too), a + chooser for opening panes, and at the end, expand and close all.
  *  The arrow keys, Home and End move between tabs, as WAI-ARIA's tabs pattern has them. */
@@ -289,35 +297,45 @@ export function PaneTabs({
         </ActionButton>
       </div>
       <div className="ptabs-content">
-        <div className="ptabs-content-body" inert={adding}>
+        <div className="ptabs-content-body" hidden={adding} inert={adding}>
           {children}
         </div>
         {adding && (
-          <>
-            <span className="ptabs-chooser-veil" aria-hidden onClick={() => setAdding(false)} />
-            <section className="ptabs-chooser" id={`${idPrefix}-chooser`} aria-labelledby={`${idPrefix}-chooser-title`}>
-              <h2 id={`${idPrefix}-chooser-title`}>Open a pane</h2>
-              {items.map((candidate, index) => (
-                <ActionButton
-                  key={candidate.id}
-                  ref={index === 0 ? firstChoice : undefined}
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setAdding(false);
-                    onAdd(candidate.id);
-                    requestAnimationFrame(() => {
-                      const activeTab = strip.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
-                      activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
-                      activeTab?.focus();
-                    });
-                  }}
-                >
-                  <Ic n={candidate.icon} s={16} />
-                  {candidate.label}
-                </ActionButton>
-              ))}
-            </section>
-          </>
+          <section className="ptabs-chooser" id={`${idPrefix}-chooser`} aria-labelledby={`${idPrefix}-chooser-title`}>
+            <div className="ptabs-chooser-inner">
+              <div className="ptabs-chooser-head">
+                <h2 id={`${idPrefix}-chooser-title`}>Open a pane</h2>
+                <p>Choose a view to open in a new tab.</p>
+              </div>
+              <div className="ptabs-chooser-grid">
+                {items.map((candidate, index) => (
+                  <ActionButton
+                    key={candidate.id}
+                    ref={index === 0 ? firstChoice : undefined}
+                    className="ptabs-chooser-card"
+                    aria-label={candidate.label}
+                    onClick={() => {
+                      setAdding(false);
+                      onAdd(candidate.id);
+                      requestAnimationFrame(() => {
+                        const activeTab = strip.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+                        activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+                        activeTab?.focus();
+                      });
+                    }}
+                  >
+                    <span className="ptabs-chooser-ic" aria-hidden="true">
+                      <Ic n={candidate.icon} s={18} />
+                    </span>
+                    <span className="ptabs-chooser-copy">
+                      <span className="ptabs-chooser-label">{candidate.label}</span>
+                      <span className="ptabs-chooser-desc">{PANE_DESCRIPTIONS[candidate.id]}</span>
+                    </span>
+                  </ActionButton>
+                ))}
+              </div>
+            </div>
+          </section>
         )}
       </div>
     </>
@@ -660,7 +678,7 @@ function CodingPanel({
         )
       }
     >
-      <div className="side-panel-body">
+      <div className={`side-panel-body ${view === "files" ? "is-files" : ""}`}>
         {view === "review" ? (
           <ReviewPanel
             scope={scope}
@@ -699,7 +717,7 @@ function CodingPanel({
                 onNote={() => onView("review")}
               />
             </div>
-            <div hidden={view !== "files"}>
+            <div className="kp-files-host" hidden={view !== "files"}>
               <FilesView
                 scope={scope}
                 run={turn}

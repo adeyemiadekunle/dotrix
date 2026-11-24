@@ -1,6 +1,8 @@
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { setPref } from "@/src/core/actions";
+import { PRIVACY_URL, TERMS_URL } from "@/src/core/constants";
 import { Ic, Logo } from "@/src/core/icons";
 import { applyPrefs, effectiveDark } from "@/src/core/theme";
 
@@ -18,7 +20,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           <Logo h={22} />
         </a>
         <div className="row">
-          <button
+          <ActionButton
             className="ibtn"
             onClick={() => {
               setPref("theme", effectiveDark() ? "light" : "dark");
@@ -29,12 +31,21 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             aria-label="Toggle theme"
           >
             <Ic n={effectiveDark() ? "sun" : "moon"} s={16} />
-          </button>
+          </ActionButton>
         </div>
       </div>
-      <div className="auth-c">{children}</div>
+      <main className="auth-c">{children}</main>
       <div className="auth-foot" style={{ padding: 18, fontSize: 12 }}>
-        <span className="faint">© 2026 dotrix · Terms · Privacy</span>
+        <span className="faint">
+          © 2026 dotrix ·{" "}
+          <a href={TERMS_URL} target="_blank" rel="noreferrer">
+            Terms
+          </a>{" "}
+          ·{" "}
+          <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
+            Privacy
+          </a>
+        </span>
       </div>
     </div>
   );

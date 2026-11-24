@@ -17,7 +17,7 @@ function TreeNode({ node, selected, onSelect, depth = 0 }: { node: FileTreeNodeD
       <Collapsible defaultOpen>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="sm" className="w-full justify-start font-normal" style={style}>
-            <ChevronRightIcon className="transition-transform group-data-[state=open]/collapsible:rotate-90" />
+            <ChevronRightIcon className="transition-transform group-data-[open]/collapsible:rotate-90" />
             <FolderIcon />
             <span className="truncate">{node.name}</span>
           </Button>

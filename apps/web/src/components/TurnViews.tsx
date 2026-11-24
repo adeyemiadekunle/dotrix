@@ -432,6 +432,16 @@ function WorktreeBranch({ worktree }: { worktree: string }) {
   );
 }
 
+export function FilesEmpty() {
+  return (
+    <div className="kp-files-empty">
+      <Ic n="file-code" s={22} />
+      <b>Select a file to view</b>
+      <span>Pick any file from the tree on the left.</span>
+    </div>
+  );
+}
+
 function Files({
   scope,
   run,
@@ -451,68 +461,108 @@ function Files({
   const [open, setOpen] = useState<string | null>(initialPath ?? null);
   const [changedOnly, setChangedOnly] = useState(false);
   const root = useMemo(() => buildTree((tree.data?.entries ?? []).filter((e) => !changedOnly || e.status !== "unchanged")), [tree.data, changedOnly]);
-  if (open)
-    return (
-      <FileView
-        scope={scope}
-        run={run}
-        path={open}
-        worktree={worktree}
-        initialLine={open === initialPath ? initialLine : undefined}
-        onBack={() => setOpen(null)}
-      />
-    );
-  if (!run.base_sha) return <p className="muted">The files show once the turn starts on a commit.</p>;
-  if (tree.isLoading) return <p className="muted">Loading the files…</p>;
-  if (tree.error)
-    return (
-      <p className="muted">
-        {tree.error instanceof Error ? tree.error.message : "The files can't be read here."}{" "}
-        <button className="btn btn-sm btn-ghost" onClick={() => void tree.refetch()}>
-          Try again
-        </button>
-      </p>
-    );
   return (
-    <div>
-      {worktree && (
-        <div className="row work-file-actions">
-          <span className="faint">Live on this computer</span>
-          <span className="sp" />
-          <WorktreeButtons worktree={worktree} />
-        </div>
-      )}
-      {worktree && run.status !== "running" && run.status !== "queued" && <WorktreeBranch key={worktree} worktree={worktree} />}
-      <label className="row faint" style={{ gap: 6, fontSize: 12, marginBottom: 6 }}>
-        <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
-        Changed only ({root.changed})
-        <span className="sp" />
-        <span className="mono">{run.base_sha.slice(0, 7)}</span>
-      </label>
-      <FileTree nodes={root.children} onOpen={setOpen} expanded={changedOnly} />
-      {tree.data?.truncated && <p className="faint kp-note">Only the first 20,000 files are listed.</p>}
+    <div className="kp-files" data-open={Boolean(open)}>
+      <div className="kp-files-tree">
+        {!run.base_sha ? (
+          <p className="muted">The files show once the turn starts on a commit.</p>
+        ) : tree.isLoading ? (
+          <p className="muted">Loading the files…</p>
+        ) : tree.error ? (
+          <p className="muted">
+            {tree.error instanceof Error ? tree.error.message : "The files can't be read here."}{" "}
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void tree.refetch()}>
+              Try again
+            </button>
+          </p>
+        ) : (
+          <>
+            {worktree && (
+              <div className="row work-file-actions">
+                <span className="faint">Live on this computer</span>
+                <span className="sp" />
+                <WorktreeButtons worktree={worktree} />
+              </div>
+            )}
+            {worktree && run.status !== "running" && run.status !== "queued" && <WorktreeBranch key={worktree} worktree={worktree} />}
+            <label className="row faint" style={{ gap: 6, fontSize: 12, marginBottom: 6 }}>
+              <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />
+              Changed only ({root.changed})
+              <span className="sp" />
+              <span className="mono">{run.base_sha.slice(0, 7)}</span>
+            </label>
+            <FileTree nodes={root.children} onOpen={setOpen} expanded={changedOnly} activePath={open} />
+            {tree.data?.truncated && <p className="faint kp-note">Only the first 20,000 files are listed.</p>}
+          </>
+        )}
+      </div>
+      <div className="kp-files-viewer">
+        {open ? (
+          <FileView
+            scope={scope}
+            run={run}
+            path={open}
+            worktree={worktree}
+            initialLine={open === initialPath ? initialLine : undefined}
+            onBack={() => setOpen(null)}
+          />
+        ) : (
+          <FilesEmpty />
+        )}
+      </div>
     </div>
   );
 }
 
-export function FileTree({ nodes, onOpen, expanded = false }: { nodes: TreeNode[]; onOpen: (path: string) => void; expanded?: boolean }) {
+export function FileTree({
+  nodes,
+  onOpen,
+  expanded = false,
+  activePath = null,
+}: {
+  nodes: TreeNode[];
+  onOpen: (path: string) => void;
+  expanded?: boolean;
+  activePath?: string | null;
+}) {
   return (
     <div className="kp-tree mono" role="tree" aria-label="Files">
       {nodes.map((node) => (
-        <Node key={node.path} node={node} depth={0} onOpen={onOpen} expanded={expanded} />
+        <Node key={node.path} node={node} depth={0} onOpen={onOpen} expanded={expanded} activePath={activePath} />
       ))}
     </div>
   );
 }
 
 /** A folder opens and closes as a Collapsible (shadcn's AI Elements File Tree); changed folders start open. */
-function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number; onOpen: (path: string) => void; expanded: boolean }) {
+function Node({
+  node,
+  depth,
+  onOpen,
+  expanded,
+  activePath,
+}: {
+  node: TreeNode;
+  depth: number;
+  onOpen: (path: string) => void;
+  expanded: boolean;
+  activePath?: string | null;
+}) {
   const [open, setOpen] = useState(expanded || node.changed > 0);
   const pad = { paddingLeft: 6 + depth * 14 };
   if (node.file) {
     const st = node.file.status;
+    const active = activePath === node.path;
     return (
-      <button role="treeitem" className={`kp-node file ${st}`} style={pad} onClick={() => onOpen(node.path)} title={node.path}>
+      <button
+        type="button"
+        role="treeitem"
+        aria-current={active ? "true" : undefined}
+        className={`kp-node file ${st} ${active ? "on" : ""}`}
+        style={pad}
+        onClick={() => onOpen(node.path)}
+        title={node.path}
+      >
         <Ic n={fileIcon(node.path)} s={13} cls="kp-file-icon" />
         <span className="trunc grow">{node.name}</span>
         {st !== "unchanged" && (
@@ -533,7 +583,7 @@ function Node({ node, depth, onOpen, expanded }: { node: TreeNode; depth: number
       </CollapsibleTrigger>
       <CollapsibleContent>
         {node.children.map((c) => (
-          <Node key={c.path} node={c} depth={depth + 1} onOpen={onOpen} expanded={expanded} />
+          <Node key={c.path} node={c} depth={depth + 1} onOpen={onOpen} expanded={expanded} activePath={activePath} />
         ))}
       </CollapsibleContent>
     </Collapsible>
@@ -577,7 +627,7 @@ function FileView({
   return (
     <div className="kp-fileview">
       <div className="kp-file-bar">
-        <button className="ibtn ibtn-sm" onClick={onBack} aria-label="Back to the files">
+        <button type="button" className="ibtn ibtn-sm kp-files-back" onClick={onBack} aria-label="Back to the files">
           <Ic n="arrow-left" s={13} />
         </button>
         <Ic n={fileIcon(path)} s={14} cls="kp-file-icon" />

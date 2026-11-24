@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { Textarea as DesignTextarea } from "@dotrix/ui/components/textarea";
+import { Tabs, TabsList, TabsTab } from "@ui-sdk/react/tabs";
 
 import { allowed } from "../core/can";
 import { Ic } from "../core/icons";
@@ -116,7 +117,14 @@ function SkillRow({
               sha256:{item.sha256.slice(0, 12)} · v{item.version || item.registry_version}
             </span>
             {item.source_repo && (
-              <a className="row" style={{ gap: 3, color: "inherit", textDecoration: "underline" }} href={item.source_repo} target="_blank" rel="noreferrer">
+              <a
+                className="row"
+                style={{ gap: 3, color: "inherit", textDecoration: "underline" }}
+                href={item.source_repo}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Source for ${item.name}`}
+              >
                 Source
                 <Ic n="arrow-up-right" s={11} />
               </a>
@@ -131,11 +139,17 @@ function SkillRow({
               className={item.enabled ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm"}
               disabled={busy}
               onClick={() => void runSave(item.enabled ? "" : item.content, item.enabled ? `${item.name} disabled` : `${item.name} enabled`)}
+              aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.name}`}
             >
               {item.enabled ? "Disable" : "Enable"}
             </ActionButton>
           )}
-          <ActionButton className="btn btn-secondary btn-sm" onClick={onToggle} aria-expanded={open}>
+          <ActionButton
+            className="btn btn-secondary btn-sm"
+            onClick={onToggle}
+            aria-expanded={open}
+            aria-label={`${open ? "Close" : editable ? "Edit" : "Inspect"} ${item.name}`}
+          >
             {open ? "Close" : editable ? "Edit" : "Inspect"}
           </ActionButton>
         </div>
@@ -207,17 +221,18 @@ export function SkillsCatalog({
   return (
     <div className="page wide" style={{ maxWidth: 1020 }}>
       <div className="ph">
-        <div>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <h1>Skills</h1>
           <p>
             {enabledCount} enabled · {data.items.length} total across built-ins, reviewed bundles, and workspace skills. Skills provide procedures on demand
             without granting tool permissions.
           </p>
         </div>
-        <div className="acts">
+        <div className="acts" style={{ flexShrink: 0 }}>
           {canManage && (
             <ActionButton
               className="btn btn-primary"
+              style={{ whiteSpace: "nowrap" }}
               onClick={() =>
                 promptDlg({
                   title: "New workspace skill",
@@ -254,32 +269,46 @@ export function SkillsCatalog({
             aria-label="Search skills"
           />
         </div>
-        <div className="seg" role="tablist" aria-label="Skill trust and origin">
-          {(
-            [
-              ["all", "All"],
-              ["builtin", "Built-in"],
-              ["bundle", "Reviewed bundles"],
-              ["workspace", "Workspace"],
-            ] as const
-          ).map(([id, label]) => (
-            <button key={id} className={origin === id ? "on" : ""} onClick={() => setOrigin(id)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          value={origin}
+          onValueChange={(next) => {
+            if (next) setOrigin(next as TrustOriginFilter);
+          }}
+        >
+          <TabsList className="seg" aria-label="Skill trust and origin">
+            {(
+              [
+                ["all", "All"],
+                ["builtin", "Built-in"],
+                ["bundle", "Reviewed bundles"],
+                ["workspace", "Workspace"],
+              ] as const
+            ).map(([id, label]) => (
+              <TabsTab key={id} value={id} className={origin === id ? "on" : ""}>
+                {label}
+              </TabsTab>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
-      <div className="row" style={{ gap: 6, marginBottom: 16, flexWrap: "wrap" }} role="tablist" aria-label="Skill categories">
-        <button className={`btn btn-sm ${category === "all" ? "btn-primary" : "btn-secondary"}`} onClick={() => setCategory("all")}>
-          All ({data.items.length})
-        </button>
-        {data.categories.map((cat) => (
-          <button key={cat.id} className={`btn btn-sm ${category === cat.id ? "btn-primary" : "btn-secondary"}`} onClick={() => setCategory(cat.id)}>
-            {cat.label} ({categoryCounts.get(cat.id) ?? 0})
-          </button>
-        ))}
-      </div>
+      <Tabs
+        value={category}
+        onValueChange={(next) => {
+          if (next) setCategory(next);
+        }}
+      >
+        <TabsList className="row" style={{ gap: 6, marginBottom: 16, flexWrap: "wrap" }} aria-label="Skill categories">
+          <TabsTab value="all" className={`btn btn-sm ${category === "all" ? "btn-primary" : "btn-secondary"}`}>
+            All ({data.items.length})
+          </TabsTab>
+          {data.categories.map((cat) => (
+            <TabsTab key={cat.id} value={cat.id} className={`btn btn-sm ${category === cat.id ? "btn-primary" : "btn-secondary"}`}>
+              {cat.label} ({categoryCounts.get(cat.id) ?? 0})
+            </TabsTab>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {filtered.length ? (
         <div className="panel" style={{ overflow: "hidden" }}>

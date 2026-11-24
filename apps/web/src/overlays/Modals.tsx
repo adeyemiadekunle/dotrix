@@ -1,6 +1,7 @@
 // Modals, same markup. Each
 // open modal is an entry in S.ui.modals; its form lives on the entry.
 import { useEffect, useId, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { SelectField } from "@dotrix/ui/components/select";
 
 import { applyPatch, copy, createTask, openPop, openTask } from "../core/actions";
@@ -37,7 +38,7 @@ export function ModalLayer() {
             style={{ zIndex: 61 + i * 2 }}
             onMouseDown={(e) => e.target === e.currentTarget && closeModal()}
             onKeyDown={(e) => {
-              if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"], [data-dotrix-select-listbox]')) closeModal();
+              if (e.key === "Escape" && !document.querySelector('[data-slot="select-content"][data-open], [data-dotrix-select-listbox]')) closeModal();
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.currentTarget.querySelector("[data-submit]") as HTMLButtonElement | null)?.click();
             }}
           >
@@ -1258,9 +1259,15 @@ function ConfirmModal({ m }: { m: Modal }) {
         <button className="btn btn-secondary" onClick={closeModal} autoFocus={!needs}>
           Cancel
         </button>
-        <button className={`btn ${m.danger ? "btn-danger" : "btn-primary"}`} data-submit onClick={run} disabled={!ok}>
+        <ActionButton
+          className={`btn ${m.danger ? "btn-danger" : "btn-primary"}`}
+          data-submit
+          data-agent-confirm={m.danger ? (typeof m.title === "string" && m.title ? m.title : "Confirm destructive action") : undefined}
+          onClick={run}
+          disabled={!ok}
+        >
           {m.ok as string}
-        </button>
+        </ActionButton>
       </div>
     </>
   );

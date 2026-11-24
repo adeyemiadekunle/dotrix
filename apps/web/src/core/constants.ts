@@ -81,7 +81,12 @@ export const TYPES: { id: IssueType; name: string; icon: string; c: string }[] =
 ];
 export const TY = Object.fromEntries(TYPES.map((t) => [t.id, t])) as Record<IssueType, (typeof TYPES)[number]>;
 
+/** Public marketing & legal site base URL. */
+export const SITE_URL = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SITE_URL || "https://dotrix.cc").replace(/\/$/, "");
 /** Help & resources → Getting started: the guide on the public site. */
-export const GUIDE_URL = "https://dotrix.cc/#start";
+export const GUIDE_URL = `${SITE_URL}/#start`;
+/** Public site Terms of Service and Privacy Policy pages. */
+export const TERMS_URL = `${SITE_URL}/terms`;
+export const PRIVACY_URL = `${SITE_URL}/privacy`;
 /** Where "Report a problem" goes: the repository's issues (it's public). */
 export const ISSUES_URL = "https://github.com/adeyemiadekunle/dotrix/issues/new";

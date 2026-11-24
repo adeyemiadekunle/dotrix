@@ -338,7 +338,7 @@ export function Onboarding() {
   return (
     <Frame art={current} projectKey={project?.key ?? key} dots={dots}>
       {back && (
-        <button className="onb2-back" disabled={busy} onClick={() => move(back)}>
+        <button type="button" className="onb2-back" disabled={busy} onClick={() => move(back)}>
           <Ic n="chevron-left" s={14} />
           Back
         </button>
@@ -1042,10 +1042,10 @@ function Frame({
 }) {
   return (
     <div className="onb2">
-      <main className="onb2-main">
+      <div className="onb2-main">
         <div className={`onb2-col ${center ? "center" : ""}`}>{children}</div>
         {dots}
-      </main>
+      </div>
       <div className="onb2-art" aria-hidden>
         <Preview key={art} step={art} projectKey={projectKey} />
       </div>

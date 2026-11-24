@@ -233,8 +233,10 @@ test("the session shows Kai, never the engine underneath", async ({ page, contex
 
 test("a file in the session's details opens it in Files", async ({ page, context, baseURL }) => {
   await mockWorkspace(page, context, baseURL!, undefined, false);
-  const details = page.getByRole("complementary", { name: "Session details" });
+  await page.getByRole("button", { name: "Session details", exact: true }).click();
+  const details = page.getByRole("dialog", { name: "Session details" });
   await expect(details.getByText("Cloud")).toBeVisible();
+  await expect(details.getByRole("heading", { name: "Background tasks" })).toBeVisible();
   await details.getByRole("button", { name: `Open ${path} in Files` }).click();
   await expect(paneTab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await expect(pane(page, "Files").getByRole("button", { name: "Back to the files" })).toBeVisible();

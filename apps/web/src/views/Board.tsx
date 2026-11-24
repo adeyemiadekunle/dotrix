@@ -1,5 +1,6 @@
 // Board: a column per status, cards you drag between and
 // within them (core/dragdrop), an inline composer per column, collapsible columns.
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useState, type CSSProperties } from "react";
 
 import { openPop, openTask, toggleDone } from "../core/actions";
@@ -19,19 +20,16 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
   const sd = t.subtasks.filter((s) => s.done).length;
   const p = proj(t.project);
   return (
-    <div
+    <article
       className={`kcard ${t.status === "done" ? "done" : ""}`}
       draggable
       data-drag-card={t.id}
+      aria-label={t.title}
       onClick={() => openTask(t.id)}
       onContextMenu={(e) => {
         e.preventDefault();
         openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id, x: e.clientX, y: e.clientY });
       }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && openTask(t.id)}
-      aria-label={t.title}
     >
       {t.labels.length > 0 && (
         <div className="labels">
@@ -46,7 +44,17 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
             <StIcon st="done" />
           </span>
         )}
-        <div className="title">{t.title}</div>
+        <ActionButton
+          className="title rounded-xs border-0 bg-transparent p-0 text-left hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+          style={{ cursor: "pointer" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            openTask(t.id);
+          }}
+          aria-label={`Open ${t.key}: ${t.title}`}
+        >
+          {t.title}
+        </ActionButton>
       </div>
       {t.subtasks.length > 0 && (
         <div className="subp">
@@ -69,18 +77,22 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
           </span>
         )}
         <span className="key">{t.key}</span>
-        <button
+        <ActionButton
           className="m"
           onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "priority", { id: t.id }))}
           data-tip={PR[t.priority].name}
-          aria-label={`Priority: ${PR[t.priority].name}`}
+          aria-label={`Priority for ${t.key}: ${PR[t.priority].name}`}
         >
           <PrIcon p={t.priority} s={13} />
-        </button>
+        </ActionButton>
         {t.due && (
-          <button className="m" onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "date", { id: t.id, field: "due" }))} aria-label="Due date">
+          <ActionButton
+            className="m"
+            onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "date", { id: t.id, field: "due" }))}
+            aria-label={`Due date for ${t.key}`}
+          >
             <Due t={t} />
-          </button>
+          </ActionButton>
         )}
         {t.recur && (
           <span className="m" data-tip={`Repeats ${t.recur.toLowerCase()}`}>
@@ -99,32 +111,36 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
             {ac}
           </span>
         )}
-        <button
+        <ActionButton
           className="m"
           onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "assignee", { id: t.id }))}
           style={{ marginLeft: "auto" }}
-          aria-label="Assignee"
+          aria-label={`Assignee for ${t.key}`}
         >
           <Av id={t.assignee} cls="sm" />
-        </button>
+        </ActionButton>
       </div>
       <div className="hacts">
-        <button
+        <ActionButton
           className="ibtn ibtn-xs"
           onClick={(e) => (e.stopPropagation(), toggleDone(t.id))}
           data-tip={t.status === "done" ? "Reopen" : "Mark complete"}
-          aria-label={t.status === "done" ? "Reopen" : "Mark complete"}
+          aria-label={`${t.status === "done" ? "Reopen" : "Mark complete"} ${t.key}`}
         >
           <Ic n={t.status === "done" ? "rotate-ccw" : "check"} s={13} />
-        </button>
-        <button className="ibtn ibtn-xs" onClick={(e) => (e.stopPropagation(), editTask(t.id))} data-tip="Quick edit" aria-label="Quick edit">
+        </ActionButton>
+        <ActionButton className="ibtn ibtn-xs" onClick={(e) => (e.stopPropagation(), editTask(t.id))} data-tip="Quick edit" aria-label={`Quick edit ${t.key}`}>
           <Ic n="pencil" s={12} />
-        </button>
-        <button className="ibtn ibtn-xs" onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id }))} aria-label="More">
+        </ActionButton>
+        <ActionButton
+          className="ibtn ibtn-xs"
+          onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "ctx", { ctx: "task", id: t.id }))}
+          aria-label={`More actions for ${t.key}`}
+        >
           <Ic n="ellipsis" s={13} />
-        </button>
+        </ActionButton>
       </div>
-    </div>
+    </article>
   );
 }
 

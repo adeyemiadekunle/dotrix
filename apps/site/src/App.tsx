@@ -2,6 +2,7 @@
 // desktop app, or the CLI). Everything here is something dotrix does today.
 import {
   CommandIcon,
+  ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpRightIcon,
   LibraryBigIcon,
@@ -18,7 +19,7 @@ import {
   SquareTerminalIcon,
   AppWindowIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { APP_URL, DOWNLOADS_URL } from "./config";
 import { Face, Mark } from "./Face";
@@ -73,7 +74,8 @@ function Section({ id, children, className = "" }: { id?: string; children: Reac
   );
 }
 
-function Nav() {
+function Nav({ onHome = true }: { onHome?: boolean }) {
+  const sec = (id: string) => (onHome ? `#${id}` : `/#${id}`);
   return (
     <header className="nav">
       <div className="wrap nav-in">
@@ -82,11 +84,11 @@ function Nav() {
           <span>dotrix</span>
         </a>
         <nav className="nav-links" aria-label="Sections">
-          <a href="#team">Team</a>
-          <a href="#approvals">Approvals</a>
-          <a href="#keys">Your keys</a>
-          <a href="#start">Getting started</a>
-          <a href="#download">Download</a>
+          <a href={sec("team")}>Team</a>
+          <a href={sec("approvals")}>Approvals</a>
+          <a href={sec("keys")}>Your keys</a>
+          <a href={sec("start")}>Getting started</a>
+          <a href={sec("download")}>Download</a>
         </nav>
         <div className="nav-cta">
           <a href={SIGN_IN} className="btn btn-ghost">
@@ -436,8 +438,8 @@ const STEPS: { title: string; text: ReactNode }[] = [
     title: "Connect your model key",
     text: (
       <>
-        In <b>Account → Your models</b>, add a key from Anthropic, OpenAI or Google. It's encrypted, it's only ever used for your own runs, and your agents
-        can't run without one. Projects and tasks work without a key.
+        In <b>Account → Your models</b>, add a key from Anthropic, OpenAI, Google, or another supported provider. It's encrypted, it's only ever used for your
+        own runs, and your agents can't run without one. Projects and tasks work without a key.
       </>
     ),
   },
@@ -463,7 +465,7 @@ const STEPS: { title: string; text: ReactNode }[] = [
     title: "Stop anything",
     text: (
       <>
-        <b>Stop</b> ends a reply in Chat or a coding turn in Codes. A stopped, rejected or interrupted run shows exactly that, never a success or a pull request
+        <b>Stop</b> ends a reply in Chat or a coding turn in Code. A stopped, rejected or interrupted run shows exactly that, never a success or a pull request
         it didn't make.
       </>
     ),
@@ -500,14 +502,12 @@ function GettingStarted() {
         ))}
       </ol>
       <div className="facts">
-        {["Chat on Anthropic, OpenAI or Google", "Kai codes in a sandbox or on your computer", "Desktop app for Windows", "No team workspaces yet"].map(
-          (fact) => (
-            <span key={fact}>
-              <CheckIcon size={14} />
-              {fact}
-            </span>
-          ),
-        )}
+        {["BYOK across 9 model providers", "Kai codes in a sandbox or on your computer", "Desktop app for Windows", "No team workspaces yet"].map((fact) => (
+          <span key={fact}>
+            <CheckIcon size={14} />
+            {fact}
+          </span>
+        ))}
       </div>
     </Section>
   );
@@ -566,9 +566,9 @@ function Final() {
       <div className="final-glow" aria-hidden="true" />
       <div className="wrap reveal">
         <h2>
-          Bring your team.
+          Build with
           <br />
-          <span className="serif">Keep your keys.</span>
+          <span className="serif">your agents.</span>
         </h2>
         <p className="sub">Start with a project, connect a repository, and ask Nova where to begin.</p>
         <div className="cta-row">
@@ -581,14 +581,135 @@ function Final() {
           </a>
         </div>
         <p className="fine">
-          <LockKeyholeIcon size={13} /> Your conversations stay yours. What agents change stays visible to the team.
+          <LockKeyholeIcon size={13} /> Your conversations stay yours. Every change stays reviewable and auditable.
         </p>
       </div>
     </section>
   );
 }
 
-function Footer() {
+const LEGAL_UPDATED = "November 2026";
+const ISSUES_NEW_URL = "https://github.com/adeyemiadekunle/dotrix/issues/new";
+
+function LegalShell({ title, lead, children }: { title: string; lead: string; children: ReactNode }) {
+  return (
+    <article className="legal">
+      <div className="wrap legal-in">
+        <a href="/" className="legal-back">
+          <ArrowLeftIcon size={15} />
+          Back to dotrix
+        </a>
+        <header className="legal-head">
+          <h1>{title}</h1>
+          <p className="legal-lead">{lead}</p>
+          <p className="legal-meta">Last updated {LEGAL_UPDATED}</p>
+        </header>
+        <div className="legal-body">{children}</div>
+      </div>
+    </article>
+  );
+}
+
+function TermsPage() {
+  return (
+    <LegalShell title="Terms of Service" lead="How dotrix workspaces, connected model keys, repositories, and approval gates work when you use the service.">
+      <section>
+        <h2>1. Accounts and workspaces</h2>
+        <p>
+          You need an account to create or join a dotrix workspace. Keep your credentials secure and do not share sign-in links or API tokens. Workspace owners
+          manage workspace membership, approval caps, and repository connections for their workspace.
+        </p>
+      </section>
+      <section>
+        <h2>2. Your model keys and third-party providers</h2>
+        <p>
+          dotrix uses a Bring Your Own Key (BYOK) model. You connect your own API keys from supported model providers (such as Anthropic, OpenAI, or Google) and
+          pay those providers directly under their terms and pricing. dotrix does not resell tokens or add markup.
+        </p>
+      </section>
+      <section>
+        <h2>3. Code execution, approvals, and GitHub repositories</h2>
+        <p>
+          Coding runs only execute on repositories you connect or authorize through the dotrix GitHub App or local runner. Changes wait according to the
+          conversation&apos;s approval setting (Manual, Accept edits, or Auto), CI workflow edits remain approval-gated, and human members decide whether to
+          merge pull requests.
+        </p>
+      </section>
+      <section>
+        <h2>4. Ownership of your work</h2>
+        <p>
+          You retain all rights to your prompts, project documents, tasks, and code changes generated or reviewed inside your workspaces. You are responsible
+          for reviewing agent output before merging or shipping it to production.
+        </p>
+      </section>
+      <section>
+        <h2>5. Acceptable use and beta availability</h2>
+        <p>
+          Do not use dotrix to abuse sandboxes, bypass access controls, or automate harm against third-party services. During beta, features and platform
+          integrations evolve continuously and are provided on an as-available basis.
+        </p>
+      </section>
+      <section>
+        <h2>6. Questions or problem reports</h2>
+        <p>
+          If you spot an issue or have a question about these terms, open a public report on{" "}
+          <a href={ISSUES_NEW_URL} target="_blank" rel="noreferrer">
+            GitHub Issues
+          </a>{" "}
+          without including private keys or confidential workspace content.
+        </p>
+      </section>
+    </LegalShell>
+  );
+}
+
+function PrivacyPage() {
+  return (
+    <LegalShell title="Privacy Policy" lead="What stays private to you, how connected provider keys and code sandboxes are isolated, and what we store.">
+      <section>
+        <h2>1. Private conversations vs. shared workspace items</h2>
+        <p>
+          Your individual chat threads with Nova and coding agent transcripts remain private to your account unless you explicitly publish an outcome, document,
+          or pull request metadata to your shared project.
+        </p>
+      </section>
+      <section>
+        <h2>2. Provider API keys and credentials</h2>
+        <p>
+          Personal model API keys are encrypted at rest and never shared with other workspace members. Cloud coding sandboxes and isolated local namespaces only
+          receive strictly scoped model access needed to run your authorized turn.
+        </p>
+      </section>
+      <section>
+        <h2>3. Code and execution environments</h2>
+        <p>
+          When Kai runs in a cloud sandbox or locally through the desktop app or CLI runner, dotrix accesses only the workspace repository you selected and
+          records session summaries, changed files, commands, and audit events needed to review and recover runs.
+        </p>
+      </section>
+      <section>
+        <h2>4. Cookies and local storage</h2>
+        <p>
+          dotrix uses essential session cookies and browser storage for authentication state, theme preferences, and pane layout state. Embedded browser-pane
+          sessions keep cookies local to the desktop app settings you control.
+        </p>
+      </section>
+      <section>
+        <h2>5. Retention and control</h2>
+        <p>
+          You can remove connected API keys, disconnect GitHub installations, or delete sessions inside dotrix settings at any time. Public bug reports
+          submitted via{" "}
+          <a href={ISSUES_NEW_URL} target="_blank" rel="noreferrer">
+            GitHub Issues
+          </a>{" "}
+          are public—never paste API keys or private code into them.
+        </p>
+      </section>
+    </LegalShell>
+  );
+}
+
+function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: string }) {
   return (
     <footer className="footer">
       <div className="wrap footer-in">
@@ -601,32 +722,76 @@ function Footer() {
         <nav aria-label="Footer">
           <a href={SIGN_IN}>Sign in</a>
           <a href={SIGN_UP}>Sign up</a>
-          <a href="#start">Getting started</a>
+          <a href={onHome ? "#start" : "/#start"}>Getting started</a>
           <a href={DOWNLOADS_URL}>Download</a>
+          <a href="/terms" aria-current={route === "/terms" ? "page" : undefined}>
+            Terms
+          </a>
+          <a href="/privacy" aria-current={route === "/privacy" ? "page" : undefined}>
+            Privacy
+          </a>
         </nav>
       </div>
     </footer>
   );
 }
 
-export function App() {
+export function App({ pathname = "/" }: { pathname?: string }) {
+  const route = pathname.replace(/\/+$/, "") || "/";
+  const onHome = route === "/";
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll<HTMLElement>(".reveal"));
+    if (!els.length) return;
+    if (!("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      els.forEach((el) => el.classList.add("in"));
+      return;
+    }
+    const seen = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in");
+            seen.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.01, rootMargin: "0px 0px -4% 0px" },
+    );
+    for (const el of els) {
+      const rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight) {
+        el.classList.add("in");
+      } else {
+        seen.observe(el);
+      }
+    }
+    return () => seen.disconnect();
+  }, [route]);
   return (
     <>
-      <Nav />
+      <Nav onHome={onHome} />
       <main>
-        <Hero />
-        <Team />
-        <Approvals />
-        <Inbox />
-        <Keys />
-        <Knowledge />
-        <Board />
-        <Terminal />
-        <GettingStarted />
-        <Download />
-        <Final />
+        {route === "/terms" ? (
+          <TermsPage />
+        ) : route === "/privacy" ? (
+          <PrivacyPage />
+        ) : (
+          <>
+            <Hero />
+            <Team />
+            <Approvals />
+            <Inbox />
+            <Keys />
+            <Knowledge />
+            <Board />
+            <Terminal />
+            <GettingStarted />
+            <Download />
+            <Final />
+          </>
+        )}
       </main>
-      <Footer />
+      <Footer onHome={onHome} route={route} />
     </>
   );
 }

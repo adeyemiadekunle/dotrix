@@ -1,6 +1,8 @@
 // Projects. The workspace Overview folded into Home.
 
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { SelectField } from "@dotrix/ui/components/select";
+import { Tabs, TabsList, TabsTab } from "@ui-sdk/react/tabs";
 import { openPop } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { allowed } from "../core/can";
@@ -30,14 +32,22 @@ function ProjectCard({ p }: { p: Project }) {
   const open = ts.filter((t) => t.status !== "done").length;
   const locked = !canSee(p);
   return (
-    <div className="pcard" onClick={() => go("project", { id: p.key })} onContextMenu={ctx(p)} role="link" tabIndex={0} aria-label={p.name}>
+    <div className="pcard" onClick={() => go("project", { id: p.key })} onContextMenu={ctx(p)}>
       <div className="row">
         <PIcon p={p} />
         <div className="grow" style={{ minWidth: 0 }}>
           <div className="row" style={{ gap: 6 }}>
-            <b className="trunc" style={{ fontWeight: 600, fontSize: 14 }}>
+            <ActionButton
+              className="trunc rounded-xs border-0 bg-transparent p-0 text-left hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+              style={{ fontWeight: 600, fontSize: 14, minWidth: 0, cursor: "pointer" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                go("project", { id: p.key });
+              }}
+              aria-label={`Open project ${p.name}`}
+            >
               {p.name}
-            </b>
+            </ActionButton>
             {p.fav && (
               <span style={{ color: "var(--amber)" }}>
                 <Ic n="star" s={12} />
@@ -82,14 +92,14 @@ function ProjectCard({ p }: { p: Project }) {
         <span className="sp" />
         {!personal() && <AvStack ids={p.members} max={3} />}
       </div>
-      <button
+      <ActionButton
         className="ibtn ibtn-sm more"
         onClick={more(p)}
-        aria-label="Project options"
+        aria-label={`Project options for ${p.name}`}
         style={{ background: "var(--surface)", boxShadow: "0 0 0 1px var(--border)" }}
       >
         <Ic n="ellipsis" s={14} />
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -301,20 +311,30 @@ export function Projects() {
           ].map(([k, n]) => ({ value: k, label: `Sort: ${n}` }))}
         />
         <span className="sp" />
-        <div className="seg" role="tablist" aria-label="Layout">
-          {(
-            [
-              ["grid", "Grid", "layout-grid"],
-              ["list", "List", "list"],
-              ["table", "Table", "table-2"],
-            ] as const
-          ).map(([k, n, i]) => (
-            <button key={k} className={view === k ? "on" : ""} onClick={() => ((u.projView = k), render())} aria-label={n}>
-              <Ic n={i} s={13} />
-              <span className="hide-m">{n}</span>
-            </button>
-          ))}
-        </div>
+        <Tabs
+          value={view}
+          onValueChange={(next) => {
+            if (next) {
+              u.projView = next;
+              render();
+            }
+          }}
+        >
+          <TabsList className="seg" aria-label="Layout">
+            {(
+              [
+                ["grid", "Grid", "layout-grid"],
+                ["list", "List", "list"],
+                ["table", "Table", "table-2"],
+              ] as const
+            ).map(([k, n, i]) => (
+              <TabsTab key={k} value={k} className={view === k ? "on" : ""} aria-label={n}>
+                <Ic n={i} s={13} />
+                <span className="hide-m">{n}</span>
+              </TabsTab>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       {body}
     </div>

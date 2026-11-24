@@ -90,7 +90,7 @@ function TraceCollapsibleContent({ className, children, ...props }: Omit<React.C
   return (
     <CollapsibleContent
       data-slot="trace-collapsible-content"
-      className="min-w-0 overflow-hidden duration-200 data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up"
+      className="min-w-0 overflow-hidden duration-200 data-[open]:animate-collapsible-down data-[closed]:animate-collapsible-up"
       {...props}
     >
       <div

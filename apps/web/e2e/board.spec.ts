@@ -17,14 +17,14 @@ test("create a task, move it to In Progress, and comment on it", async ({ page }
   await expect(form).toBeHidden();
 
   // It starts in To Do, with the project's next key.
-  const card = column(page, "To Do").getByRole("button", { name: "Write the onboarding docs" });
+  const card = column(page, "To Do").getByRole("article", { name: "Write the onboarding docs" });
   await expect(card).toContainText(`${key}-1`);
-  await card.click();
+  await card.getByRole("button", { name: "Write the onboarding docs" }).click();
 
   const drawer = page.getByRole("dialog", { name: "Task: Write the onboarding docs" });
   await drawer.getByRole("button", { name: /^Status/ }).click();
   await page.getByRole("menuitemradio", { name: /In Progress/ }).click();
-  await expect(drawer.getByRole("button", { name: "Status: In Progress" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: `Status for ${key}-1: In Progress` })).toBeVisible();
 
   await drawer.getByRole("textbox", { name: "Comment" }).fill("Starting with the CLI guide.");
   // The reload below comes a moment later: wait for the comment to be saved, not only shown.
@@ -71,7 +71,7 @@ test("marking a card complete moves it to Done, and List shows the same tasks", 
   await createTask(page, workspace.id, project.id, { title: "Check the invoices" });
   await page.reload();
 
-  const card = column(page, "To Do").getByRole("button", { name: "Draft the pricing page" });
+  const card = column(page, "To Do").getByRole("article", { name: "Draft the pricing page" });
   await card.hover();
   await card.getByRole("button", { name: "Mark complete" }).click();
   await expect(column(page, "Done").getByText("Draft the pricing page")).toBeVisible();

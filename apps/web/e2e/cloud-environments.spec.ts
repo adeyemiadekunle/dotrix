@@ -19,7 +19,7 @@ test("project cloud profiles persist without running scripts and stay separate",
   await pickSelect(page, scope, projects[0].name);
   const imageSelect = page.getByLabel("Environment coding image", { exact: true });
   await imageSelect.click();
-  const imageOptions = page.getByRole("option");
+  const imageOptions = page.getByRole("listbox", { name: "Environment coding image" }).getByRole("option");
   const chosenImage = (await imageOptions.count()) > 1 ? imageOptions.nth(1) : imageOptions.first();
   const chosenImageLabel = (await chosenImage.innerText()).trim();
   await chosenImage.click();

@@ -1,5 +1,6 @@
 // An agent's proposed changes (a document diff, an issue's fields) and checkpoints (a plan to
 // continue, change, or stop), the same in Chat and the Inbox.
+import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useState } from "react";
 import { ACTION_OF, alwaysAllow, answerCheckpoint, canAlwaysAllow, decideChange, threadOf } from "../core/agents";
 import { Ic } from "../core/icons";
@@ -100,9 +101,13 @@ export function ChangeCard({ ch }: { ch: ProposedChange }) {
               <button className="btn btn-sm btn-ghost" onClick={() => setRejecting(false)}>
                 Cancel
               </button>
-              <button className="btn btn-sm btn-danger" onClick={() => decideChange(ch.id, false, reason)}>
+              <ActionButton
+                className="btn btn-sm btn-danger"
+                data-agent-confirm="Rejects the proposed agent change"
+                onClick={() => decideChange(ch.id, false, reason)}
+              >
                 Reject
-              </button>
+              </ActionButton>
             </>
           ) : (
             <>

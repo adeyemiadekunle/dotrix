@@ -2,6 +2,8 @@
 
 Read [CLAUDE.md](CLAUDE.md) before any change: it has the repo map, commands, rules, conventions, implementation status, and detailed product direction. Keep this file's summary aligned with it when those decisions change.
 
+- Before using `ui-sdk`, follow the `ui-sdk` skill if installed, and read `node_modules/@ui-sdk/react/docs/llms.txt`. To build a new component, also search `node_modules/@ui-sdk/react/docs/core.md` by heading, and read `rendering.md` next to it.
+
 ## Product direction
 
 - Serve solo developers and organisation teams through one account and personal/organisation workspaces. Support three starting intentions: Explore an idea, Start a new codebase, Connect an existing repository.
