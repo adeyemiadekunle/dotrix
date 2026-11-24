@@ -1,7 +1,13 @@
-"""Shared Linux process boundary for fx and Claude Code. The host owns model/browser access.
+"""Shared OS process boundary for fx and Claude Code. The host owns model/browser access.
+
+- Linux: Bubblewrap (`bwrap`) with user/network/PID/mount namespaces and a Unix-socket relay.
+- macOS: Seatbelt (`sandbox-exec`) denying default filesystem/network access outside the
+  worktree, private profile, and Unix-socket / loopback relay.
+- Windows: zero-capability AppContainer + Job Object (`win_sandbox.py`) with an inherited
+  pipe relay.
 
 No broad proxy, host filesystem mount, credential-bearing engine environment, or
-unconfined fallback. Other operating systems remain unavailable.
+unconfined fallback. Unsupported or unverifiable hosts fail closed.
 """
 from __future__ import annotations
 
@@ -22,6 +28,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from . import win_sandbox
+
 FRAME_LIMIT = 24 * 1024 * 1024
 SAFE_HEADERS = {'accept', 'content-type', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id', 'anthropic-version', 'anthropic-beta'}
 
@@ -35,8 +43,8 @@ def filesystem_args() -> list[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def available() -> bool:
-    if sys.platform != 'linux' or not shutil.which('bwrap') or (not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file()):
+def _linux_available() -> bool:
+    if not shutil.which('bwrap') or (not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file()):
         return False
     try:
         result = subprocess.run(['bwrap', *filesystem_args(), '--', '/bin/true'],
@@ -46,19 +54,192 @@ def available() -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=1)
+def _macos_available() -> bool:
+    if not Path('/usr/bin/sandbox-exec').is_file() or not Path('/bin/bash').is_file():
+        return False
+    try:
+        result = subprocess.run(
+            ['/usr/bin/sandbox-exec', '-p', '(version 1)(allow default)', '/usr/bin/true'],
+            capture_output=True, timeout=10,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+@functools.lru_cache(maxsize=1)
+def _windows_available() -> bool:
+    return win_sandbox.available()
+
+
+@functools.lru_cache(maxsize=1)
+def available() -> bool:
+    if sys.platform == 'linux':
+        return _linux_available()
+    if sys.platform == 'darwin':
+        return _macos_available()
+    if sys.platform == 'win32':
+        return _windows_available()
+    return False
+
+
+def _sbpl_quote(path: Path | str) -> str:
+    text = str(path)
+    if any(ch in text for ch in ('"', '\\', '\n', '\r', '\0')):
+        raise ValueError(f'Path cannot be represented safely in macOS Seatbelt profile: {text!r}')
+    return f'"{text}"'
+
+
+def _parent_git_dir(root: Path) -> Path | None:
+    dot_git = root / '.git'
+    if not dot_git.is_file():
+        return None
+    try:
+        content = dot_git.read_text(encoding='utf-8').strip()
+    except OSError:
+        return None
+    if not content.startswith('gitdir:'):
+        return None
+    raw = content.partition(':')[2].strip()
+    if not raw:
+        return None
+    target = (root / raw).resolve()
+    # A worktree's gitdir is <repo>/.git/worktrees/<name>; block the whole parent .git dir.
+    if target.parent.name == 'worktrees' and target.parent.parent.name == '.git':
+        return target.parent.parent
+    return target
+
+
+def macos_sandbox_profile(
+    root: Path,
+    profile: Path,
+    temp_dir: Path,
+    relay_sock: Path,
+    binary: Path,
+    helper: Path,
+    python_exe: Path | None = None,
+    real_home: Path | None = None,
+) -> str:
+    """Build a fail-closed macOS Seatbelt (SBPL) profile for a native coding session.
+
+    In SBPL, the last matching rule wins: we deny default, allow system read roots,
+    explicitly deny the user's real $HOME and any parent repository .git directory, then
+    re-allow read/write strictly on the worktree, private profile, and relay temp dir.
+    """
+    resolved_root = root.resolve()
+    resolved_profile = profile.resolve()
+    resolved_temp = temp_dir.resolve()
+    resolved_sock = relay_sock.resolve()
+    resolved_binary = binary.resolve()
+    resolved_helper = helper.resolve()
+    resolved_python = (python_exe or Path(sys.executable)).resolve()
+    home_dir = (real_home or Path.home()).resolve()
+
+    system_read_roots = [
+        '/usr', '/bin', '/sbin', '/Library', '/System', '/private/var/db',
+        '/private/etc', '/etc', '/private/preboot', '/dev', '/opt/homebrew', '/usr/local',
+    ]
+    extra_read_roots = list(dict.fromkeys([
+        str(Path(sys.base_prefix).resolve()),
+        str(Path(sys.prefix).resolve()),
+        str(resolved_python.parent),
+        str(resolved_binary.parent),
+        str(resolved_helper.parent),
+    ]))
+
+    lines = [
+        '(version 1)',
+        '(deny default)',
+        '(allow process-exec process-fork signal sysctl-read mach-lookup)',
+        '(allow file-read-metadata file-map-executable)',
+        '(allow file-read* (literal "/"))',
+    ]
+    for entry in system_read_roots:
+        lines.append(f'(allow file-read* (subpath {_sbpl_quote(entry)}))')
+
+    # Never expose host credentials or personal config under the user's real home directory.
+    lines.append(f'(deny file-read* (subpath {_sbpl_quote(home_dir)}))')
+
+    # Allow the Python runtime, helper, and coding binary even when installed under $HOME (e.g. uv/venv).
+    for entry in extra_read_roots:
+        lines.append(f'(allow file-read* (subpath {_sbpl_quote(entry)}))')
+
+    # Hide any parent checkout's .git directory referenced by a worktree gitfile.
+    parent_git = _parent_git_dir(resolved_root)
+    if parent_git is not None:
+        lines.append(f'(deny file-read* (subpath {_sbpl_quote(parent_git)}))')
+
+    # Allow read and write strictly inside the worktree, private profile, and relay temp folder.
+    for rw in (resolved_root, resolved_profile, resolved_temp):
+        q = _sbpl_quote(rw)
+        lines.append(f'(allow file-read* (subpath {q}))')
+        lines.append(f'(allow file-write* (subpath {q}))')
+
+    lines.extend([
+        f'(allow file-read* (literal {_sbpl_quote(resolved_binary)}) (literal {_sbpl_quote(resolved_helper)}))',
+        '(allow file-write* (literal "/dev/null") (literal "/dev/tty") (literal "/dev/dtracehelper"))',
+        # Network: allow ONLY the private relay Unix socket and loopback HTTP for fx <-> bridge.
+        f'(allow network-outbound (remote unix-socket (path-literal {_sbpl_quote(resolved_sock)})))',
+        '(allow network-bind (local ip "localhost:*"))',
+        '(allow network-inbound (local ip "localhost:*"))',
+        '(allow network-outbound (remote ip "localhost:*"))',
+    ])
+    return '\n'.join(lines) + '\n'
+
+
 class Relay:
-    def __init__(self, channel: socket.socket, model_url: str, key: str, model: str, browser: dict | None, protocol: str = 'openai'):
+    def __init__(
+        self,
+        channel: socket.socket | None,
+        model_url: str,
+        key: str,
+        model: str,
+        browser: dict | None,
+        protocol: str = 'openai',
+        *,
+        pipe_fds: tuple[int, int] | None = None,
+    ):
         self.channel, self.model_url, self.key, self.model, self.browser = channel, model_url, key, model, browser
+        self.pipe_fds = pipe_fds
         self.lock = asyncio.Lock()
         self.protocol = protocol
         self.work: set[asyncio.Task] = set()
 
     async def send(self, value):
         encoded = json.dumps(value).encode()
+        frame = struct.pack('!I', len(encoded)) + encoded
         async with self.lock:
-            await asyncio.get_running_loop().sock_sendall(self.channel, struct.pack('!I', len(encoded)) + encoded)
+            if self.pipe_fds is not None:
+                _, write_fd = self.pipe_fds
+                await asyncio.to_thread(self._write_fd_all, write_fd, frame)
+            else:
+                await asyncio.get_running_loop().sock_sendall(self.channel, frame)
+
+    @staticmethod
+    def _write_fd_all(fd: int, data: bytes) -> None:
+        view = memoryview(data)
+        total = 0
+        while total < len(data):
+            written = os.write(fd, view[total:])
+            if written <= 0:
+                raise OSError('Short write on relay pipe')
+            total += written
+
+    @staticmethod
+    def _read_fd_exact(fd: int, size: int) -> bytes:
+        output = bytearray()
+        while len(output) < size:
+            chunk = os.read(fd, size - len(output))
+            if not chunk:
+                raise EOFError()
+            output.extend(chunk)
+        return bytes(output)
 
     async def receive(self, size):
+        if self.pipe_fds is not None:
+            read_fd, _ = self.pipe_fds
+            return await asyncio.to_thread(self._read_fd_exact, read_fd, size)
         output = bytearray()
         while len(output) < size:
             data = await asyncio.get_running_loop().sock_recv(self.channel, size - len(output))
@@ -91,7 +272,7 @@ class Relay:
     def completed(self, task):
         self.work.discard(task)
         if not task.cancelled():
-            task.exception()  # A disconnected namespace must not log request contents.
+            task.exception()  # A disconnected sandbox must not log request contents.
 
     async def forward(self, client, request):
         identity = request['id']
@@ -145,7 +326,7 @@ def connection(profile: Path, environ: dict[str, str]):
             or (address.scheme != 'https' and not (address.scheme == 'http' and address.hostname in ('127.0.0.1', 'localhost')))):
         raise ValueError('Native execution requires a custom Chat Completions API-key connection; use cloud coding for other sign-ins')
     target = configured['base_url']
-    # The namespace receives neither other provider settings nor saved OAuth credentials.
+    # The sandbox receives neither other provider settings nor saved OAuth credentials.
     for name in ('auth.json', 'chatgpt-auth.json', 'grok-auth.json', 'api-key'):
         (profile / '.fx' / name).unlink(missing_ok=True)
     settings['providers'] = {provider: {'protocol': 'openai-chat-completions', 'base_url': 'http://127.0.0.1:0/model',
@@ -159,18 +340,20 @@ def connection(profile: Path, environ: dict[str, str]):
     return target, key, model
 
 
-@asynccontextmanager
-async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *, anthropic: tuple[str, str, str] | None = None):
-    if not available():
-        raise ValueError('Native isolation is unavailable: Linux Bubblewrap with working user/network namespaces is required')
-    target, key, model = anthropic if anthropic else connection(profile, dict(os.environ))
-    expected_version = '2.1.296' if anthropic else '0.0.17'
+def _validate_browser(browser: dict | None) -> None:
     if browser:
         url = urlsplit(browser['url'])
         if url.scheme != 'http' or url.hostname not in ('127.0.0.1', 'localhost') or url.username or url.password:
             raise ValueError('The desktop browser must use its authenticated loopback connection')
-    temporary = tempfile.TemporaryDirectory(prefix="dotrix-fx-relay-")
-    address = str(Path(temporary.name) / "relay.sock")
+
+
+@asynccontextmanager
+async def _launch_linux(
+    profile: Path, binary: str, root: Path, browser: dict | None,
+    target: str, key: str, model: str, expected_version: str, anthropic: bool,
+):
+    temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
+    address = str(Path(temporary.name) / 'relay.sock')
     passwd = Path(temporary.name) / 'passwd'
     group = Path(temporary.name) / 'group'
     passwd.write_text(f'dotrix:x:{os.getuid()}:{os.getgid()}:Dotrix:{profile}:/bin/bash\n')
@@ -235,3 +418,180 @@ async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *
         if task:
             await asyncio.gather(task, return_exceptions=True)
         temporary.cleanup()
+
+
+@asynccontextmanager
+async def _launch_macos(
+    profile: Path, binary: str, root: Path, browser: dict | None,
+    target: str, key: str, model: str, expected_version: str, anthropic: bool,
+):
+    temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
+    temp_path = Path(temporary.name)
+    address = temp_path / 'relay.sock'
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(address))
+    os.chmod(address, 0o600)
+    listener.listen(1)
+    listener.setblocking(False)
+    parent = task = None
+    helper = Path(__file__).with_name('fx_bridge.py').resolve()
+    binary_path = Path(binary).resolve()
+    sbpl_path = temp_path / 'sandbox.sb'
+    sbpl_path.write_text(
+        macos_sandbox_profile(root, profile, temp_path, address, binary_path, helper),
+        encoding='utf-8',
+    )
+    env = {
+        'SHELL': '/bin/bash',
+        'PATH': '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+        'HOME': str(profile),
+        'TMPDIR': str(temp_path),
+        'FX_HOME': str(profile / '.fx'),
+        'LANG': 'C.UTF-8',
+        'NO_COLOR': '1',
+        'FX_AUTO_UPGRADE': '0',
+        'FX_PROJECT_CONFIG': '0',
+        'FX_DISABLE_KEYCHAIN': '1',
+        'FX_NO_OPEN_BROWSER': '1',
+        'GIT_CONFIG_SYSTEM': '/dev/null',
+        'GIT_CONFIG_GLOBAL': '/dev/null',
+        'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder',
+    }
+    if (root / '.git').exists():
+        metadata = profile / '.sandbox-git'
+        metadata.mkdir(mode=0o700, exist_ok=True)
+        env['DOTRIX_SANDBOX_GIT_DIR'] = str(metadata)
+        env['GIT_DIR'] = str(metadata)
+        env['GIT_WORK_TREE'] = str(root.resolve())
+
+    argv = [
+        '/usr/bin/sandbox-exec', '-f', str(sbpl_path),
+        sys.executable, str(helper), str(address), str(profile), str(binary_path),
+    ]
+    if anthropic:
+        argv.append('claude')
+    process = None
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *argv, cwd=str(root), env=env,
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=None,
+            limit=16 * 1024 * 1024,
+        )
+        parent, _ = await asyncio.wait_for(asyncio.get_running_loop().sock_accept(listener), 10)
+        listener.close()
+        parent.setblocking(False)
+        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai')
+        task = asyncio.create_task(relay.run())
+        line = await asyncio.wait_for(process.stdout.readline(), 20)
+        ready = json.loads(line)
+        if not ready.get('bridge_ready') or ready.get('version') != expected_version:
+            raise ValueError('The native isolation helper did not start')
+        yield process, ready['port']
+    finally:
+        listener.close()
+        if process and process.returncode is None:
+            process.kill()
+        if process:
+            await process.wait()
+        if task:
+            task.cancel()
+        if parent:
+            parent.close()
+        if task:
+            await asyncio.gather(task, return_exceptions=True)
+        temporary.cleanup()
+
+
+@asynccontextmanager
+async def _launch_windows(
+    profile: Path, binary: str, root: Path, browser: dict | None,
+    target: str, key: str, model: str, expected_version: str, anthropic: bool,
+):
+    temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
+    temp_path = Path(temporary.name)
+    helper = Path(__file__).with_name('fx_bridge.py').resolve()
+    binary_path = Path(binary).resolve()
+    system_root = os.environ.get('SystemRoot', r'C:\Windows')
+    env = {
+        'SystemRoot': system_root,
+        'COMSPEC': os.environ.get('COMSPEC', os.path.join(system_root, 'System32', 'cmd.exe')),
+        'PATH': f"{Path(sys.executable).resolve().parent};{os.path.join(system_root, 'System32')};{system_root}",
+        'HOME': str(profile),
+        'USERPROFILE': str(profile),
+        'TEMP': str(temp_path),
+        'TMP': str(temp_path),
+        'FX_HOME': str(profile / '.fx'),
+        'NO_COLOR': '1',
+        'FX_AUTO_UPGRADE': '0',
+        'FX_PROJECT_CONFIG': '0',
+        'FX_DISABLE_KEYCHAIN': '1',
+        'FX_NO_OPEN_BROWSER': '1',
+        'GIT_CONFIG_SYSTEM': os.devnull,
+        'GIT_CONFIG_GLOBAL': os.devnull,
+        'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder',
+    }
+    if (root / '.git').exists():
+        metadata = profile / '.sandbox-git'
+        metadata.mkdir(exist_ok=True)
+        env['DOTRIX_SANDBOX_GIT_DIR'] = str(metadata)
+        env['GIT_DIR'] = str(metadata)
+        env['GIT_WORK_TREE'] = str(root.resolve())
+
+    process = None
+    task = None
+    try:
+        process = win_sandbox.launch_appcontainer(
+            python_exe=sys.executable,
+            helper=helper,
+            profile=profile,
+            binary=binary_path,
+            root=root,
+            temp_dir=temp_path,
+            env=env,
+            extra_args=['claude'] if anthropic else None,
+        )
+        relay = Relay(
+            None, target, key, model, browser,
+            protocol='anthropic' if anthropic else 'openai',
+            pipe_fds=(process.relay_read_fd, process.relay_write_fd),
+        )
+        task = asyncio.create_task(relay.run())
+        line = await asyncio.wait_for(process.stdout.readline(), 20)
+        ready = json.loads(line)
+        if not ready.get('bridge_ready') or ready.get('version') != expected_version:
+            raise ValueError('The native isolation helper did not start')
+        yield process, ready['port']
+    finally:
+        if process and process.returncode is None:
+            process.kill()
+        if process:
+            await process.wait()
+        if task:
+            task.cancel()
+        if process:
+            process.cleanup()
+        if task:
+            await asyncio.gather(task, return_exceptions=True)
+        temporary.cleanup()
+
+
+@asynccontextmanager
+async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *, anthropic: tuple[str, str, str] | None = None):
+    if not available():
+        raise ValueError(
+            'Native isolation is unavailable: Linux Bubblewrap, macOS Seatbelt (sandbox-exec), '
+            'or Windows AppContainer is required'
+        )
+    target, key, model = anthropic if anthropic else connection(profile, dict(os.environ))
+    expected_version = '2.1.296' if anthropic else '0.0.17'
+    _validate_browser(browser)
+    if sys.platform == 'linux':
+        launcher = _launch_linux
+    elif sys.platform == 'darwin':
+        launcher = _launch_macos
+    elif sys.platform == 'win32':
+        launcher = _launch_windows
+    else:
+        raise ValueError('Native isolation is unavailable on this operating system')
+    async with launcher(profile, binary, root, browser, target, key, model, expected_version, bool(anthropic)) as result:
+        yield result

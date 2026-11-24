@@ -144,6 +144,18 @@ jobs:
           echo "$out"
           echo "$out" | grep -q "Not signed in"
 
+  cli-windows:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install Python packages
+        run: uv sync --locked
+      - name: Run CLI native sandbox and worktree tests on Windows
+        run: uv run pytest apps/cli/tests/test_fx_native.py apps/cli/tests/test_runner.py -q
+
   node:
     needs: changes
     if: needs.changes.outputs.node == 'true' || needs.changes.outputs.contract == 'true'

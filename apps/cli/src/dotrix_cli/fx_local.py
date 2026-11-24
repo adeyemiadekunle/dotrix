@@ -22,8 +22,8 @@ from typing import Any
 # The kernel boundary, not fx's wildcard permission rules, protects native work.
 # fx_native.available() refuses unsupported hosts; there is no unconfined fallback.
 NATIVE_FX_POLICY_VALIDATED = True
-NATIVE_FX_REFUSAL = ("Local execution requires Linux Bubblewrap with working user/network namespaces and the tested coding runtime. "
-                     "Use cloud coding or another local runtime on this computer.")
+NATIVE_FX_REFUSAL = ("Local execution requires OS sandbox isolation (Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer) "
+                     "and the tested coding runtime. Use cloud coding or another local runtime on this computer.")
 
 AUTH_FILES = ("auth.json", "chatgpt-auth.json", "grok-auth.json", "api-key")
 # Kai's contract ends every brief under this heading (the backend's coding/brief.py, CONTRACT_HEADING). fx takes it

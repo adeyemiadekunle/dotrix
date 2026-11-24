@@ -138,4 +138,4 @@ async def test_native_fx_is_refused_before_any_engine_or_model_process(monkeypat
     monkeypatch.setattr("asyncio.create_subprocess_exec", forbidden)
     assert await run(tmp_path / "not-created") == 1
     output = capsys.readouterr().out
-    assert "requires Linux Bubblewrap" in output and "Use cloud coding" in output
+    assert "Linux Bubblewrap" in output and "macOS Seatbelt" in output and "Use cloud coding" in output
