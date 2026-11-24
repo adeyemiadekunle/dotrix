@@ -25,7 +25,7 @@ import {
   TerminalIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { APP_URL, DOWNLOADS_URL } from "./config";
 import { Face, Mark } from "./Face";
@@ -80,34 +80,132 @@ const SHOWCASE_TABS = [
   },
 ] as const;
 
-// Deterministic angled micro-dash particle field inspired by weightless orbital motion,
-// tinted with dotrix's 7-agent spectrum.
-const HERO_PARTICLES: { x: number; y: number; r: number; len: number; c: string; o: number }[] = [
-  { x: 64, y: 74, r: -38, len: 10, c: "#3B82C4", o: 0.72 },
-  { x: 118, y: 128, r: -30, len: 8, c: "#5AA9D6", o: 0.65 },
-  { x: 174, y: 58, r: -44, len: 11, c: "#3D8B5C", o: 0.7 },
-  { x: 222, y: 162, r: -26, len: 9, c: "#5C95C4", o: 0.55 },
-  { x: 268, y: 94, r: -35, len: 7, c: "#3B82C4", o: 0.62 },
-  { x: 318, y: 212, r: -22, len: 8, c: "#8C6FD6", o: 0.5 },
-  { x: 364, y: 66, r: -18, len: 10, c: "#5AA9D6", o: 0.58 },
-  { x: 422, y: 146, r: -14, len: 7, c: "#8C6FD6", o: 0.45 },
-  { x: 486, y: 84, r: -8, len: 9, c: "#3D9E6A", o: 0.52 },
-  { x: 548, y: 42, r: -4, len: 7, c: "#3B82C4", o: 0.44 },
-  { x: 632, y: 54, r: 6, len: 8, c: "#D0628B", o: 0.56 },
-  { x: 696, y: 104, r: 12, len: 9, c: "#E0A92E", o: 0.62 },
-  { x: 758, y: 62, r: 18, len: 10, c: "#D0628B", o: 0.68 },
-  { x: 814, y: 148, r: 24, len: 8, c: "#E0A92E", o: 0.6 },
-  { x: 874, y: 88, r: 30, len: 11, c: "#3D9E6A", o: 0.58 },
-  { x: 928, y: 196, r: 36, len: 8, c: "#E0A92E", o: 0.52 },
-  { x: 988, y: 74, r: 42, len: 10, c: "#8C6FD6", o: 0.65 },
-  { x: 1042, y: 142, r: 34, len: 9, c: "#D0628B", o: 0.58 },
-  { x: 1112, y: 82, r: 46, len: 11, c: "#5AA9D6", o: 0.68 },
-  { x: 1168, y: 168, r: 38, len: 8, c: "#3D8B5C", o: 0.6 },
-  { x: 142, y: 268, r: -18, len: 7, c: "#3B82C4", o: 0.34 },
-  { x: 248, y: 312, r: -12, len: 6, c: "#3D9E6A", o: 0.3 },
-  { x: 964, y: 294, r: 22, len: 7, c: "#E0A92E", o: 0.35 },
-  { x: 1084, y: 256, r: 28, len: 7, c: "#D0628B", o: 0.36 },
-];
+const PARTICLE_COLORS = ["#3D8B5C", "#3B82C4", "#5AA9D6", "#8C6FD6", "#D0628B", "#E0A92E", "#5C95C4"];
+
+function HeroParticles() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let raf = 0;
+    let width = 0;
+    let height = 0;
+    const pointer = { x: -9999, y: -9999, active: false };
+
+    // Deterministic seeded particles so initial composition is balanced and airy
+    const count = 52;
+    const particles = Array.from({ length: count }, (_, i) => {
+      const t = (i + 0.5) / count;
+      const angle = (t - 0.5) * Math.PI * 1.15;
+      const ring = 0.24 + ((i * 37) % 100) / 145;
+      return {
+        bx: 0.5 + Math.sin(angle) * ring * 0.92,
+        by: 0.14 + Math.cos(angle * 0.85) * ring * 0.56 + ((i * 19) % 100) / 380,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        len: 7 + (i % 5) * 1.4,
+        phase: i * 0.73,
+        speed: 0.38 + (i % 6) * 0.08,
+        driftX: 10 + (i % 4) * 5,
+        driftY: 6 + (i % 3) * 4,
+        color: PARTICLE_COLORS[i % PARTICLE_COLORS.length]!,
+        alpha: 0.34 + (i % 5) * 0.09,
+        baseRot: angle * 0.85,
+      };
+    });
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = rect.width;
+      height = rect.height;
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      for (const p of particles) {
+        if (!p.x && !p.y) {
+          p.x = p.bx * width;
+          p.y = p.by * height;
+        }
+      }
+    };
+
+    const onMove = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = e.clientX - rect.left;
+      pointer.y = e.clientY - rect.top;
+      pointer.active = pointer.y >= 0 && pointer.y <= rect.height;
+    };
+    const onLeave = () => {
+      pointer.active = false;
+    };
+
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerleave", onLeave);
+
+    const draw = (now: number) => {
+      const sec = now * 0.001;
+      ctx.clearRect(0, 0, width, height);
+
+      for (const p of particles) {
+        const tx = p.bx * width + Math.sin(sec * p.speed + p.phase) * p.driftX;
+        const ty = p.by * height + Math.cos(sec * p.speed * 0.8 + p.phase) * p.driftY;
+
+        if (pointer.active && !reduced) {
+          const dx = p.x - pointer.x;
+          const dy = p.y - pointer.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 150 && dist > 1) {
+            const force = ((150 - dist) / 150) * 1.45;
+            p.vx += (dx / dist) * force;
+            p.vy += (dy / dist) * force;
+          }
+        }
+
+        p.vx += (tx - p.x) * 0.045;
+        p.vy += (ty - p.y) * 0.045;
+        p.vx *= 0.86;
+        p.vy *= 0.86;
+        p.x = reduced ? tx : p.x + p.vx;
+        p.y = reduced ? ty : p.y + p.vy;
+
+        const rot = p.baseRot + Math.sin(sec * 0.6 + p.phase) * 0.14;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(rot);
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.roundRect(-p.len / 2, -1.35, p.len, 2.7, 1.35);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (!reduced) {
+        raf = window.requestAnimationFrame(draw);
+      }
+    };
+
+    draw(0);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerleave", onLeave);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="hero-particles" aria-hidden="true" />;
+}
 
 const ORBIT_ICONS = [
   { key: "chat", node: <MessageCircleMoreIcon size={20} />, offset: 0 },
@@ -233,16 +331,6 @@ function AnnouncementBar({ onHome = true }: { onHome?: boolean }) {
   );
 }
 
-function HeroParticles() {
-  return (
-    <svg className="hero-particles" viewBox="0 0 1240 380" fill="none" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
-      {HERO_PARTICLES.map((p, i) => (
-        <rect key={i} x={p.x} y={p.y} width={p.len} height={2.6} rx={1.3} fill={p.c} fillOpacity={p.o} transform={`rotate(${p.r} ${p.x} ${p.y})`} />
-      ))}
-    </svg>
-  );
-}
-
 function Hero() {
   const [activeTab, setActiveTab] = useState<(typeof SHOWCASE_TABS)[number]["id"]>("home");
   const current = SHOWCASE_TABS.find((t) => t.id === activeTab) ?? SHOWCASE_TABS[0];
@@ -251,32 +339,34 @@ function Hero() {
     <section className="hero">
       <HeroParticles />
       <div className="wrap hero-in">
-        <div className="hero-lockup">
+        <div className="hero-lockup hero-anim" style={{ ["--d" as string]: "0ms" }}>
           <Mark size={20} />
           <span>dotrix</span>
         </div>
-        <h1>
+        <h1 className="hero-anim" style={{ ["--d" as string]: "70ms" }}>
           Plan, build and ship
           <br />
           <span className="serif">with a team of agents</span>
         </h1>
-        <p className="lead">
+        <p className="lead hero-anim" style={{ ["--d" as string]: "140ms" }}>
           Nova and five specialists plan, research and review with you. Kai writes the code and opens the pull request. Nothing changes without your approval.
         </p>
-        <div className="cta-row">
+        <div className="cta-row hero-anim" style={{ ["--d" as string]: "210ms" }}>
           <a href={SIGN_UP} className="btn btn-ink btn-lg">
             Open dotrix
-            <ArrowUpRightIcon size={16} />
+            <ArrowUpRightIcon size={16} className="ic-diag" />
           </a>
           <a href={DOWNLOADS_URL} className="btn btn-soft btn-lg">
             <AppWindowIcon size={16} />
             Download for Windows
           </a>
         </div>
-        <p className="fine">Bring your own model keys · macOS and Linux soon</p>
+        <p className="fine hero-anim" style={{ ["--d" as string]: "270ms" }}>
+          Bring your own model keys · macOS and Linux soon
+        </p>
       </div>
 
-      <div className="wrap hero-stage-wrap">
+      <div className="wrap hero-stage-wrap hero-anim" style={{ ["--d" as string]: "320ms" }}>
         <div className="hero-stage">
           <div className="stage-glow" aria-hidden="true" />
           <div className="stage-top">
@@ -294,9 +384,11 @@ function Hero() {
                 </button>
               ))}
             </div>
-            <span className="stage-caption">{current.caption}</span>
+            <span key={current.id} className="stage-caption stage-caption-in">
+              {current.caption}
+            </span>
           </div>
-          <div className="stage-frame shot-desktop">
+          <div key={current.id} className="stage-frame shot-desktop stage-panel">
             <Window src={current.src} alt={current.alt} eager />
           </div>
           <div className="shot-phone">
@@ -313,8 +405,8 @@ function Mission() {
     <section className="mission">
       <div className="wrap reveal">
         <div className="orbit-strip" aria-hidden="true">
-          {ORBIT_ICONS.map((item) => (
-            <span key={item.key} className="orbit-badge" style={{ ["--dy" as string]: `${item.offset}px` }}>
+          {ORBIT_ICONS.map((item, i) => (
+            <span key={item.key} className="orbit-badge" style={{ ["--dy" as string]: `${item.offset}px`, ["--i" as string]: i }}>
               {item.node}
             </span>
           ))}
@@ -337,8 +429,8 @@ function Team() {
         <p className="sub">You talk to Nova. Nova brings in the specialist the work needs, and Kai takes the build when you ask for one.</p>
       </div>
       <div className="team">
-        {TEAM.map((agent) => (
-          <article key={agent.name} className="agent" style={{ ["--c" as string]: agent.c }}>
+        {TEAM.map((agent, i) => (
+          <article key={agent.name} className="agent stagger-item" style={{ ["--c" as string]: agent.c, ["--i" as string]: i }}>
             <div className="agent-top">
               <Face c={agent.c} size={42} />
               <span className="agent-role">{agent.role}</span>
@@ -367,7 +459,10 @@ function ApprovalCard() {
         <div>
           <b>Kai</b> <span className="mock-muted">· WEB-139 Build hero component</span>
         </div>
-        <span className="badge">Changes ready</span>
+        <span className="badge">
+          <i className="badge-dot" aria-hidden="true" />
+          Changes ready
+        </span>
       </div>
       <div className="mock-branch mono">dotrix/web-139-build-hero → main · 3 files · checks passed</div>
       <div className="mock-files">
@@ -560,18 +655,30 @@ function Terminal() {
               <span className="mono">~/acme-web</span>
             </div>
             <pre className="mono">
-              <span className="p">$</span> dotrix login{"\n"}
-              <span className="ok">✓</span> <span className="term-dim">Signed in as tanjim@acme.dev</span>
-              {"\n"}
-              <span className="p">$</span> dotrix link{"\n"}
-              <span className="ok">✓</span> <span className="term-dim">Linked to Website Redesign (WEB)</span>
-              {"\n"}
-              <span className="p">$</span> dotrix code WEB-139{"\n"}
-              <span className="term-dim">▲ Kai is coding on this computer…</span>
-              {"\n"}
-              <span className="ok">✓</span> <span className="term-dim">3 files changed · changes ready to accept</span>
-              {"\n"}
-              <span className="p">$</span> <span className="caret" />
+              <span className="term-line" style={{ ["--i" as string]: 0 }}>
+                <span className="p">$</span> dotrix login
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 1 }}>
+                <span className="ok">✓</span> <span className="term-dim">Signed in as tanjim@acme.dev</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 2 }}>
+                <span className="p">$</span> dotrix link
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 3 }}>
+                <span className="ok">✓</span> <span className="term-dim">Linked to Website Redesign (WEB)</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 4 }}>
+                <span className="p">$</span> dotrix code WEB-139
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 5 }}>
+                <span className="term-dim">▲ Kai is coding on this computer…</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 6 }}>
+                <span className="ok">✓</span> <span className="term-dim">3 files changed · changes ready to accept</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 7 }}>
+                <span className="p">$</span> <span className="caret" />
+              </span>
             </pre>
           </div>
         </div>
@@ -600,8 +707,8 @@ function Keys() {
           </p>
         </div>
         <div className="providers">
-          {PROVIDERS.map((name) => (
-            <div key={name} className="provider">
+          {PROVIDERS.map((name, i) => (
+            <div key={name} className="provider stagger-item" style={{ ["--i" as string]: i }}>
               <KeyIcon size={16} />
               <span>{name}</span>
             </div>
@@ -704,7 +811,7 @@ function GettingStarted() {
       </div>
       <ol className="steps">
         {STEPS.map((step, i) => (
-          <li key={step.title} className="step">
+          <li key={step.title} className="step stagger-item" style={{ ["--i" as string]: i }}>
             <span className="step-n mono">0{i + 1}</span>
             <div>
               <h3>{step.title}</h3>
@@ -741,7 +848,7 @@ function Download() {
         <p className="sub">The web app, the desktop app and the CLI share one account, one board and the same approvals.</p>
       </div>
       <div className="downloads">
-        <article className="dl">
+        <article className="dl stagger-item" style={{ ["--i" as string]: 0 }}>
           <span className="dl-ic">
             <GlobeIcon size={22} />
           </span>
@@ -749,11 +856,11 @@ function Download() {
           <p>Everything in your browser. Coding runs in the cloud, in a sandbox.</p>
           <a href={SIGN_UP} className="btn btn-ink">
             Open dotrix
-            <ArrowUpRightIcon size={15} />
+            <ArrowUpRightIcon size={15} className="ic-diag" />
           </a>
           <span className="soon">Nothing to install</span>
         </article>
-        <article className="dl">
+        <article className="dl stagger-item" style={{ ["--i" as string]: 1 }}>
           <span className="dl-ic">
             <AppWindowIcon size={22} />
           </span>
@@ -766,7 +873,7 @@ function Download() {
             <CommandIcon size={13} /> macOS soon
           </span>
         </article>
-        <article className="dl">
+        <article className="dl stagger-item" style={{ ["--i" as string]: 2 }}>
           <span className="dl-ic">
             <SquareTerminalIcon size={22} />
           </span>
@@ -983,7 +1090,7 @@ function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: stri
           </div>
         </div>
 
-        <div className="footer-wordmark" aria-hidden="true">
+        <div className="footer-wordmark reveal" aria-hidden="true">
           dotrix
         </div>
 

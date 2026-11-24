@@ -378,8 +378,8 @@ p {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: min(1320px, 100vw);
-  height: auto;
+  width: min(1440px, 100vw);
+  height: 540px;
   z-index: -1;
   pointer-events: none;
 }
@@ -1289,9 +1289,18 @@ h2 .serif {
 /* Footer */
 
 .footer {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-2);
   padding: clamp(64px, 8vw, 96px) 0 32px;
+  background: #eef1f5;
+}
+
+.footer .btn-soft {
   background: #ffffff;
+  border-color: var(--line-2);
+}
+
+.footer .btn-soft:hover {
+  background: #f8f9fb;
 }
 
 .footer-top {
@@ -1491,19 +1500,294 @@ h2 .serif {
   text-underline-offset: 3px;
 }
 
-/* Reveal on scroll */
+/* Reveal on scroll & Motion choreography */
+
+html.js .hero-anim {
+  animation: hero-rise 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.stage-glow {
+  animation: glow-breathe 9s ease-in-out infinite alternate;
+}
+
+@keyframes glow-breathe {
+  0% {
+    opacity: 0.78;
+    transform: scale(0.96) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.06) translateY(8px);
+  }
+}
+
+.stage-panel {
+  animation: stage-in 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.stage-caption-in {
+  animation: caption-in 0.3s ease-out both;
+}
+
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Continuous weightless wave on orbit badges */
+
+.orbit-badge {
+  animation: orbit-bob 5.4s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * -0.38s);
+  transition:
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.orbit-badge:hover {
+  border-color: var(--line-2);
+  box-shadow: 0 12px 24px -14px rgba(17, 19, 24, 0.28);
+}
+
+@keyframes orbit-bob {
+  0%,
+  100% {
+    transform: translateY(var(--dy, 0px));
+  }
+  50% {
+    transform: translateY(calc(var(--dy, 0px) - 9px));
+  }
+}
+
+/* Living showcase cards */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f0c564;
+  box-shadow: 0 0 0 0 rgba(240, 197, 100, 0.65);
+  animation: pulse-dot 2.2s ease-out infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(240, 197, 100, 0.65);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(240, 197, 100, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(240, 197, 100, 0);
+  }
+}
+
+.mock-file {
+  transition: background-color 0.16s ease;
+}
+
+.mock-file:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.connector {
+  position: relative;
+  overflow: hidden;
+}
+
+.connector::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -12px;
+  width: 3px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, transparent, #8de0ae);
+  animation: beam-drop 2.6s ease-in-out infinite;
+}
+
+@keyframes beam-drop {
+  0% {
+    top: -12px;
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.showcase-aura {
+  background-size: 160% 160%;
+  animation: aura-drift 14s ease-in-out infinite alternate;
+}
+
+@keyframes aura-drift {
+  0% {
+    background-position: 0% 25%;
+  }
+  50% {
+    background-position: 100% 60%;
+  }
+  100% {
+    background-position: 25% 100%;
+  }
+}
+
+.card-aura-emerald {
+  animation: glow-breathe 8s ease-in-out infinite alternate;
+}
+
+.final-streaks {
+  animation: glow-breathe 10s ease-in-out infinite alternate;
+}
+
+/* Terminal line-by-line reveal */
+
+.term-line {
+  display: block;
+}
+
+html.js .reveal .term-line {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: calc(var(--i, 0) * 110ms + 140ms);
+}
+
+html.js .reveal.in .term-line {
+  opacity: 1;
+  transform: none;
+}
+
+/* Tactile micro-interactions */
+
+.btn .ic-diag {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn:hover .ic-diag {
+  transform: translate(2px, -2px);
+}
+
+.announce-link svg {
+  transition: transform 0.18s ease;
+}
+
+.announce-link:hover svg {
+  transform: translateX(3px);
+}
+
+.agent .face {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent:hover .face {
+  transform: scale(1.09) rotate(-4deg);
+}
+
+.step,
+.dl {
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.22s ease,
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.step:hover,
+.dl:hover {
+  border-color: var(--line-2);
+  box-shadow: 0 18px 40px -28px rgba(17, 19, 24, 0.18);
+  transform: translateY(-2px);
+}
+
+.showcase-card .window {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.showcase-card:hover .window {
+  transform: translateY(-3px);
+}
+
+/* Staggered scroll reveals */
 
 html.js .reveal {
   opacity: 0;
-  transform: translateY(16px);
+  transform: translateY(20px);
   transition:
-    opacity 0.65s ease,
-    transform 0.65s cubic-bezier(0.2, 0.7, 0.2, 1);
+    opacity 0.7s ease,
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.js .reveal.in {
   opacity: 1;
   transform: none;
+}
+
+html.js .reveal .stagger-item {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.55s ease,
+    transform 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.2s ease,
+    box-shadow 0.22s ease;
+  transition-delay: calc(var(--i, 0) * 55ms + 60ms);
+}
+
+html.js .reveal.in .stagger-item {
+  opacity: 1;
+  transform: none;
+}
+
+html.js .reveal.in .stagger-item:hover {
+  transition-delay: 0ms;
+  transform: translateY(-2px);
 }
 
 /* Responsive */
@@ -1538,15 +1822,51 @@ html.js .reveal.in {
     grid-column: 1 / -1;
   }
   .downloads {
-    grid-template-columns: 1fr;
-    max-width: 520px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .dl {
+    padding: 22px;
+  }
+  .dl .btn {
+    padding: 0 14px;
+    font-size: 13.5px;
   }
   .orbit-strip {
-    justify-content: flex-start;
+    justify-content: center;
     gap: 10px;
+  }
+  .orbit-badge {
+    width: 48px;
+    height: 48px;
   }
   .footer-top {
     grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .footer-tagline {
+    max-width: 540px;
+  }
+  .footer-cols {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 28px 32px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 740px) {
+  .downloads {
+    grid-template-columns: 1fr;
+    max-width: none;
+    gap: 14px;
+  }
+  .dl {
+    padding: 24px;
+  }
+  .dl .btn {
+    padding: 0 20px;
+    font-size: 14.5px;
   }
 }
 
@@ -1613,6 +1933,14 @@ html.js .reveal.in {
     font-size: 12.5px;
     padding: 18px;
   }
+  .footer-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px 24px;
+  }
+  .footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
   .footer-wordmark {
     letter-spacing: -0.045em;
   }
@@ -1628,7 +1956,10 @@ html.js .reveal.in {
     animation: none !important;
     transition: none !important;
   }
-  html.js .reveal {
+  html.js .reveal,
+  html.js .reveal .stagger-item,
+  html.js .reveal .term-line,
+  html.js .hero-anim {
     opacity: 1;
     transform: none;
   }
