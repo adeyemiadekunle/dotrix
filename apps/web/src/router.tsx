@@ -62,10 +62,16 @@ function Start() {
   return slug ? <Navigate to="/w/$ws" params={{ ws: slug }} replace /> : null;
 }
 const home = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Start });
+const chatUiLab = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dev/chat-ui",
+  staticData: { title: "chat/ui lab" },
+  component: page(() => import("./screens/ChatUiLab")),
+});
 const workspace = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws", component: Studio });
 const workspaceAny = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws/$", component: Studio });
 
-const routeTree = rootRoute.addChildren([auth.addChildren(authRoutes), home, workspace, workspaceAny]);
+const routeTree = rootRoute.addChildren([auth.addChildren(authRoutes), home, chatUiLab, workspace, workspaceAny]);
 
 export const router = createRouter({
   routeTree,

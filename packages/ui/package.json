@@ -6,6 +6,8 @@
   "exports": {
     "./globals.css": "./src/styles/globals.css",
     "./components/*": "./src/components/*.tsx",
+    "./components/chat/hooks/*": "./src/components/chat/hooks/*.ts",
+    "./components/chat/lib/*": "./src/components/chat/lib/*.ts",
     "./hooks/*": "./src/hooks/*.ts",
     "./lib/*": "./src/lib/*.ts"
   },
@@ -19,6 +21,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "1.77.0",
+    "motion": "^12.43.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.6.7",
     "recharts": "3.10.1",

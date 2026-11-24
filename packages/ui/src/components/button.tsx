@@ -71,3 +71,4 @@ function Button({ className, variant = "default", size = "default", asChild = fa
 }
 
 export { Button, buttonVariants };
+export type { ButtonProps };
