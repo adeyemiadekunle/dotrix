@@ -407,9 +407,11 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(edited), "HEAD"], check=True)
     week_ago = time.time() - 7 * 86400
 
+    follow_kwargs = {"follow_symlinks": False} if os.utime in os.supports_follow_symlinks else {}
+
     def age(tree: Path) -> None:
         for path in [*tree.rglob("*"), tree]:
-            os.utime(path, (week_ago, week_ago), follow_symlinks=False)
+            os.utime(path, (week_ago, week_ago), **follow_kwargs)
 
     for tree in (old, busy, stray, edited):
         age(tree)
@@ -844,7 +846,7 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
     tree.parent.mkdir(parents=True)
 
     def git_at(cwd, *args):
-        return subprocess.check_output(["git", "-C", str(cwd), *args])
+        return subprocess.check_output(["git", "-c", "core.autocrlf=false", "-C", str(cwd), *args])
 
     def command(action, *args):
         return CliRunner().invoke(cli.app, ["worktree", action, session_id, "--worktrees", str(root), *args])

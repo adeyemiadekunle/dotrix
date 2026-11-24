@@ -97,19 +97,34 @@ def test_native_profile_refuses_ambiguous_model_connections(tmp_path, url):
         connection(tmp_path, {"KEY": "secret"})
 
 
+def _write_py_command(tmp_path: Path, name: str, body: str) -> Path:
+    import os
+
+    if os.name == "nt":
+        script_path = tmp_path / f"{name}.py"
+        script_path.write_text(body)
+        wrapper = tmp_path / f"{name}.cmd"
+        wrapper.write_text(f'@"{sys.executable}" "{script_path}" %*\r\n')
+        return wrapper
+    binary = tmp_path / name
+    binary.write_text(f"#!{sys.executable}\n{body}")
+    binary.chmod(0o755)
+    return binary
+
+
 @pytest.mark.parametrize(("answer", "allowed"), [
     ("print('false')", True),
     ("print('true')", False),  # the Kai runtime's fx, with the repository's configuration still on
     ("import sys; sys.stderr.write('fx config: unknown setting project_config'); sys.exit(2)", False),  # upstream fx 0.0.17
 ])
 def test_native_execution_runs_only_the_kai_runtime_s_fx_with_project_config_off(tmp_path: Path, answer, allowed):
-    import sys
-
     from dotrix_cli.fx_bridge import require_kai_fx
 
-    binary = tmp_path / "fx"
-    binary.write_text(f"#!{sys.executable}\nimport sys\nassert sys.argv[1:] == ['config', 'get', 'project_config']\n{answer}\n")
-    binary.chmod(0o755)
+    binary = _write_py_command(
+        tmp_path,
+        "fx",
+        f"import sys\nassert sys.argv[1:] == ['config', 'get', 'project_config']\n{answer}\n",
+    )
     if allowed:
         require_kai_fx(str(binary))
     else:
@@ -186,7 +201,6 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
 
     from dotrix_cli import fx_local, fx_native
 
-    fake_fx = tmp_path / "fx"
     log = tmp_path / "acp.log"
     script = (
         "import json, os, sys\n"
@@ -216,8 +230,7 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
         "              'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Done local.'}}}})\n"
         "        send({'jsonrpc': '2.0', 'id': mid, 'result': {'stopReason': 'end_turn', 'usage': {'inputTokens': 5, 'outputTokens': 2}}})\n"
     )
-    fake_fx.write_text(f"#!{sys.executable}\n{script}")
-    fake_fx.chmod(0o755)
+    fake_fx = _write_py_command(tmp_path, "fx", script)
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -227,17 +240,19 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
 
     launches = 0
 
+    import os
+
     @asynccontextmanager
     async def fake_launch(profile, binary, root, browser):
         nonlocal launches
         launches += 1
+        argv = [sys.executable, str(Path(binary).with_suffix(".py"))] if os.name == "nt" else [binary]
         proc = await asyncio.create_subprocess_exec(
-            binary, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, env={**os.environ},
         )
         yield proc, 0
 
-    import os
     monkeypatch.setattr(fx_native, "launch", fake_launch)
 
     contract = "# How Kai works\n\nYou are Kai."
@@ -286,6 +301,7 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
     assert out3[0] == {"type": "started", "resumed": False, "profileDigest": digest, "fresh": True}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="macOS Seatbelt profiles use POSIX paths")
 def test_macos_seatbelt_profile_denies_default_home_and_parent_git(tmp_path: Path):
     from dotrix_cli.fx_native import macos_sandbox_profile
 
