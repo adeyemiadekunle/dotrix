@@ -24,7 +24,7 @@ test("create a task, move it to In Progress, and comment on it", async ({ page }
   const drawer = page.getByRole("dialog", { name: "Task: Write the onboarding docs" });
   await drawer.getByRole("button", { name: /^Status/ }).click();
   await page.getByRole("menuitemradio", { name: /In Progress/ }).click();
-  await expect(drawer.getByRole("button", { name: "Status: In Progress" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: `Status for ${key}-1: In Progress` })).toBeVisible();
 
   await drawer.getByRole("textbox", { name: "Comment" }).fill("Starting with the CLI guide.");
   // The reload below comes a moment later: wait for the comment to be saved, not only shown.
