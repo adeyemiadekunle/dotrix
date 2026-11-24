@@ -1,31 +1,40 @@
 // dotrix.cc: what dotrix is, the team, how approvals work, and where to start (the cloud app, the
 // desktop app, or the CLI). Everything here is something dotrix does today.
 import {
-  CommandIcon,
+  AppWindowIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpRightIcon,
-  LibraryBigIcon,
-  GlobeIcon,
-  MessageCircleMoreIcon,
+  BookOpenIcon,
   CheckIcon,
   CodeIcon,
+  CommandIcon,
+  FolderGit2Icon,
   GitPullRequestIcon,
+  GlobeIcon,
+  InboxIcon,
   KeyIcon,
-  TerminalIcon,
+  LayoutGridIcon,
+  LibraryBigIcon,
   LockKeyholeIcon,
+  MessageCircleMoreIcon,
   SearchIcon,
   ShieldCheckIcon,
+  SparklesIcon,
   SquareTerminalIcon,
-  AppWindowIcon,
+  TerminalIcon,
+  XIcon,
 } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { APP_URL, DOWNLOADS_URL } from "./config";
 import { Face, Mark } from "./Face";
 
 const SIGN_IN = `${APP_URL}/login`;
 const SIGN_UP = `${APP_URL}/signup`;
+const ISSUES_NEW_URL = "https://github.com/adeyemiadekunle/dotrix/issues/new";
+const GITHUB_URL = "https://github.com/adeyemiadekunle/dotrix";
+const LEGAL_UPDATED = "November 2026";
 
 const TEAM = [
   { name: "Nova", role: "Lead", c: "#E0A92E", text: "Plans the work, brings in the right agent, and pulls it together." },
@@ -39,6 +48,180 @@ const TEAM = [
 
 const PROVIDERS = ["Anthropic", "OpenAI", "Google", "xAI", "DeepSeek", "Mistral", "Groq", "OpenRouter", "NVIDIA"];
 const ENGINES = ["Claude Code", "Codex", "OpenCode", "fx"];
+
+const SHOWCASE_TABS = [
+  {
+    id: "home",
+    label: "Home",
+    src: "/shots/home.webp",
+    alt: "dotrix Home: your tasks, decisions waiting on you, and what each agent is doing",
+    caption: "Home · Decisions waiting on you, active threads, and live agent status in one place.",
+  },
+  {
+    id: "chat",
+    label: "Chat",
+    src: "/shots/chat.webp",
+    alt: "dotrix Chat with Nova planning work and delegating to specialists",
+    caption: "Chat · Work with Nova across Discuss, Plan, Build, and Review modes.",
+  },
+  {
+    id: "board",
+    label: "Board",
+    src: "/shots/board.webp",
+    alt: "A dotrix project board with tasks and agent assignments",
+    caption: "Board · Issues, milestones, and Kai assignments on the board your team already knows.",
+  },
+  {
+    id: "inbox",
+    label: "Inbox",
+    src: "/shots/inbox.webp",
+    alt: "The dotrix Inbox, with Kai waiting for approval to start coding",
+    caption: "Inbox · Every approval, plan, and PR review waiting on you across all projects.",
+  },
+] as const;
+
+const PARTICLE_COLORS = ["#3D8B5C", "#3B82C4", "#5AA9D6", "#8C6FD6", "#D0628B", "#E0A92E", "#5C95C4"];
+
+function HeroParticles() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let raf = 0;
+    let width = 0;
+    let height = 0;
+    const pointer = { x: -9999, y: -9999, active: false };
+
+    // Deterministic seeded particles so initial composition is balanced and airy
+    const count = 52;
+    const particles = Array.from({ length: count }, (_, i) => {
+      const t = (i + 0.5) / count;
+      const angle = (t - 0.5) * Math.PI * 1.15;
+      const ring = 0.24 + ((i * 37) % 100) / 145;
+      return {
+        bx: 0.5 + Math.sin(angle) * ring * 0.92,
+        by: 0.14 + Math.cos(angle * 0.85) * ring * 0.56 + ((i * 19) % 100) / 380,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        len: 7 + (i % 5) * 1.4,
+        phase: i * 0.73,
+        speed: 0.38 + (i % 6) * 0.08,
+        driftX: 10 + (i % 4) * 5,
+        driftY: 6 + (i % 3) * 4,
+        color: PARTICLE_COLORS[i % PARTICLE_COLORS.length]!,
+        alpha: 0.34 + (i % 5) * 0.09,
+        baseRot: angle * 0.85,
+      };
+    });
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = rect.width;
+      height = rect.height;
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      for (const p of particles) {
+        if (!p.x && !p.y) {
+          p.x = p.bx * width;
+          p.y = p.by * height;
+        }
+      }
+    };
+
+    const onMove = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = e.clientX - rect.left;
+      pointer.y = e.clientY - rect.top;
+      pointer.active = pointer.y >= 0 && pointer.y <= rect.height;
+    };
+    const onLeave = () => {
+      pointer.active = false;
+    };
+
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerleave", onLeave);
+
+    const draw = (now: number) => {
+      const sec = now * 0.001;
+      ctx.clearRect(0, 0, width, height);
+
+      for (const p of particles) {
+        const tx = p.bx * width + Math.sin(sec * p.speed + p.phase) * p.driftX;
+        const ty = p.by * height + Math.cos(sec * p.speed * 0.8 + p.phase) * p.driftY;
+
+        if (pointer.active && !reduced) {
+          const dx = p.x - pointer.x;
+          const dy = p.y - pointer.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 150 && dist > 1) {
+            const force = ((150 - dist) / 150) * 1.45;
+            p.vx += (dx / dist) * force;
+            p.vy += (dy / dist) * force;
+          }
+        }
+
+        p.vx += (tx - p.x) * 0.045;
+        p.vy += (ty - p.y) * 0.045;
+        p.vx *= 0.86;
+        p.vy *= 0.86;
+        p.x = reduced ? tx : p.x + p.vx;
+        p.y = reduced ? ty : p.y + p.vy;
+
+        const rot = p.baseRot + Math.sin(sec * 0.6 + p.phase) * 0.14;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(rot);
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.roundRect(-p.len / 2, -1.35, p.len, 2.7, 1.35);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (!reduced) {
+        raf = window.requestAnimationFrame(draw);
+      }
+    };
+
+    draw(0);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerleave", onLeave);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="hero-particles" aria-hidden="true" />;
+}
+
+const ORBIT_ICONS = [
+  { key: "chat", node: <MessageCircleMoreIcon size={20} />, offset: 0 },
+  { key: "nova", node: <Face c="#E0A92E" size={28} />, offset: -14 },
+  { key: "code", node: <CodeIcon size={20} />, offset: -22 },
+  { key: "lyra", node: <Face c="#3D9E6A" size={28} />, offset: -12 },
+  { key: "pr", node: <GitPullRequestIcon size={20} />, offset: 4 },
+  { key: "orion", node: <Face c="#3B82C4" size={28} />, offset: 18 },
+  { key: "shield", node: <ShieldCheckIcon size={20} />, offset: 24 },
+  { key: "juno", node: <Face c="#D0628B" size={28} />, offset: 14 },
+  { key: "docs", node: <LibraryBigIcon size={20} />, offset: -4 },
+  { key: "kai", node: <Face c="#5C95C4" size={28} />, offset: -18 },
+  { key: "term", node: <TerminalIcon size={20} />, offset: -20 },
+  { key: "echo", node: <Face c="#8C6FD6" size={28} />, offset: -6 },
+  { key: "keys", node: <KeyIcon size={20} />, offset: 10 },
+];
 
 function Window({ src, alt, eager = false }: { src: string; alt: string; eager?: boolean }) {
   return (
@@ -58,7 +241,9 @@ function Bullets({ items }: { items: ReactNode[] }) {
     <ul className="bullets">
       {items.map((item, i) => (
         <li key={i}>
-          <CheckIcon size={16} />
+          <span className="bullet-ic" aria-hidden="true">
+            <CheckIcon size={13} />
+          </span>
           <span>{item}</span>
         </li>
       ))}
@@ -75,27 +260,47 @@ function Section({ id, children, className = "" }: { id?: string; children: Reac
 }
 
 function Nav({ onHome = true }: { onHome?: boolean }) {
+  const [hidden, setHidden] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const sec = (id: string) => (onHome ? `#${id}` : `/#${id}`);
+
+  useEffect(() => {
+    let lastY = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      setScrolled(y > 12);
+      if (y > 120 && y > lastY + 6) {
+        setHidden(true);
+      } else if (y < lastY - 4 || y <= 80) {
+        setHidden(false);
+      }
+      lastY = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   return (
-    <header className="nav">
+    <header className={`nav ${scrolled ? "scrolled" : ""} ${hidden ? "nav-hidden" : ""}`}>
       <div className="wrap nav-in">
         <a href="/" className="brand" aria-label="dotrix home">
-          <Mark />
+          <Mark size={21} />
           <span>dotrix</span>
         </a>
         <nav className="nav-links" aria-label="Sections">
           <a href={sec("team")}>Team</a>
           <a href={sec("approvals")}>Approvals</a>
-          <a href={sec("keys")}>Your keys</a>
+          <a href={sec("keys")}>BYOK</a>
           <a href={sec("start")}>Getting started</a>
           <a href={sec("download")}>Download</a>
         </nav>
         <div className="nav-cta">
-          <a href={SIGN_IN} className="btn btn-ghost">
+          <a href={SIGN_IN} className="btn btn-soft btn-sm">
             Sign in
           </a>
-          <a href={SIGN_UP} className="btn btn-primary btn-sm">
-            Get started
+          <a href={SIGN_UP} className="btn btn-ink btn-sm">
+            Open dotrix
+            <ArrowUpRightIcon size={14} />
           </a>
         </div>
       </div>
@@ -103,60 +308,112 @@ function Nav({ onHome = true }: { onHome?: boolean }) {
   );
 }
 
-const TILES = [
-  { Icon: MessageCircleMoreIcon, cls: "t1" },
-  { Icon: GitPullRequestIcon, cls: "t2" },
-  { Icon: ShieldCheckIcon, cls: "t3" },
-  { Icon: LibraryBigIcon, cls: "t4" },
-  { Icon: SearchIcon, cls: "t5" },
-  { Icon: CodeIcon, cls: "t6" },
-];
-
-function Hero() {
+function AnnouncementBar({ onHome = true }: { onHome?: boolean }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed || !onHome) return null;
   return (
-    <section className="hero">
-      <div className="hero-grid" aria-hidden="true" />
-      <div className="tiles" aria-hidden="true">
-        {TILES.map(({ Icon, cls }) => (
-          <span key={cls} className={`tile ${cls}`}>
-            <Icon size={28} />
-          </span>
-        ))}
-      </div>
-      <div className="wrap hero-in">
-        <a href="#download" className="pill">
-          <span className="pill-dot" />
-          Desktop and CLI for Windows are here
+    <div className="announce">
+      <div className="wrap announce-in">
+        <span className="announce-badge">
+          <SparklesIcon size={11} />
+          NEW
+        </span>
+        <span className="announce-text">Desktop app and CLI for Windows are now available in private beta</span>
+        <a href="#download" className="announce-link">
+          See downloads
           <ArrowRightIcon size={13} />
         </a>
-        <h1>
+        <button type="button" className="announce-close" onClick={() => setDismissed(true)} aria-label="Dismiss announcement">
+          <XIcon size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Hero() {
+  const [activeTab, setActiveTab] = useState<(typeof SHOWCASE_TABS)[number]["id"]>("home");
+  const current = SHOWCASE_TABS.find((t) => t.id === activeTab) ?? SHOWCASE_TABS[0];
+
+  return (
+    <section className="hero">
+      <HeroParticles />
+      <div className="wrap hero-in">
+        <div className="hero-lockup hero-anim" style={{ ["--d" as string]: "0ms" }}>
+          <Mark size={20} />
+          <span>dotrix</span>
+        </div>
+        <h1 className="hero-anim" style={{ ["--d" as string]: "70ms" }}>
           Plan, build and ship
           <br />
-          <span className="serif">with a team of agents.</span>
+          <span className="serif">with a team of agents</span>
         </h1>
-        <p className="lead">
+        <p className="lead hero-anim" style={{ ["--d" as string]: "140ms" }}>
           Nova and five specialists plan, research and review with you. Kai writes the code and opens the pull request. Nothing changes without your approval.
         </p>
-        <div className="cta-row">
-          <a href={SIGN_UP} className="btn btn-primary btn-lg">
+        <div className="cta-row hero-anim" style={{ ["--d" as string]: "210ms" }}>
+          <a href={SIGN_UP} className="btn btn-ink btn-lg">
             Open dotrix
-            <ArrowRightIcon size={16} />
+            <ArrowUpRightIcon size={16} className="ic-diag" />
           </a>
-          <a href={DOWNLOADS_URL} className="btn btn-secondary btn-lg">
-            <AppWindowIcon size={17} />
+          <a href={DOWNLOADS_URL} className="btn btn-soft btn-lg">
+            <AppWindowIcon size={16} />
             Download for Windows
           </a>
         </div>
-        <p className="fine">Bring your own model keys · macOS and Linux soon</p>
+        <p className="fine hero-anim" style={{ ["--d" as string]: "270ms" }}>
+          Bring your own model keys · macOS and Linux soon
+        </p>
       </div>
-      <div className="wrap hero-shot">
-        <div className="glow" aria-hidden="true" />
-        <div className="shot-desktop">
-          <Window src="/shots/home.webp" alt="dotrix Home: your tasks, decisions waiting on you, and what each agent is doing" eager />
+
+      <div className="wrap hero-stage-wrap hero-anim" style={{ ["--d" as string]: "320ms" }}>
+        <div className="hero-stage">
+          <div className="stage-glow" aria-hidden="true" />
+          <div className="stage-top">
+            <div className="stage-tabs" role="tablist" aria-label="Product preview">
+              {SHOWCASE_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.id === activeTab}
+                  className={`stage-tab ${tab.id === activeTab ? "on" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <span key={current.id} className="stage-caption stage-caption-in">
+              {current.caption}
+            </span>
+          </div>
+          <div key={current.id} className="stage-frame shot-desktop stage-panel">
+            <Window src={current.src} alt={current.alt} eager />
+          </div>
+          <div className="shot-phone">
+            <img src="/shots/phone-home.webp" alt="dotrix Home on a phone" width={780} height={1688} loading="eager" />
+          </div>
         </div>
-        <div className="shot-phone">
-          <img src="/shots/phone-home.webp" alt="dotrix Home on a phone" width={780} height={1688} loading="eager" />
+      </div>
+    </section>
+  );
+}
+
+function Mission() {
+  return (
+    <section className="mission">
+      <div className="wrap reveal">
+        <div className="orbit-strip" aria-hidden="true">
+          {ORBIT_ICONS.map((item, i) => (
+            <span key={item.key} className="orbit-badge" style={{ ["--dy" as string]: `${item.offset}px`, ["--i" as string]: i }}>
+              {item.node}
+            </span>
+          ))}
         </div>
+        <p className="mission-statement">
+          dotrix is an agent-first workspace where Nova leads five specialists, Kai writes the code, and every change waits for your approval.
+        </p>
       </div>
     </section>
   );
@@ -165,20 +422,21 @@ function Hero() {
 function Team() {
   return (
     <Section id="team">
-      <div className="head">
+      <div className="split-head">
         <h2>
           Meet the team. <span className="serif dim">Seven agents, one lead.</span>
         </h2>
         <p className="sub">You talk to Nova. Nova brings in the specialist the work needs, and Kai takes the build when you ask for one.</p>
       </div>
       <div className="team">
-        {TEAM.map((agent) => (
-          <article key={agent.name} className="agent" style={{ ["--c" as string]: agent.c }}>
-            <Face c={agent.c} size={44} />
+        {TEAM.map((agent, i) => (
+          <article key={agent.name} className="agent stagger-item" style={{ ["--c" as string]: agent.c, ["--i" as string]: i }}>
+            <div className="agent-top">
+              <Face c={agent.c} size={42} />
+              <span className="agent-role">{agent.role}</span>
+            </div>
             <div>
-              <h3>
-                {agent.name} <span>{agent.role}</span>
-              </h3>
+              <h3>{agent.name}</h3>
               <p>{agent.text}</p>
             </div>
           </article>
@@ -199,9 +457,12 @@ function ApprovalCard() {
       <div className="mock-h">
         <Face c="#5C95C4" size={26} />
         <div>
-          <b>Kai</b> <span className="muted">· WEB-139 Build hero component</span>
+          <b>Kai</b> <span className="mock-muted">· WEB-139 Build hero component</span>
         </div>
-        <span className="badge">Changes ready</span>
+        <span className="badge">
+          <i className="badge-dot" aria-hidden="true" />
+          Changes ready
+        </span>
       </div>
       <div className="mock-branch mono">dotrix/web-139-build-hero → main · 3 files · checks passed</div>
       <div className="mock-files">
@@ -214,12 +475,12 @@ function ApprovalCard() {
         ))}
       </div>
       <div className="mock-f">
-        <span className="muted">Nothing is pushed until someone accepts.</span>
+        <span className="mock-muted">Nothing is pushed until someone accepts.</span>
         <span className="grow" />
-        <button type="button" className="btn btn-ghost btn-sm" tabIndex={-1}>
+        <button type="button" className="btn btn-dark-ghost btn-sm" tabIndex={-1}>
           Discard
         </button>
-        <button type="button" className="btn btn-light btn-sm" tabIndex={-1}>
+        <button type="button" className="btn btn-white btn-sm" tabIndex={-1}>
           <CheckIcon size={14} />
           Accept and push
         </button>
@@ -231,16 +492,12 @@ function ApprovalCard() {
 function Approvals() {
   return (
     <Section id="approvals">
-      <div className="split">
-        <div className="split-visual">
-          <ApprovalCard />
-          <div className="connector" aria-hidden="true" />
-          <div className="chip">
-            <GitPullRequestIcon size={16} />
-            Pull request opened · Juno is reviewing
-          </div>
-        </div>
-        <div className="split-text">
+      <div className="showcase-row">
+        <div className="showcase-copy">
+          <span className="eyebrow">
+            <ShieldCheckIcon size={14} />
+            Approvals
+          </span>
           <h2>
             Every change <span className="serif">waits for you.</span>
           </h2>
@@ -258,6 +515,17 @@ function Approvals() {
             ]}
           />
         </div>
+        <div className="showcase-card showcase-dark">
+          <div className="card-aura card-aura-emerald" aria-hidden="true" />
+          <div className="showcase-inner">
+            <ApprovalCard />
+            <div className="connector" aria-hidden="true" />
+            <div className="chip">
+              <GitPullRequestIcon size={15} />
+              Pull request opened · Juno is reviewing
+            </div>
+          </div>
+        </div>
       </div>
     </Section>
   );
@@ -266,13 +534,17 @@ function Approvals() {
 function Inbox() {
   return (
     <Section>
-      <div className="split reverse">
-        <div className="split-text">
+      <div className="showcase-row reverse">
+        <div className="showcase-copy">
+          <span className="eyebrow">
+            <InboxIcon size={14} />
+            Inbox
+          </span>
           <h2>
             Decide from <span className="serif">one inbox.</span>
           </h2>
           <p className="sub">
-            Approvals, plans and questions from every project come to you in one place. Approve Kai's turn, accept a change, or open the conversation.
+            Approvals, plans and questions from every project come to you in one place. Approve Kai&apos;s turn, accept a change, or open the conversation.
           </p>
           <Bullets
             items={[
@@ -282,49 +554,9 @@ function Inbox() {
             ]}
           />
         </div>
-        <div className="split-visual">
+        <div className="showcase-card showcase-aura">
           <Window src="/shots/inbox.webp" alt="The dotrix Inbox, with Kai waiting for approval to start coding" />
         </div>
-      </div>
-    </Section>
-  );
-}
-
-function Keys() {
-  return (
-    <Section id="keys">
-      <div className="head">
-        <h2>
-          Bring your own keys. <span className="serif dim">Keep your plan.</span>
-        </h2>
-        <p className="sub">
-          dotrix doesn't resell tokens. Each person connects their own provider key, encrypted at rest, and picks the model for each agent. Kai codes with the
-          engine that fits the model.
-        </p>
-      </div>
-      <div className="providers">
-        {PROVIDERS.map((name) => (
-          <div key={name} className="provider">
-            <KeyIcon size={18} />
-            <span>{name}</span>
-          </div>
-        ))}
-      </div>
-      <div className="engines">
-        <span className="muted">Kai codes with</span>
-        {ENGINES.map((name) => (
-          <span key={name} className="engine mono">
-            {name}
-          </span>
-        ))}
-      </div>
-      <div className="facts">
-        {["No markup on tokens", "Keys encrypted, never shared", "A model per agent", "Sandboxes reach only the model API"].map((fact) => (
-          <span key={fact}>
-            <CheckIcon size={14} />
-            {fact}
-          </span>
-        ))}
       </div>
     </Section>
   );
@@ -333,11 +565,12 @@ function Keys() {
 function Knowledge() {
   return (
     <Section>
-      <div className="split">
-        <div className="split-visual">
-          <Window src="/shots/knowledge.webp" alt="A project's knowledge in dotrix: documents, decisions and research" />
-        </div>
-        <div className="split-text">
+      <div className="showcase-row">
+        <div className="showcase-copy">
+          <span className="eyebrow">
+            <BookOpenIcon size={14} />
+            Knowledge
+          </span>
           <h2>
             Knowledge that <span className="serif">stays current.</span>
           </h2>
@@ -352,6 +585,9 @@ function Knowledge() {
             ]}
           />
         </div>
+        <div className="showcase-card showcase-dark">
+          <Window src="/shots/knowledge.webp" alt="A project's knowledge in dotrix: documents, decisions and research" />
+        </div>
       </div>
     </Section>
   );
@@ -360,15 +596,25 @@ function Knowledge() {
 function Board() {
   return (
     <Section>
-      <div className="head center">
-        <h2>
-          Your board, <span className="serif">with agents on it.</span>
-        </h2>
+      <div className="split-head">
+        <div>
+          <span className="eyebrow">
+            <LayoutGridIcon size={14} />
+            Projects
+          </span>
+          <h2>
+            Your board, <span className="serif">with agents on it.</span>
+          </h2>
+        </div>
         <p className="sub">Issues, epics and checklists your team already knows. Assign one to Kai, or ask Nova about it from the project.</p>
       </div>
       <div className="pair">
-        <Window src="/shots/board.webp" alt="A dotrix project board" />
-        <Window src="/shots/overview.webp" alt="A dotrix project overview with progress and milestones" />
+        <div className="showcase-card showcase-surface">
+          <Window src="/shots/board.webp" alt="A dotrix project board" />
+        </div>
+        <div className="showcase-card showcase-surface">
+          <Window src="/shots/overview.webp" alt="A dotrix project overview with progress and milestones" />
+        </div>
       </div>
     </Section>
   );
@@ -377,8 +623,30 @@ function Board() {
 function Terminal() {
   return (
     <Section>
-      <div className="split">
-        <div className="split-visual">
+      <div className="showcase-row reverse">
+        <div className="showcase-copy">
+          <span className="eyebrow">
+            <SquareTerminalIcon size={14} />
+            CLI
+          </span>
+          <h2>
+            Or stay in <span className="serif">your terminal.</span>
+          </h2>
+          <p className="sub">
+            The CLI links a checkout to its project. Run Kai&apos;s turns on your own machine, chat with Nova, or work the board, all through the same
+            approvals.
+          </p>
+          <Bullets
+            items={[
+              <>
+                <span className="mono code-chip">dotrix runner</span> codes your local turns
+              </>,
+              "An MCP server for Claude Code and Codex",
+              "The desktop app bundles it for you",
+            ]}
+          />
+        </div>
+        <div className="showcase-card showcase-dark showcase-stars">
           <div className="term">
             <div className="term-bar">
               <i />
@@ -387,37 +655,82 @@ function Terminal() {
               <span className="mono">~/acme-web</span>
             </div>
             <pre className="mono">
-              <span className="p">$</span> dotrix login{"\n"}
-              <span className="ok">✓</span> <span className="dim">Signed in as tanjim@acme.dev</span>
-              {"\n"}
-              <span className="p">$</span> dotrix link{"\n"}
-              <span className="ok">✓</span> <span className="dim">Linked to Website Redesign (WEB)</span>
-              {"\n"}
-              <span className="p">$</span> dotrix code WEB-139{"\n"}
-              <span className="dim">▲ Kai is coding on this computer…</span>
-              {"\n"}
-              <span className="ok">✓</span> <span className="dim">3 files changed · changes ready to accept</span>
-              {"\n"}
-              <span className="p">$</span> <span className="caret" />
+              <span className="term-line" style={{ ["--i" as string]: 0 }}>
+                <span className="p">$</span> dotrix login
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 1 }}>
+                <span className="ok">✓</span> <span className="term-dim">Signed in as tanjim@acme.dev</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 2 }}>
+                <span className="p">$</span> dotrix link
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 3 }}>
+                <span className="ok">✓</span> <span className="term-dim">Linked to Website Redesign (WEB)</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 4 }}>
+                <span className="p">$</span> dotrix code WEB-139
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 5 }}>
+                <span className="term-dim">▲ Kai is coding on this computer…</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 6 }}>
+                <span className="ok">✓</span> <span className="term-dim">3 files changed · changes ready to accept</span>
+              </span>
+              <span className="term-line" style={{ ["--i" as string]: 7 }}>
+                <span className="p">$</span> <span className="caret" />
+              </span>
             </pre>
           </div>
         </div>
-        <div className="split-text">
-          <h2>
-            Or stay in <span className="serif">your terminal.</span>
-          </h2>
+      </div>
+    </Section>
+  );
+}
+
+function Keys() {
+  return (
+    <Section id="keys">
+      <div className="inset-panel">
+        <div className="split-head">
+          <div>
+            <span className="eyebrow">
+              <KeyIcon size={14} />
+              BYOK
+            </span>
+            <h2>
+              Bring your own keys. <span className="serif dim">Keep your plan.</span>
+            </h2>
+          </div>
           <p className="sub">
-            The CLI links a checkout to its project. Run Kai's turns on your own machine, chat with Nova, or work the board, all through the same approvals.
+            dotrix doesn&apos;t resell tokens. Each person connects their own provider key, encrypted at rest, and picks the model for each agent. Kai codes
+            with the engine that fits the model.
           </p>
-          <Bullets
-            items={[
-              <>
-                <span className="mono">dotrix runner</span> codes your local turns
-              </>,
-              "An MCP server for Claude Code and Codex",
-              "The desktop app bundles it for you",
-            ]}
-          />
+        </div>
+        <div className="providers">
+          {PROVIDERS.map((name, i) => (
+            <div key={name} className="provider stagger-item" style={{ ["--i" as string]: i }}>
+              <KeyIcon size={16} />
+              <span>{name}</span>
+            </div>
+          ))}
+        </div>
+        <div className="keys-foot">
+          <div className="engines">
+            <span className="muted">Kai codes with</span>
+            {ENGINES.map((name) => (
+              <span key={name} className="engine mono">
+                {name}
+              </span>
+            ))}
+          </div>
+          <div className="facts">
+            {["No markup on tokens", "Keys encrypted, never shared", "A model per agent", "Sandboxes reach only the model API"].map((fact) => (
+              <span key={fact}>
+                <CheckIcon size={14} />
+                {fact}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </Section>
@@ -429,8 +742,8 @@ const STEPS: { title: string; text: ReactNode }[] = [
     title: "Create your account",
     text: (
       <>
-        Sign up with your email (you'll get a link to verify it) or with GitHub. You land in your own private workspace, and onboarding walks you through the
-        rest.
+        Sign up with your email (you&apos;ll get a link to verify it) or with GitHub. You land in your own private workspace, and onboarding walks you through
+        the rest.
       </>
     ),
   },
@@ -438,8 +751,8 @@ const STEPS: { title: string; text: ReactNode }[] = [
     title: "Connect your model key",
     text: (
       <>
-        In <b>Account → Your models</b>, add a key from Anthropic, OpenAI, Google, or another supported provider. It's encrypted, it's only ever used for your
-        own runs, and your agents can't run without one. Projects and tasks work without a key.
+        In <b>Account → Your models</b>, add a key from Anthropic, OpenAI, Google, or another supported provider. It&apos;s encrypted, it&apos;s only ever used
+        for your own runs, and your agents can&apos;t run without one. Projects and tasks work without a key.
       </>
     ),
   },
@@ -466,7 +779,7 @@ const STEPS: { title: string; text: ReactNode }[] = [
     text: (
       <>
         <b>Stop</b> ends a reply in Chat or a coding turn in Code. A stopped, rejected or interrupted run shows exactly that, never a success or a pull request
-        it didn't make.
+        it didn&apos;t make.
       </>
     ),
   },
@@ -484,16 +797,22 @@ const STEPS: { title: string; text: ReactNode }[] = [
 function GettingStarted() {
   return (
     <Section id="start">
-      <div className="head">
-        <h2>
-          Getting started. <span className="serif dim">Six steps, a few minutes.</span>
-        </h2>
+      <div className="split-head">
+        <div>
+          <span className="eyebrow">
+            <FolderGit2Icon size={14} />
+            Onboarding
+          </span>
+          <h2>
+            Getting started. <span className="serif dim">Six steps, a few minutes.</span>
+          </h2>
+        </div>
         <p className="sub">The private beta is for solo developers: one personal workspace, your own key, and your own GitHub.</p>
       </div>
       <ol className="steps">
         {STEPS.map((step, i) => (
-          <li key={step.title} className="step">
-            <span className="step-n mono">{i + 1}</span>
+          <li key={step.title} className="step stagger-item" style={{ ["--i" as string]: i }}>
+            <span className="step-n mono">0{i + 1}</span>
             <div>
               <h3>{step.title}</h3>
               <p>{step.text}</p>
@@ -516,43 +835,55 @@ function GettingStarted() {
 function Download() {
   return (
     <Section id="download">
-      <div className="head center">
-        <h2>
-          Start where <span className="serif">you work.</span>
-        </h2>
+      <div className="split-head">
+        <div>
+          <span className="eyebrow">
+            <SearchIcon size={14} />
+            Surfaces
+          </span>
+          <h2>
+            Start where <span className="serif">you work.</span>
+          </h2>
+        </div>
         <p className="sub">The web app, the desktop app and the CLI share one account, one board and the same approvals.</p>
       </div>
       <div className="downloads">
-        <article className="dl">
-          <GlobeIcon size={26} />
+        <article className="dl stagger-item" style={{ ["--i" as string]: 0 }}>
+          <span className="dl-ic">
+            <GlobeIcon size={22} />
+          </span>
           <h3>Web</h3>
           <p>Everything in your browser. Coding runs in the cloud, in a sandbox.</p>
-          <a href={SIGN_UP} className="btn btn-primary">
+          <a href={SIGN_UP} className="btn btn-ink">
             Open dotrix
-            <ArrowUpRightIcon size={15} />
+            <ArrowUpRightIcon size={15} className="ic-diag" />
           </a>
           <span className="soon">Nothing to install</span>
         </article>
-        <article className="dl">
-          <AppWindowIcon size={26} />
+        <article className="dl stagger-item" style={{ ["--i" as string]: 1 }}>
+          <span className="dl-ic">
+            <AppWindowIcon size={22} />
+          </span>
           <h3>Desktop</h3>
           <p>The app, with local coding on your own computer. Windows now.</p>
-          <a href={DOWNLOADS_URL} className="btn btn-secondary">
+          <a href={DOWNLOADS_URL} className="btn btn-soft">
             Download for Windows
           </a>
           <span className="soon">
-            <CommandIcon size={14} /> macOS soon
+            <CommandIcon size={13} /> macOS soon
           </span>
         </article>
-        <article className="dl">
-          <SquareTerminalIcon size={26} />
+        <article className="dl stagger-item" style={{ ["--i" as string]: 2 }}>
+          <span className="dl-ic">
+            <SquareTerminalIcon size={22} />
+          </span>
           <h3>CLI</h3>
           <p>Link a checkout, run Kai locally, and connect Claude Code or Codex.</p>
-          <a href={DOWNLOADS_URL} className="btn btn-secondary">
+          <a href={DOWNLOADS_URL} className="btn btn-soft">
             Download for Windows
           </a>
           <span className="soon">
-            <TerminalIcon size={14} /> macOS and Linux soon
+            <TerminalIcon size={13} /> macOS and Linux soon
           </span>
         </article>
       </div>
@@ -562,34 +893,34 @@ function Download() {
 
 function Final() {
   return (
-    <section className="final">
-      <div className="final-glow" aria-hidden="true" />
+    <section className="final-wrap">
       <div className="wrap reveal">
-        <h2>
-          Build with
-          <br />
-          <span className="serif">your agents.</span>
-        </h2>
-        <p className="sub">Start with a project, connect a repository, and ask Nova where to begin.</p>
-        <div className="cta-row">
-          <a href={SIGN_UP} className="btn btn-primary btn-lg">
-            Get started
-            <ArrowRightIcon size={16} />
-          </a>
-          <a href={SIGN_IN} className="btn btn-secondary btn-lg">
-            Sign in
-          </a>
+        <div className="final-card">
+          <div className="final-streaks" aria-hidden="true" />
+          <div className="final-in">
+            <h2>
+              Build with <span className="serif">your agents.</span>
+            </h2>
+            <p className="final-sub">Start with a project, connect a repository, and ask Nova where to begin.</p>
+            <div className="cta-row">
+              <a href={SIGN_UP} className="btn btn-white btn-lg">
+                Open dotrix
+                <ArrowUpRightIcon size={16} />
+              </a>
+              <a href={DOWNLOADS_URL} className="btn btn-dark-outline btn-lg">
+                <AppWindowIcon size={16} />
+                Download for Windows
+              </a>
+            </div>
+            <p className="final-fine">
+              <LockKeyholeIcon size={13} /> Your conversations stay yours. Every change stays reviewable and auditable.
+            </p>
+          </div>
         </div>
-        <p className="fine">
-          <LockKeyholeIcon size={13} /> Your conversations stay yours. Every change stays reviewable and auditable.
-        </p>
       </div>
     </section>
   );
 }
-
-const LEGAL_UPDATED = "November 2026";
-const ISSUES_NEW_URL = "https://github.com/adeyemiadekunle/dotrix/issues/new";
 
 function LegalShell({ title, lead, children }: { title: string; lead: string; children: ReactNode }) {
   return (
@@ -710,27 +1041,83 @@ function PrivacyPage() {
 }
 
 function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: string }) {
+  const sec = (id: string) => (onHome ? `#${id}` : `/#${id}`);
   return (
     <footer className="footer">
-      <div className="wrap footer-in">
-        <a href="/" className="brand" aria-label="dotrix home">
-          <Mark size={18} />
-          <span>dotrix</span>
-        </a>
-        <span className="muted">© 2026 dotrix</span>
-        <span className="grow" />
-        <nav aria-label="Footer">
-          <a href={SIGN_IN}>Sign in</a>
-          <a href={SIGN_UP}>Sign up</a>
-          <a href={onHome ? "#start" : "/#start"}>Getting started</a>
-          <a href={DOWNLOADS_URL}>Download</a>
-          <a href="/terms" aria-current={route === "/terms" ? "page" : undefined}>
-            Terms
-          </a>
-          <a href="/privacy" aria-current={route === "/privacy" ? "page" : undefined}>
-            Privacy
-          </a>
-        </nav>
+      <div className="wrap">
+        <div className="footer-top">
+          <div className="footer-tagline">
+            <p className="footer-lead">
+              Plan, build and ship <span className="serif">with your agents.</span>
+            </p>
+            <p className="footer-sub">Seven agents, one lead, and every change behind your approval.</p>
+            <div className="footer-actions">
+              <a href={SIGN_UP} className="btn btn-ink btn-sm">
+                Open dotrix
+                <ArrowUpRightIcon size={14} />
+              </a>
+              <a href={DOWNLOADS_URL} className="btn btn-soft btn-sm">
+                Download
+              </a>
+            </div>
+          </div>
+          <div className="footer-cols">
+            <div className="footer-col">
+              <h4>Product</h4>
+              <a href={sec("team")}>Team</a>
+              <a href={sec("approvals")}>Approvals</a>
+              <a href={sec("keys")}>BYOK</a>
+              <a href={sec("start")}>Getting started</a>
+              <a href={sec("download")}>Download</a>
+            </div>
+            <div className="footer-col">
+              <h4>Surfaces</h4>
+              <a href={SIGN_UP}>Web app</a>
+              <a href={DOWNLOADS_URL}>Desktop (Windows)</a>
+              <a href={DOWNLOADS_URL}>CLI</a>
+            </div>
+            <div className="footer-col">
+              <h4>Resources</h4>
+              <a href={SIGN_IN}>Sign in</a>
+              <a href={SIGN_UP}>Create account</a>
+              <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+                GitHub
+              </a>
+              <a href={ISSUES_NEW_URL} target="_blank" rel="noreferrer">
+                Report a problem
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div className="footer-wordmark reveal" aria-hidden="true">
+          dotrix
+        </div>
+
+        <div className="footer-bottom">
+          <div className="footer-brand">
+            <a href="/" className="brand" aria-label="dotrix home">
+              <Mark size={18} />
+              <span>dotrix</span>
+            </a>
+            <span className="footer-meta muted">
+              <span>© 2026 dotrix</span>
+              <span aria-hidden="true">·</span>
+              <span className="footer-powered">Powered by Kunemi Technologies</span>
+            </span>
+          </div>
+          <nav aria-label="Legal">
+            <a href="/terms" aria-current={route === "/terms" ? "page" : undefined}>
+              Terms
+            </a>
+            <a href="/privacy" aria-current={route === "/privacy" ? "page" : undefined}>
+              Privacy
+            </a>
+            <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+              GitHub
+            </a>
+          </nav>
+        </div>
       </div>
     </footer>
   );
@@ -770,6 +1157,7 @@ export function App({ pathname = "/" }: { pathname?: string }) {
   return (
     <>
       <Nav onHome={onHome} />
+      <AnnouncementBar onHome={onHome} />
       <main>
         {route === "/terms" ? (
           <TermsPage />
@@ -778,13 +1166,14 @@ export function App({ pathname = "/" }: { pathname?: string }) {
         ) : (
           <>
             <Hero />
+            <Mission />
             <Team />
             <Approvals />
             <Inbox />
-            <Keys />
             <Knowledge />
             <Board />
             <Terminal />
+            <Keys />
             <GettingStarted />
             <Download />
             <Final />
