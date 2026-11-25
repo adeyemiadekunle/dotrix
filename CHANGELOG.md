@@ -11,6 +11,8 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Added a Cloudflare staging deployment for the web app and API, with a Railway job worker and certificate-verified Redis connections.
+
 - Added native macOS Seatbelt (`sandbox-exec`) and Windows AppContainer + Job Object (`apps/cli/src/dotrix_cli/win_sandbox.py`) process boundaries to `fx_native.py` and `fx_bridge.py` (with inherited pipe relay support and a `cli-windows` CI job), plus per-worker `max_duration_seconds` limits forwarded through `workers.py` and `infra/coding/fx-acp.mjs`.
 - Added Phase 6 operator rollback switches (`DOTRIX_CHAT_DEFAULT_RUNTIME=deepagents` and `DOTRIX_CODING_AGENT=legacy`), the [Kai runtime rollback runbook](docs/runbooks/kai-runtime-rollback.md), and D7 durable/cross-version recovery tests for saved write replay, `correlationId` survival, and rollback thread preservation.
 - Added the category-based Skills Registry (`packages/engine/src/dotrix_engine/skill_bundles.py`, `skills.py`), `GET /v1/workspaces/{workspace_id}/skills/registry` endpoint, curated pinned skill bundles (Google Modern Web Guidance, Browser Exploratory Verification, and Anthropic Knowledge Work compatible pilots), and dedicated `/w/{workspace}/skills` UI page with category tabs, search, trust/origin filters, provenance, and workspace enablement controls.

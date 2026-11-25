@@ -65,6 +65,7 @@ class Settings(DatabaseSettings):
     log_json: bool = True
     # 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 first and stalls.
     redis_url: str = "redis://127.0.0.1:6379/0"
+    redis_ca_pem: str | None = None
     cors_origins: list[str] = ["http://localhost:3000"]
     # Swagger UI (/docs), ReDoc (/redoc), and /openapi.json. Turn off to hide the API surface.
     docs_enabled: bool = True

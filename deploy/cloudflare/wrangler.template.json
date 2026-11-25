@@ -1,0 +1,29 @@
+{
+  "name": "dotrix-cloudflare-staging",
+  "main": "./worker.mjs",
+  "compatibility_date": "2026-11-25",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "../../apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1", "/v1/*", "/api", "/api/*", "/health", "/health/*"]
+  },
+  "containers": [
+    {
+      "class_name": "DotrixApi",
+      "scheduling_policy": "durable_object",
+      "images": {}
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "BACKEND", "class_name": "DotrixApi" }]
+  },
+  "exports": {
+    "DotrixApi": { "type": "durable-object", "storage": "sqlite" }
+  }
+}

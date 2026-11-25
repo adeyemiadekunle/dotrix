@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from arq import cron, func
-from arq.connections import RedisSettings
 from arq.worker import Function, Retry, run_worker
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +24,7 @@ from .core.crypto import Secrets
 from .core.email import build_email_sender
 from .core.jobs import QUEUE_NAME, JobContext, JobFunction, QueuedJobs
 from .core.logging import configure_logging
+from .core.redis import redis_connection_settings
 from .core.settings import get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
@@ -254,7 +254,7 @@ def main() -> None:
     if sys.platform == "win32":
         # psycopg (the Postgres checkpointer) can't run on Windows' default Proactor loop.
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    run_worker(WorkerSettings, redis_settings=RedisSettings.from_dsn(get_settings().redis_url))  # type: ignore[arg-type]
+    run_worker(WorkerSettings, redis_settings=redis_connection_settings(get_settings()))  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

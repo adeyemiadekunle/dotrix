@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from arq import create_pool
-from arq.connections import RedisSettings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,6 +24,7 @@ from .core.logging import configure_logging
 from .core.middleware import RequestContextMiddleware
 from .core.openapi import install_openapi, operation_id
 from .core.ratelimit import build_rate_limiter
+from .core.redis import redis_connection_settings
 from .core.settings import Settings, get_settings
 from .core.storage import build_storage
 from .db.session import create_engine, create_sessionmaker
@@ -84,7 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with AsyncExitStack() as stack:
             redis = None
             if settings.jobs == "worker" or settings.rate_limits == "redis":
-                redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+                redis = await create_pool(redis_connection_settings(settings))
                 stack.push_async_callback(redis.aclose)
             app.state.redis = redis
             app.state.rate_limiter = build_rate_limiter(settings, redis)

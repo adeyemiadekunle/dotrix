@@ -14,6 +14,7 @@
 **/.env.*
 !**/.env.example
 **/*.pem
+deploy/cloudflare/staging-secrets.json
 .claude
 .codex
 .dotrix

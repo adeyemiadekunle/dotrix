@@ -3,6 +3,8 @@ packages/api-client/openapi.json
 packages/api-client/src/schema.ts
 pnpm-lock.yaml
 uv.lock
+deploy/cloudflare/wrangler.generated.json
+deploy/cloudflare/staging-secrets.json
 # Kept as generated (unformatted)
 packages/ui/src/styles/design.css
 # Build output, caches, and tools' own folders
