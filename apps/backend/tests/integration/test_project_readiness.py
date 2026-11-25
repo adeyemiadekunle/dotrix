@@ -19,7 +19,7 @@ def checks(data):
 
 
 async def test_saved_readiness_does_not_count_scaffolding_or_require_integrations(db_client, github_world, agent_script):
-    owner, member, ws, project, _ = await github_world()
+    owner, _, ws, project, _ = await github_world()
     base = f"{ws}/projects/{project['id']}"
     model = agent_script.say("This must not be called.")
     response = await db_client.get(f"{base}/readiness", headers=owner.headers)
@@ -31,8 +31,8 @@ async def test_saved_readiness_does_not_count_scaffolding_or_require_integration
     assert rows["purpose"]["state"] == rows["knowledge"]["state"] == rows["model"]["state"] == "missing"
     assert rows["repository"]["state"] == rows["baseline"]["state"] == "optional"
     assert model.received == []
-    # Manual project work stays available without GitHub or a personal key.
-    assert (await db_client.post(f"{base}/issues", headers=member.headers, json={"title": "Agree scope"})).status_code == 201
+    # Owners can create tasks without GitHub or a personal key.
+    assert (await db_client.post(f"{base}/issues", headers=owner.headers, json={"title": "Agree scope"})).status_code == 201
     assert (await db_client.patch(base, headers=owner.headers, json={"description": "Help solo developers ship projects."})).status_code == 200
     assert (await db_client.get(f"{base}/readiness", headers=owner.headers)).json()["next_action"] == "knowledge"
     saved = await db_client.put(f"{base}/knowledge/files/requirements/product.md", headers=owner.headers,
@@ -47,7 +47,8 @@ async def test_readiness_is_scoped_and_explains_restricted_actions(db_client, gi
     base = f"{ws}/projects/{project['id']}"
     data = (await db_client.get(f"{base}/readiness", headers=member.headers)).json()
     assert not data["next_allowed"] and data["next_restriction"]
-    assert checks(data)["knowledge"]["allowed"] and not checks(data)["implementation"]["allowed"]
+    assert not checks(data)["purpose"]["allowed"] and not checks(data)["repository"]["allowed"]
+    assert checks(data)["knowledge"]["allowed"] and checks(data)["implementation"]["allowed"]
     outsider = await signup(email="outside@example.com")
     assert (await db_client.get(f"{base}/readiness", headers=outsider.headers)).status_code == 404
     await add_member(ws.rsplit("/", 1)[-1], outsider.id, Role.GUEST)
@@ -131,7 +132,9 @@ async def test_new_codebase_guidance_keeps_planning_before_connection_and_coding
     assert before["next_action"] == "discuss"  # An editable scope draft, no code or model invocation.
     await db_client.put(f"{base}/knowledge/files/requirements/product.md", headers=owner.headers,
                         json={"content": "# Scope\nAccept one appointment at a time.", "base_version": 1})
-    await db_client.post(f"{base}/issues", headers=owner.headers, json={"title": "Booking form", "status": "todo"})
+    issue = await db_client.post(f"{base}/issues", headers=owner.headers,
+                                 json={"title": "Booking form", "status": "todo", "assignee_user_id": member.id})
+    assert issue.status_code == 201, issue.text
     before = (await db_client.get(f"{base}/readiness", headers=owner.headers)).json()
     assert before["next_action"] == "repository"
     installation = await db_client.post(f"{ws}/github/installations", headers=owner.headers,
@@ -145,7 +148,8 @@ async def test_new_codebase_guidance_keeps_planning_before_connection_and_coding
     assert data["next_action"] == "plan" and data["next_allowed"]
     assert checks(data)["repository"]["state"] == "unverified"  # Saved configuration never means live admission.
     data = (await db_client.get(f"{base}/readiness", headers=member.headers)).json()
-    assert data["next_action"] == "tasks" and not checks(data)["implementation"]["allowed"]
+    assert data["next_action"] == "plan" and data["next_allowed"]
+    assert checks(data)["implementation"]["allowed"]
     runs = await db_session.scalars(select(AgentRun).where(AgentRun.project_id == uuid.UUID(project["id"])))
     assert not list(runs)
 

@@ -95,7 +95,7 @@ async function mockWorkspace(
     let data: unknown = [];
     if (pathname === "/v1/me") data = { id: "u1", display_name: "Test User", email: "test@example.com" };
     else if (pathname === "/v1/workspaces")
-      data = [{ id: "w1", slug: "test-workspace", name: "Test workspace", kind: "personal", permissions: ["agents:code"] }];
+      data = [{ id: "w1", slug: "test-workspace", name: "Test workspace", kind: "personal", role: "owner", permissions: ["agents:code"] }];
     else if (pathname.endsWith("/members"))
       data = [{ user_id: "u1", display_name: "Test User", email: "test@example.com", role: "owner", sees_all_projects: true, project_ids: [] }];
     else if (pathname.endsWith("/projects"))
