@@ -8,9 +8,12 @@ from dotrix_backend.modules.workspaces.models import Role
 
 @pytest.fixture
 def project(db_client: AsyncClient, create_team, signup):
-    async def _make():
+    async def _make(*, personal=False):
         ada = await signup()
-        team = await create_team(ada.headers)
+        if personal:
+            [team] = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
+        else:
+            team = await create_team(ada.headers)
         created = (
             await db_client.post(
                 f"/v1/workspaces/{team['id']}/projects", json={"key": "KUN", "name": "Kunemi"},
@@ -209,7 +212,7 @@ async def test_issues_assigned_to_others_are_not_claimable(
 
 
 async def test_coding_tool_workflow(project, db_client: AsyncClient) -> None:
-    ada, _, url = await project()
+    ada, _, url = await project(personal=True)
     issue = await new(db_client, url, ada.headers, title="Build postcode lookup")
     other = await new(db_client, url, ada.headers, title="Someone else's")
     await patch(db_client, url, other["key"], ada.headers, assignee_agent="codex")
@@ -242,18 +245,37 @@ async def test_coding_tool_workflow(project, db_client: AsyncClient) -> None:
     assert (await patch(db_client, url, issue["key"], ada.headers, status="done")).json()["status"] == "done"
 
 
-async def test_assigning_the_coding_agent_needs_permission(
+async def test_only_team_owners_and_admins_create_or_assign_issues(
     project, db_client: AsyncClient, add_member, signup
 ) -> None:
     ada, team, url = await project()
     bob = await signup(email="bob@example.com", name="Bob")
+    admin = await signup(email="admin@example.com", name="Admin")
     await add_member(team["id"], bob.id, Role.MEMBER)
-    issue = await new(db_client, url, ada.headers)
-    # Members can't instruct the built-in coding agent (PRD default), owners can.
-    assert (await patch(db_client, url, issue["key"], bob.headers, assignee_agent="coding-agent")).status_code == 403
-    assert (await patch(db_client, url, issue["key"], ada.headers, assignee_agent="coding-agent")).status_code == 200
-    # Members may hand work to Claude Code or Codex.
-    assert (await patch(db_client, url, issue["key"], bob.headers, assignee_agent="codex")).status_code == 200
+    await add_member(team["id"], admin.id, Role.ADMIN)
+    assert (await db_client.post(url, json={"title": "Member's issue"}, headers=bob.headers)).status_code == 403
+    issue = await new(db_client, url, admin.headers, assignee_user_id=bob.id)
+    assert issue["assignee_user_id"] == bob.id and issue["assignee_agent"] is None
+    assert (await patch(db_client, url, issue["key"], bob.headers, assignee_user_id=None)).status_code == 403
+    assert (await patch(db_client, url, issue["key"], ada.headers, assignee_agent="coding-agent")).status_code == 403
+    assert (await patch(db_client, url, issue["key"], admin.headers, assignee_agent="codex")).status_code == 403
+    assert (await patch(db_client, url, issue["key"], bob.headers,
+                        checklist=[{"id": "1", "title": "Step", "assignee_user_id": ada.id}])).status_code == 403
+    denied = await patch(db_client, url, issue["key"], bob.headers, due="2026-12-01", recurrence="weekly")
+    assert denied.status_code == 403
+    started = await db_client.post(f"{url}/claim", json={}, headers=bob.headers)
+    assert started.status_code == 200 and started.json()["assignee_user_id"] == bob.id
+    unassigned = await new(db_client, url, ada.headers)
+    assert (await db_client.post(f"{url}/claim", json={"key": unassigned["key"]}, headers=bob.headers)).status_code == 409
+    assert (await db_client.post(f"{url}/claim", json={"as_agent": "coding-agent"}, headers=ada.headers)).status_code == 403
+
+
+async def test_personal_owner_can_assign_and_reassign_to_agents(project, db_client: AsyncClient) -> None:
+    ada, _, url = await project(personal=True)
+    issue = await new(db_client, url, ada.headers, assignee_agent="coding-agent")
+    assert issue["assignee_agent"] == "coding-agent" and issue["assignee_user_id"] is None
+    changed = await patch(db_client, url, issue["key"], ada.headers, assignee_agent="codex")
+    assert changed.status_code == 200 and changed.json()["assignee_agent"] == "codex"
 
 
 async def test_assignee_must_be_a_member(project, db_client: AsyncClient, signup) -> None:
@@ -294,7 +316,7 @@ async def test_board_backlog_and_rank(project, db_client: AsyncClient) -> None:
 
 
 async def test_epic_progress_and_filters(project, db_client: AsyncClient) -> None:
-    ada, _, url = await project()
+    ada, _, url = await project(personal=True)
     epic = await new(db_client, url, ada.headers, type="epic", title="Scheduled delivery")
     s1 = await new(db_client, url, ada.headers, type="story", parent=epic["key"], labels=["api"])
     await new(db_client, url, ada.headers, type="story", parent=epic["key"], assignee_agent="codex")
@@ -438,11 +460,13 @@ async def test_a_checklist_is_kept_in_order_and_logged(project, db_client: Async
     assert any("checklist" in event["changes"] for event in res.json()["log"])
 
 
-async def test_a_repeating_issue_comes_back_when_finished(project, db_client: AsyncClient) -> None:
-    ada, _, url = await project()
+async def test_a_repeating_issue_comes_back_when_finished(project, db_client: AsyncClient, signup, add_member) -> None:
+    ada, team, url = await project()
+    bob = await signup(email="repeat@example.com", name="Bob")
+    await add_member(team["id"], bob.id, Role.MEMBER)
     made = await new(
         db_client, url, ada.headers, title="Water the plants", due="2026-10-10", recurrence="weekly",
-        checklist=[{"id": "p", "title": "Ferns", "done": True}],
+        assignee_user_id=bob.id, checklist=[{"id": "p", "title": "Ferns", "done": True}],
     )
     done = await patch(db_client, url, made["key"], ada.headers, status="done")
     assert done.status_code == 200, done.text
@@ -585,11 +609,9 @@ async def test_deleting_an_issue(project, db_client: AsyncClient, signup, add_me
     epic = await new(db_client, url, ada.headers, type="epic", title="Epic")
     child = await new(db_client, url, ada.headers, title="Child", parent=epic["key"])
     await db_client.post(f"{url}/{child['key']}/attachments", files={"file": ("a.txt", b"a", "text/plain")}, headers=ada.headers)
-    hers = await new(db_client, url, grace.headers, title="Grace's")
 
     assert (await db_client.delete(f"{url}/{epic['key']}", headers=ada.headers)).status_code == 409  # has a child
     assert (await db_client.delete(f"{url}/{child['key']}", headers=grace.headers)).status_code == 403  # not hers
-    assert (await db_client.delete(f"{url}/{hers['key']}", headers=grace.headers)).status_code == 204  # she reported it
     assert (await db_client.delete(f"{url}/{child['key']}", headers=ada.headers)).status_code == 204
     assert (await db_client.get(f"{url}/{child['key']}", headers=ada.headers)).status_code == 404
     assert storage.objects == {}

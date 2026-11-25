@@ -1,6 +1,6 @@
 """Whose a conversation is: a person's runs are theirs alone (decided 2026-10-09).
 
-In a personal workspace that's simply the owner. In an organisation, colleagues — owners and
+In a personal workspace that's simply the owner. In a Team workspace, colleagues — owners and
 admins included — don't see each other's conversations; what an agent changed is still public
 (documents, issues, the activity of decisions, the audit log). Two exceptions:
 - an automation's runs, which belong to the workspace, are also seen by owners and admins;
@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import or_
 
 from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.permissions import Permission, can, can_approve_others
 
 from .models import AgentRun, RunStatus
 
@@ -30,6 +30,6 @@ def runs_visible_to(member: Membership) -> Any:
 def run_openable_by(member: Membership) -> Any:
     """The runs `member` may open one by one: theirs, and those waiting on a decision they may make."""
     clause = runs_visible_to(member)
-    if can(member, Permission.APPROVE_ACTIONS):
+    if can_approve_others(member):
         clause = or_(clause, AgentRun.status == RunStatus.AWAITING_APPROVAL)
     return clause

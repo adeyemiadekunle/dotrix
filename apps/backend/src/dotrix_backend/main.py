@@ -164,7 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     install_openapi(app, API_VERSION)
     app.state.settings = settings
-    # Reads and writes organisations' own model provider keys (encrypted at rest).
+    # Reads and writes Team workspaces' own model provider keys (encrypted at rest).
     app.state.secrets = Secrets.from_settings(settings)
     # Replaced in lifespan by a sender that queues each email as a job; until then (and in
     # tests that don't run the lifespan) emails go straight to the provider.

@@ -67,7 +67,7 @@ for (const mode of ["signup", "signin"] as const) {
       route.fulfill({
         json: {
           workspace_name: "Return team",
-          workspace_kind: "organization",
+          workspace_kind: "team",
           role: "member",
           invited_by: "Owner",
           email: null,

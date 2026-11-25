@@ -68,11 +68,13 @@ class Settings(DatabaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     # Swagger UI (/docs), ReDoc (/redoc), and /openapi.json. Turn off to hide the API surface.
     docs_enabled: bool = True
-    # Organisation workspaces (teams: invites, roles, members). Personal workspaces launch first, so
-    # a deployed server (staging, production) hides organisations unless this is set to true;
+    # Team workspaces (invites, roles, members). Personal workspaces launch first, so
+    # a deployed server (staging, production) hides Team workspaces unless this is set to true;
     # development and tests keep them. Off: none can be created or opened, invites are refused, and
     # the web app shows only personal workspaces. Their data is kept, so turning it on brings them back.
-    organisations: bool | None = None
+    teams: bool | None = Field(
+        default=None, validation_alias=AliasChoices("DOTRIX_TEAMS", "DOTRIX_ORGANISATIONS", "teams")
+    )
     # `run_script` for Nova (agents/scripts.py): several read tool calls in one sandboxed script, so a long read
     # takes fewer model steps. Experimental: on in development and tests, off on a deployed server unless this is
     # set to true, until real runs show what it saves.
@@ -350,8 +352,8 @@ class Settings(DatabaseSettings):
         return self.env in ("staging", "production")
 
     @property
-    def organisations_enabled(self) -> bool:
-        return self.organisations if self.organisations is not None else not self.is_deployed
+    def teams_enabled(self) -> bool:
+        return self.teams if self.teams is not None else not self.is_deployed
 
     @property
     def agent_scripts_enabled(self) -> bool:

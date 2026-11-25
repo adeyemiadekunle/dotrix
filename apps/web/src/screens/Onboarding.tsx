@@ -1,5 +1,5 @@
 // Setting up: one decision per screen, with progress dots and Skip wherever a step is optional.
-// Your profile (and, only if you want one, an organisation), how you want to start (an idea, a new
+// Your profile (and, only if you want one, a Team workspace), how you want to start (an idea, a new
 // codebase, or an existing repository), the project, GitHub (not for an idea), your AI provider,
 // and what's ready. GitHub and the AI provider can wait: a project is useful without them.
 // Only server-confirmed workspace and project IDs are kept in the URL across refreshes, sign-in and
@@ -11,7 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
 import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
 import { AGENTS, CODING_AGENT } from "../data/seed-dotrix";
-import { useOrganisations } from "../core/features";
+import { useTeams } from "../core/features";
 import { Ic } from "../core/icons";
 import { PROJECT_STARTS, projectStart, projectDiscussionHref, projectImplementationHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
 import { Face } from "../ui/face";
@@ -47,11 +47,11 @@ export function Onboarding() {
         : "start",
   );
   const [teamName, setTeamName] = useState("");
-  const [workspaceKind, setWorkspaceKind] = useState<"personal" | "organization">("personal");
+  const [workspaceKind, setWorkspaceKind] = useState<"personal" | "team">("personal");
   const [teamAsked, setCreatingTeam] = useState(query.get("team") === "1");
-  // Organisations may be turned off on this server (personal workspaces launch first): then
+  // Team workspaces may be turned off on this server (personal workspaces launch first): then
   // every team option here is hidden, and the API refuses one anyway.
-  const orgs = useOrganisations();
+  const orgs = useTeams();
   const creatingTeam = orgs && teamAsked;
   const [displayName, setDisplayName] = useState<string | null>(null);
   const chosenKind = orgs ? workspaceKind : "personal";
@@ -172,7 +172,7 @@ export function Onboarding() {
               key,
               source: PROJECT_STARTS.find((item) => item.id === intention)!.source,
               description: description.trim(),
-              access: workspace?.kind === "organization" ? accessLevel : "workspace",
+              access: workspace?.kind === "team" ? accessLevel : "workspace",
             },
           }),
         );
@@ -184,14 +184,14 @@ export function Onboarding() {
         throw cause;
       }
     });
-  const chooseWorkspace = (kind: "personal" | "organization", rename: boolean) =>
+  const chooseWorkspace = (kind: "personal" | "team", rename: boolean) =>
     perform(async () => {
       setStep("workspace");
       const typed = (displayName ?? "").trim();
       if (rename && typed && typed !== profile.data?.display_name) {
         await unwrap(api.PATCH("/v1/me", { body: { display_name: typed } }));
       }
-      const body = { kind, name: kind === "organization" ? teamName.trim() : null };
+      const body = { kind, name: kind === "team" ? teamName.trim() : null };
       let chosen;
       try {
         chosen = await unwrap(api.POST("/v1/me/onboarding-workspace", { body }));
@@ -201,7 +201,7 @@ export function Onboarding() {
         const available = await workspaces.refetch();
         chosen = available.data?.find((item) => item.id === saved.data?.onboarding_workspace_id);
         if (!chosen) throw cause;
-        if (chosen.kind !== kind || (kind === "organization" && chosen.name !== body.name)) {
+        if (chosen.kind !== kind || (kind === "team" && chosen.name !== body.name)) {
           setWorkspace(chosen.id);
           setCreatingTeam(false);
           move("workspace", "", chosen.id);
@@ -298,7 +298,7 @@ export function Onboarding() {
       </Frame>
     );
   const duplicateKey = projects.data?.some((item) => item.key === key);
-  const existingTeam = workspaces.data?.find((item) => item.kind === "organization" && item.name.toLowerCase() === teamName.trim().toLowerCase());
+  const existingTeam = workspaces.data?.find((item) => item.kind === "team" && item.name.toLowerCase() === teamName.trim().toLowerCase());
   const modelReady =
     !!access.data?.ready &&
     !!((models.data?.default_model && access.data.models.includes(models.data.default_model)) || (project && access.data.models.includes(project.model)));
@@ -371,21 +371,21 @@ export function Onboarding() {
                   />
                 </span>
               </label>
-              {chosenKind === "organization" ? (
+              {chosenKind === "team" ? (
                 <label className="field">
-                  Organisation name
+                  Team name
                   <input
                     className="input onb2-input"
                     value={teamName}
                     onChange={(event) => setTeamName(event.target.value)}
-                    aria-label="Organisation name"
+                    aria-label="Team name"
                     maxLength={100}
                     autoComplete="organization"
                     required
                     autoFocus
                   />
                   <span className="onb2-hint">
-                    A shared workspace for your team. Your sign-in and model keys stay yours.{" "}
+                    Manage projects and assign tasks to your team. Members can use Chat and Codes to help with their work.{" "}
                     <button type="button" className="link" onClick={() => setWorkspaceKind("personal")}>
                       Just me
                     </button>
@@ -393,11 +393,11 @@ export function Onboarding() {
                 </label>
               ) : (
                 <p className="onb2-hint">
-                  Your projects start in your own private workspace.
+                  Your projects start in your own private workspace, where you can assign tasks to Kai.
                   {orgs && (
                     <>
                       {" "}
-                      <button type="button" className="link" onClick={() => setWorkspaceKind("organization")}>
+                      <button type="button" className="link" onClick={() => setWorkspaceKind("team")}>
                         Setting up for a team?
                       </button>
                     </>
@@ -409,11 +409,7 @@ export function Onboarding() {
               <button type="button" className="btn btn-ghost onb2-btn" disabled={busy} onClick={() => void chooseWorkspace("personal", false)}>
                 Skip
               </button>
-              <button
-                className="btn btn-primary onb2-btn"
-                type="submit"
-                disabled={busy || !typedName.trim() || (chosenKind === "organization" && !teamName.trim())}
-              >
+              <button className="btn btn-primary onb2-btn" type="submit" disabled={busy || !typedName.trim() || (chosenKind === "team" && !teamName.trim())}>
                 Continue
               </button>
             </div>
@@ -422,7 +418,7 @@ export function Onboarding() {
           <>
             <Head
               title="Your workspace is saved"
-              sub={`${summaryWorkspace.name} · ${summaryWorkspace.kind === "organization" ? "Organisation" : "Personal"}. Continue to your first project.`}
+              sub={`${summaryWorkspace.name} · ${summaryWorkspace.kind === "team" ? "Team" : "Personal"}. Continue to your first project.`}
             />
             <div className="onb2-acts">
               <button
@@ -555,7 +551,7 @@ export function Onboarding() {
                       onClick={() =>
                         void perform(async () => {
                           try {
-                            const created = await unwrap(api.POST("/v1/workspaces", { body: { name: teamName.trim(), kind: "organization" } }));
+                            const created = await unwrap(api.POST("/v1/workspaces", { body: { name: teamName.trim(), kind: "team" } }));
                             setWorkspace(created.id);
                             setProject("");
                             move("start", "", created.id);
@@ -665,7 +661,7 @@ export function Onboarding() {
                     onChange={(event) => setDescription(event.target.value)}
                   />
                 </label>
-                {workspace?.kind === "organization" && (
+                {workspace?.kind === "team" && (
                   <div className="field">
                     <span className="label">Who can see it</span>
                     <SelectField

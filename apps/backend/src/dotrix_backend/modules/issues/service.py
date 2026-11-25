@@ -2,8 +2,8 @@
 
 - Keys come from a per-project counter taken under a row lock: never reused.
 - Parent rules follow the PRD hierarchy; dependencies can't form a cycle.
-- Coding tools (`as_agent`) may only work on issues assigned to them: comment,
-  add sub-tasks, and move their issue as far as `review`. Only a person closes.
+- Personal issues can be assigned to coding agents. In Teams, approved Codes runs can
+  record progress without replacing the human assignee. Only a person closes an issue.
 - `claim` is atomic (`FOR UPDATE SKIP LOCKED`): two agents never get the same issue.
 """
 from __future__ import annotations
@@ -34,8 +34,9 @@ from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
-from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
+from dotrix_backend.modules.workspaces.permissions import Permission, can, can_manage_issues
+from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_backend.modules.workspaces.storage import ensure_room
 from dotrix_engine.contracts import AgentPolicy
 
@@ -112,6 +113,12 @@ class IssueActor:
     # An approved coding run hands the issue to Kai: whoever asked for the run was allowed to instruct
     # the coding agent when they asked, so the approver needs only the right to approve.
     coding_instructed: bool = False
+    # Set only by the Codes service or worker for a recorded, approved run.
+    team_coding_assistance: bool = False
+
+    @property
+    def team_workspace(self) -> bool:
+        return self.member.workspace.kind is WorkspaceKind.TEAM
 
     @property
     def user_id(self) -> uuid.UUID:
@@ -124,6 +131,12 @@ class IssueActor:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def can_code_team_issue(member: Membership, assignee_user_id: uuid.UUID | None) -> bool:
+    return can_manage_issues(member) or (
+        member.role is Role.MEMBER and member.user_id == assignee_user_id
+    )
 
 
 def normalize_key(key: str) -> str:
@@ -215,12 +228,18 @@ class IssueService:
 
     async def _insert(
         self, project: Project, actor: IssueActor, data: IssueCreate, *, emit_automation_events: bool = True,
+        repeat: bool = False,
     ) -> Issue:
         """Stage an issue with history, audit and notifications; the caller commits.
 
         Snapshot imports disable automation events so copying a backlog cannot start agent work.
-        This host-only option does not change the issue's human actor or normal creation history.
+        A repeat inherits the assignment of an existing issue at completion.
         """
+        if actor.team_workspace and not repeat:
+            if not can_manage_issues(actor.member):
+                raise Forbidden("Only Team Owners and Admins can create issues")
+            if actor.agent is not None:
+                raise Forbidden("Coding agents can't create issues in a Team workspace")
         parent = await self._by_key(project, data.parent) if data.parent else None
         if actor.agent is not None:
             if data.type is not IssueType.SUB_TASK or parent is None or parent.assignee_agent is not actor.agent:
@@ -536,16 +555,25 @@ class IssueService:
         if "checklist" in sent:
             items = [item.model_dump(mode="json") for item in data.checklist or []]
             if items != issue.checklist:
+                old_assignments = {item["id"]: item["assignee_user_id"] for item in issue.checklist
+                                   if item.get("assignee_user_id")}
+                new_assignments = {item["id"]: item["assignee_user_id"] for item in items
+                                   if item.get("assignee_user_id")}
+                if old_assignments != new_assignments:
+                    self._check_team_assignment(actor)
                 await self._check_checklist(project, items)
                 changes["checklist"] = [_checklist_progress(issue.checklist), _checklist_progress(items)]
                 issue.checklist = items
-        if "recurrence" in sent:
+        if "recurrence" in sent and data.recurrence != issue.recurrence:
+            if actor.team_workspace and not can_manage_issues(actor.member):
+                raise Forbidden("Only Team Owners and Admins can schedule recurring issues")
             change("recurrence", data.recurrence)
         if data.archived is not None and data.archived != (issue.archived_at is not None):
             changes["archived"] = [issue.archived_at is not None, data.archived]
             issue.archived_at = _now() if data.archived else None
 
         if "assignee_user_id" in sent or "assignee_agent" in sent:
+            self._check_team_assignment(actor)
             self._check_assignment(actor, data.assignee_agent)
             if data.assignee_user_id is not None:
                 await self._check_member(project, data.assignee_user_id)
@@ -577,6 +605,13 @@ class IssueService:
             if data.status is None:
                 raise InvalidIssue("status can't be empty")
             before = issue.status
+            if actor.team_workspace and data.status is IssueStatus.DONE and before is not IssueStatus.DONE:
+                decision_maker = actor.member
+                if actor.thinking_agent is not None and actor.approved_by_id != actor.user_id:
+                    decision_maker = await MembershipRepository(self.session).get(project.workspace_id, actor.approved_by_id) \
+                        if actor.approved_by_id else None
+                if decision_maker is None or not can_manage_issues(decision_maker):
+                    raise Forbidden("Only Team Owners and Admins can close issues")
             change("status", data.status)
             if data.status is IssueStatus.DONE and before is not IssueStatus.DONE:
                 issue.resolved_at = _now()
@@ -709,7 +744,7 @@ class IssueService:
             title=issue.title, description=issue.description, status=issue.status, priority=issue.priority,
             estimate=issue.estimate, due=issue.due, scheduled=issue.scheduled, labels=issue.labels,
             components=issue.components, links=issue.links, checklist=issue.checklist, recurrence=issue.recurrence,
-            assignee_user_id=assignee, assignee_agent=issue.assignee_agent,
+            assignee_user_id=assignee, assignee_agent=None if actor.team_workspace else issue.assignee_agent,
         )
         moved = await self._insert(target, actor, data)
         moved.created_at, moved.resolved_at, moved.archived_at = issue.created_at, issue.resolved_at, issue.archived_at
@@ -882,6 +917,8 @@ class IssueService:
     async def next(self, project: Project, actor: IssueActor, agent: AgentAssignee | None) -> IssueRead:
         """The requester's own in-progress issue first (a crashed session resumes), else the
         best ready issue: priority, then earliest due date, then oldest."""
+        if agent is not None and actor.team_workspace:
+            raise Forbidden("Team issues can only be assigned to people")
         mine = self._assigned_to(actor, agent)
         own = await self.session.scalar(
             select(Issue)
@@ -891,7 +928,7 @@ class IssueService:
         )
         if own is not None:
             return await self.get(project, own.key)
-        candidate = await self.session.scalar(self._ready_query(project, mine).limit(1))
+        candidate = await self.session.scalar(self._ready_query(project, self._claimable(actor, mine)).limit(1))
         if candidate is None:
             raise NothingReady("Nothing is ready for you right now")
         return await self.get(project, candidate.key)
@@ -900,7 +937,7 @@ class IssueService:
         agent = data.as_agent
         self._check_assignment(actor, agent)
         mine = self._assigned_to(actor, agent)
-        stmt = self._ready_query(project, mine)
+        stmt = self._ready_query(project, self._claimable(actor, mine))
         if data.key is not None:
             stmt = stmt.where(Issue.key == normalize_key(data.key))
         # SKIP LOCKED: a concurrent claimer gets the next issue instead of waiting for this one.
@@ -915,7 +952,7 @@ class IssueService:
         if agent is not None:
             issue.assignee_agent, issue.assignee_user_id = agent, None
             changes["assignee_agent"] = [None, agent.value]
-        else:
+        elif issue.assignee_user_id is None:
             issue.assignee_user_id, issue.assignee_agent = actor.user_id, None
             changes["assignee_user_id"] = [None, str(actor.user_id)]
         issue.updated_at = _now()
@@ -1024,8 +1061,14 @@ class IssueService:
             found.setdefault(issue_id, []).append(key)
         return found
 
-    def _ready_query(self, project: Project, mine: Any) -> Any:
+    @staticmethod
+    def _claimable(actor: IssueActor, mine: Any) -> Any:
+        if actor.team_workspace and not can_manage_issues(actor.member):
+            return mine
         unassigned = and_(Issue.assignee_user_id.is_(None), Issue.assignee_agent.is_(None))
+        return or_(unassigned, mine)
+
+    def _ready_query(self, project: Project, claimable: Any) -> Any:
         return (
             select(Issue)
             .where(
@@ -1034,7 +1077,7 @@ class IssueService:
                 Issue.type != IssueType.EPIC,  # epics are containers, not work
                 Issue.archived_at.is_(None),
                 ~blocked_clause(),
-                or_(unassigned, mine),
+                claimable,
             )
             .order_by(priority_rank(), Issue.due.asc().nulls_last(), Issue.created_at, Issue.number)
         )
@@ -1078,13 +1121,26 @@ class IssueService:
             raise InvalidIssue(f"A {issue_type} needs a description with {what}")
 
     @staticmethod
+    def _check_team_assignment(actor: IssueActor) -> None:
+        if actor.team_workspace and not can_manage_issues(actor.member):
+            raise Forbidden("Only Team Owners and Admins can change issue assignments")
+
+    @staticmethod
     def _check_assignment(actor: IssueActor, agent: AgentAssignee | None) -> None:
+        if agent is not None and actor.team_workspace:
+            raise Forbidden("Team issues can only be assigned to people")
         if (agent is AgentAssignee.CODING_AGENT and not actor.coding_instructed
                 and not can(actor.member, Permission.INSTRUCT_CODING_AGENT)):
             raise Forbidden("Your role can't instruct the coding agent")
 
     @staticmethod
     def _check_agent_owns(actor: IssueActor, issue: Issue) -> None:
+        if actor.team_workspace:
+            if not actor.team_coding_assistance or not can_code_team_issue(actor.member, issue.assignee_user_id):
+                raise Forbidden(f"{issue.key} needs a Team member to work on it in Codes")
+            if issue.status is IssueStatus.DONE or issue.archived_at is not None:
+                raise Conflict(f"{issue.key} is closed or archived")
+            return
         if issue.assignee_agent is not actor.agent:
             raise Forbidden(f"{issue.key} isn't assigned to {actor.agent}")
 
@@ -1113,9 +1169,10 @@ class IssueService:
             labels=issue.labels, components=issue.components,
             checklist=[{**item, "done": False} for item in issue.checklist],
             recurrence=issue.recurrence,
-            assignee_user_id=issue.assignee_user_id, assignee_agent=issue.assignee_agent,
+            assignee_user_id=issue.assignee_user_id,
+            assignee_agent=None if actor.team_workspace else issue.assignee_agent,
         )
-        return await self._insert(project, actor, data)
+        return await self._insert(project, actor, data, repeat=True)
 
     async def _dependency_keys(self, issue: Issue) -> list[str]:
         return sorted(

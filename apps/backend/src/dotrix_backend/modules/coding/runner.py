@@ -65,6 +65,7 @@ from dotrix_backend.modules.model_keys.service import run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
+from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
 from dotrix_backend.modules.workspaces.models import Workspace
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
@@ -1812,7 +1813,7 @@ async def issue_to_review(session: AsyncSession, run: CodingRun, title: str, *, 
     project = await session.get(Project, run.project_id)
     member = await MembershipRepository(session).get(run.workspace_id, run.requested_by_id) \
         if run.requested_by_id else None
-    if project is None or member is None:
+    if project is None or member is None or not await ProjectRepository(session).can_see(project, member.user_id):
         return
     issues = IssueService(session)
     try:
@@ -1822,7 +1823,8 @@ async def issue_to_review(session: AsyncSession, run: CodingRun, title: str, *, 
             links.append(Link(kind="pr", url=run.pr_url or "", title=f"PR #{run.pr_number}: {title}"[:200]))
         said = f"Opened PR #{run.pr_number} for review" if opened else f"Pushed turn {run.turn} to PR #{run.pr_number}"
         await issues.update(project, run.issue_key, IssueActor(member, agent=run.agent.assignee,
-                                                               approved_by_id=run.decided_by_id),
+                                                               approved_by_id=run.decided_by_id,
+                                                               team_coding_assistance=True),
                             IssueUpdate(status=IssueStatus.REVIEW, links=links,
                                         note=f"{said}: {run.pr_url}"))
     except DomainError as exc:  # reassigned or closed meanwhile: the PR still stands

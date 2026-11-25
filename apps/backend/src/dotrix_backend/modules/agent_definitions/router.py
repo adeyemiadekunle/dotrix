@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Path, status
 from dotrix_backend.api.deps import SessionDep, SettingsDep, require_permission
 from dotrix_backend.core.openapi import errors
 from dotrix_backend.modules.agents.llm import available_models
-from dotrix_backend.modules.model_keys.deps import Connected, Personal
+from dotrix_backend.modules.model_keys.deps import Connected
 from dotrix_backend.modules.projects.deps import ProjectManager, ProjectViewer
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
@@ -171,14 +171,14 @@ async def list_my_agent_preference_versions(handle: Handle, member: Chatter, ses
 @mine_router.put("/{handle}", responses=errors(403, 422))
 async def save_my_agent_preference(
     handle: Handle, data: AgentPreferenceSave, member: Chatter, session: SessionDep, settings: SettingsDep,
-    connected: Connected, personal: Personal,
+    connected: Connected,
 ) -> AgentPreferenceRead:
     """How you like an agent to work (up to 2,000 characters, added to its instructions) and its
     model, for the runs you start. Within limits: it can't change the agent's tools, folder
-    access, or what it may do without asking. A model needs the workspace's permission to
-    choose models, unless your own key runs it (403). Empty instructions and no model: removed."""
+    access, or what it may do without asking. Pick a model from your connected providers.
+    Empty instructions and no model remove the preference."""
     return await AgentPreferences(session).save(
-        member, handle, data, available=available_models(settings, connected=connected), personal=personal
+        member, handle, data, available=available_models(settings, connected=connected)
     )
 
 

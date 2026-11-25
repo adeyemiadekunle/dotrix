@@ -1,4 +1,5 @@
 // Task pages: the same views over every project you can see.
+import { canManageIssues } from "../core/can";
 import { Ic } from "../core/icons";
 import { confirmDlg, deleteTasks, escapeHtml, newTask, restore, snapshot } from "../core/more";
 import { go } from "../core/nav";
@@ -88,10 +89,12 @@ export function MyTasks() {
           </p>
         </div>
         <div className="acts">
-          <button className="btn btn-primary" onClick={() => newTask({ assignee: D().me })}>
-            <Ic n="plus" s={14} />
-            New task
-          </button>
+          {canManageIssues() && (
+            <button className="btn btn-primary" onClick={() => newTask({ assignee: D().me })}>
+              <Ic n="plus" s={14} />
+              New task
+            </button>
+          )}
         </div>
       </div>
       <div className="tabs" style={{ margin: "0 24px 10px" }}>

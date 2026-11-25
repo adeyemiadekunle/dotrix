@@ -92,15 +92,16 @@ async def test_publication_uses_current_destination_rights_even_for_a_saved_retr
     url = f"{base}/agent/runs/{run['id']}/publications"
     body = {"request_id": str(uuid.uuid4()), "destination": "decisions", "title": "Agreed choice", "content": "Only the choice", "acknowledge_shared": True}
     assert (await db_client.post(url, headers=editor.headers, json=body)).status_code == 200
+    task = body | {"destination": "task", "request_id": str(uuid.uuid4())}
+    assert (await db_client.post(url, headers=editor.headers, json=task)).status_code == 200
     await db_session.execute(update(Membership).where(
         Membership.workspace_id == uuid.UUID(team["id"]), Membership.user_id == uuid.UUID(editor.id),
     ).values(role=Role.MEMBER))
     await db_session.commit()
     assert (await db_client.post(url, headers=editor.headers, json=body)).status_code == 403
     assert (await db_client.post(url, headers=editor.headers, json=body | {"request_id": str(uuid.uuid4())})).status_code == 403
-    # A normal member can still publish their own selected outcome as an unassigned task.
-    task = await db_client.post(url, headers=editor.headers, json=body | {"destination": "task", "request_id": str(uuid.uuid4())})
-    assert task.status_code == 200, task.text
+    assert (await db_client.post(url, headers=editor.headers, json=task)).status_code == 403
+    assert (await db_client.post(url, headers=editor.headers, json=task | {"request_id": str(uuid.uuid4())})).status_code == 403
 
 
 @pytest.fixture

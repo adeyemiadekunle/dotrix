@@ -28,15 +28,21 @@ from dotrix_backend.modules.execution.models import RunDispatch
 from dotrix_backend.modules.execution.service import RunDispatcher, record_dispatch
 from dotrix_backend.modules.issues.models import AgentAssignee, Issue, IssueStatus, IssueType
 from dotrix_backend.modules.issues.schemas import IssueRead, IssueUpdate
-from dotrix_backend.modules.issues.service import IssueActor, IssueService
+from dotrix_backend.modules.issues.service import IssueActor, IssueService, can_code_team_issue
 from dotrix_backend.modules.model_keys.service import run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
-from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.models import Membership, WorkspaceKind
+from dotrix_backend.modules.workspaces.permissions import (
+    Permission,
+    can,
+    can_approve_others,
+    can_approve_run,
+)
+from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
 from . import guard
 from .brief import build_brief, with_task
@@ -96,14 +102,14 @@ def visible_runs(member: Membership) -> Any:
     """The coding runs `member` sees: theirs (sessions are private, like conversations), and, when
     they may approve agent changes, those waiting on that decision (to start, or to push)."""
     clause = CodingRun.requested_by_id == member.user_id
-    if can(member, Permission.APPROVE_ACTIONS):
+    if can_approve_others(member):
         clause = or_(clause, CodingRun.status.in_(WAITING))
     return clause
 
 
 def _sees(run: CodingRun, member: Membership) -> bool:
     return run.requested_by_id == member.user_id or (
-        run.status in WAITING and can(member, Permission.APPROVE_ACTIONS))
+        run.status in WAITING and can_approve_others(member))
 
 
 def _earlier(turn: CodingRun) -> str:
@@ -291,7 +297,7 @@ class CodingService:
                 CodingRun.status.in_(ACTIVE)).limit(1))
             if busy:
                 raise CodingBusy("Kai already has an active turn in this conversation")
-        issue = await self._codable(access.project, access.member.user_id, key, location=data.location)
+        issue = await self._codable(access.project, access.member, key, location=data.location)
         await self._require_base(access.project)
         run = await self._create(access.project, access.member, issue, data.note, CodingOrigin.START,
                                  approval=data.approval_mode, location=data.location,
@@ -322,10 +328,12 @@ class CodingService:
         """An issue was just assigned to a coding tool: start a session in the background (waiting for
         an approval as always), when coding is available and the person may instruct the coding agent.
         Quietly nothing otherwise: the assignment stands either way."""
+        if access.member.workspace.kind is not WorkspaceKind.PERSONAL:
+            return None
         if not can(access.member, Permission.INSTRUCT_CODING_AGENT):
             return None
         try:
-            issue = await self._codable(access.project, access.member.user_id, key)
+            issue = await self._codable(access.project, access.member, key)
             await self._require_base(access.project)
         except (CodingUnavailable, CodingBusy, Conflict, Unprocessable):
             return None
@@ -460,7 +468,7 @@ class CodingService:
             raise CodingBusy("This session has a turn waiting or working; follow up once it's done")
         issue = None
         if turns[0].issue_id is not None:
-            issue = await self._codable(access.project, access.member.user_id, turns[-1].issue_key, location=location,
+            issue = await self._codable(access.project, access.member, turns[-1].issue_key, location=location,
                                         publish_only=publish_only)
         else:
             await self._require_location(access.project, access.member.user_id, location, publish_only=publish_only)
@@ -510,14 +518,17 @@ class CodingService:
             if not available.available or available.agent is None:
                 raise CodingUnavailable(available.reason or "Coding runs aren't available")
     async def _codable(
-        self, project: Project, user_id: uuid.UUID, key: str, *, busy_ok: bool = False,
+        self, project: Project, member: Membership, key: str, *, busy_ok: bool = False,
         location: CodingLocation = CodingLocation.CLOUD, publish_only: bool = False,
     ) -> IssueRead:
-        await self._require_location(project, user_id, location, publish_only=publish_only)
+        await self._require_location(project, member.user_id, location, publish_only=publish_only)
         # One start at a time per project: the busy check below and the insert that follows it
         # can't interleave with another request's.
         await ProjectRepository(self.session).get(project.workspace_id, project.id, for_update=True)
         issue = await IssueService(self.session).get(project, key)
+        if (member.workspace.kind is WorkspaceKind.TEAM
+                and not can_code_team_issue(member, issue.assignee_user_id)):
+            raise Forbidden("Start Codes for a Team issue assigned to you")
         if issue.type is IssueType.EPIC:
             raise Unprocessable("An epic is too big for one coding run: start one on each of its stories")
         if issue.status is IssueStatus.DONE:
@@ -673,7 +684,7 @@ class CodingService:
         return self._read(run, access)
 
     async def _queue(self, access: ProjectAccess, run: CodingRun) -> RunDispatch | None:
-        """An approved run, queued (not committed): the issue is Kai's, audited, its dispatch recorded."""
+        """Queue an approved run and stage its audit and dispatch in the current transaction."""
         # The run codes on its requester's keys (or computer), not the approver's; a revert codes nowhere.
         if run.revert_of is not None:
             if why := await self._publishable(access.project):
@@ -691,8 +702,20 @@ class CodingService:
             await self._selection(access.project, run.requested_by_id, run.location,
                                   agent=run.agent, model=run.model, fixed=True)
         run.status = CodingRunStatus.QUEUED
-        if run.issue_id is not None:
-            # The issue is the coding tool's now (its own rules: it may move it to review, never done).
+        if run.issue_id is not None and access.member.workspace.kind is WorkspaceKind.TEAM:
+            requester = await MembershipRepository(self.session).get(run.workspace_id, run.requested_by_id) \
+                if run.requested_by_id else None
+            if requester is None or not await ProjectRepository(self.session).can_see(access.project, requester.user_id):
+                raise Forbidden("The person who requested Codes needs access to this Team project")
+            await IssueService(self.session).update(
+                access.project, run.issue_key,
+                IssueActor(requester, agent=run.agent.assignee, approved_by_id=access.member.user_id,
+                           team_coding_assistance=True),
+                IssueUpdate(status=IssueStatus.IN_PROGRESS, note=f"{CODING_AGENT_NAME} is assisting in Codes"),
+                commit=False,
+            )
+        elif run.issue_id is not None:
+            # In a Personal workspace, Kai takes ownership of the issue when the run is approved.
             issue = await IssueService(self.session).get(access.project, run.issue_key)
             change = IssueUpdate(assignee_agent=run.agent.assignee, assignee_user_id=None,
                                  note=f"Coding run approved: {CODING_AGENT_NAME} is working on it")
@@ -1013,7 +1036,7 @@ class CodingService:
             ci_review_run_id=run.ci_review_run_id, ci_review_posted_url=_posted(run.ci_review_posted_url),
             created_at=run.created_at, decided_at=run.decided_at, started_at=run.started_at,
             finished_at=run.finished_at,
-            can_decide=run.status in WAITING and can(access.member, Permission.APPROVE_ACTIONS),
+            can_decide=run.status in WAITING and can_approve_run(access.member, run.requested_by_id),
             can_revert=run.status is CodingRunStatus.PR_OPENED and run.commit_sha is not None
             and run.pr_state not in (PrState.MERGED, PrState.CLOSED) and run.requested_by_id == access.member.user_id
             and can(access.member, Permission.INSTRUCT_CODING_AGENT),

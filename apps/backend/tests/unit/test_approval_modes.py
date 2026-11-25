@@ -14,7 +14,7 @@ from dotrix_engine.builtins import builtin_specs
 M, A, X = ApprovalMode.MANUAL, ApprovalMode.ACCEPT_EDITS, ApprovalMode.AUTO
 
 
-def _ws(kind=WorkspaceKind.ORGANIZATION, cap=None, paused=False, grants=()):
+def _ws(kind=WorkspaceKind.TEAM, cap=None, paused=False, grants=()):
     return SimpleNamespace(kind=kind, approval_mode_cap=cap, unattended_paused=paused, member_permissions=list(grants))
 
 

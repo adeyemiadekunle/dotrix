@@ -4,11 +4,11 @@ import { signUp } from "./helpers";
 test("skipping the first step keeps Personal even after choosing to set up for a team", async ({ page }) => {
   await signUp(page);
   await page.goto("/onboarding");
-  await expect(page.getByLabel("Organisation name", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Team name", { exact: true })).toHaveCount(0);
   const progress = page.getByRole("navigation", { name: "Onboarding progress", exact: true });
   await expect(progress.locator('[aria-current="step"]')).toHaveText(/Profile/);
   await page.getByRole("button", { name: "Setting up for a team?", exact: true }).click();
-  await expect(page.getByLabel("Organisation name", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Team name", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(page.getByRole("heading", { name: "How do you want to start?", exact: true })).toBeVisible();
   await expect(progress.locator('[aria-current="step"]')).toHaveText(/Starting point/);
@@ -24,7 +24,7 @@ test("an organisation save recovers a lost response and the stepper preserves it
   await signUp(page);
   await page.goto("/onboarding");
   await page.getByRole("button", { name: "Setting up for a team?", exact: true }).click();
-  await page.getByLabel("Organisation name", { exact: true }).fill("First delivery team");
+  await page.getByLabel("Team name", { exact: true }).fill("First delivery team");
   let calls = 0;
   await page.route("**/me/onboarding-workspace", async (route) => {
     calls++;
@@ -32,18 +32,18 @@ test("an organisation save recovers a lost response and the stepper preserves it
     expect(saved.status()).toBe(200);
     await route.abort("failed");
   });
-  await page.getByLabel("Organisation name", { exact: true }).press("Enter");
+  await page.getByLabel("Team name", { exact: true }).press("Enter");
   await expect(page.getByRole("heading", { name: "How do you want to start?", exact: true })).toBeVisible();
   const selected = new URL(page.url()).searchParams.get("workspace");
   expect(selected).toBeTruthy();
   const state = await page.evaluate(async () => ({ user: await (await fetch("/v1/me")).json(), workspaces: await (await fetch("/v1/workspaces")).json() }));
   expect(state.workspaces).toHaveLength(2);
-  expect(state.workspaces.find((w: { id: string }) => w.id === selected)).toMatchObject({ name: "First delivery team", kind: "organization", role: "owner" });
+  expect(state.workspaces.find((w: { id: string }) => w.id === selected)).toMatchObject({ name: "First delivery team", kind: "team", role: "owner" });
   expect(state.workspaces.some((w: { kind: string }) => w.kind === "personal")).toBeTruthy();
   expect(state.user.onboarding_workspace_id).toBe(selected);
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your workspace is saved", exact: true })).toBeVisible();
-  await expect(page.getByText(/First delivery team · Organisation/)).toBeVisible();
+  await expect(page.getByText(/First delivery team · Team/)).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Your workspace is saved", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -57,14 +57,14 @@ test("workspace settings offers separate organisation creation and no conversion
   const slug = new URL(page.url()).pathname.split("/")[2]!;
   await page.goto(`/w/${slug}/settings/workspace`);
   await expect(page.getByRole("button", { name: "Turn into an organisation", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Create organisation workspace", exact: true })).toHaveAttribute("href", "/onboarding?mode=project&team=1");
+  await expect(page.getByRole("link", { name: "Create Team workspace", exact: true })).toHaveAttribute("href", "/onboarding?mode=project&team=1");
 });
 
 test("a saved organisation choice still allows personal setup after role restrictions", async ({ page }) => {
   await signUp(page);
   const chosen = await page.request.post("/v1/me/onboarding-workspace", {
     headers: { "X-Requested-With": "e2e" },
-    data: { kind: "organization", name: "Earlier team" },
+    data: { kind: "team", name: "Earlier team" },
   });
   expect(chosen.status()).toBe(200);
   const organisation = await chosen.json();
@@ -93,7 +93,7 @@ test("a different saved choice opens its summary instead of continuing in the st
     async (route) => {
       const saved = await page.request.post("/v1/me/onboarding-workspace", {
         headers: { "X-Requested-With": "e2e" },
-        data: { kind: "organization", name: "Saved in another tab" },
+        data: { kind: "team", name: "Saved in another tab" },
       });
       expect(saved.status()).toBe(200);
       return route.fulfill({ status: 409, json: { detail: "Your first workspace is already selected" } });
@@ -102,7 +102,7 @@ test("a different saved choice opens its summary instead of continuing in the st
   );
   await page.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your workspace is saved", exact: true })).toBeVisible();
-  await expect(page.getByText(/Saved in another tab · Organisation/)).toBeVisible();
+  await expect(page.getByText(/Saved in another tab · Team/)).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Review it before continuing");
   await expect(page.getByLabel("Project name", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -117,7 +117,7 @@ test("a background profile refetch reconciles another tab's saved organisation b
   await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toBeVisible();
   const response = await page.request.post("/v1/me/onboarding-workspace", {
     headers: { "X-Requested-With": "e2e" },
-    data: { kind: "organization", name: "Chosen from another tab" },
+    data: { kind: "team", name: "Chosen from another tab" },
   });
   expect(response.status()).toBe(200);
   const organisation = await response.json();
@@ -131,7 +131,7 @@ test("a background profile refetch reconciles another tab's saved organisation b
   });
   await refreshed;
   await expect(page.getByRole("heading", { name: "Your workspace is saved", exact: true })).toBeVisible();
-  await expect(page.getByText(/Chosen from another tab · Organisation/)).toBeVisible();
+  await expect(page.getByText(/Chosen from another tab · Team/)).toBeVisible();
   await expect(page.getByLabel("Project name", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByLabel("Workspace", { exact: true })).toHaveAttribute("data-value", organisation.id);

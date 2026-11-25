@@ -463,9 +463,7 @@ async def test_intervening_shared_context_invalidates_an_open_review_and_blank_c
     from dotrix_backend.modules.repo_knowledge.models import RepoBaselineReview
     from dotrix_backend.modules.repo_knowledge.service import RepoKnowledgeService
 
-    ada, cat, ws, kun, _ = await github_world()
-    assert (await db_client.patch(ws, headers=ada.headers,
-                                 json={"member_permissions": ["knowledge:write"]})).status_code == 200
+    ada, _, ws, kun, _ = await github_world()
     await _connect(db_client, ws, kun, ada.headers)
     project = f"{ws}/projects/{kun['id']}"
     base = f"{project}/repository/knowledge"
@@ -480,14 +478,14 @@ async def test_intervening_shared_context_invalidates_an_open_review_and_blank_c
     assert opened["can_confirm"]
     correction = {"request_id": str(uuid.uuid4()), "digest": opened["digest"], "decision": "corrections",
                   "notes": "Goal: serve consultants. Correct the assumption that we sell to enterprises."}
-    saved = await db_client.post(f"{base}/baseline/reviews", headers=cat.headers, json=correction)
+    saved = await db_client.post(f"{base}/baseline/reviews", headers=ada.headers, json=correction)
     assert saved.status_code == 200, saved.text
     revised = saved.json()
     assert revised["digest"] != opened["digest"] and not revised["current"]
     assert revised["human_context"]["notes"] == correction["notes"]
     assert revised["evidence"]["human_context"]["revision"] == revised["review"]["id"]
     assert revised["evidence"]["knowledge_revision"] == opened["evidence"]["knowledge_revision"]
-    assert (await db_client.post(f"{base}/baseline/reviews", headers=cat.headers, json=correction)).json()["review"]["id"] == revised["review"]["id"]
+    assert (await db_client.post(f"{base}/baseline/reviews", headers=ada.headers, json=correction)).json()["review"]["id"] == revised["review"]["id"]
     stale_confirmation = {"request_id": str(uuid.uuid4()), "digest": opened["digest"],
                           "decision": "confirmed", "notes": "", "acknowledge_limits": True}
     rejected = await db_client.post(f"{base}/baseline/reviews", headers=ada.headers, json=stale_confirmation)

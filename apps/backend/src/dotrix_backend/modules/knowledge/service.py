@@ -29,7 +29,9 @@ from dotrix_backend.modules.automations.events import record_event
 from dotrix_backend.modules.automations.models import AutomationEvent
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository
-from dotrix_backend.modules.workspaces.models import Role
+from dotrix_backend.modules.workspaces.models import Role, Workspace, WorkspaceKind
+from dotrix_backend.modules.workspaces.permissions import can_manage_issues
+from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_engine.contracts import AgentPolicy
 from dotrix_engine.knowledge_index import describe
 from dotrix_engine.layout import MAX_FILE_BYTES, InvalidPath, normalize_path
@@ -186,7 +188,7 @@ class KnowledgeService:
         clean = _clean_path(path)
         if len(content.encode("utf-8")) > MAX_FILE_BYTES:
             raise FileTooLarge(f"Files are limited to {MAX_FILE_BYTES // 1_000_000} MB")
-        self._check_write(actor, clean)
+        await self._check_write(project, actor, clean)
 
         locked = await self._lock(project)
         file = await self.files.get_file(locked.id, clean)
@@ -224,7 +226,7 @@ class KnowledgeService:
         self, project: Project, path: str, actor: Actor, *, base_version: int | None = None
     ) -> None:
         clean = _clean_path(path)
-        self._check_write(actor, clean)
+        await self._check_write(project, actor, clean)
         locked = await self._lock(project)
         file = await self.files.get_file(locked.id, clean)
         if file is None or file.deleted:
@@ -253,12 +255,17 @@ class KnowledgeService:
 
     # -- helpers -----------------------------------------------------------------------
 
-    def _check_write(self, actor: Actor, path: str) -> None:
+    async def _check_write(self, project: Project, actor: Actor, path: str) -> None:
         if actor.kind is AuthorType.SYSTEM:
             return
         if actor.kind is AuthorType.AGENT:
             if actor.instructed_by_id is None or actor.approved_by_id is None:
                 raise Forbidden("Agent writes need an instructing and an approving person")
+            workspace = await self.session.get(Workspace, project.workspace_id)
+            if workspace is not None and workspace.kind is WorkspaceKind.TEAM:
+                approver = await MembershipRepository(self.session).get(workspace.id, actor.approved_by_id)
+                if approver is None or not can_manage_issues(approver):
+                    raise Forbidden("Only Team Owners and Admins can approve changes to Knowledge")
             policy = actor.policy or _BUILTIN_POLICY
             if not policy.can_write(actor.agent or "", path):
                 owner = policy.access(actor.agent or "", path)

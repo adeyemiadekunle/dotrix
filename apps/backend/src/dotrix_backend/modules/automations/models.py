@@ -44,7 +44,7 @@ class Automation(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base
     schedule_hour: Mapped[int | None] = mapped_column(SmallInteger)  # 0-23 UTC; null: no schedule
     schedule_weekday: Mapped[int | None] = mapped_column(SmallInteger)  # 0 Monday … 6 Sunday; null: daily
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    # Its own daily cap, if an owner set one; null: none (runs use the organisation's own keys).
+    # Its own daily cap, if an owner set one; null: none (runs use the Team workspace's own keys).
     max_runs_per_day: Mapped[int | None] = mapped_column(Integer)
     # Its runs may use the agents' standing rules to change things without approval (beyond the
     # low-risk ones). Off by default; owners turn it on.

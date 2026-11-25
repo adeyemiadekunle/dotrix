@@ -9,6 +9,7 @@ import type { Scope } from "@/lib/issues";
 
 import { Confirmation as ConfirmPrompt } from "@dotrix/ui/components/ai-elements/confirmation";
 
+import { canApplyAgentApproval } from "../core/can";
 import { Ic } from "../core/icons";
 import { D, who } from "../data/store";
 import { PlanSteps } from "./AgentTrace";
@@ -88,7 +89,7 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
           <ConfirmPrompt
             icon={<Ic n="hand-palm" />}
             title={`${label}?`}
-            description="Waiting for your decision"
+            description={!canApplyAgentApproval(a) ? "An Owner or Admin must approve this change" : "Waiting for your decision"}
             denyLabel="Reject"
             approveLabel={
               <>
@@ -98,7 +99,7 @@ function ChangeCard({ a, choice, onChoose, busy }: { a: Approval; choice?: Choic
             }
             disabled={busy}
             onDeny={() => setRejecting(true)}
-            onApprove={() => onChoose({ decision: "approve", reason: "" })}
+            onApprove={!canApplyAgentApproval(a) ? undefined : () => onChoose({ decision: "approve", reason: "" })}
           />
         </div>
       ) : pending ? (
@@ -230,7 +231,7 @@ export function RunApprovals({ run, scope }: { run: Run; scope: Scope | undefine
           <button className="btn btn-sm btn-ghost" onClick={() => all("reject")} disabled={decide.isPending}>
             Reject all
           </button>
-          <button className="btn btn-sm btn-secondary" onClick={() => all("approve")} disabled={decide.isPending}>
+          <button className="btn btn-sm btn-secondary" onClick={() => all("approve")} disabled={decide.isPending || !waiting.every(canApplyAgentApproval)}>
             <Ic n="check-check" s={13} />
             Approve all {waiting.length}
           </button>

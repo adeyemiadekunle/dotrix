@@ -8,11 +8,11 @@ Dotrix helps a solo developer turn an idea or an existing GitHub repository into
 
 **Idea or repository → understand → agree on scope → save knowledge and tasks → approve Kai → implement and check → Juno review → human merge and project update.**
 
-Launch a focused private solo beta, learn from real use, then widen collaboration. Personal and organisation workspaces share one account and permission foundation. Organisations are hidden when `DOTRIX_ORGANISATIONS` is off; preserve their data, isolation and existing permissions. Do not remove features merely because they are outside the first release.
+Launch a focused private solo beta, learn from real use, then widen collaboration. Personal and Team workspaces share one account. A Team workspace is for project management. Owners and Admins create issues and assign them to people who can access the project. Members can use Chat and Codes on their assigned tasks and retain ownership of the work. A Personal workspace owner can assign work to Kai. Team workspace availability follows `DOTRIX_TEAMS`. Do not remove features merely because they are outside the first release.
 
 A project is the home for work. Support Explore an idea, Start a new codebase, and Connect an existing repository. An idea needs only a working title; GitHub is optional until code is needed. Tasks, documents and navigation work without a model key. Agents use the instructing person's encrypted provider key, with no platform or colleague key fallback. Provider charges and infrastructure costs are separate.
 
-Keep Home, Projects, Chat, Codes, Tasks and Settings useful to one person. Hide team invitations, workload reports and organisation administration from personal workspaces. Defer enterprise controls, broad integrations, arbitrary agent identities and recursive teams until the core loop is dependable.
+Keep Home, Projects, Chat, Codes, Tasks and Settings useful to one person. Hide team invitations, workload reports and Team workspace administration from personal workspaces. Defer enterprise controls, broad integrations, arbitrary agent identities and recursive teams until the core loop is dependable.
 
 ## Getting started
 
@@ -103,7 +103,7 @@ J01–J08 describe implemented repository journeys, with deterministic regressio
 | J05: explicit publication | A person previews and edits selected content from their completed private reply into shared requirements, decisions, research or an unassigned To do task. | Current permissions, version checks and retry receipts apply. Optional task/document links are same-project and version-pinned. Decision supersession preserves old text/history. Shared destinations never inherit private transcript links or start coding. |
 | J06: GitHub backlog import | A human reviews and selects up to 50 issues per preview page from the connected repository. Imports are one-time snapshots into Tasks. | Open issues map to Backlog/To do; closed-completed issues to Done. No comments, attachments, milestones, Projects or source relationships. Recheck source revisions and permissions before one atomic batch. Stable source IDs and tombstones prevent duplicate or deleted-task recreation; later GitHub edits never overwrite tasks. |
 | J07: readiness and next action | Onboarding, Overview and empty task views share saved, requester-specific readiness. | A URL is not a connection; a connection is not live execution admission; a saved key is not verified provider access. Key changes invalidate older success evidence. Readiness makes no external calls or writes and never blocks manual project work. |
-| J08: first workspace | The optional initial workspace choice defaults to Personal; Skip saves it. Organisation creation is explicit and feature-gated. A labelled stepper keeps saved state. | Concurrent/retried choices reuse the confirmed workspace; conflicts require review. Invitation/return paths and later project setup bypass registration choice. Personal-to-organisation conversion is retired; explicit project moves preserve permissions and privacy. |
+| J08: first workspace | The optional initial workspace choice defaults to Personal; Skip saves it. Team workspace creation is explicit and feature-gated. A labelled stepper keeps saved state. | Concurrent/retried choices reuse the confirmed workspace; conflicts require review. Invitation/return paths and later project setup bypass registration choice. Personal-to-Team conversion is retired; explicit project moves preserve permissions and privacy. |
 
 Regression entry points are [web browser specs](../apps/web/e2e/) and [backend integration tests](../apps/backend/tests/integration/), including onboarding, project starts, repository creation/readiness, baseline review, publication, imports, coding and project readiness. Synthetic GitHub/model traffic establishes application behaviour; it does not verify external services or paid-model quality.
 
@@ -125,7 +125,7 @@ Demo and live share Shell, session/message rows, coding panels and Settings pres
 
 | Area | Supported in the beta | Notes |
 | --- | --- | --- |
-| Workspace | One personal workspace per account | Organisations are off (`DOTRIX_ORGANISATIONS`, the default on staging and production). Existing organisations keep their data and return when the setting is turned on. |
+| Workspace | One personal workspace per account | Team workspaces are off (`DOTRIX_TEAMS`, the default on staging and production). Existing Team workspaces keep their data and return when the setting is turned on. |
 | Sign-in | Email and password, sign-in links, GitHub sign-in | Email verification, password reset and sign-in links need outgoing email (Sendly). |
 | Account recovery | Password reset and sign-in link by email; signing out other browsers and the desktop app from Settings → Sessions | No two-factor authentication for people's accounts yet (the admin console has its own). |
 | Starting a project | Explore an idea, Start a new codebase, Connect an existing repository | Repository creation on GitHub needs the GitHub App installed on the account; personal GitHub accounts create the repository on GitHub, then connect it. |
@@ -210,7 +210,7 @@ evidence lives when a check passes.
 
 What a beta participant should be told, with where each is tracked (CLAUDE.md's remaining work).
 
-- **Organisations and teams** are off: no invites, members, roles or shared workspaces.
+- **Team workspaces** are off: no invites, members, roles or shared workspaces.
 - **One person per key.** No retry on a provider's 429 beyond stopping the run with Continue; no per-workspace queue of runs.
 - **Codes** shows recorded background task states, checks and command output. Token-by-token replies, aggregate session usage and fully nested runtime-native subagent events remain incomplete.
 - **Local coding** runs commands only with `sbx` installed (checked against a fake `sbx`, not a real one); a folder without a remote gets a branch and diff, no PR.

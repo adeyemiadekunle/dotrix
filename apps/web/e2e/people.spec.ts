@@ -117,12 +117,52 @@ test("join by link, see a restricted project once added, then become the owner; 
   await other.close();
 });
 
-test("what members can do: an owner grants approving agents' changes", async ({ page }) => {
+test("a Team Admin can find Permissions and change member grants", async ({ page, browser }) => {
   await signUp(page);
-  await createOrganisation(page);
-  await page.goto(`/w/${slugOf(page)}/settings/permissions`);
-  await page.getByLabel("Approve agents' changes").check();
-  await page.reload();
-  await expect(page.getByLabel("Approve agents' changes")).toBeChecked();
-  await expect(page.getByLabel("Edit documents")).not.toBeChecked();
+  const team = await createOrganisation(page);
+  const headers = { "X-Requested-With": "e2e" };
+  const invite = await page.request.post(`/v1/workspaces/${team.id}/invites/links`, {
+    headers,
+    data: { role: "member" },
+  });
+  expect(invite.status()).toBe(201);
+  const { url } = await invite.json();
+
+  const context = await browser.newContext();
+  try {
+    const admin = await context.newPage();
+    await signUp(admin, newUser("Team Admin"));
+    await admin.goto(url);
+    await admin.getByRole("button", { name: "Accept and join" }).click();
+    await expect(admin).toHaveURL(new RegExp(`/w/${team.slug}$`));
+    const me = await (await admin.request.get("/v1/me")).json();
+
+    await admin.goto(`/w/${team.slug}/settings/permissions`);
+    await expect(admin.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
+    await expect(admin.getByRole("heading", { name: "Role permissions" })).toHaveCount(0);
+
+    const promote = await page.request.patch(`/v1/workspaces/${team.id}/members/${me.id}`, {
+      headers,
+      data: { role: "admin" },
+    });
+    expect(promote.status()).toBe(200);
+
+    await admin.goto(`/w/${team.slug}/members`);
+    await admin.getByRole("button", { name: "Manage permissions" }).click();
+    await expect(admin).toHaveURL(/\/settings\/permissions$/);
+    await expect(admin.getByRole("heading", { name: "Role permissions" })).toBeVisible();
+    const grant = admin.getByRole("checkbox", { name: "Approve other people’s agent work" });
+    const row = admin.getByRole("row", { name: /Approve eligible work requested by teammates/ });
+    await expect(row.getByText("Off", { exact: true })).toBeVisible();
+    await grant.click();
+    await expect(grant).toBeChecked();
+    await expect(row.getByText("Granted", { exact: true })).toBeVisible();
+    await admin.reload();
+    await expect(grant).toBeChecked();
+    await grant.click();
+    await expect(grant).not.toBeChecked();
+    await expect(row.getByText("Off", { exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
 });

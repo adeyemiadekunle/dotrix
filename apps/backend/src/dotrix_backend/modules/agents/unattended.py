@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dotrix_backend.modules.audit.models import AuditEvent
 from dotrix_backend.modules.workspaces.models import Membership, Role
 from dotrix_backend.modules.workspaces.permissions import Permission, can
-from dotrix_engine.catalog import ACTIONS, LOW_RISK_ACTIONS
+from dotrix_engine.catalog import ACTIONS, LOW_RISK_ACTIONS, action_for
 from dotrix_engine.contracts import AgentPolicy, AgentSpec
 
 # What the instructing person must be able to do themselves for an agent to do it unasked.
@@ -40,6 +40,15 @@ _NEEDS: dict[str, Permission] = {
 }
 
 REFUSED = "Changes need a person's instruction and approval"
+
+
+def team_admin_approval(tool: str, args: dict[str, Any]) -> str | None:
+    action = action_for(tool)
+    if action == "knowledge.write":
+        return "Only Team Owners and Admins can approve changes to Knowledge"
+    if action == "issues.update" and args.get("status") == "done":
+        return "Only Team Owners and Admins can approve closing issues"
+    return None
 
 
 def effective_specs(

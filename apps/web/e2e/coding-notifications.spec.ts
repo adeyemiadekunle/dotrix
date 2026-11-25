@@ -53,7 +53,7 @@ for (const scenario of cases) {
     await page.route("**/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
       let data: unknown = [];
-      if (path === "/v1/features") data = { organisations: true };
+      if (path === "/v1/features") data = { teams: true };
       else if (path === "/v1/me") data = { id: "u1", display_name: "Test User", email: "test@example.com" };
       else if (path === "/v1/workspaces") data = [{ id: "w1", slug: "test-workspace", name: "Test workspace", kind: "personal", permissions: ["agents:code"] }];
       else if (path.endsWith("/members"))

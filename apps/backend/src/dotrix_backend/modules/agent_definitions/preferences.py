@@ -11,10 +11,9 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dotrix_backend.core.errors import Forbidden, NotFound, Unprocessable
+from dotrix_backend.core.errors import NotFound, Unprocessable
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.knowledge.models import AuthorType
-from dotrix_backend.modules.model_keys.service import may_choose
 from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_engine.contracts import AgentSpec
 
@@ -73,7 +72,7 @@ class AgentPreferences:
             Membership.user_id == member.user_id).with_for_update())
 
     async def save(
-        self, member: Membership, handle: str, data: AgentPreferenceSave, *, available: list[str], personal: set[str]
+        self, member: Membership, handle: str, data: AgentPreferenceSave, *, available: list[str]
     ) -> AgentPreferenceRead:
         handles = {a.spec.handle for a in await AgentDefinitionRepository(self.session).resolve(member.workspace_id)}
         handles.add("coding-agent")
@@ -84,8 +83,6 @@ class AgentPreferences:
                 raise Unprocessable("Choose Kai's coding tool and model in Your models")
             if data.model not in available:
                 raise Unprocessable(f"{data.model} can't run here; choose one of: {', '.join(available) or 'none'}")
-            if not may_choose(member, data.model, personal):
-                raise Forbidden("Choosing a model needs the workspace's permission, unless it runs on your own key")
         await self._lock(member)
         row = await self._row(member, handle)
         instructions = data.instructions.strip()

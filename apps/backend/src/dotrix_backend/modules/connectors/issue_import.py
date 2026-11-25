@@ -18,7 +18,7 @@ from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.models import Membership, Role
-from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.permissions import can_manage_issues
 
 from .github_app import GitHubApp, GitHubUnavailable
 from .import_models import GitHubImportedIssue, GitHubImportPreview
@@ -45,7 +45,7 @@ class GitHubIssueImport:
         member = await self.session.scalar(select(Membership).options(joinedload(Membership.workspace)).where(
             Membership.workspace_id == access.project.workspace_id, Membership.user_id == access.member.user_id,
         ).with_for_update(of=Membership).execution_options(populate_existing=True))
-        if member is None or not can(member, Permission.EDIT_ISSUES):
+        if member is None or not can_manage_issues(member):
             raise Forbidden("You can no longer import issues")
         project = await ProjectRepository(self.session).visible(member, access.project.id)
         if project is None:
@@ -187,6 +187,8 @@ class GitHubIssueImport:
         ))
         if row is None:
             raise NotFound("Import preview not found")
+        if not can_manage_issues(access.member):
+            raise Forbidden("Only Team Owners and Admins can import issues")
         if row.result is not None:
             if row.selection_digest != selection:
                 raise Conflict("This preview was already imported with a different selection")

@@ -1,5 +1,6 @@
 // Shared task list: the editable cells, a row, the
 // grouped list with inline add and bulk selection, an activity line, and the small task row.
+import { canManageIssues } from "../core/can";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { Fragment, useState, type CSSProperties, type MouseEvent, type ReactElement } from "react";
 
@@ -42,6 +43,13 @@ export function CellStatus({ t }: { t: Task }) {
 }
 export function CellAssignee({ t }: { t: Task }) {
   const w = who(t.assignee);
+  if (!canManageIssues())
+    return (
+      <span className="pillbtn">
+        <Av id={t.assignee} cls="sm" tip={false} />
+        {w?.name ?? "Unassigned"}
+      </span>
+    );
   return (
     <ActionButton className={`pillbtn ${w ? "" : "empty"}`} onClick={pop("assignee", t)} aria-label={`Assignee for ${t.key}`}>
       <Av id={t.assignee} cls="sm" tip={false} />
@@ -238,6 +246,7 @@ function TaskRow({ t, cols, tpl, group, complete, drag = true }: { t: Task; cols
               type="checkbox"
               className="check round"
               checked={t.status === "done"}
+              disabled={t.status !== "done" && !canManageIssues()}
               onChange={() => toggleDone(t.id)}
               aria-label={`Mark ${t.title} complete`}
             />
@@ -339,11 +348,17 @@ export function ListView({
   const total = all.length;
   if (!total)
     return (
-      <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
-        <button className="btn btn-primary btn-sm" onClick={() => newTask({ project })}>
-          <Ic n="plus" s={14} />
-          New task
-        </button>
+      <Empty
+        icon="list-checks"
+        title="No tasks here"
+        text={canManageIssues() ? "Add a task to get things moving." : "Tasks will appear here when an Owner or Admin creates them."}
+      >
+        {canManageIssues() && (
+          <button className="btn btn-primary btn-sm" onClick={() => newTask({ project })}>
+            <Ic n="plus" s={14} />
+            New task
+          </button>
+        )}
       </Empty>
     );
   const v = S.views[k];
@@ -418,7 +433,7 @@ export function ListView({
                   {g.html}
                   <span>{g.name}</span>
                   <span className="cnt">{g.tasks.length}</span>
-                  {!noAdd && (
+                  {!noAdd && canManageIssues() && (
                     <ActionButton className="ibtn ibtn-xs" onClick={() => startComposer(k, g.key, g.set || {})} aria-label={`Quick add task to ${g.name}`}>
                       <Ic n="plus" s={13} />
                     </ActionButton>
@@ -428,6 +443,7 @@ export function ListView({
               {!coll && g.tasks.map((t) => <TaskRow key={t.id} t={t} cols={cols} tpl={tpl} group={g.key} complete={complete} drag={drag !== false} />)}
               {!coll &&
                 !noAdd &&
+                canManageIssues() &&
                 (comp ? (
                   <Composer k={k} g={g} />
                 ) : (
@@ -470,10 +486,12 @@ function BulkBar({ ids }: { ids: string[] }) {
         <Ic n="circle-dot" s={14} />
         Status
       </button>
-      <button className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-assignee")}>
-        <Ic n="user" s={14} />
-        Assignee
-      </button>
+      {canManageIssues() && (
+        <button className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-assignee")}>
+          <Ic n="user" s={14} />
+          Assignee
+        </button>
+      )}
       <button className="btn btn-sm" onClick={(e) => openPop(e.currentTarget, "bulk-priority")}>
         <Ic n="signal-high" s={14} />
         Priority
@@ -538,6 +556,7 @@ export function MiniRow({ t, av = true, noProj }: { t: Task; av?: boolean; noPro
         type="checkbox"
         className="check round"
         checked={t.status === "done"}
+        disabled={t.status !== "done" && !canManageIssues()}
         onClick={(e) => e.stopPropagation()}
         onChange={() => toggleDone(t.id)}
         aria-label={`Complete ${t.title}`}

@@ -30,7 +30,7 @@ export async function signUp(page: Page, user = newUser()) {
 export async function createOrganisation(page: Page, name = "Test organisation") {
   const response = await page.request.post("/v1/workspaces", {
     headers: { "X-Requested-With": "e2e" },
-    data: { kind: "organization", name },
+    data: { kind: "team", name },
   });
   expect(response.status()).toBe(201);
   const workspace = await response.json();

@@ -38,7 +38,6 @@ class RunKeys:
     """The instructing person's keys; no workspace or server fallback."""
 
     keys: dict[str, str]
-    personal: set[str]  # providers whose key is the person's own
 
 
 async def run_keys(
@@ -46,20 +45,12 @@ async def run_keys(
 ) -> RunKeys:
     """Only the instructing person's keys, including scheduled runs by their creator."""
     if user_id is None:
-        return RunKeys({}, set())
+        return RunKeys({})
     member = await session.scalar(select(Membership.id).where(
         Membership.workspace_id == workspace_id, Membership.user_id == user_id,
     ))
     keys = await PersonalKeys(session, secrets).keys(user_id) if member is not None else {}
-    return RunKeys(keys, set(keys))
-
-
-def may_choose(member: Membership, model: str, personal: set[str]) -> bool:
-    """Picking a model other than the project's: people the workspace lets choose, or anyone
-    whose own key pays for it."""
-    from dotrix_backend.modules.workspaces.permissions import Permission, can
-
-    return can(member, Permission.CHOOSE_MODEL) or model.partition(":")[0] in personal
+    return RunKeys(keys)
 
 
 class PersonalKeys:

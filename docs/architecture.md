@@ -21,6 +21,8 @@ Every query and tool effect rechecks workspace/project access and the instructin
 
 Conversations and run diagnostics belong to their requester. Owners/admins can see automation runs; an approver has the existing limited access while deciding. Publishing selected outcomes does not publish the conversation. Shared tasks expose published PR/commit metadata, current-commit CI and posted review links; private briefs, summaries, events, usage and Chat/Juno links remain private. A requester may get a link to their own session. A merged PR does not close a task without a person confirming completion.
 
+Team Members can approve eligible changes and Codes turns they request. An explicit approval grant extends this to eligible work requested by teammates. An Owner or Admin must apply changes to shared Knowledge and confirm issue closure, including changes proposed by agents.
+
 Manual, Accept edits and Auto use the lowest of the requested mode, workspace cap and person's authorised mode. Default to Manual. A workspace pause forces Manual; an owner block always blocks. Role/contract restrictions remain in force regardless of mode.
 
 | Action | Approval boundary |
