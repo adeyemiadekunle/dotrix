@@ -4,14 +4,19 @@
   "compatibility_date": "2026-11-25",
   "workers_dev": false,
   "preview_urls": false,
+  "vars": {
+    "DOTRIX_APP_URL": "https://cf-pilot.dotrix.cc",
+    "DOTRIX_ADMIN_URL": "https://cf-admin-pilot.dotrix.cc",
+    "DOTRIX_SITE_URL": "https://cf-site-pilot.dotrix.cc"
+  },
   "observability": {
     "enabled": true
   },
   "assets": {
-    "directory": "../../apps/web/dist",
+    "directory": "./dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/v1", "/v1/*", "/api", "/api/*", "/health", "/health/*"]
+    "html_handling": "none",
+    "run_worker_first": true
   },
   "containers": [
     {

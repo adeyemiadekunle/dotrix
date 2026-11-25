@@ -9760,6 +9760,32 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
         };
+        /** OperationsSnapshot */
+        OperationsSnapshot: {
+            /** Worker Revision */
+            worker_revision?: string | null;
+            /** Worker Heartbeat At */
+            worker_heartbeat_at?: string | null;
+            /** Email Last Accepted At */
+            email_last_accepted_at?: string | null;
+            /**
+             * Email Retries Today
+             * @default 0
+             */
+            email_retries_today: number;
+            /**
+             * Email Permanent Failures Today
+             * @default 0
+             */
+            email_permanent_failures_today: number;
+            /**
+             * First Nova Event Samples Today
+             * @default 0
+             */
+            first_nova_event_samples_today: number;
+            /** First Nova Event Mean Ms Today */
+            first_nova_event_mean_ms_today?: number | null;
+        };
         /** OutputItemUpdate */
         OutputItemUpdate: {
             /**
@@ -9995,6 +10021,9 @@ export interface components {
             generated_at: string;
             /** Version */
             version: string;
+            /** Api Revision */
+            api_revision?: string | null;
+            operations?: components["schemas"]["OperationsSnapshot"] | null;
             /** Environment */
             environment: string;
             /**
@@ -10023,6 +10052,8 @@ export interface components {
              * @description When a worker last took a run off the queue
              */
             worker_last_took_at: string | null;
+            /** Last Queue Wait Ms */
+            last_queue_wait_ms?: number | null;
             /** Runs Running */
             runs_running: number;
             /** Runs Queued */

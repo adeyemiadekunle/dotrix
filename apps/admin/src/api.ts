@@ -113,6 +113,16 @@ export type AdminAlerts = { open: AdminAlert[]; resolved: AdminAlert[] };
 export type Health = {
   generated_at: string;
   version: string;
+  api_revision?: string | null;
+  operations?: {
+    worker_revision: string | null;
+    worker_heartbeat_at: string | null;
+    email_last_accepted_at: string | null;
+    email_retries_today: number;
+    email_permanent_failures_today: number;
+    first_nova_event_samples_today: number;
+    first_nova_event_mean_ms_today: number | null;
+  } | null;
   environment: string;
   jobs: string;
   sandbox: string;
@@ -121,6 +131,7 @@ export type Health = {
   queue_oldest_seconds: number | null;
   queue_discarded_24h: number;
   worker_last_took_at: string | null;
+  last_queue_wait_ms?: number | null;
   runs_running: number;
   runs_queued: number;
   stuck: StuckRun[];

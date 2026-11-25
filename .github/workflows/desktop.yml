@@ -24,6 +24,10 @@ on:
         description: Optional existing component release tag to rebuild and attach to (empty builds artifacts only)
         type: string
         default: ""
+      staging:
+        description: Build an artifact for the Cloudflare pilot
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -56,7 +60,8 @@ jobs:
       run:
         shell: bash
     env:
-      DOTRIX_WEB_URL: ${{ vars.DOTRIX_APP_URL || (github.event_name == 'pull_request' && 'https://dotrix.example.com' || '') }}
+      DOTRIX_WEB_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.staging && 'https://cf-pilot.dotrix.cc' || vars.DOTRIX_APP_URL || (github.event_name == 'pull_request' && 'https://dotrix.example.com' || '') }}
+      DOTRIX_STAGING_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.staging == true }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
       CLI_ONLY: ${{ startsWith(github.event.release.tag_name, 'cli-v') || startsWith(inputs.release_tag, 'cli-v') || inputs.artifact == 'cli' }}
     steps:
@@ -66,6 +71,10 @@ jobs:
       - name: Versions and release target
         id: meta
         run: |
+          if [ "$DOTRIX_STAGING_BUILD" = true ] && [ -n "$RELEASE_TAG" ]; then
+            echo '::error::Staging artifacts cannot be attached to a public release'
+            exit 1
+          fi
           test -n "$DOTRIX_WEB_URL" || { echo '::error::Set DOTRIX_APP_URL to the public API/web origin'; exit 1; }
           desktop_version="$(python scripts/release.py version --component desktop)"
           cli_version="$(python scripts/release.py version --component cli)"
@@ -73,6 +82,7 @@ jobs:
           echo "CLI_VERSION=$cli_version" >> "$GITHUB_ENV"
           artifact=desktop
           if [ "$CLI_ONLY" = true ]; then artifact=cli; fi
+          if [ "$DOTRIX_STAGING_BUILD" = true ]; then artifact="$artifact-staging"; fi
           echo "artifact_name=dotrix-$artifact-windows-x64" >> "$GITHUB_OUTPUT"
           if [ -n "$RELEASE_TAG" ]; then
             expected="v$desktop_version"
@@ -104,12 +114,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Compress-Archive -Path apps/desktop/resources/dotrix/* -DestinationPath "out/dotrix-cli-$env:CLI_VERSION-windows-x64.zip"
       - name: Desktop installer and update feed
-        if: env.CLI_ONLY != 'true'
+        if: env.CLI_ONLY != 'true' && env.DOTRIX_STAGING_BUILD != 'true'
         run: |
           pnpm --filter @dotrix/desktop dist:win
           mkdir -p out
           cp apps/desktop/release/*-setup.exe apps/desktop/release/*-setup.exe.blockmap apps/desktop/release/latest.yml out/
           grep -q "dotrix-$VERSION-windows-x64-setup.exe" out/latest.yml
+      - name: Stage the portable desktop build
+        if: env.CLI_ONLY != 'true' && env.DOTRIX_STAGING_BUILD == 'true'
+        shell: pwsh
+        run: |
+          pnpm --filter @dotrix/desktop dist:win:portable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Compress-Archive -Path apps/desktop/release/win-unpacked/* -DestinationPath "out/dotrix-desktop-staging-windows-x64.zip"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.meta.outputs.artifact_name }}
@@ -118,7 +136,7 @@ jobs:
 
   attach:
     needs: windows
-    if: github.event_name == 'release' || inputs.release_tag != ''
+    if: github.event_name == 'release' || (inputs.release_tag != '' && !(github.event_name == 'workflow_dispatch' && inputs.staging))
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.jobs import QUEUE_NAME
 from dotrix_backend.core.model_prices import cost_of
+from dotrix_backend.core.operations import Operations
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.admin.schemas import (
     AuditPage,
@@ -213,7 +214,15 @@ class PlatformObserve:
 
         open_dispatch = (RunDispatch.accepted_at.is_(None), RunDispatch.discarded_at.is_(None))
         oldest = await self.session.scalar(select(func.min(RunDispatch.created_at)).where(*open_dispatch))
-        last_taken = await self.session.scalar(select(func.max(RunDispatch.accepted_at)))
+        last_dispatch = (
+            await self.session.execute(
+                select(RunDispatch.created_at, RunDispatch.accepted_at)
+                .where(RunDispatch.accepted_at.is_not(None))
+                .order_by(RunDispatch.accepted_at.desc()).limit(1)
+            )
+        ).first()
+        redis = getattr(state, "redis", None)
+        operations = await Operations(redis).snapshot() if redis is not None and self.settings.jobs == "worker" else None
 
         stuck_rows: list[StuckRun] = []
         chat_stuck = await self.session.execute(
@@ -272,6 +281,8 @@ class PlatformObserve:
                 )
             ),
             version=version,
+            api_revision=self.settings.deployment_revision,
+            operations=operations,
             environment=self.settings.env,
             jobs=self.settings.jobs,
             sandbox=self.settings.coding_sandbox,
@@ -281,7 +292,11 @@ class PlatformObserve:
             queue_discarded_24h=await self._scalar(
                 select(func.count(RunDispatch.id)).where(RunDispatch.discarded_at >= day)
             ),
-            worker_last_took_at=last_taken,
+            worker_last_took_at=last_dispatch.accepted_at if last_dispatch else None,
+            last_queue_wait_ms=(
+                round((last_dispatch.accepted_at - last_dispatch.created_at).total_seconds() * 1000, 1)
+                if last_dispatch and last_dispatch.accepted_at else None
+            ),
             runs_running=await self._scalar(
                 select(func.count(AgentRun.id)).where(AgentRun.status == RunStatus.RUNNING)
             )

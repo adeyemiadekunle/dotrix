@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added a staging Windows build that defaults to the Cloudflare pilot URL.
+
 ### Added
 
 - Managed local fx coding sessions now persist `.fx` session state beside their managed worktree, resume the conversation across follow-up turns (`--resume`), and verify `profile_digest` before starting the isolated runtime (`fx_local.py`, `runner.py`).

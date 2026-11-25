@@ -4,7 +4,7 @@
   "ignoreWorkspaces": ["apps/backend", "apps/cli", "packages/engine"],
   "workspaces": {
     ".": {
-      "entry": ["deploy/cloudflare/configure.mjs", "deploy/cloudflare/worker.mjs"],
+      "entry": ["deploy/cloudflare/build-assets.mjs", "deploy/cloudflare/configure.mjs", "deploy/cloudflare/worker.mjs"],
       "ignoreDependencies": ["cloudflare"]
     },
     "apps/web": {

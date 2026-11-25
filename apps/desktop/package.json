@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "bundle-cli": "uv run --no-project python ../cli/scripts/standalone.py",
     "dist:win": "tsc && node scripts/build-config.mjs && electron-builder --win nsis --x64 --publish never",
+    "dist:win:portable": "tsc && node scripts/build-config.mjs && electron-builder --win --dir --x64 --publish never",
     "test": "tsc && node --test dist/*.test.js"
   },
   "devDependencies": {

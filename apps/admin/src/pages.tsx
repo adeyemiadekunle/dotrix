@@ -102,7 +102,43 @@ function checks(h: Health, now: number): Check[] {
         ? "warn"
         : "good";
   const slotsFull = h.coding_slots != null && h.coding_running_cloud >= h.coding_slots;
+  const ops = h.operations;
+  const revisionMismatch = Boolean(h.api_revision && ops?.worker_revision && h.api_revision !== ops.worker_revision);
   const extra: Check[] = [
+    {
+      id: "api-revision",
+      label: "API revision",
+      icon: <SettingsIcon size={18} />,
+      tone: revisionMismatch ? "warn" : "muted",
+      value: h.api_revision?.slice(0, 12) ?? "Unavailable",
+      detail: revisionMismatch ? "Worker is running a different revision" : "Source commit",
+    },
+    {
+      id: "worker-revision",
+      label: "Worker revision",
+      icon: <SettingsIcon size={18} />,
+      tone: revisionMismatch || (h.jobs === "worker" && !ops?.worker_heartbeat_at) ? "warn" : "muted",
+      value: ops?.worker_revision?.slice(0, 12) ?? "Unavailable",
+      detail: ops?.worker_heartbeat_at ? `Heartbeat ${ago(ops.worker_heartbeat_at, now)}` : "No recent heartbeat",
+    },
+    {
+      id: "email-provider",
+      label: "Email acceptance",
+      icon: <ListTodoIcon size={18} />,
+      tone: ops?.email_permanent_failures_today ? "warn" : "muted",
+      value: ops?.email_last_accepted_at ? ago(ops.email_last_accepted_at, now) : "No recent acceptance",
+      detail: ops ? `${ops.email_retries_today} retries · ${ops.email_permanent_failures_today} permanent failures today (UTC)` : "Worker data unavailable",
+    },
+    {
+      id: "nova-latency",
+      label: "Nova first event",
+      icon: <HistoryIcon size={18} />,
+      tone: "muted",
+      value: ops?.first_nova_event_mean_ms_today == null ? "No samples" : duration(ops.first_nova_event_mean_ms_today / 1000),
+      detail: ops?.first_nova_event_samples_today
+        ? `Mean for ${ops.first_nova_event_samples_today} attempts today (UTC), from stream open`
+        : "Time from stream open",
+    },
     {
       id: "emails-waiting",
       label: "Emails waiting",
@@ -146,6 +182,14 @@ function checks(h: Health, now: number): Check[] {
       tone: queueTone,
       value: h.queue_pending ? `${h.queue_pending} waiting` : "Empty",
       detail: h.queue_oldest_seconds != null ? `oldest for ${duration(h.queue_oldest_seconds)}` : `${h.queue_discarded_24h} given up in 24h`,
+    },
+    {
+      id: "last-queue-wait",
+      label: "Last queue wait",
+      icon: <HistoryIcon size={18} />,
+      tone: "muted",
+      value: h.last_queue_wait_ms == null ? "No samples" : duration(h.last_queue_wait_ms / 1000),
+      detail: "Most recently claimed dispatch",
     },
     {
       id: "worker",

@@ -2,6 +2,7 @@
 // (tray, notifications for pending approvals, deep links) added over time. It also codes local turns
 // itself (runner.ts): the bundled dotrix CLI's runner, for the folders a person picks.
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, Notification, shell } from "electron";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 
 import { Browser } from "./browser";
@@ -10,7 +11,7 @@ import { LocalActions, localProfile } from "./localActions";
 import { DevServers, KaiApp } from "./devServer";
 import { McpServer, type ToolSet } from "./mcp";
 import { readChangelog } from "./changelog";
-import { webUrl } from "./config";
+import { stagingBuild, webUrl } from "./config";
 import { opensOutside, staysInside } from "./links";
 import { Runners, sameOrigin } from "./runner";
 import { Updates } from "./updates";
@@ -20,6 +21,11 @@ import { createWorktreeBranch, ownWorktree, worktreeEditorUrl, worktreeFile, wor
 const WEB_URL = webUrl();
 // The web app is served on the API's origin, so the runner talks to the same one unless told otherwise.
 const API_URL = process.env.DOTRIX_API_URL ?? new URL(WEB_URL).origin;
+if (stagingBuild()) {
+  const profile = path.join(app.getPath("appData"), "dotrix-staging");
+  mkdirSync(profile, { recursive: true });
+  app.setPath("userData", profile);
+}
 
 let browser: Browser; // the Browser pane's profile and rules (made once the app is ready)
 let kai: KaiBrowser; // Kai's use of the pane on a turn coding here
@@ -47,7 +53,7 @@ let stopped = false; // the runners were stopped for quitting (or restarting int
 const updates = new Updates(async () => {
   stopped = true;
   await Promise.all([runners.stopAll(), devServers?.stopAll(), localActions?.stopAll()]);
-});
+}, !stagingBuild());
 
 function createWindow(): void {
   const win = new BrowserWindow({

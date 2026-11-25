@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from dotrix_backend.core.operations import Operations
 
 _END = object()
 TTL_SECONDS = 3600  # a stream's keys outlive any run
@@ -36,7 +39,7 @@ class Stream(Protocol):
 
 
 class Streams(Protocol):
-    async def open(self, run_id: uuid.UUID) -> Stream: ...
+    async def open(self, run_id: uuid.UUID, *, observe_nova: bool = False) -> Stream: ...
     async def close(self, run_id: uuid.UUID) -> None: ...
     def follow(self, run_id: uuid.UUID, heartbeat_seconds: float = 15) -> AsyncIterator[tuple[str, str]]: ...
 
@@ -85,7 +88,7 @@ class RunStreams:
     def __init__(self) -> None:
         self._streams: dict[uuid.UUID, RunStream] = {}
 
-    async def open(self, run_id: uuid.UUID) -> RunStream:
+    async def open(self, run_id: uuid.UUID, *, observe_nova: bool = False) -> RunStream:
         stream = self._streams[run_id] = RunStream()
         return stream
 
@@ -130,8 +133,15 @@ class RunStreams:
 
 
 class RedisRunStream:
-    def __init__(self, redis: Any, keys: _Keys) -> None:
+    def __init__(self, redis: Any, keys: _Keys, operations: Operations | None) -> None:
         self.redis, self.keys = redis, keys
+        self.operations = operations
+        self.opened_at = time.monotonic()
+
+    async def observe_event(self) -> None:
+        if self.operations is not None:
+            operations, self.operations = self.operations, None
+            await operations.first_nova_event(self.opened_at)
 
     async def publish(self, delta: str) -> None:
         if not delta:
@@ -140,6 +150,7 @@ class RedisRunStream:
         # snapshot already contains.
         end = await self.redis.append(self.keys.text, delta.encode())
         await self.redis.publish(self.keys.channel, json.dumps({"end": end, "text": delta}))
+        await self.observe_event()
 
     async def think(self, delta: str) -> None:
         if not delta:
@@ -147,12 +158,14 @@ class RedisRunStream:
         await self.redis.append(self.keys.thinking, delta.encode())
         await self.redis.expire(self.keys.thinking, TTL_SECONDS)
         await self.redis.publish(self.keys.channel, json.dumps({"thinking": delta}))
+        await self.observe_event()
 
     async def activity(self, label: str) -> None:
         if not label:
             return
         await self.redis.set(self.keys.activity, label.encode(), ex=TTL_SECONDS)
         await self.redis.publish(self.keys.channel, json.dumps({"activity": label}))
+        await self.observe_event()
 
 
 @dataclass(frozen=True)
@@ -165,8 +178,9 @@ class _Keys:
 
 
 class RedisRunStreams:
-    def __init__(self, redis: Any, prefix: str = "dotrix:stream") -> None:
+    def __init__(self, redis: Any, prefix: str = "dotrix:stream", *, operations: Operations | None = None) -> None:
         self.redis, self.prefix = redis, prefix
+        self.operations = operations
 
     def _keys(self, run_id: uuid.UUID) -> _Keys:
         base = f"{self.prefix}:{run_id}"
@@ -175,14 +189,14 @@ class RedisRunStreams:
             thinking=f"{base}:thinking",
         )
 
-    async def open(self, run_id: uuid.UUID) -> RedisRunStream:
+    async def open(self, run_id: uuid.UUID, *, observe_nova: bool = False) -> RedisRunStream:
         keys = self._keys(run_id)
         pipe = self.redis.pipeline()
         pipe.delete(keys.text, keys.activity, keys.thinking)
         pipe.set(keys.text, b"", ex=TTL_SECONDS)
         pipe.set(keys.active, b"1", ex=TTL_SECONDS)
         await pipe.execute()
-        return RedisRunStream(self.redis, keys)
+        return RedisRunStream(self.redis, keys, self.operations if observe_nova else None)
 
     async def close(self, run_id: uuid.UUID) -> None:
         keys = self._keys(run_id)

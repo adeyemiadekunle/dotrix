@@ -22,5 +22,5 @@ if (url.protocol !== "https:" && url.hostname !== "localhost") {
 }
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
 fs.mkdirSync(dist, { recursive: true });
-fs.writeFileSync(path.join(dist, "build.json"), JSON.stringify({ webUrl: url.origin }) + "\n");
+fs.writeFileSync(path.join(dist, "build.json"), JSON.stringify({ webUrl: url.origin, staging: process.env.DOTRIX_STAGING_BUILD === "true" }) + "\n");
 console.log(`The app opens ${url.origin}`);

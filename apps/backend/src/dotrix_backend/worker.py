@@ -24,6 +24,7 @@ from .core.crypto import Secrets
 from .core.email import build_email_sender
 from .core.jobs import QUEUE_NAME, JobContext, JobFunction, QueuedJobs
 from .core.logging import configure_logging
+from .core.operations import ObservedEmailSender, Operations
 from .core.redis import redis_connection_settings
 from .core.settings import get_settings
 from .core.storage import build_storage
@@ -71,6 +72,8 @@ async def startup(ctx: dict[str, Any]) -> None:
     stack = ctx["stack"] = AsyncExitStack()
     engine = ctx["engine"] = create_engine(settings.database_url, echo=settings.database_echo)
     redis = ctx["redis"]
+    operations = ctx["operations"] = Operations(redis)
+    ctx["deployment_revision"] = settings.deployment_revision
     sessionmaker = create_sessionmaker(engine)
     embedder = build_embedder(settings)
     checkouts = build_checkouts(settings)
@@ -82,8 +85,11 @@ async def startup(ctx: dict[str, Any]) -> None:
         queue=RunQueue(redis), secrets=Secrets.from_settings(settings),
     )
     storage = build_storage(settings)
+    email = build_email_sender(settings)
+    if settings.email_backend != "console":
+        email = ObservedEmailSender(email, operations)
     ctx["jobs"] = JobContext(
-        sessionmaker, settings, build_email_sender(settings), storage, embedder, checkouts,
+        sessionmaker, settings, email, storage, embedder, checkouts,
         runner=dispatcher, coding=build_coding_worker(settings, sessionmaker, dispatcher, storage),
         jobs=QueuedJobs(redis, session_factory=sessionmaker),
     )
@@ -102,7 +108,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         inline=True,  # this process executes the runs
         stop_reasons=runs,
         outbox=runs,  # follow-ups it delivers are dispatched like the API's runs
-        streams=RedisRunStreams(redis),
+        streams=RedisRunStreams(redis, operations=operations),
     )
     # A coding run asked for from a conversation that starts at once: dispatched like any other.
     ctx["runner"].jobs = QueuedJobs(redis, session_factory=sessionmaker)
@@ -145,6 +151,8 @@ def job_function(name: str, job: JobFunction, backoff_seconds: float = 10) -> Fu
             tries = ctx.get("job_try", 1)
             if tries >= JOB_MAX_TRIES:
                 raise
+            if name in {"send_email", "send_password_reset"} and (operations := ctx.get("operations")):
+                await operations.count("email_retry")
             logger.warning("job %s failed (try %s), retrying: %s", name, tries, exc)
             raise Retry(defer=backoff_seconds * tries) from exc
 
@@ -163,6 +171,8 @@ async def dispatch_runs(ctx: dict[str, Any]) -> None:
     """Recover committed intent whose queue publication/acceptance was interrupted, and agent runs
     whose worker stopped (their lease lapsed): they go on from their last checkpoint."""
     runner: AgentRunner = ctx["runner"]
+    if operations := ctx.get("operations"):
+        await operations.heartbeat(ctx.get("deployment_revision"))
     from .modules.agents.coding_outcomes import sweep_team
     await sweep_team(runner)
     queue = RunQueue(ctx["redis"])

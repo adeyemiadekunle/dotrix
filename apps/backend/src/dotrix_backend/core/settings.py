@@ -61,6 +61,7 @@ class Settings(DatabaseSettings):
 
     # "staging" and "production" are deployed: secure cookies, and the checks in _safe_for_production.
     env: Literal["development", "test", "staging", "production"] = "development"
+    deployment_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{7,64}$")
     log_level: str = "INFO"
     log_json: bool = True
     # 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 first and stalls.
