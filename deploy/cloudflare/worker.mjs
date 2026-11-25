@@ -13,7 +13,8 @@ const REQUIRED_SECRETS = [
   "DOTRIX_S3_ACCESS_KEY",
   "DOTRIX_S3_SECRET_KEY",
   "DOTRIX_S3_BUCKET",
-  "DOTRIX_SENDLY_API_KEY",
+  "DOTRIX_CLOUDFLARE_EMAIL_ACCOUNT_ID",
+  "DOTRIX_CLOUDFLARE_EMAIL_API_TOKEN",
   "DOTRIX_EMAIL_FROM",
 ];
 
@@ -32,7 +33,7 @@ function containerEnv(env) {
     DOTRIX_JOBS: "worker",
     DOTRIX_RATE_LIMITS: "redis",
     DOTRIX_CODING_SANDBOX: "off",
-    DOTRIX_EMAIL_BACKEND: "sendly",
+    DOTRIX_EMAIL_BACKEND: "cloudflare",
     DOTRIX_S3_REGION: "auto",
     // The private container port is reachable through this Worker, which rewrites proxy headers.
     FORWARDED_ALLOW_IPS: "*",

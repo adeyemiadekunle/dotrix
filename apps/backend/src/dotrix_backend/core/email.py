@@ -122,6 +122,67 @@ class SendlyEmailSender:
         )
 
 
+class CloudflareEmailSender:
+    """Cloudflare Email Sending REST API, shared by the API and external job workers."""
+
+    def __init__(
+        self,
+        account_id: str,
+        api_token: str,
+        *,
+        from_address: str,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._account_id = account_id
+        self._api_token = api_token
+        self._from_address = from_address
+        self._transport = transport
+
+    async def send(self, message: EmailMessage) -> None:
+        payload = {
+            "from": self._from_address,
+            "to": message.to,
+            "subject": message.subject,
+            "text": message.body,
+            "html": message.html or text_to_html(message.body),
+        }
+        try:
+            async with httpx.AsyncClient(
+                base_url="https://api.cloudflare.com/client/v4/",
+                timeout=SEND_TIMEOUT_SECONDS,
+                transport=self._transport,
+            ) as client:
+                response = await client.post(
+                    f"accounts/{self._account_id}/email/sending/send",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self._api_token}"},
+                )
+        except httpx.TransportError as exc:
+            raise EmailSendError(0, f"couldn't reach Cloudflare ({exc.__class__.__name__})", retryable=True) from exc
+        if not response.is_success:
+            errors = _json(response).get("errors")
+            codes = (
+                [str(error["code"]) for error in errors if isinstance(error, dict) and type(error.get("code")) is int]
+                if isinstance(errors, list) else []
+            )
+            # Provider error text can include recipients or email contents.
+            detail = "Cloudflare rejected the email"
+            if codes:
+                detail += f" (codes: {', '.join(codes[:5])})"
+            status = response.status_code
+            raise EmailSendError(status, detail, retryable=status == 429 or status >= 500)
+
+        body = _json(response)
+        result = body.get("result")
+        if body.get("success") is not True or not isinstance(result, dict):
+            raise EmailSendError(response.status_code, "Cloudflare did not confirm acceptance", retryable=False)
+        if result.get("permanent_bounces") or result.get("suppressed_recipients"):
+            raise EmailSendError(response.status_code, "Cloudflare bounced or suppressed the recipient", retryable=False)
+        if not (result.get("delivered") or result.get("queued")):
+            raise EmailSendError(response.status_code, "Cloudflare did not confirm acceptance", retryable=False)
+        logger.info("email accepted by Cloudflare")
+
+
 _URL = re.compile(r"https?://[^\s<>\"']+")
 
 
@@ -154,6 +215,13 @@ def _error_detail(response: httpx.Response) -> str:
 
 
 def build_email_sender(settings: Settings) -> EmailSender:
+    if settings.email_backend == "cloudflare":
+        assert settings.cloudflare_email_account_id and settings.cloudflare_email_api_token and settings.email_from
+        return CloudflareEmailSender(
+            settings.cloudflare_email_account_id,
+            settings.cloudflare_email_api_token.get_secret_value(),
+            from_address=settings.email_from,
+        )
     if settings.email_backend == "sendly":
         assert settings.sendly_api_key is not None  # (settings validation guarantees it)
         return SendlyEmailSender(

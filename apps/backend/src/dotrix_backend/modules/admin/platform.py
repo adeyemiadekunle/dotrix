@@ -179,6 +179,8 @@ class PlatformObserve:
             return DependencyCheck(id="storage", state="ok", detail=f"Answered in {ms} ms", latency_ms=ms)
 
         async def email_check() -> DependencyCheck:
+            if s.email_backend == "cloudflare":
+                return DependencyCheck(id="email", state="ok", detail="Cloudflare Email Sending")
             if s.email_backend == "sendly":
                 return DependencyCheck(id="email", state="ok", detail="Sendly")
             return DependencyCheck(id="email", state="degraded", detail="Console (emails are only logged)")

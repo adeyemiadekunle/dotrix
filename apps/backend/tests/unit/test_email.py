@@ -1,10 +1,11 @@
-"""Sending email through Sendly (mocked HTTP), and choosing the email backend."""
+"""Sending email through providers (mocked HTTP), and choosing the email backend."""
 import json
 
 import httpx
 import pytest
 
 from dotrix_backend.core.email import (
+    CloudflareEmailSender,
     ConsoleEmailSender,
     EmailMessage,
     EmailSendError,
@@ -17,6 +18,59 @@ from dotrix_backend.core.settings import Settings
 from dotrix_backend.jobs import send_email
 
 MESSAGE = EmailMessage(to="ada@example.com", subject="Reset your dotrix password", body="Reset: http://app.test/reset?token=abc")
+ACCOUNT_ID = "1" * 32
+FROM_ADDRESS = "staging@example.com"
+
+
+def cloudflare(handler) -> CloudflareEmailSender:
+    return CloudflareEmailSender(
+        ACCOUNT_ID, "test-email-sending-token", from_address=FROM_ADDRESS, transport=httpx.MockTransport(handler),
+    )
+
+
+@pytest.mark.parametrize("accepted_as", ["queued", "delivered"])
+async def test_cloudflare_sends_transactional_email(accepted_as: str) -> None:
+    def accept(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert str(request.url) == f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/email/sending/send"
+        assert request.headers["authorization"] == "Bearer test-email-sending-token"
+        assert json.loads(request.content) == {
+            "from": FROM_ADDRESS, "to": MESSAGE.to, "subject": MESSAGE.subject, "text": MESSAGE.body,
+            "html": text_to_html(MESSAGE.body),
+        }
+        return httpx.Response(200, json={"success": True, "result": {accepted_as: [MESSAGE.to]}})
+
+    await cloudflare(accept).send(MESSAGE)
+
+
+@pytest.mark.parametrize(("status", "retryable"), [(403, False), (429, True), (503, True)])
+async def test_cloudflare_handles_http_failures_without_exposing_provider_messages(status, retryable) -> None:
+    sender = cloudflare(
+        lambda _: httpx.Response(status, json={"errors": [{"code": 10001, "message": MESSAGE.body}]}),
+    )
+    with pytest.raises(EmailSendError) as info:
+        await sender.send(MESSAGE)
+    assert info.value.status == status and info.value.retryable is retryable
+    assert "10001" in info.value.detail and "token=abc" not in str(info.value)
+
+
+@pytest.mark.parametrize("result", [{"permanent_bounces": [MESSAGE.to]}, {"suppressed_recipients": [MESSAGE.to]}, {}])
+async def test_cloudflare_requires_the_recipient_to_be_accepted(result) -> None:
+    sender = cloudflare(lambda _: httpx.Response(200, json={"success": True, "result": result}))
+    with pytest.raises(EmailSendError) as info:
+        await sender.send(MESSAGE)
+    assert not info.value.retryable and MESSAGE.to not in str(info.value)
+
+
+def test_cloudflare_backend_requires_a_sending_account_token_and_address() -> None:
+    settings = {
+        "email_backend": "cloudflare", "cloudflare_email_account_id": ACCOUNT_ID,
+        "cloudflare_email_api_token": "test-email-sending-token", "email_from": FROM_ADDRESS,
+    }
+    assert isinstance(build_email_sender(_settings(**settings)), CloudflareEmailSender)
+    for field in ("cloudflare_email_account_id", "cloudflare_email_api_token", "email_from"):
+        with pytest.raises(ValueError, match=f"DOTRIX_{field.upper()}"):
+            _settings(**{**settings, field: None})
 
 
 def sendly(handler, **kwargs) -> tuple[SendlyEmailSender, list[httpx.Request]]:
