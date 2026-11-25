@@ -1,6 +1,7 @@
 // Actions: what clicks and keys do to the workspace. In the sample workspace they change the
 // store through mutate(). In a real workspace they leave the store's objects alone and hand the
 // change to its save (data/live.ts), which shows it in the query cache the store's lists read.
+import { canManageIssues } from "./can";
 import { PR, PSTAT, ST, type ProjectStatusId } from "./constants";
 import { TODAY, addD, fmtDate, iso, parse, uid } from "./utils";
 import { inviteResent, isInvite } from "../data/account";
@@ -69,6 +70,10 @@ export function applyPatch(task: Task & { prevStatus?: Task["status"] }, patch: 
     const old = t[k];
     const nv = patch[k];
     if (JSON.stringify(old) === JSON.stringify(nv)) continue;
+    if (k === "status" && nv === "done" && !canManageIssues()) {
+      toast("Only Team Owners and Admins can close issues", { kind: "err" });
+      continue;
+    }
     // A real workspace moves an issue on the API (a new key there); the lists follow its answer.
     if (k === "project" && isLive()) {
       void taskMoved(task, nv as string);
@@ -134,7 +139,7 @@ export function updateTask(id: string, patch: Partial<Task>) {
 }
 export function toggleDone(id: string) {
   const t = task(id) as (Task & { prevStatus?: Task["status"] }) | undefined;
-  if (!t) return;
+  if (!t || (t.status !== "done" && !canManageIssues())) return;
   const was = t.status;
   const wasDone = was === "done";
   S.ui.pop = null;

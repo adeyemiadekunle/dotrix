@@ -110,7 +110,7 @@ async def get_membership(
     workspace_id: uuid.UUID, user: CurrentUser, session: SessionDep, settings: SettingsDep
 ) -> Membership:
     membership = await MembershipRepository(session).get(workspace_id, user.id)
-    # An organisation while they're turned off is hidden like one you don't belong to.
+    # Unavailable Team workspaces respond like workspaces you do not belong to.
     if membership is None or not available(membership.workspace, settings):
         raise NotFound("Workspace not found")
     return membership

@@ -1,7 +1,7 @@
 // More actions: undo snapshots, confirmations, modals,
 // and what the context menus do (duplicate, archive, delete, rename, share, columns, members,
 // files, saved views), with their wording and undo.
-import { allowed, canInvite } from "./can";
+import { allowed, canInvite, canManageIssues } from "./can";
 import { PR } from "./constants";
 import { applyPatch, changeTask, closePop, copy, createTask, guarded, openTask } from "./actions";
 import { go, routeOf } from "./nav";
@@ -85,6 +85,7 @@ function curProjectId(): string | null {
   return null;
 }
 export function newTask(d: { project?: string; assignee?: string; due?: string; status?: Task["status"] } = {}) {
+  if (!canManageIssues()) return;
   const pid =
     d.project || curProjectId() || (S.ui.drawer && task(S.ui.drawer)?.project) || visibleProjects().find((p) => canSee(p) && p.status !== "complete")?.id;
   openModal({
@@ -253,12 +254,14 @@ export function deleteTasks(ids: string[], { send = true } = {}) {
   D().comments = D().comments.filter((c) => !set.has(c.task));
 }
 export function dupTask(id: string) {
+  if (!canManageIssues()) return;
   const t = task(id)!;
+  const assignee = D().ws.kind === "team" && t.assignee?.startsWith("agent:") ? null : t.assignee;
   S.ui.pop = null;
   let n: Task | undefined;
   mutate(() => {
     // createTask gives it the project's next key (a real workspace's, the API's).
-    n = createTask({ ...JSON.parse(JSON.stringify(t)), id: uid("t"), key: undefined, title: t.title + " (copy)", created: Date.now(), fav: false });
+    n = createTask({ ...JSON.parse(JSON.stringify(t)), id: uid("t"), key: undefined, title: t.title + " (copy)", assignee, created: Date.now(), fav: false });
   });
   toast("Task duplicated", { action: "Open", onAction: () => openTask(n!.id) });
 }
@@ -378,6 +381,7 @@ function colTasks(key: string, st: string) {
   return (pid ? tasksOf(pid) : allTasks()).filter((t) => t.status === st);
 }
 export function startComposer(key: string, group: string, gb: Partial<Task>) {
+  if (!canManageIssues()) return;
   S.ui.composer = { key, group, gb } as typeof S.ui.composer & { gb: Partial<Task> };
   S.ui.pop = null;
   render();
@@ -388,7 +392,7 @@ export function cancelComposer() {
 }
 export function commitComposer(title: string) {
   const c = S.ui.composer as (typeof S.ui.composer & { gb?: Partial<Task> }) | null;
-  if (!c) return;
+  if (!c || !canManageIssues()) return;
   const v = title.trim();
   if (!v) return cancelComposer();
   const f: Partial<Task> = { title: v, ...(c.gb ?? {}) };

@@ -69,12 +69,20 @@ async def test_accept_edits_lets_what_you_ask_for_go_through(
     assert "Closing an issue needs a person" in said
     assert (await db_client.get(f"{base}/issues/{issue['key']}", headers=ada.headers)).json()["status"] != "done"
 
-    # Someone who may not approve agent changes stays on Manual: their change waits.
-    agent_script.say(tool_call("create_issue", type="task", title="From Cat"), "Waiting for approval.")
+    # Members can use Accept edits for their own eligible changes within the workspace cap.
+    agent_script.say(tool_call("comment_issue", key=issue["key"], body="Ready for review"), "Commented.")
     theirs = (await db_client.post(f"{base}/agent/runs", headers=cat.headers, json={
-        "message": "Create it", "approval_mode": "accept_edits",
+        "message": "Comment on the issue", "approval_mode": "accept_edits",
     })).json()
-    assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval"
+    assert theirs["approval_mode"] == "accept_edits" and theirs["status"] == "completed"
+    assert not theirs["approvals"]
+
+    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Changes"), "Waiting.")
+    knowledge = (await db_client.post(f"{base}/agent/runs", headers=cat.headers, json={
+        "message": "Update the roadmap", "approval_mode": "accept_edits",
+    })).json()
+    assert knowledge["approval_mode"] == "accept_edits" and knowledge["status"] == "awaiting_approval"
+
 
 
 async def test_manual_is_the_default_and_a_pause_wins(

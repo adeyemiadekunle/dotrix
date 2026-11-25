@@ -178,7 +178,7 @@ async def test_delegated_specialists_use_their_model_override_or_project_default
     assert GEMINI in agent_script.models_used and CLAUDE in agent_script.models_used
 
 
-async def test_who_may_choose_a_model(project, db_client: AsyncClient, agent_script, connected, signup, add_member) -> None:
+async def test_members_choose_models_with_their_own_keys(project, db_client: AsyncClient, agent_script, connected, signup, add_member) -> None:
     ada, team, base = await project()
     await connected(ada)
     bob = await signup(email="bob@example.com", name="Bob")
@@ -187,15 +187,24 @@ async def test_who_may_choose_a_model(project, db_client: AsyncClient, agent_scr
     agent_script.say("ok", "ok", "ok")
     assert (await send(db_client, base, bob.headers, "hi")).status_code == 202  # the project's model: anyone
     assert (await send(db_client, base, bob.headers, "hi", model=CLAUDE)).status_code == 202  # same thing
-    assert (await send(db_client, base, bob.headers, "hi", model=GEMINI)).status_code == 403
     ws = f"/v1/workspaces/{team['id']}"
-    res = await db_client.patch(ws, json={"member_permissions": ["agents:choose_model"]}, headers=ada.headers)
-    assert res.status_code == 200
-    assert (await send(db_client, base, bob.headers, "hi", model=GEMINI)).status_code == 422
-    # A role grant cannot borrow Ada's key. With his own key Bob can choose its model.
+    conversations = f"{ws}/conversations/runs"
+    for response in [
+        await send(db_client, base, bob.headers, "hi", model=GEMINI),
+        await db_client.post(conversations, headers=bob.headers, json={"message": "hi", "model": GEMINI}),
+    ]:
+        assert response.status_code == 422 and response.json()["type"].endswith("/model_not_available")
+    preference = f"{ws}/my-agents/research"
+    assert (await db_client.put(preference, headers=bob.headers, json={"model": GEMINI})).status_code == 422
     own = await connected(bob)
-    await db_client.patch(ws, json={"member_permissions": []}, headers=ada.headers)
+    saved = await db_client.put(preference, headers=bob.headers, json={"model": GEMINI})
+    assert saved.status_code == 200 and saved.json()["model"] == GEMINI
     assert (await send(db_client, base, bob.headers, "hi", model=GEMINI)).status_code == 202
+    assert agent_script.keys_used[-1]["google_genai"] == own
+    agent_script.say("Workspace reply")
+    started = await db_client.post(conversations, headers=bob.headers, json={"message": "hi", "model": GEMINI})
+    assert started.status_code == 202, started.text
+    assert started.json()["conversation_model"] == GEMINI
     assert agent_script.keys_used[-1]["google_genai"] == own
     # Only models that can run here.
     unavailable = await send(db_client, base, ada.headers, "hi", model="openai:gpt-test")

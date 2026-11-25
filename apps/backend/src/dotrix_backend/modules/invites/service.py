@@ -20,7 +20,7 @@ from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.auth.repository import UserRepository
 from dotrix_backend.modules.knowledge.models import AuthorType
-from dotrix_backend.modules.workspaces.availability import require_organisations
+from dotrix_backend.modules.workspaces.availability import require_teams
 from dotrix_backend.modules.workspaces.models import Membership, Role, WorkspaceKind
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 from dotrix_backend.modules.workspaces.schemas import WorkspaceWithRole
@@ -38,15 +38,15 @@ from .schemas import (
 EMAIL_INVITE_TTL = timedelta(days=7)
 
 
-class InvitesNeedOrganization(Conflict):
-    code = "invites_need_organization"
+class InvitesNeedTeam(Conflict):
+    code = "invites_need_team"
 
 
 def _check_can_invite(workspace: object) -> None:
-    """People join organisations; a personal workspace is just for its owner."""
-    if getattr(workspace, "kind", None) is not WorkspaceKind.ORGANIZATION:
-        raise InvitesNeedOrganization(
-            "A personal workspace is just for you. Create a separate organisation to work with others, then move selected projects explicitly."
+    """People join teams; a personal workspace is just for its owner."""
+    if getattr(workspace, "kind", None) is not WorkspaceKind.TEAM:
+        raise InvitesNeedTeam(
+            "A personal workspace is just for you. Create a separate Team workspace to work with others, then move selected projects explicitly."
         )
 
 
@@ -141,7 +141,7 @@ class InviteService:
         await self.session.commit()
 
     async def preview(self, token: str) -> InvitePreview:
-        require_organisations(self.settings)  # every invite is to an organisation
+        require_teams(self.settings)  # every invite is to a Team workspace
         invite = await self._usable(token)
         inviter = await self.users.get(invite.invited_by_id) if invite.invited_by_id else None
         return InvitePreview(
@@ -155,9 +155,9 @@ class InviteService:
 
     async def accept(self, user: User, token: str) -> WorkspaceWithRole:
         now = _now()
-        require_organisations(self.settings)
+        require_teams(self.settings)
         invite = await self._usable(token, for_update=True)
-        # Also for invites sent before the rule, or before the workspace left its organisation.
+        # Also for invites sent before the rule, or before the workspace type changed.
         _check_can_invite(invite.workspace)
         if invite.kind is InviteKind.EMAIL:
             if invite.email != user.email:

@@ -1,3 +1,4 @@
+import { canManageIssues } from "../core/can";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { SelectField } from "@dotrix/ui/components/select";
 // The right side panel beside one of Kai's sessions in Code.
@@ -28,8 +29,7 @@ import { allowed } from "../core/can";
 import { Ic } from "../core/icons";
 import { parseDiff } from "../core/kaiWork";
 import { go, useRoute } from "../core/nav";
-import { isLive, live } from "../data/live";
-import { me } from "../data/store";
+import { isLive } from "../data/live";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { tabKeys } from "../ui/tabs";
 import { toast } from "../ui/toast";
@@ -776,9 +776,9 @@ function ReviewPanel({
     .filter((output) => output.kind === "finding")
     .flatMap((output) => output.items.map((item) => ({ item, outputId: output.id })));
   const detailTab = tab ?? (findings.length ? "findings" : "summary");
-  const canCreate = isLive() ? Boolean(live.ws?.permissions?.includes("issues:write" as never)) : me()?.role !== "Guest";
+  const canCreate = canManageIssues();
   const createFromFinding = async (outputId: string, index: number, title: string, detail: string, fix: string) => {
-    if (!scope || !run || saving) return;
+    if (!canCreate || !scope || !run || saving) return;
     if (!isLive()) {
       const task = createTask({ project: scope.projectId, title, desc: `${detail}\n\n${fix}`, type: "bug" });
       openTask(task.id);
@@ -807,7 +807,7 @@ function ReviewPanel({
   };
   // A finding as an issue in the project's GitHub repository, opened by the GitHub App at your request.
   const openOnGitHub = async (outputId: string, index: number) => {
-    if (!scope || !run || saving) return;
+    if (!canCreate || !scope || !run || saving) return;
     setSaving(true);
     try {
       const updated = await unwrap(

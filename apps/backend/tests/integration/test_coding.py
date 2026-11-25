@@ -151,12 +151,14 @@ class ScriptedSandbox(LocalSandbox):
         return ScriptedSession(session.root, session.env, self.agent)
 
 
-async def _approve(db_client: AsyncClient, base: str, run: dict, headers: dict) -> dict:
+async def _approve(
+    db_client: AsyncClient, base: str, run: dict, headers: dict, *, requester_headers: dict | None = None,
+) -> dict:
     """Approve a turn; in Manual its checked changes then wait (`changes_ready`), and are accepted too."""
     for _ in range(2):
         res = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=headers)
         assert res.status_code == 200, res.text
-        read = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=headers)).json()
+        read = (await db_client.get(f"{base}/coding/runs/{run['id']}", headers=requester_headers or headers)).json()
         if read["status"] != "changes_ready":
             break
     return read
@@ -187,7 +189,7 @@ async def _save_key(client: AsyncClient, headers, provider: str, key: str) -> No
 
 
 @pytest.fixture
-async def coding(db_client: AsyncClient, github, github_world, origin: Path, claude: ScriptedClaude):
+async def coding(db_client: AsyncClient, github, github_world, origin: Path, claude: ScriptedClaude, request, signup):
     """Ada (owner) and Cat (member); KUN connected to kunemi/api; coding on, with Claude Code."""
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
@@ -200,8 +202,15 @@ async def coding(db_client: AsyncClient, github, github_world, origin: Path, cla
     app.state.secrets = app.state.runner.secrets = Secrets.from_settings(settings)
     settings.github_app_id, settings.github_app_slug = "4242", "dotrix-test"
     settings.github_app_private_key = SecretStr(client.private_key)
-    ada, cat, ws, kun, mob = await github_world()
-    for person in (ada, cat):
+    if getattr(request, "param", None) == "personal":
+        ada = await signup()
+        [workspace] = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
+        ws = f"/v1/workspaces/{workspace['id']}"
+        kun = (await db_client.post(f"{ws}/projects", json={"key": "KUN", "name": "K"}, headers=ada.headers)).json()
+        cat = mob = None
+    else:
+        ada, cat, ws, kun, mob = await github_world()
+    for person in (ada, cat) if cat else (ada,):
         await _save_key(db_client, person.headers, "anthropic", "test-anthropic-personal-key-" + str(person.id))
     installation = (await db_client.post(f"{ws}/github/installations", json={"installation_id": 111, "code": "code-1"},
                                           headers=ada.headers)).json()
@@ -231,7 +240,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     await db_client.put(f"{base}/knowledge/files/requirements/refunds.md", headers=ada.headers,
                         json={"content": "# Refunds\n\nRefund within a week of purchase.\n"})
     story = (await db_client.post(f"{base}/issues", headers=ada.headers, json={
-        "type": "story", "title": "Refund a payment",
+        "type": "story", "title": "Refund a payment", "assignee_user_id": ada.id,
         "description": "Implements requirements/refunds.md.\n\nAcceptance: refund() returns the amount.",
     })).json()
 
@@ -244,7 +253,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert {tool["agent"]: tool["available"] for tool in availability["tools"]} == {
         "claude-code": True, "codex": False, "opencode": True, "fx": True,  # fx: Anthropic's OpenAI-compatible endpoint
     }
-    # Members can't instruct the coding agent unless the workspace lets them.
+    # Members can use Codes on issues assigned to them.
     assert (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={},
                                  headers=cat.headers)).status_code == 403
 
@@ -262,7 +271,7 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert (await db_client.get(f"{base}/coding/runs", headers=cat.headers)).json() == []
     assert (await db_client.get(f"{ws}/coding/sessions", headers=cat.headers)).json() == []
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
-                                 headers=cat.headers)).status_code == 403
+                                 headers=cat.headers)).status_code == 404
 
     claude.edits = {
         "src/payments.py": "class PaymentProvider:\n    def refund(self, amount):\n        return amount\n",
@@ -308,9 +317,9 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert claude.env["ANTHROPIC_API_KEY"] == "test-anthropic-personal-key-" + str(ada.id)
     assert claude.argv[:3] == ["claude", "-p", "--bare"] and "--dangerously-skip-permissions" not in claude.argv
 
-    # The issue is the coding tool's, in review, with the PR linked; a person closes it.
+    # The human assignee keeps the issue, with the PR linked for review.
     issue = (await db_client.get(f"{base}/issues/{story['key']}", headers=ada.headers)).json()
-    assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"  # Kai, whatever the engine
+    assert issue["status"] == "review" and issue["assignee_agent"] is None and issue["assignee_user_id"] == ada.id
     assert {"kind": "pr", "url": run["pr_url"], "title": "PR #1: Refund a payment"} in issue["links"]
 
     # The Reviewer read the PR in a conversation of its own.
@@ -331,12 +340,12 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert (await db_client.get(f"{ws}/notifications", params={"kind": "coding"}, headers=cat.headers)).json() == []
 
 
-async def test_an_approver_who_cant_instruct_the_coding_agent_still_approves_its_run(
+async def test_an_approver_can_approve_another_members_team_coding_run(
     db_client: AsyncClient, coding, claude: ScriptedClaude
 ) -> None:
     ada, cat, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
-    # Cat may approve agents' changes, not instruct the coding agent: approving Ada's run is enough.
+    # A Team member with approval rights can approve a run they could not start.
     assert (await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)).status_code == 200
     story = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Refund a payment"})).json()
     run = (await db_client.post(f"{base}/coding/issues/{story['key']}/runs", json={}, headers=ada.headers)).json()
@@ -347,8 +356,8 @@ async def test_an_approver_who_cant_instruct_the_coding_agent_still_approves_its
     done = await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=cat.headers)
     assert done.status_code == 200, done.text
     issue = (await db_client.get(f"{base}/issues/{story['key']}", headers=ada.headers)).json()
-    assert issue["assignee_agent"] == "coding-agent"
-    # Assigning Kai by hand still needs the right to instruct it.
+    assert issue["assignee_agent"] is None
+    # Approval rights do not confer issue-assignment rights.
     other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "t"})).json()
     refused = await db_client.patch(f"{base}/issues/{other['key']}", json={"assignee_agent": "coding-agent"}, headers=cat.headers)
     assert refused.status_code == 403
@@ -422,10 +431,10 @@ async def test_rejecting_stopping_and_when_it_isnt_available(
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"},
                                  headers=ada.headers)).status_code == 409
 
-    # Stopped before it starts: whoever asked (Cat, once the workspace lets members code), or an owner.
-    await db_client.patch(ws, json={"member_permissions": ["agents:code"]}, headers=ada.headers)
+    # Stopped before it starts: whoever asked (Cat, the assignee), or an owner.
+    await db_client.patch(f"{base}/issues/{task['key']}", json={"assignee_user_id": cat.id}, headers=ada.headers)
     run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=cat.headers)).json()
-    assert run["can_stop"] and not run["can_decide"]
+    assert run["can_stop"] and run["can_decide"]
     stopped = (await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=cat.headers)).json()
     assert stopped["status"] == "stopped" and sandbox.opened == 0
     assert (await db_client.post(f"{base}/coding/runs/{run['id']}/stop", headers=cat.headers)).status_code == 409
@@ -548,7 +557,7 @@ async def test_a_session_continues_on_its_branch_and_pr(
     claude.result = "Refunds over £500 now need a manager."
     claude.edits = {"src/refunds.py": "def refund(amount):\n    if amount > 500:\n        raise PermissionError\n    return amount\n"}
     turns = f"{base}/coding/sessions/{first['session_id']}/turns"
-    assert (await db_client.post(turns, json={"message": "Large refunds"}, headers=cat.headers)).status_code == 403
+    assert (await db_client.post(turns, json={"message": "Large refunds"}, headers=cat.headers)).status_code == 404
     second = await db_client.post(turns, json={"message": "Refunds over £500 need a manager"}, headers=ada.headers)
     assert second.status_code == 201, second.text
     second = second.json()
@@ -577,41 +586,49 @@ async def test_a_session_continues_on_its_branch_and_pr(
     assert session["issue_title"] == "Refunds" and session["status"] == "pr_opened" and session["pr_number"] == 1
 
 
-async def test_assigning_to_a_coding_tool_starts_a_session_and_approvers_are_told(
-    db_client: AsyncClient, coding
-) -> None:
-    ada, cat, ws, kun, _, _ = coding
+@pytest.mark.parametrize("coding", ["personal"], indirect=True)
+async def test_personal_owner_assigning_to_a_coding_tool_starts_a_session(db_client: AsyncClient, coding) -> None:
+    ada, _, ws, kun, _, _ = coding
     base = f"{ws}/projects/{kun['id']}"
-    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Export"}, headers=ada.headers)).json()
-
-    # Cat may assign Claude Code, but may not instruct the coding agent: no session.
-    await db_client.patch(f"{base}/issues/{task['key']}", json={"assignee_agent": "claude-code"}, headers=cat.headers)
-    assert (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json() == []
-
-    # Once the workspace lets members code, assigning starts one in the background.
-    await db_client.patch(f"{base}/issues/{task['key']}", json={"assignee_agent": None}, headers=ada.headers)
-    await db_client.patch(ws, json={"member_permissions": ["agents:code"]}, headers=ada.headers)
-    await db_client.patch(f"{base}/issues/{task['key']}", json={"assignee_agent": "claude-code"}, headers=cat.headers)
-    [run] = (await db_client.get(f"{base}/coding/runs", headers=ada.headers)).json()
+    created = await db_client.post(f"{base}/issues", headers=ada.headers,
+                                   json={"title": "Import", "assignee_agent": "coding-agent"})
+    assert created.status_code == 201 and created.json()["assignee_agent"] == "coding-agent"
+    task = (await db_client.post(f"{base}/issues", json={"title": "Export"}, headers=ada.headers)).json()
+    assigned = await db_client.patch(f"{base}/issues/{task['key']}", headers=ada.headers,
+                                     json={"assignee_agent": "coding-agent"})
+    assert assigned.status_code == 200
+    [run] = (await db_client.get(f"{base}/coding/runs", params={"issue": task["key"]}, headers=ada.headers)).json()
     assert run["origin"] == "assigned" and run["status"] == "awaiting_approval"
-    # Creating an issue assigned to a coding tool does the same.
-    other = (await db_client.post(f"{base}/issues", headers=cat.headers,
-                                  json={"type": "task", "title": "Import", "assignee_agent": "codex"})).json()
-    assert [r["origin"] for r in (await db_client.get(f"{base}/coding/runs", params={"issue": other["key"]},
-                                                       headers=ada.headers)).json()] == ["assigned"]
-
-    # Ada (who may approve) is told; it counts until decided, and Cat hears the decision.
     notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
     waiting = next(n for n in notes if n["coding_run_id"] == run["id"])
     assert waiting["title"] == f"Coding {task['key']}: Export" and not waiting["resolved"]
-    assert waiting["coding_session_id"] == run["session_id"] and waiting["issue_key"] == task["key"]
-    assert (await db_client.get(f"{ws}/notifications/counts", headers=ada.headers)).json()["by_kind"]["approval"] == 2
-    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "reject", "reason": "Later"},
-                         headers=ada.headers)
-    notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
-    assert next(n for n in notes if n["coding_run_id"] == run["id"])["resolved"]
-    [decided] = (await db_client.get(f"{ws}/notifications", params={"kind": "decided"}, headers=cat.headers)).json()
-    assert decided["title"] == f"1 rejected: Coding {task['key']}: Export" and decided["excerpt"] == "Later"
+
+
+async def test_team_member_can_use_codes_without_transferring_the_issue(
+    db_client: AsyncClient, coding, agent_script, claude: ScriptedClaude,
+) -> None:
+    ada, cat, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    task = (await db_client.post(f"{base}/issues", headers=ada.headers,
+                                 json={"title": "Export", "assignee_user_id": cat.id})).json()
+    claude.edits = {"src/exports.py": "READY = True\n"}
+    agent_script.say("Looks right.")
+    res = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=cat.headers, json={})
+    assert res.status_code == 201, res.text
+    run = await _approve(db_client, base, res.json(), cat.headers)
+    assert run["status"] == "pr_opened", run
+    issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=cat.headers)).json()
+    assert issue["status"] == "review"
+    assert issue["assignee_user_id"] == cat.id and issue["assignee_agent"] is None
+
+    pending = await db_client.post(f"{base}/coding/issues/{task['key']}/runs", headers=cat.headers, json={})
+    assert pending.status_code == 201
+    reassigned = await db_client.patch(f"{base}/issues/{task['key']}", headers=ada.headers,
+                                       json={"assignee_user_id": ada.id})
+    assert reassigned.status_code == 200
+    decision = await db_client.post(f"{base}/coding/runs/{pending.json()['id']}/decision", headers=ada.headers,
+                                    json={"decision": "approve"})
+    assert decision.status_code == 403
 
 
 async def test_a_merged_pr_is_recorded_on_the_session_and_the_issue(
@@ -966,9 +983,9 @@ async def test_opencode_codes_on_the_model_the_server_names(
     assert "OPENCODE_DISABLE_PROJECT_CONFIG=1" in opencode.argv
     assert set(opencode.env) == {"PATH", "HOME", "LANG", "OPENAI_API_KEY"}
     assert opencode.env["OPENAI_API_KEY"] == "test-opencode-openai-personal-key"
-    # OpenCode isn't an assignee of its own: the issue shows the built-in coding agent.
+    # Codes puts the Team issue in review without changing its assignment.
     issue = (await db_client.get(f"{base}/issues/{task['key']}", headers=ada.headers)).json()
-    assert issue["status"] == "review" and issue["assignee_agent"] == "coding-agent"
+    assert issue["status"] == "review" and issue["assignee_agent"] is None
     [pr] = github.pulls
     assert "Written by Kai in a dotrix coding run" in pr["body"] and "opencode" not in pr["body"].lower()
 
@@ -1418,11 +1435,11 @@ async def test_build_asks_kai_from_the_conversation_and_review_reads_the_evidenc
     assert theirs["thread_id"] is None  # another person's conversation isn't named to them
     await db_client.patch(ws, json={"member_permissions": []}, headers=ada.headers)
 
-    # Cat may chat but not instruct Kai: Build says so instead of asking for a run.
+    # Cat may use Build, but this issue isn't assigned to them.
     model = agent_script.say(tool_call("start_coding", issue_key=issue["key"]), "You can't ask Kai here.")
     await db_client.post(f"{base}/agent/runs", headers=cat.headers, json={"message": "Build it", "work_mode": "build"})
     refused = next(m.content for m in model.received[1] if m.type == "tool")
-    assert "can't instruct Kai" in refused
+    assert "Team issue assigned to you" in refused
 
     # Someone who lost the project after sending a Build message can't ask Kai for it.
     from dotrix_backend.modules.agents.work_modes import ModeContext, StartCoding, _start_coding
@@ -1460,14 +1477,13 @@ async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
     audit = [e for e in (await db_client.get(f"{ws}/audit", headers=ada.headers)).json() if e["action"] == "coding.approved"]
     assert audit[0]["details"]["approval_mode"] == "accept_edits"
 
-    # Cat may instruct Kai but not approve agent changes: Manual, so it waits.
-    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other"})).json()
+    # A Team Member can run within the workspace's Accept edits cap.
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other", "assignee_user_id": cat.id})).json()
     theirs = (await db_client.post(f"{base}/coding/issues/{other['key']}/runs", headers=cat.headers,
                                    json={"approval_mode": "accept_edits"})).json()
-    assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval"
-    await db_client.post(f"{base}/coding/runs/{theirs['id']}/decision", json={"decision": "reject"}, headers=ada.headers)
+    assert theirs["approval_mode"] == "accept_edits" and theirs["decided_by_id"] == cat.id
 
-    # A chat assignment creates one notification-backed handoff, even in Accept edits.
+    # Team chat can request coding assistance but cannot assign a task to Kai.
     third = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Third"})).json()
     model = agent_script.say(tool_call("update_issue", key=third["key"], assignee="coding-agent"),
                              tool_call("start_coding", issue_key=third["key"]), "Kai waits for your approval in Inbox.")
@@ -1476,7 +1492,9 @@ async def test_accept_edits_starts_kai_at_once_and_manual_still_waits(
     })
     # (here the coding run, and its Reviewer, run inside the tool call: search every call for its result)
     said = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "start_coding"]
-    assert said and "already has this handoff" in said[-1]
+    assert said and "Approve and start Kai" in said[-1]
+    refused = [m.content for call in model.received for m in call if m.type == "tool" and m.name == "update_issue"]
+    assert refused and "Team issues can only be assigned to people" in refused[-1]
     [built] = (await db_client.get(f"{base}/coding/runs?issue={third['key']}", headers=ada.headers)).json()
     assert built["approval_mode"] == "manual" and built["status"] == "awaiting_approval"
     notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
@@ -1508,13 +1526,13 @@ async def test_build_in_auto_starts_kai_at_once_without_an_approval_notification
     notes = (await db_client.get(f"{ws}/notifications", params={"kind": "approval"}, headers=ada.headers)).json()
     assert not any(n.get("coding_run_id") == built["id"] for n in notes)
 
-    # Cat may instruct Kai but not approve agent changes, so Auto in their conversation still waits.
-    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other"})).json()
+    # Team Members may request Auto within the workspace cap.
+    other = (await db_client.post(f"{base}/issues", headers=ada.headers, json={"type": "task", "title": "Other", "assignee_user_id": cat.id})).json()
     agent_script.say(tool_call("start_coding", issue_key=other["key"]), "Kai waits for approval.")
     await db_client.post(f"{base}/agent/runs", headers=cat.headers,
                          json={"message": "Build it", "work_mode": "build", "approval_mode": "auto"})
     [theirs] = (await db_client.get(f"{base}/coding/runs?issue={other['key']}", headers=cat.headers)).json()
-    assert theirs["approval_mode"] == "manual" and theirs["status"] == "awaiting_approval", theirs
+    assert theirs["approval_mode"] == "auto" and theirs["decided_by_id"] == cat.id, theirs
 
 
 async def test_changes_to_files_ci_runs_wait_for_a_person_in_every_mode(
@@ -1668,7 +1686,7 @@ async def test_a_pushed_turn_is_reverted_on_its_branch(
     again = await db_client.post(f"{base}/coding/runs/{first['id']}/revert", json={}, headers=ada.headers)
     assert again.status_code == 409 and "already reverted" in again.json()["detail"]
     assert (await db_client.post(f"{base}/coding/runs/{second['id']}/revert", json={},
-                                 headers=cat.headers)).status_code == 403
+                                 headers=cat.headers)).status_code == 404
     await _set_run(db_client, second["id"], pr_state="merged")
     merged = await db_client.post(f"{base}/coding/runs/{second['id']}/revert", json={}, headers=ada.headers)
     assert merged.status_code == 409 and "merged" in merged.json()["detail"]
@@ -2107,7 +2125,9 @@ async def test_a_turns_files_diff_and_command_output_are_kept_for_the_panels(
     assert after["status"] == "added" and after["before"] is None and after["after"].startswith("def test_refund")
 
 
-@pytest.mark.parametrize("entry", ["direct", "handoff", "assignment", "local"])
+@pytest.mark.parametrize(("entry", "coding"), [
+    ("direct", "team"), ("handoff", "team"), ("assignment", "personal"), ("local", "team"),
+], indirect=["coding"])
 async def test_empty_default_branch_blocks_new_sessions_from_every_entry(
     db_client: AsyncClient, coding, github, agent_script, entry, checkout: Path, tmp_path: Path
 ) -> None:
@@ -2590,7 +2610,7 @@ async def race_world(engine, monkeypatch):
         session.add(User(id=user_id, email=f"{user_id}@example.com", display_name="Ada"))
         await session.flush()
         session.add(Workspace(id=workspace_id, name="Race", slug=f"race-{workspace_id}",
-                              kind=WorkspaceKind.ORGANIZATION, created_by_id=user_id))
+                              kind=WorkspaceKind.TEAM, created_by_id=user_id))
         await session.flush()
         session.add_all([
             Membership(workspace_id=workspace_id, user_id=user_id, role=Role.OWNER),
@@ -2633,14 +2653,17 @@ async def test_two_starts_on_one_issue_are_serialised(race_world) -> None:
     from dotrix_backend.modules.coding.models import CodingLocation
     from dotrix_backend.modules.coding.service import CodingBusy
     from dotrix_backend.modules.projects.models import Project
+    from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
     sessions, service, workspace_id, project_id, user_id, issue = race_world
     async with sessions() as a, sessions() as b:
         project_a, project_b = await a.get(Project, project_id), await b.get(Project, project_id)
-        await service(a)._codable(project_a, user_id, "RACE-1", location=CodingLocation.CLOUD)
+        member_a = await MembershipRepository(a).get(workspace_id, user_id)
+        member_b = await MembershipRepository(b).get(workspace_id, user_id)
+        await service(a)._codable(project_a, member_a, "RACE-1", location=CodingLocation.CLOUD)
         a.add(_race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.AWAITING_APPROVAL))
         await a.flush()  # A's turn exists, but isn't committed yet
-        other = asyncio.create_task(service(b)._codable(project_b, user_id, "RACE-1", location=CodingLocation.CLOUD))
+        other = asyncio.create_task(service(b)._codable(project_b, member_b, "RACE-1", location=CodingLocation.CLOUD))
         await asyncio.sleep(0.3)
         assert not other.done(), "B went ahead while A was still starting its turn"
         await a.commit()
@@ -2653,7 +2676,7 @@ async def test_two_follow_ups_on_one_session_are_serialised(race_world) -> None:
     from dotrix_backend.modules.coding.service import CodingBusy
     from dotrix_backend.modules.projects.deps import ProjectAccess
     from dotrix_backend.modules.projects.models import Project
-    from dotrix_backend.modules.workspaces.models import Membership
+    from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
     sessions, service, workspace_id, project_id, user_id, issue = race_world
     first = _race_run(workspace_id, project_id, issue, user_id, CodingRunStatus.PR_OPENED)
@@ -2663,8 +2686,7 @@ async def test_two_follow_ups_on_one_session_are_serialised(race_world) -> None:
         await session.commit()
 
     async def access(session):
-        member = await session.scalar(select(Membership).where(
-            Membership.workspace_id == workspace_id, Membership.user_id == user_id))
+        member = await MembershipRepository(session).get(workspace_id, user_id)
         return ProjectAccess(await session.get(Project, project_id), member)
 
     async with sessions() as a, sessions() as b:

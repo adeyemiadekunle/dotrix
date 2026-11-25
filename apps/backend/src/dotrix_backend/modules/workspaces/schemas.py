@@ -25,21 +25,21 @@ WorkspaceName = Field(min_length=1, max_length=100)
 class WorkspaceCreate(BaseModel):
     name: str = WorkspaceName
     # Personal workspaces are created automatically at sign-up, one per user; a new one is an
-    # organisation.
-    kind: Literal[WorkspaceKind.ORGANIZATION] = WorkspaceKind.ORGANIZATION
+    # team workspace.
+    kind: Literal[WorkspaceKind.TEAM] = WorkspaceKind.TEAM
 
 
 class FirstWorkspaceChoice(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["personal", "organization"] = "personal"
+    kind: Literal["personal", "team"] = "personal"
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] | None = None
 
     @model_validator(mode="after")
-    def organization_name(self):
-        if self.kind == "organization" and not self.name:
-            raise ValueError("Give the organisation a name")
+    def team_name(self):
+        if self.kind == "team" and not self.name:
+            raise ValueError("Give the team a name")
         if self.kind == "personal" and self.name is not None:
-            raise ValueError("Personal setup does not create or rename an organisation")
+            raise ValueError("Use Team setup to create or rename a Team workspace")
         return self
 
 
@@ -49,9 +49,8 @@ class WorkspaceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     member_permissions: list[Permission] | None = Field(
         default=None,
-        description="What members may do beyond chatting, brainstorming, and working the board: any of "
-        "`knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` "
-        "(instruct the coding agent). Empty: owners and admins only.",
+        description="Additional Member grants. `agents:approve` delegates approval of eligible work "
+        "requested by other people. `agents:code` is also accepted for existing configurations.",
     )
     unattended_paused: bool | None = Field(
         default=None,
@@ -81,7 +80,7 @@ class WorkspaceRead(BaseModel):
     id: uuid.UUID
     name: str
     slug: str
-    kind: WorkspaceKind = Field(description="personal (just you) or organization (a team that invites people)")
+    kind: WorkspaceKind = Field(description="personal (just you) or team (a shared workspace)")
     created_at: datetime
     member_permissions: list[Permission] = Field(
         default_factory=list, description="What this workspace lets members do beyond the defaults"
@@ -97,7 +96,7 @@ class WorkspaceRead(BaseModel):
     default_approval_mode: ApprovalMode = Field(
         default=ApprovalMode.MANUAL, validate_default=True,
         description="What a new conversation or coding session starts on in the app: Accept edits in a personal "
-        "workspace, Manual in an organisation (never above the cap)",
+        "workspace, Manual in a Team workspace (never above the cap)",
     )
 
     @field_validator("approval_mode_cap", mode="before")

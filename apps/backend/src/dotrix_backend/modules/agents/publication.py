@@ -14,7 +14,7 @@ from dotrix_backend.modules.issues.service import IssueActor, IssueService
 from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.repository import ProjectRepository
-from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.permissions import Permission, can, can_manage_issues
 
 from .models import AgentRun, ChatPublication, RunStatus
 
@@ -57,8 +57,8 @@ class ChatPublicationRead(BaseModel):
 async def publish(
     session: AsyncSession, access: ProjectAccess, run_id: uuid.UUID, data: ChatPublicationCreate,
 ) -> ChatPublicationRead:
-    permission = Permission.EDIT_ISSUES if data.destination == "task" else Permission.EDIT_KNOWLEDGE
-    if not can(access.member, permission):
+    is_task = data.destination == "task"
+    if not is_task and not can(access.member, Permission.EDIT_KNOWLEDGE):
         raise Forbidden("You cannot publish to this destination")
     # Serialize retries with document/issue writes and project moves. Do not rely on
     # approver access: only the owner may publish from their private conversation.
@@ -70,6 +70,8 @@ async def publish(
     ))
     if run is None:
         raise NotFound("Conversation run not found")
+    if is_task and not can_manage_issues(access.member):
+        raise Forbidden("Only Team Owners and Admins can publish a task")
     if run.status != RunStatus.COMPLETED:
         raise Conflict("Wait for this reply to finish before publishing an outcome")
     if not data.title.strip() or not data.content.strip():

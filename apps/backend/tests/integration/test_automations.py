@@ -91,13 +91,14 @@ async def test_retired_custom_automation_cannot_be_reenabled_or_run(db_client, d
 async def test_people_s_changes_set_it_off_and_agents_don_t(
     db_client: AsyncClient, signup, create_team, add_member, agent_script
 ) -> None:
-    ada, cat, _, base = await _world(db_client, signup, create_team, add_member)
+    ada, _, _, base = await _world(db_client, signup, create_team, add_member)
     made = (await db_client.post(f"{base}/automations", json={
         "name": "Triage new issues", "instructions": "Triage the new issues.", "events": ["issue.created"],
     }, headers=ada.headers)).json()
 
     for title in ("Login fails on Safari", "Export is slow"):
-        await db_client.post(f"{base}/issues", json={"type": "task", "title": title}, headers=cat.headers)
+        created = await db_client.post(f"{base}/issues", json={"type": "task", "title": title}, headers=ada.headers)
+        assert created.status_code == 201, created.text
     model = agent_script.say("Both triaged.")
     await _tick(db_client)
     runs = await _runs(db_client, base, ada.headers)

@@ -60,12 +60,12 @@ TAGS: list[dict[str, str]] = [
     {
         "name": "workspaces",
         "description": "Workspaces, the tenant everything belongs to: your personal one (just you) or "
-        "organisations (a team: invites, roles, many projects). Members, roles, ownership transfer.",
+        "Team workspaces (invites, roles, many projects). Members, roles, ownership transfer.",
     },
     {"name": "invites", "description": "Invite people by email or shareable link; accept invites."},
     {
         "name": "models",
-        "description": "An organisation's own model provider keys (Anthropic, OpenAI, Google), stored "
+        "description": "A Team workspace's own model provider keys (Anthropic, OpenAI, Google), stored "
         "encrypted and used for its agents' runs, and when a provider last refused a run for its limits.",
     },
     {"name": "projects", "description": "Projects: start from a new repo, an existing repo, or docs only."},
@@ -145,7 +145,7 @@ TAGS: list[dict[str, str]] = [
         "name": "admin",
         "description": "The Admin app's own accounts and reads: sign-up of the first account with the "
         "deployment's setup token (others are made from the server's command line), httpOnly "
-        "cookie sessions, workspace observability, audit, and creating an organisation workspace.",
+        "cookie sessions, workspace observability, audit, and creating a Team workspace.",
     },
     {"name": "health", "description": "Liveness and readiness probes."},
     {"name": "features", "description": "What this server offers, for clients to show only what works (no sign-in needed)."},

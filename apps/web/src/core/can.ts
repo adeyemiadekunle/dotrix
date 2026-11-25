@@ -2,7 +2,7 @@
 // workspace it's what the API reports for them (their role's permissions plus what the workspace
 // grants members); on the seeded demo, owners and admins do everything and members only their
 // own work. The API still enforces every one of these.
-import type { ApprovalMode } from "@/lib/agent";
+import type { Approval, ApprovalMode } from "@/lib/agent";
 import { isLive, live } from "../data/live";
 import { me } from "../data/store";
 import { personal } from "./features";
@@ -23,6 +23,21 @@ export function allowed(p: Perm): boolean {
   return role === "Owner" || role === "Admin";
 }
 
+/** Team issue creation and assignment are reserved for Owners and Admins. */
+export function canManageIssues(): boolean {
+  return !isLive() || live.ws?.role === "owner" || live.ws?.role === "admin";
+}
+
+/** Changes that require an Owner or Admin even when a Member can approve a run. */
+export function canApplyAgentApproval(approval: Pick<Approval, "tool" | "args">): boolean {
+  return (
+    canManageIssues() ||
+    (approval.tool !== "write_file" &&
+      approval.tool !== "edit_file" &&
+      !(["update_issue", "update_task"].includes(approval.tool) && approval.args?.status === "done"))
+  );
+}
+
 /** The approval modes you may work in here: up to the workspace's cap, and only Manual unless you
  * may approve agent changes. On the seeded demo, all three. */
 export function approvalModes(): ApprovalMode[] {
@@ -40,6 +55,6 @@ export function defaultApproval(): ApprovalMode {
   return mine.includes(wanted) ? wanted : "manual";
 }
 
-/** Invites: people who manage members, and only in an organisation (a personal workspace is
+/** Invites: people who manage members, and only in a Team workspace (a personal workspace is
  * just its owner's; the API refuses its invites too). */
 export const canInvite = () => allowed("members:manage") && !personal();

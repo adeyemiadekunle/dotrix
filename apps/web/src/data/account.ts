@@ -107,23 +107,21 @@ export async function workspaceRenamed(name: string) {
 
 /** What a workspace grants its members on top of their role (owners and admins set it). */
 export const GRANTABLE: [Schemas["Permission"], string, string][] = [
-  ["knowledge:write", "Edit documents", "Change the project's knowledge directly."],
-  ["agents:approve", "Approve agents' changes", "Approve or reject what an agent proposes."],
+  ["agents:approve", "Approve other people’s agent work", "Decide eligible Chat and Codes approvals requested by teammates."],
   ["agents:code", "Start coding", "Ask Kai, the coding agent, to work on a task."],
-  ["agents:choose_model", "Choose the agents' model", "Bigger models cost more."],
 ];
 export async function memberPermissionsSaved(perms: Schemas["Permission"][]) {
-  const was = live.ws!.member_permissions ?? [];
-  live.ws = { ...live.ws!, member_permissions: perms };
-  render();
+  const { id } = live.ws!;
   try {
     const w = await send(api.PATCH("/v1/workspaces/{workspace_id}", { ...wsPath(), body: { member_permissions: perms } }), WORKSPACE);
-    live.ws = { ...live.ws!, member_permissions: w.member_permissions };
-  } catch (e) {
-    live.ws = { ...live.ws!, member_permissions: was };
-    failed("What members can do", e);
+    if (live.ws?.id === id) {
+      live.ws = { ...live.ws, member_permissions: w.member_permissions };
+      render();
+      toast("Member permissions updated");
+    }
+  } catch (error) {
+    if (live.ws?.id === id) failed("Member permissions", error);
   }
-  render();
 }
 
 /** The highest approval mode people may work in here: owners raise it, owners and admins lower it. */
@@ -191,7 +189,7 @@ function patchInvites(fn: (is: Schemas["InviteRead"][]) => Schemas["InviteRead"]
 
 /** Pending email invites, shown with the members as "Invite pending" (owners and admins see them): fetched again. */
 export async function loadInvites() {
-  if (!isLive() || live.ws!.kind !== "organization") return;
+  if (!isLive() || live.ws!.kind !== "team") return;
   await queryClient.invalidateQueries({ queryKey: invitesKey() });
 }
 
@@ -340,7 +338,7 @@ export const agentSaved = (handle: string, agent: AgentFields, base: number | nu
 export const agentReset = (handle: string) =>
   send(api.DELETE("/v1/workspaces/{workspace_id}/agents/{handle}", { params: { path: { workspace_id: live.ws!.id, handle: apiHandle(handle) } } }), AGENTS);
 
-/* ---------- models: the organisation's own keys, your own, and each agent's model ---------- */
+/* ---------- models: the Team workspace's own keys, your own, and each agent's model ---------- */
 
 export const myModels = () => unwrap(api.GET("/v1/me/models"));
 export const myDefaultModelSaved = (model: string | null) => send(api.PUT("/v1/me/models", { body: { default_model: model } }), MODELS);

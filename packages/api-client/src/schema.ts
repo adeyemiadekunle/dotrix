@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * Get Features
-         * @description What this server offers (`DOTRIX_ORGANISATIONS`: off on a deployed server unless turned on).
+         * @description What this server offers (`DOTRIX_TEAMS`: off on a deployed server unless turned on).
          */
         get: operations["get_features"];
         put?: never;
@@ -1171,7 +1171,7 @@ export interface paths {
         /**
          * Choose Onboarding Workspace
          * @description Save the first optional workspace choice. Personal is the default; no conversion or projects.
-         *     403 `organisations_unavailable` for an organisation while this server has them turned off.
+         *     403 `teams_unavailable` for a Team workspace while this server has them turned off.
          */
         post: operations["choose_onboarding_workspace"];
         delete?: never;
@@ -1409,16 +1409,16 @@ export interface paths {
         };
         /**
          * List Workspaces
-         * @description Workspaces you belong to, with your role in each. Organisations are left out while this
+         * @description Workspaces you belong to, with your role in each. Team workspaces are left out while this
          *     server has them turned off (`GET /v1/features`).
          */
         get: operations["list_workspaces"];
         put?: never;
         /**
          * Create Workspace
-         * @description Create an organisation (a workspace for a team: invites, roles, many projects); you
+         * @description Create a Team workspace (a workspace for a team: invites, roles, many projects); you
          *     become its owner. Your personal workspace was created at sign-up. 403
-         *     `organisations_unavailable` while this server has organisations turned off.
+         *     `teams_unavailable` while this server has teams turned off.
          */
         post: operations["create_workspace"];
         delete?: never;
@@ -1576,8 +1576,8 @@ export interface paths {
         /**
          * Invite By Email
          * @description Email an invite (valid 7 days, single use, only for that address). Inviting the same
-         *     address again replaces the earlier invite. Owners and admins, and only in an organisation
-         *     (409 `invites_need_organization` in a personal workspace).
+         *     address again replaces the earlier invite. Owners and admins, and only in a Team workspace
+         *     (409 `invites_need_team` in a personal workspace).
          */
         post: operations["invite_by_email"];
         delete?: never;
@@ -1598,7 +1598,7 @@ export interface paths {
         /**
          * Create Invite Link
          * @description Create a shareable invite link (member or guest only). The `url` is returned only
-         *     here. Owners and admins, and only in an organisation (409 `invites_need_organization` in
+         *     here. Owners and admins, and only in a Team workspace (409 `invites_need_team` in
          *     a personal workspace).
          */
         post: operations["create_invite_link"];
@@ -1807,7 +1807,7 @@ export interface paths {
         /**
          * Move Project
          * @description Move a project, with its knowledge, issues, documents, and conversations, to another
-         *     workspace: from your personal workspace into an organisation, or back. You need to set up
+         *     workspace: from your personal workspace into a Team workspace, or back. You need to set up
          *     projects in both (owners and admins). 409 if the other workspace already has a project with
          *     its key or repo, or while one of its agent runs is working or waiting for approval. People
          *     who can't see it there are unassigned from its issues (logged) and stop watching them; linked
@@ -2397,8 +2397,8 @@ export interface paths {
          * Save My Agent Preference
          * @description How you like an agent to work (up to 2,000 characters, added to its instructions) and its
          *     model, for the runs you start. Within limits: it can't change the agent's tools, folder
-         *     access, or what it may do without asking. A model needs the workspace's permission to
-         *     choose models, unless your own key runs it (403). Empty instructions and no model: removed.
+         *     access, or what it may do without asking. Pick a model from your connected providers.
+         *     Empty instructions and no model remove the preference.
          */
         put: operations["save_my_agent_preference"];
         post?: never;
@@ -2453,9 +2453,9 @@ export interface paths {
          *     It runs in the background: poll the run until `status` is `completed`, `failed`, or
          *     `awaiting_approval`. Agents stay in Chat Mode unless you instruct a change, and every write
          *     pauses for approval. Pass `thread_id` to continue a conversation; a new one may pick its
-         *     `model` (fixed from then on: 409 `model_locked` for another on an existing conversation;
-         *     403 without agents:choose_model; 422 `model_not_available`). 503 `model_unavailable` if the
-         *     model has no API key.
+         *     `model` from its requester's connected providers. A conversation keeps that model
+         *     (409 `model_locked` for a different model on follow-up). A model outside the requester's
+         *     available choices returns 422 `model_not_available`.
          */
         post: operations["create_run"];
         delete?: never;
@@ -2712,8 +2712,9 @@ export interface paths {
          * Decide Approvals
          * @description Decide every pending action of a paused run (one decision each), then the run resumes.
          *     Changes are approved or rejected, with the reason sent back to the agent; they need the
-         *     approve permission, and changes to `architecture/` an owner or admin (403 otherwise, and
-         *     the run keeps waiting). A checkpoint (`checkpoint`, the agent's plan before a large job)
+         *     approve permission. Team Members may decide their own runs and can be delegated approvals
+         *     for other people's runs. Applying Knowledge changes or closing a Team issue needs an Owner
+         *     or Admin. A checkpoint (`checkpoint`, the agent's plan before a large job)
          *     is answered by whoever asked, or anyone who may approve: approve to continue, `steer` with
          *     the changes as `reason`, or reject to stop. Your decision is recorded next to who
          *     instructed the run.
@@ -3502,9 +3503,10 @@ export interface paths {
          * Create Issue
          * @description Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
          *     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
-         *     or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
-         *     instruct-coding-agent permission. Assigning Kai, the coding agent (`coding-agent`; its
-         *     older names `claude-code` and `codex` still work), also starts a coding session, waiting for approval, where coding is set up.
+         *     or bug; other types may sit under an epic. In Team workspaces, only Owners and Admins
+         *     can create issues and assign them to people who can access the project. In Personal,
+         *     assigning Kai (`coding-agent`, `claude-code`, or `codex`) also starts a coding session
+         *     awaiting approval where coding is set up.
          */
         post: operations["create_issue"];
         delete?: never;
@@ -3583,7 +3585,8 @@ export interface paths {
         /**
          * Next Issue
          * @description What to work on: your (or the agent's) in-progress issue first, so a crashed session
-         *     resumes; otherwise the best ready issue. 404 `nothing_ready` when there's none.
+         *     resumes; otherwise the best ready issue. Team Members only see their own assignments
+         *     here. Agent mode is for Personal workspaces. 404 `nothing_ready` when there's none.
          */
         get: operations["next_issue"];
         put?: never;
@@ -3606,7 +3609,8 @@ export interface paths {
         /**
          * Claim Issue
          * @description Atomically take a ready issue (a given key, or the next one) and start it: it's assigned
-         *     to you or the agent and moves to `in_progress`. Two claimers never get the same issue.
+         *     to you or the agent and moves to `in_progress`. Team Members can start issues assigned
+         *     to them. Two claimers never get the same issue.
          */
         post: operations["claim_issue"];
         delete?: never;
@@ -3641,8 +3645,9 @@ export interface paths {
          * Update Issue
          * @description Change fields; only what you send changes, and every change is logged (old → new).
          *     `depends_on` replaces the list and can't create a cycle. Only a person moves an issue to
-         *     `done`; coding tools (`as_agent`) stop at `review`. Assigning it to a coding tool starts a
-         *     coding session, waiting for approval, where coding is set up.
+         *     `done`; coding tools (`as_agent`) stop at `review`. Only Team Owners and Admins can close
+         *     issues or change assignments, using people who can access the project. In Personal, assigning a coding
+         *     agent starts a session awaiting approval where coding is set up.
          */
         patch: operations["update_issue"];
         trace?: never;
@@ -8421,10 +8426,10 @@ export interface components {
         /** Features */
         Features: {
             /**
-             * Organisations
-             * @description Organisation workspaces (teams: invites, roles, members) can be created and opened. When false, only personal workspaces are listed and the API refuses organisations.
+             * Teams
+             * @description Team workspaces (invites, roles, members) can be created and opened. When false, only personal workspaces are listed and the API refuses teams.
              */
-            organisations: boolean;
+            teams: boolean;
         };
         /**
          * FileEntry
@@ -8502,7 +8507,7 @@ export interface components {
              * @default personal
              * @enum {string}
              */
-            kind: "personal" | "organization";
+            kind: "personal" | "team";
             /** Name */
             name?: string | null;
         };
@@ -9833,7 +9838,7 @@ export interface components {
          * Permission
          * @enum {string}
          */
-        Permission: "workspace:view" | "agents:chat" | "issues:write" | "knowledge:write" | "agents:approve" | "agents:code" | "projects:manage" | "workspace:manage" | "members:manage" | "workspace:billing" | "usage:view" | "agents:choose_model";
+        Permission: "workspace:view" | "agents:chat" | "issues:write" | "knowledge:write" | "agents:approve" | "agents:code" | "projects:manage" | "workspace:manage" | "members:manage" | "workspace:billing" | "usage:view";
         /**
          * PersonalModelsRead
          * @description Your own keys and default model (Account → Models).
@@ -10821,7 +10826,7 @@ export interface components {
             agent: string;
             /**
              * Model
-             * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model.
+             * @description For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; available through your connected provider). Fixed for the conversation. Omit to use your preference or the project default.
              */
             model?: string | null;
             /** @description For a new project conversation: `fx` (the default for compatible providers) or `deepagents`. A conversation keeps its runtime; omit on follow-up. */
@@ -12061,10 +12066,10 @@ export interface components {
             name: string;
             /**
              * Kind
-             * @default organization
+             * @default team
              * @constant
              */
-            kind: "organization";
+            kind: "team";
         };
         /**
          * WorkspaceIssue
@@ -12148,7 +12153,7 @@ export interface components {
          * WorkspaceKind
          * @enum {string}
          */
-        WorkspaceKind: "personal" | "organization";
+        WorkspaceKind: "personal" | "team";
         /** WorkspaceRuleRead */
         WorkspaceRuleRead: {
             /**
@@ -12203,7 +12208,7 @@ export interface components {
             agent: string;
             /**
              * Model
-             * @description For a new conversation only
+             * @description For a new conversation only. Choose a model from your connected providers.
              */
             model?: string | null;
         };
@@ -12318,7 +12323,7 @@ export interface components {
             name?: string | null;
             /**
              * Member Permissions
-             * @description What members may do beyond chatting, brainstorming, and working the board: any of `knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` (instruct the coding agent). Empty: owners and admins only.
+             * @description Additional Member grants. `agents:approve` delegates approval of eligible work requested by other people. `agents:code` is also accepted for existing configurations.
              */
             member_permissions?: components["schemas"]["Permission"][] | null;
             /**
@@ -12395,7 +12400,7 @@ export interface components {
             name: string;
             /** Slug */
             slug: string;
-            /** @description personal (just you) or organization (a team that invites people) */
+            /** @description personal (just you) or team (a shared workspace) */
             kind: components["schemas"]["WorkspaceKind"];
             /**
              * Created At
@@ -12419,7 +12424,7 @@ export interface components {
              */
             approval_mode_cap: components["schemas"]["ApprovalMode"];
             /**
-             * @description What a new conversation or coding session starts on in the app: Accept edits in a personal workspace, Manual in an organisation (never above the cap)
+             * @description What a new conversation or coding session starts on in the app: Accept edits in a personal workspace, Manual in a Team workspace (never above the cap)
              * @default manual
              */
             default_approval_mode: components["schemas"]["ApprovalMode"];
@@ -23287,6 +23292,15 @@ export interface operations {
             };
             /** @description Missing, invalid, or expired credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

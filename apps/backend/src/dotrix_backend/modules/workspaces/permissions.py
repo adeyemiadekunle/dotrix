@@ -9,9 +9,10 @@ can grant members some of that back (`Workspace.member_permissions`): the PRD's
 from __future__ import annotations
 
 import enum
+import uuid
 from typing import Any
 
-from .models import Role
+from .models import Role, WorkspaceKind
 
 
 class Permission(enum.StrEnum):
@@ -27,7 +28,6 @@ class Permission(enum.StrEnum):
     MANAGE_MEMBERS = "members:manage"  # invite, remove, change roles
     MANAGE_BILLING = "workspace:billing"  # billing, plan, delete workspace
     VIEW_USAGE = "usage:view"  # agent runs' token counts and model (spend)
-    CHOOSE_MODEL = "agents:choose_model"  # start a conversation on a model other than the project's
 
 
 _ALL = frozenset(Permission)
@@ -40,8 +40,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.VIEW,
             Permission.CHAT,  # chat and brainstorm; a change they ask for waits for an owner or admin
             Permission.EDIT_ISSUES,
-            # Off by default, grantable per workspace (MEMBER_GRANTABLE): EDIT_KNOWLEDGE,
-            # APPROVE_ACTIONS, INSTRUCT_CODING_AGENT, CHOOSE_MODEL (a bigger model costs more).
+            # Team Members can use Codes and approve their runs by default.
             # MANAGE_PROJECTS: off, so connecting a repo on a member's machine links to the
             # owner's project instead of creating another one.
         }
@@ -54,10 +53,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 # What a workspace may grant its members on top of the defaults.
 MEMBER_GRANTABLE = frozenset(
     {
-        Permission.EDIT_KNOWLEDGE,
         Permission.APPROVE_ACTIONS,
         Permission.INSTRUCT_CODING_AGENT,
-        Permission.CHOOSE_MODEL,
     }
 )
 
@@ -76,7 +73,30 @@ def can(membership: Any, permission: Permission) -> bool:
     """Whether this membership allows `permission`, counting what the workspace grants its members."""
     if has_permission(membership.role, permission):
         return True
-    return membership.role is Role.MEMBER and permission in granted_to_members(membership.workspace)
+    if membership.role is not Role.MEMBER:
+        return False
+    workspace = membership.workspace
+    if workspace.kind is WorkspaceKind.TEAM and permission in (Permission.INSTRUCT_CODING_AGENT, Permission.APPROVE_ACTIONS):
+        return True
+    return permission in granted_to_members(workspace)
+
+
+def can_approve_others(membership: Any) -> bool:
+    """Cross-user approvals require the role's permission or explicit delegation."""
+    if has_permission(membership.role, Permission.APPROVE_ACTIONS):
+        return True
+    return membership.role is Role.MEMBER and Permission.APPROVE_ACTIONS in granted_to_members(membership.workspace)
+
+
+def can_approve_run(membership: Any, requester_id: uuid.UUID | None) -> bool:
+    return can_approve_others(membership) or (
+        requester_id == membership.user_id and can(membership, Permission.APPROVE_ACTIONS)
+    )
+
+
+def can_manage_issues(membership: Any) -> bool:
+    """Issue creation and assignment are reserved for Owners and Admins."""
+    return membership.role in (Role.OWNER, Role.ADMIN)
 
 
 def effective_permissions(membership: Any) -> list[Permission]:

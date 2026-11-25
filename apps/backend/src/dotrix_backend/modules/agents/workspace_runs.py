@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from uuid_utils.compat import uuid7
 
-from dotrix_backend.core.errors import Conflict, Forbidden, NotFound, Unprocessable
+from dotrix_backend.core.errors import Conflict, NotFound, Unprocessable
 from dotrix_backend.modules.agent_definitions.repository import AgentDefinitionRepository
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.auth.models import User
@@ -34,11 +34,11 @@ from dotrix_backend.modules.search.embeddings import Embedder
 from dotrix_backend.modules.search.models import ChunkSource
 from dotrix_backend.modules.search.service import KnowledgeIndex
 from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_engine.contracts import AgentSpec
 
 from .board_tools import BoardContext, build_board_tools
 from .events import events_after
+from .llm import ModelNotAvailable
 from .models import ACTIVE_STATUSES, AgentRun, RunKind, RunStatus
 from .schemas import (
     AgentRunRead,
@@ -254,11 +254,8 @@ class WorkspaceRunService:
         else:
             project_ids, thread_id = list(dict.fromkeys(data.project_ids)), uuid7()
             model = data.model or default_model
-            if model != default_model:
-                if not can(member, Permission.CHOOSE_MODEL):
-                    raise Forbidden("Only owners and admins (or members the workspace allows) choose the model")
-                if model not in available:
-                    raise ScopeLocked(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
+            if model != default_model and model not in available:
+                raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
             # Fail fast (503) if the model can't run.
             keys = (await run_keys(self.session, self.runner.secrets, member.workspace_id, member.user_id)).keys
             self.runner.model_factory(SimpleNamespace(model=model, specialist_model=None), model, keys=keys)

@@ -1,4 +1,4 @@
-"""Secrets at rest (organisations' model provider keys): Fernet with `DOTRIX_ENCRYPTION_KEY`.
+"""Secrets at rest (Team workspaces' model provider keys): Fernet with `DOTRIX_ENCRYPTION_KEY`.
 
 Several keys, comma-separated, rotate: the first encrypts, every one decrypts, and `rotate`
 re-encrypts a value under the first. Generate one with

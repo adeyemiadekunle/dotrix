@@ -98,7 +98,7 @@ from .scripts import SCRIPT_GUIDE, OnCall, script_tool
 from .specialist_sessions import seal_history, specialist_history, specialist_result_visible
 from .storage_backend import PlatformKnowledgeBackend, SessionFactory
 from .streams import RunStreams, Stream, Streams, text_of, thinking_of
-from .unattended import Unattended, accepting, changes_today, effective_specs
+from .unattended import Unattended, accepting, changes_today, effective_specs, team_admin_approval
 from .usage import TokenBudgetExceeded, TokenUsage, merge_breakdown
 from .work_modes import ModeContext, codes, lead_tools
 from .workspace_runs import WORKSPACE_GUIDE, build_workspace_pack, build_workspace_tools, read_only
@@ -1447,7 +1447,10 @@ async def _notify(session: Any, run: AgentRun, pending: list[dict], speaker: str
     checkpoints = [a for a in pending if a["tool"] == CHECKPOINT_TOOL]
     changes = len(pending) - len(checkpoints)
     if changes:
-        await notifier.approvals_waiting(project, run.id, title, changes, now, speaker)
+        await notifier.approvals_waiting(
+            project, run.id, title, changes, now, speaker, requester_id=run.requested_by_id,
+            managers_only=any(team_admin_approval(a["tool"], a.get("args") or {}) for a in pending),
+        )
     if checkpoints and run.requested_by_id is not None:
         notifier.checkpoint(project, run.requested_by_id, run.id, title, now, speaker)
     if not pending and run.requested_by_id is not None:

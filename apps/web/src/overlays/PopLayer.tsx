@@ -24,8 +24,8 @@ import { useCloseSession, useDeleteSandbox, useDeleteSession, useUpdateSession, 
 import { confirmDlg, promptDlg } from "../core/more";
 import { isLive, live, liveCommentById } from "../data/live";
 import { useProjectTasks } from "../data/tasks";
-import { allowed, canInvite } from "../core/can";
-import { organisations } from "../core/features";
+import { allowed, canInvite, canManageIssues } from "../core/can";
+import { teams, personal } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import {
   archiveProject,
@@ -246,7 +246,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <>
             <div className="mh">Create</div>
-            <Mi icon="circle-check" label="Task" onClick={() => newTask()} r={<kbd>N</kbd>} />
+            {canManageIssues() && <Mi icon="circle-check" label="Task" onClick={() => newTask()} r={<kbd>N</kbd>} />}
             {allowed("projects:manage") && <Mi icon="folder-plus" label="Project" onClick={newProject} r={<kbd>P</kbd>} />}
             <Mi icon="message-square-plus" label="Chat with the agents" onClick={() => (closePop(), go("chat"))} />
             {canInvite() && (
@@ -259,6 +259,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         ),
       };
     case "subassignee": {
+      if (!canManageIssues()) return null;
       const tk = task(p.id as string);
       const sb = tk?.subtasks[p.i as number];
       if (!sb) return null;
@@ -269,12 +270,14 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             search="Assign subtask to…"
             items={[
               { id: "", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, on: !sb.assignee },
-              ...people().map((m) => ({
-                id: m.id,
-                name: m.name + (m.id === D().me ? " (you)" : ""),
-                html: <Av id={m.id} cls="sm" tip={false} />,
-                on: sb.assignee === m.id,
-              })),
+              ...people()
+                .filter((m) => m.role !== "Guest")
+                .map((m) => ({
+                  id: m.id,
+                  name: m.name + (m.id === D().me ? " (you)" : ""),
+                  html: <Av id={m.id} cls="sm" tip={false} />,
+                  on: sb.assignee === m.id,
+                })),
             ]}
             onPick={(v) => {
               S.ui.pop = null;
@@ -292,7 +295,13 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: (
           <PopList
             p={p}
-            items={STATUSES.map((s, i) => ({ id: s.id, name: s.name, html: <StIcon st={s.id} />, on: t?.status === s.id, kbd: i + 1 }))}
+            items={STATUSES.filter((s) => s.id !== "done" || canManageIssues()).map((s, i) => ({
+              id: s.id,
+              name: s.name,
+              html: <StIcon st={s.id} />,
+              on: t?.status === s.id,
+              kbd: i + 1,
+            }))}
             onPick={pick("status")}
           />
         ),
@@ -314,6 +323,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         ),
       };
     case "assignee":
+      if (!canManageIssues()) return null;
       return {
         inner: (
           <PopList
@@ -321,19 +331,24 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
             search="Assign to…"
             items={[
               { id: "", name: "Unassigned", html: <Av id={null} cls="sm" tip={false} />, on: !t?.assignee },
-              ...people().map((m) => ({
-                id: m.id,
-                name: m.name + (m.id === D().me ? " (you)" : ""),
-                html: <Av id={m.id} cls="sm" tip={false} />,
-                on: t?.assignee === m.id,
-              })),
-              // dotrix: Kai, the coding agent, is assignable; assigning Kai starts a coding session (with approval)
-              {
-                id: CODING_AGENT.id,
-                name: CODING_AGENT.name,
-                html: <Av id={CODING_AGENT.id} cls="sm" tip={false} />,
-                on: !!t?.assignee && CODING_TOOLS.some((c) => c.id === t.assignee),
-              },
+              ...people()
+                .filter((m) => m.role !== "Guest")
+                .map((m) => ({
+                  id: m.id,
+                  name: m.name + (m.id === D().me ? " (you)" : ""),
+                  html: <Av id={m.id} cls="sm" tip={false} />,
+                  on: t?.assignee === m.id,
+                })),
+              ...(personal() || !isLive()
+                ? [
+                    {
+                      id: CODING_AGENT.id,
+                      name: CODING_AGENT.name,
+                      html: <Av id={CODING_AGENT.id} cls="sm" tip={false} />,
+                      on: !!t?.assignee && CODING_TOOLS.some((c) => c.id === t.assignee),
+                    },
+                  ]
+                : []),
             ]}
             onPick={pick("assignee")}
           />
@@ -363,6 +378,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
         inner: <MoveToProject p={p} current={t?.project as string | undefined} onPick={pick("project")} />,
       };
     case "recur":
+      if (!canManageIssues()) return null;
       return {
         inner: (
           <PopList
@@ -506,7 +522,7 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
               </button>
             ))}
             <Sep />
-            {organisations() && <Mi icon="plus" label="Create workspace" onClick={() => (closePop(), window.location.assign("/onboarding?team=1"))} />}
+            {teams() && <Mi icon="plus" label="Create Team workspace" onClick={() => (closePop(), window.location.assign("/onboarding?team=1"))} />}
             {allowed("workspace:manage") && (
               <Mi icon="settings" label="Workspace settings" onClick={() => (closePop(), go("settings", { sec: "workspace" }))} />
             )}
@@ -746,7 +762,9 @@ function PopInner({ p }: { p: P }): { inner: ReactNode; cls?: string; style?: CS
       return { inner: <CtxMenu p={p} /> };
     case "bulk-status":
     case "bulk-priority":
+      return { inner: <BulkMenu p={p} /> };
     case "bulk-assignee":
+      if (!canManageIssues()) return null;
       return { inner: <BulkMenu p={p} /> };
   }
   return null;
@@ -783,7 +801,7 @@ function BulkMenu({ p }: { p: P }) {
   if (p.type === "bulk-status")
     return (
       <>
-        {STATUSES.map((s) => (
+        {STATUSES.filter((s) => s.id !== "done" || canManageIssues()).map((s) => (
           <button key={s.id} className="mi" onClick={() => set("status", s.id)}>
             <StIcon st={s.id} />
             {s.name}
@@ -804,7 +822,7 @@ function BulkMenu({ p }: { p: P }) {
     );
   return (
     <>
-      {[{ id: "", name: "Unassigned" }, ...people()].map((m) => (
+      {[{ id: "", name: "Unassigned" }, ...people().filter((m) => m.role !== "Guest")].map((m) => (
         <button key={m.id} className="mi" onClick={() => set("assignee", m.id || null)}>
           <Av id={m.id || null} cls="sm" tip={false} />
           {m.name}
@@ -845,7 +863,7 @@ function CtxMenu({ p }: { p: P }) {
         />
         <Sep />
         <Mi icon="circle-dot" label="Status…" onClick={to("status")} />
-        <Mi icon="user" label="Assign to…" onClick={to("assignee")} />
+        {canManageIssues() && <Mi icon="user" label="Assign to…" onClick={to("assignee")} />}
         <Mi icon="signal-high" label="Priority…" onClick={to("priority")} />
         <Mi icon="folder-input" label="Move to project…" onClick={to("project")} />
         <Sep />
@@ -855,7 +873,7 @@ function CtxMenu({ p }: { p: P }) {
           label="Copy link"
           onClick={() => (closePop(), void copy(`${location.origin}/w/${currentSlug()}/p/${proj(t.project)!.key}/board?task=${t.key}`))}
         />
-        <Mi icon="copy" label="Duplicate" onClick={() => dupTask(id)} />
+        {canManageIssues() && <Mi icon="copy" label="Duplicate" onClick={() => dupTask(id)} />}
         <Mi icon="archive" label="Archive" onClick={() => archiveTask(id)} />
         <Sep />
         <Mi icon="trash-2" label="Delete" onClick={() => delTask(id)} r="Del" danger />
@@ -888,7 +906,7 @@ function CtxMenu({ p }: { p: P }) {
     return (
       <>
         <div className="mh">{STATUSES.find((s) => s.id === id)?.name}</div>
-        <Mi icon="plus" label="Add task" onClick={() => colAdd(k, id)} />
+        {canManageIssues() && <Mi icon="plus" label="Add task" onClick={() => colAdd(k, id)} />}
         <Mi icon="fold-horizontal" label="Collapse column" onClick={() => colCollapse(k, id)} />
         {id !== "done" ? (
           <Mi icon="check-check" label="Mark all as done" onClick={() => colDoneAll(k, id)} />
@@ -908,7 +926,7 @@ function CtxMenu({ p }: { p: P }) {
     return (
       <>
         {!invited && <Mi icon="user" label="View profile" onClick={() => (closePop(), go("member", { id }))} />}
-        {!invited && <Mi icon="plus" label="Assign a task" onClick={() => newTask({ assignee: id })} />}
+        {!invited && mem(id)?.role !== "Guest" && canManageIssues() && <Mi icon="plus" label="Assign a task" onClick={() => newTask({ assignee: id })} />}
         <Mi icon="mail" label="Copy email" onClick={() => copyEmail(id)} />
         {canRm && (
           <>

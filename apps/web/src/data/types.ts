@@ -161,7 +161,7 @@ export interface Workspace {
   /** a real workspace's address (/w/{slug}); the demo has none */
   slug?: string;
   /** dotrix: personal workspaces never invite */
-  kind?: "personal" | "organization";
+  kind?: "personal" | "team";
 }
 
 /* ---------- dotrix ---------- */

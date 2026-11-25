@@ -40,12 +40,12 @@ async def _counts(db_client: AsyncClient, ws: str, who) -> dict:
 
 async def test_changes_waiting_notify_whoever_may_approve(world, db_client: AsyncClient, agent_script) -> None:
     ada, bob, cat, dan, ws, base = await world()
-    # Members may approve here, but Dan can't see the project once it's restricted to Cat.
-    await db_client.patch(ws, json={"member_permissions": ["agents:approve"]}, headers=ada.headers)
+    # Cat can decide their own comment. Dan cannot see the restricted project.
     await db_client.patch(base, json={"access": "restricted"}, headers=ada.headers)
     assert (await db_client.put(f"{base}/members/{cat.id}", headers=ada.headers)).status_code in (200, 201)
+    issue = (await db_client.post(f"{base}/issues", json={"title": "Launch"}, headers=ada.headers)).json()
 
-    agent_script.say(tool_call("write_file", file_path="/dotrix/roadmap.md", content="# Roadmap\n"), "Done.")
+    agent_script.say(tool_call("comment_issue", key=issue["key"], body="Ready."), "Done.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Plan phase 1"}, headers=cat.headers)).json()
     assert run["status"] == "awaiting_approval"
 

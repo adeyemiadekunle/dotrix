@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { live } from "../data/live";
 import { D } from "../data/store";
-import { allowed, approvalModes, canInvite, defaultApproval } from "./can";
+import { allowed, approvalModes, canInvite, canManageIssues, defaultApproval } from "./can";
 
 type Ws = NonNullable<typeof live.ws>;
 const setLive = (permissions: string[], extra: Record<string, unknown> = {}) => {
@@ -38,8 +38,8 @@ describe("allowed", () => {
 });
 
 describe("canInvite", () => {
-  it("needs members:manage in an organisation", () => {
-    D().ws.kind = "organisation" as never;
+  it("needs members:manage in a Team workspace", () => {
+    D().ws.kind = "team";
     setLive(["members:manage"]);
     expect(canInvite()).toBe(true);
     setLive([]);
@@ -50,6 +50,18 @@ describe("canInvite", () => {
     D().ws.kind = "personal" as never;
     setLive(["members:manage"]);
     expect(canInvite()).toBe(false);
+  });
+});
+
+describe("canManageIssues", () => {
+  it.each([
+    ["owner", true],
+    ["admin", true],
+    ["member", false],
+    ["guest", false],
+  ])("checks the %s role separately from permission to edit issues", (role, expected) => {
+    setLive(["issues:write"], { role });
+    expect(canManageIssues()).toBe(expected);
   });
 });
 

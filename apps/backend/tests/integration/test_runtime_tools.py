@@ -768,7 +768,7 @@ async def test_concurrent_runtime_bindings_have_one_winner(engine, race):
         session.add(User(id=user_id, email=f"{user_id}@example.com", display_name="Runtime test"))
         await session.flush()
         session.add(Workspace(id=workspace_id, name="Runtime test", slug=f"runtime-{workspace_id}",
-                              kind=WorkspaceKind.ORGANIZATION, created_by_id=user_id))
+                              kind=WorkspaceKind.TEAM, created_by_id=user_id))
         await session.flush()
         session.add_all([
             Membership(workspace_id=workspace_id, user_id=user_id, role=Role.OWNER),
@@ -936,7 +936,7 @@ async def nova_pilot_world(engine):
                          User(id=colleague_id, email=f"{colleague_id}@example.com", display_name="Colleague")])
         await session.flush()
         session.add(Workspace(id=workspace_id, name="Pilot", slug=f"pilot-{workspace_id}",
-                              kind=WorkspaceKind.ORGANIZATION, created_by_id=user_id))
+                              kind=WorkspaceKind.TEAM, created_by_id=user_id))
         await session.flush()
         session.add_all([
             Membership(workspace_id=workspace_id, user_id=user_id, role=Role.OWNER),

@@ -1,5 +1,6 @@
 // Board: a column per status, cards you drag between and
 // within them (core/dragdrop), an inline composer per column, collapsible columns.
+import { canManageIssues } from "../core/can";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useState, type CSSProperties } from "react";
 
@@ -113,6 +114,7 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
         )}
         <ActionButton
           className="m"
+          disabled={!canManageIssues()}
           onClick={(e) => (e.stopPropagation(), openPop(e.currentTarget, "assignee", { id: t.id }))}
           style={{ marginLeft: "auto" }}
           aria-label={`Assignee for ${t.key}`}
@@ -123,6 +125,7 @@ function KCard({ t, showProj }: { t: Task; showProj?: boolean }) {
       <div className="hacts">
         <ActionButton
           className="ibtn ibtn-xs"
+          disabled={t.status !== "done" && !canManageIssues()}
           onClick={(e) => (e.stopPropagation(), toggleDone(t.id))}
           data-tip={t.status === "done" ? "Reopen" : "Mark complete"}
           aria-label={`${t.status === "done" ? "Reopen" : "Mark complete"} ${t.key}`}
@@ -216,9 +219,11 @@ export function Board({ ts, k, project }: { ts: Task[]; k: string; project?: str
               <span>{s.name}</span>
               <span className="cnt">{col.length}</span>
               <span className="acts">
-                <button className="ibtn ibtn-xs" onClick={() => startComposer(k, s.id, gb)} data-tip="Add task" aria-label={`Add task to ${s.name}`}>
-                  <Ic n="plus" s={14} />
-                </button>
+                {canManageIssues() && (
+                  <button className="ibtn ibtn-xs" onClick={() => startComposer(k, s.id, gb)} data-tip="Add task" aria-label={`Add task to ${s.name}`}>
+                    <Ic n="plus" s={14} />
+                  </button>
+                )}
                 <button
                   className="ibtn ibtn-xs"
                   onClick={(e) => openPop(e.currentTarget, "ctx", { ctx: "column", id: s.id, key: k })}
@@ -232,14 +237,15 @@ export function Board({ ts, k, project }: { ts: Task[]; k: string; project?: str
               {col.map((t) => (
                 <KCard key={t.id} t={t} showProj={!project} />
               ))}
-              {comp ? (
-                <CardComposer />
-              ) : (
-                <button className="addcard" onClick={() => startComposer(k, s.id, gb)}>
-                  <Ic n="plus" s={14} />
-                  Add task
-                </button>
-              )}
+              {canManageIssues() &&
+                (comp ? (
+                  <CardComposer />
+                ) : (
+                  <button className="addcard" onClick={() => startComposer(k, s.id, gb)}>
+                    <Ic n="plus" s={14} />
+                    Add task
+                  </button>
+                ))}
             </div>
           </section>
         );

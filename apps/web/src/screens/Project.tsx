@@ -1,3 +1,4 @@
+import { canManageIssues } from "../core/can";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 // Project page: header and a tab per view, saved views as
 // extra tabs. dotrix adds Knowledge (the project's documents the agents read and keep current).
@@ -50,15 +51,17 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const ts = applyView(base, v);
   const addBtn = (
     <div className="row" style={{ gap: 8 }}>
-      {isLive() && live.ws?.permissions?.includes("issues:write") && (
+      {isLive() && canManageIssues() && (
         <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "import" })}>
           Import from GitHub
         </ActionButton>
       )}
-      <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
-        <Ic n="plus" s={13} />
-        New task
-      </ActionButton>
+      {canManageIssues() && (
+        <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+          <Ic n="plus" s={13} />
+          New task
+        </ActionButton>
+      )}
     </div>
   );
   // Still loading isn't empty: the toolbar shows alone until the tasks arrive.
@@ -66,11 +69,17 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const emptyAll = (
     <>
       <ProjectReadiness workspaceId={isLive() ? live.ws?.id : undefined} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} compact />
-      <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
-        <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
-          <Ic n="plus" s={14} />
-          Add task
-        </ActionButton>
+      <Empty
+        icon="list-checks"
+        title="No tasks here"
+        text={canManageIssues() ? "Add a task to get things moving." : "Tasks will appear here when an Owner or Admin creates them."}
+      >
+        {canManageIssues() && (
+          <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+            <Ic n="plus" s={14} />
+            Add task
+          </ActionButton>
+        )}
       </Empty>
     </>
   );
@@ -118,7 +127,7 @@ export function Project() {
     }
   } else if (tab === "import")
     body =
-      isLive() && !live.ws?.permissions?.includes("issues:write") ? (
+      isLive() && !canManageIssues() ? (
         <Empty icon="lock" title="You cannot import issues" text="Your role does not allow adding project tasks." />
       ) : (
         <GitHubIssueImport scope={isLive() && live.ws ? { workspaceId: live.ws.id, projectId: p.id } : undefined} projectKey={p.key} />

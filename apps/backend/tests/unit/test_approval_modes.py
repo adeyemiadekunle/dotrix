@@ -14,7 +14,7 @@ from dotrix_engine.builtins import builtin_specs
 M, A, X = ApprovalMode.MANUAL, ApprovalMode.ACCEPT_EDITS, ApprovalMode.AUTO
 
 
-def _ws(kind=WorkspaceKind.ORGANIZATION, cap=None, paused=False, grants=()):
+def _ws(kind=WorkspaceKind.TEAM, cap=None, paused=False, grants=()):
     return SimpleNamespace(kind=kind, approval_mode_cap=cap, unattended_paused=paused, member_permissions=list(grants))
 
 
@@ -23,7 +23,7 @@ def _member(role=Role.OWNER, **ws):
 
 
 def test_caps_and_defaults_by_kind() -> None:
-    assert (cap_of(_ws()), default_of(_ws())) == (M, M)  # an organisation: Manual until its owners say
+    assert (cap_of(_ws()), default_of(_ws())) == (M, M)  # Team: Manual until its owners raise the cap
     personal = _ws(kind=WorkspaceKind.PERSONAL)
     assert (cap_of(personal), default_of(personal)) == (X, A)  # yours: Accept edits, Auto allowed
     assert cap_of(_ws(cap="accept_edits")) == A and default_of(_ws(cap="auto")) == M
@@ -34,8 +34,9 @@ def test_the_mode_in_effect_is_the_lowest() -> None:
     assert effective(None, _member(cap="auto")) == M  # not asked: Manual, as before
     assert effective(X, _member(cap="accept_edits")) == A  # the workspace's cap
     assert effective(A, _member(cap="auto")) == A
-    assert effective(X, _member(role=Role.MEMBER, cap="auto")) == M  # may not approve agent changes
-    assert effective(X, _member(role=Role.MEMBER, cap="auto", grants=["agents:approve"])) == X
+    assert effective(X, _member(role=Role.MEMBER)) == M  # the default Team cap
+    assert effective(X, _member(role=Role.MEMBER, cap="auto")) == X  # may approve their own runs
+    assert effective(X, _member(role=Role.GUEST, cap="auto")) == M
     assert effective(A, _member(cap="auto", paused=True)) == M
 
 

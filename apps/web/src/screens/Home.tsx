@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { openTask } from "../core/actions";
-import { allowed, canInvite } from "../core/can";
+import { allowed, canInvite, canManageIssues } from "../core/can";
 import { Ic } from "../core/icons";
 import { invite, newProject, newTask } from "../core/more";
 import { go } from "../core/nav";
@@ -179,10 +179,12 @@ export function Home() {
               New project
             </button>
           )}
-          <button className="btn btn-primary" onClick={() => newTask()}>
-            <Ic n="plus" s={14} />
-            New task
-          </button>
+          {canManageIssues() && (
+            <button className="btn btn-primary" onClick={() => newTask()}>
+              <Ic n="plus" s={14} />
+              New task
+            </button>
+          )}
         </div>
       </div>
       {waiting.length > 0 && (

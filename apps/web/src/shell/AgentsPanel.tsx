@@ -161,7 +161,7 @@ export function AgentsPanel() {
         </button>
       </div>
       <div className="ap-body">
-        <p className="ap-team-note">7 built-in agents · Nova leads the team</p>
+        <p className="ap-team-note">7 built-in agents · {D().ws.kind === "team" ? "Tools for Chat and Codes" : "Nova leads your agent team"}</p>
         <Group title="Needs you" list={by(["needs", "blocked"])} />
         <Group title="Working" list={by(["working"])} />
         <Group title="Free" list={by(["idle"])} />

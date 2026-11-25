@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 
 from sqlalchemy import select
@@ -15,7 +15,12 @@ from dotrix_backend.modules.issues.models import IssueWatcher
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
 from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.permissions import (
+    Permission,
+    can,
+    can_approve_run,
+    can_manage_issues,
+)
 
 from .models import Notification, NotificationKind
 
@@ -40,10 +45,11 @@ class Notifier:
         self.session = session
 
     async def approvals_waiting(
-        self, project: Project, run_id: uuid.UUID, title: str, count: int, at: datetime, agent: str | None
+        self, project: Project, run_id: uuid.UUID, title: str, count: int, at: datetime, agent: str | None,
+        *, requester_id: uuid.UUID | None, managers_only: bool = False,
     ) -> None:
         """A run paused on changes: everyone who may approve them and can see the project."""
-        for user_id in await self._approvers(project):
+        for user_id in await self._approvers(project, requester_id, managers_only=managers_only):
             self._add(project, user_id, NotificationKind.APPROVAL, at, run_id=run_id, title=title,
                       count=count, actor_agent=agent)
 
@@ -53,7 +59,7 @@ class Notifier:
     ) -> None:
         """A coding run waits for approval: everyone who may approve agent changes and sees the project
         (whoever asked too, when they may approve it themselves)."""
-        for user_id in await self._approvers(project):
+        for user_id in await self._approvers(project, requester_id):
             self._add(project, user_id, NotificationKind.APPROVAL, at, coding_run_id=coding_run_id, issue_id=issue_id,
                       title=title, actor_agent=agent, actor_user_id=requester_id)
 
@@ -161,7 +167,7 @@ class Notifier:
         count = len(pages)
         title = (f"{count} wiki page{'s' if count != 1 else ''} out of date after a push to {repo}: "
                  + ", ".join(p.removeprefix("docs/wiki/") for p in pages))
-        for user_id in await self._members_who(project, Permission.EDIT_KNOWLEDGE):
+        for user_id in await self._members_who(project, lambda member: can(member, Permission.EDIT_KNOWLEDGE)):
             self._add(project, user_id, NotificationKind.STALE, at, title=title, count=count, actor_agent=None)
 
     async def _can_see(self, project: Project, user_ids: list[uuid.UUID]) -> list[uuid.UUID]:
@@ -178,17 +184,21 @@ class Notifier:
                 seen.append(member.user_id)
         return seen
 
-    async def _approvers(self, project: Project) -> list[uuid.UUID]:
-        return await self._members_who(project, Permission.APPROVE_ACTIONS)
+    async def _approvers(
+        self, project: Project, requester_id: uuid.UUID | None, *, managers_only: bool = False,
+    ) -> list[uuid.UUID]:
+        return await self._members_who(
+            project, can_manage_issues if managers_only else lambda member: can_approve_run(member, requester_id)
+        )
 
-    async def _members_who(self, project: Project, permission: Permission) -> list[uuid.UUID]:
-        """Members who hold `permission` and see the project."""
+    async def _members_who(self, project: Project, allowed: Callable[[Membership], bool]) -> list[uuid.UUID]:
+        """People who can take this action and see the project."""
         members = await self.session.scalars(
             select(Membership)
             .options(selectinload(Membership.workspace))
             .where(Membership.workspace_id == project.workspace_id)
         )
-        candidates = [m for m in members if can(m, permission)]
+        candidates = [m for m in members if allowed(m)]
         visible = []
         for member in candidates:
             seen = await self.session.scalar(
