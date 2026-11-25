@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 import { PRIOS, STATUSES } from "../core/constants";
 import { DAY, dOff } from "../core/utils";
 import { D, people, type View } from "../data/store";
+import { mountDemo } from "../demo/runtime";
 import type { Task } from "../data/types";
 import { applyView, groupTasks, sortTasks } from "./viewEngine";
+
+mountDemo();
 
 let n = 0;
 function task(over: Partial<Task> = {}): Task {

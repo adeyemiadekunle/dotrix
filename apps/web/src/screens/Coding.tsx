@@ -14,7 +14,7 @@ import { Ic } from "../core/icons";
 import { useRoute } from "../core/nav";
 import { ago } from "../core/utils";
 import { isLive, live } from "../data/live";
-import { D, S, render } from "../data/store";
+import { D, S, demoRuntime, render } from "../data/store";
 import { Splitter, useStoredSize } from "../ui/splitter";
 import { Checkpoint } from "../components/AgentTrace";
 import { SessionDetails } from "../components/SessionDetails";
@@ -50,7 +50,6 @@ import {
   type CodingView,
 } from "../components/SidePanel";
 import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
-import { demoCodingSessions } from "../core/demoSessions";
 
 const css = (o: Record<string, string | number>) => o as CSSProperties;
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
@@ -68,7 +67,7 @@ export function Coding() {
   // With nothing picked, the main column is the new-session form, as Chat's is a new chat.
   const issue = search.get("issue");
   const sessionsQ = useCodingSessions(ws);
-  const all = isLive() ? (sessionsQ.data ?? []) : demoCodingSessions(D());
+  const all = isLive() ? (sessionsQ.data ?? []) : (demoRuntime()?.codingSessions(D()) ?? []);
   const cs = all.find((c) => c.session_id === sessionId) ?? null;
   const q = S.ui.codingQ.toLowerCase();
   const found = all.filter((c) => !q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q));
@@ -259,7 +258,7 @@ function DemoSession({ id }: { id: string }) {
   const toggleDetails = () => setDetailsPop((open) => !open);
   const demoProject = D().projects.find((item) => item.id === session.project);
   const demoIssue = D().tasks.find((item) => item.id === session.task || item.key === session.task);
-  const demoCs: CodingSession = demoCodingSessions(D()).find((item) => item.session_id === session.id) ?? {
+  const demoCs: CodingSession = (demoRuntime()?.codingSessions(D()) ?? []).find((item) => item.session_id === session.id) ?? {
     session_id: session.id,
     project_id: session.project,
     project_key: demoProject?.key ?? "WEB",

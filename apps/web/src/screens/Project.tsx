@@ -63,16 +63,26 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   );
   // Still loading isn't empty: the toolbar shows alone until the tasks arrive.
   const noTasks = !loading && !base.length;
+  const canImport = isLive() && Boolean(live.ws?.permissions?.includes("issues:write"));
   const emptyAll = (
-    <>
+    <div className="project-empty-shell">
       <ProjectReadiness workspaceId={isLive() ? live.ws?.id : undefined} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} compact />
-      <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
-        <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
-          <Ic n="plus" s={14} />
-          Add task
-        </ActionButton>
-      </Empty>
-    </>
+      <div className="panel">
+        <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving, or import open issues from GitHub.">
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+            <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+              <Ic n="plus" s={14} />
+              Add task
+            </ActionButton>
+            {canImport && (
+              <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "import" })}>
+                Import from GitHub
+              </ActionButton>
+            )}
+          </div>
+        </Empty>
+      </div>
+    </div>
   );
   if (type === "board")
     return (
@@ -86,7 +96,7 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
     return (
       <>
         <ViewToolbar k={k} cols={LIST_COLS.map((c) => [c, LCOLS[c]![0]])} right={addBtn} />
-        <div className="list-wrap">{noTasks ? emptyAll : loading ? null : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>
+        {noTasks ? emptyAll : <div className="list-wrap">{loading ? null : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>}
       </>
     );
   return <Empty icon="file-question" title="Page not found" text="That view doesn't exist." />;

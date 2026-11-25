@@ -23,7 +23,7 @@ import { openModal, restore, snapshot } from "../core/more";
 import { currentSlug, go } from "../core/nav";
 import { MOD, TODAY, ago, diffD, fmtDate, parse, relDate, uid } from "../core/utils";
 import { D, S, isOver, logAct, me, mutate, pColor, proj, render, save, task, toolName, who, people } from "../data/store";
-import { CODING_AGENT } from "../data/seed-dotrix";
+import { CODING_AGENT } from "../core/team";
 import type { CodingSession, Comment, Subtask, Task } from "../data/types";
 import { CellAssignee, CellDue, CellPrio, CellProject, CellStatus } from "../components/TaskList";
 import { Av, CommentText, FT, FilePrev, Lbl, ProgBar, fileType, fsize } from "../ui/helpers";

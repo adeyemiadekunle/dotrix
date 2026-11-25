@@ -1,14 +1,10 @@
-// dotrix's agent actions on the seeded data: deciding an agent's proposed changes, answering a
-// checkpoint, chatting (a canned reply after a short "working" pause), and coding sessions.
-// When the API is wired, each becomes a call (runs, approvals, coding) and the replies stream.
-import { D, S, me, mutate, proj, render, task, toolName, who } from "../data/store";
+// Agent actions for live workspaces; demo-only canned interactions delegate to ../demo/agents.
+import { D, demoRuntime, me, mutate } from "../data/store";
 import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
 import { runContinued } from "../data/account";
 import { isLive, live } from "../data/live";
 import { toast } from "../ui/toast";
-import { createTask } from "./actions";
-import { go } from "./nav";
-import { dOff, uid } from "./utils";
+
 export function threadOf(changeId: string): { th: Thread; msg: ChatMessage; ch: ProposedChange } | null {
   for (const th of D().threads)
     for (const msg of th.messages) {
@@ -17,69 +13,7 @@ export function threadOf(changeId: string): { th: Thread; msg: ChatMessage; ch: 
     }
   return null;
 }
-/** The agents' items about a thread are settled once nothing in it waits. */
-function settleNotifs(th: Thread) {
-  const waiting = th.messages.some((m) => m.changes?.some((c) => c.status === "pending"));
-  if (!waiting) D().notifs.forEach((n) => n.thread === th.id && (n.type === "approval" || n.type === "checkpoint") && (n.read = true));
-}
-/** Text after a unified diff is applied: context and added lines. */
-const applied = (diff: string) =>
-  diff
-    .split("\n")
-    .filter((l) => !l.startsWith("-"))
-    .map((l) => l.slice(1))
-    .join("\n");
-export function decideChange(changeId: string, approve: boolean, reason = "") {
-  const f = threadOf(changeId);
-  if (!f || f.ch.status !== "pending") return;
-  const { th, msg, ch } = f;
-  mutate(() => {
-    ch.status = approve ? "approved" : "rejected";
-    ch.decidedBy = D().me;
-    ch.reason = reason || undefined;
-    const pid = th.project ?? th.projects?.[0] ?? null;
-    if (approve && ch.kind === "write_file" && ch.diff && pid) {
-      const kf = D().knowledge.find((k) => k.project === pid && k.path === ch.title);
-      const content = applied(ch.diff);
-      if (kf) Object.assign(kf, { content, version: kf.version + 1, by: msg.by, at: Date.now() });
-      else D().knowledge.push({ path: ch.title, project: pid, content, version: 1, by: msg.by, at: Date.now() });
-    }
-    if (approve && ch.kind === "create_issue" && pid) {
-      const fl = ch.fields ?? {};
-      const assignee = D().members.find((m) => m.name === fl.Assignee)?.id ?? null;
-      const t = createTask({
-        project: pid,
-        title: ch.title,
-        type: (fl.Type?.toLowerCase() as never) || "task",
-        priority: (fl.Priority?.toLowerCase() as never) || "none",
-        assignee,
-        due: fl.Due ? dOff(3) : null,
-      });
-      D().activity[0]!.by = msg.by; // created by the agent, on your approval
-      ch.fields = { ...fl, Key: t.key };
-    }
-    D().audit.unshift({
-      id: uid("au"),
-      at: Date.now(),
-      by: D().me,
-      action: approve ? "approval.approved" : "approval.rejected",
-      target: ch.title,
-      project: pid ?? undefined,
-    });
-    if (pid)
-      D().activity.unshift({
-        id: uid("a"),
-        by: D().me,
-        verb: approve ? "approved" : "rejected",
-        task: null,
-        project: pid,
-        at: Date.now(),
-        extra: `${who(msg.by)?.name}'s change to ${ch.title}`,
-      });
-    settleNotifs(th);
-  });
-  toast(approve ? `Approved: ${ch.title}` : `Rejected: ${ch.title}`, { ms: 2200 });
-}
+
 /** The autonomy action each kind of change takes, and how to say it. */
 export const ACTION_OF: Partial<Record<ProposedChange["kind"], [string, string]>> = {
   write_file: ["knowledge.write", "write documents"],
@@ -87,137 +21,32 @@ export const ACTION_OF: Partial<Record<ProposedChange["kind"], [string, string]>
   update_issue: ["issues.update", "edit issues"],
   comment: ["issues.comment", "comment on issues"],
 };
+
 /** Who may "Always allow this": owners. */
 export const canAlwaysAllow = () => (isLive() ? live.ws?.role === "owner" : me()?.role === "Owner");
-/** "Always allow this": approve the change, and let its agent make that kind of change without
- * asking from now on (a new version of its contract; the API's `.../always-allow`). */
+
+export function decideChange(changeId: string, approve: boolean, reason = "") {
+  if (!isLive()) demoRuntime()?.decideChange(changeId, approve, reason);
+}
+
 export function alwaysAllow(changeId: string) {
-  const f = threadOf(changeId);
-  const act = f && ACTION_OF[f.ch.kind];
-  const agent = f && D().agents.find((a) => a.handle === f.msg.by);
-  if (!f || !act || !agent) return;
-  mutate(() => {
-    agent.allows = [...new Set([...(agent.allows ?? []), act[0]])];
-    agent.customised = agent.builtIn || undefined;
-    D().audit.unshift({ id: uid("au"), at: Date.now(), by: D().me, action: "agent.updated", target: `${agent.name}: always ${act[1]}` });
-  });
-  decideChange(changeId, true);
-  toast(`${agent.name} may now ${act[1]} without asking`, {
-    action: "Settings",
-    onAction: () => ((S.ui.agentSel = agent.handle), go("settings", { sec: "agents" })),
-  });
+  if (!isLive()) demoRuntime()?.alwaysAllow(changeId);
 }
-/** A checkpoint: continue, change the plan (steer), or stop. */
+
 export function answerCheckpoint(changeId: string, answer: "continue" | "steer" | "stop", note = "") {
-  const f = threadOf(changeId);
-  if (!f || f.ch.status !== "pending") return;
-  const { th, msg, ch } = f;
-  mutate(() => {
-    ch.status = answer === "stop" ? "rejected" : "approved";
-    ch.decidedBy = D().me;
-    ch.reason = note || undefined;
-    if (answer === "steer") th.messages.push({ id: uid("cm"), role: "user", by: D().me, at: Date.now(), text: `Change the plan: ${note}` });
-    settleNotifs(th);
-  });
-  const reply =
-    answer === "stop"
-      ? "Stopped. Here's what I found so far: the app reads issues, comments, and attachments offline, and writes status changes and comments."
-      : answer === "steer"
-        ? `Updated the plan with your changes. Working through it now:\n\n${(ch.plan ?? []).map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\n*(${note})*`
-        : "Continuing with the plan. **Recommendation:** a server-side queue with last-write-wins per field; CRDTs are more than the app needs. I've drafted an ADR you can review below.";
-  agentReply(th, msg.by, reply, answer === "continue" ? ["Read architecture/overview.md", "Compared 3 approaches"] : []);
+  if (!isLive()) demoRuntime()?.answerCheckpoint(changeId, answer, note);
 }
-/** The agent answers after a short pause (seeded: canned, by intent). */
-function agentReply(th: Thread, by: string, text: string, activity: string[] = [], changes?: ProposedChange[]) {
-  S.ui.chatBusy = th.id;
-  render();
-  setTimeout(() => {
-    mutate(() => {
-      th.messages.push({ id: uid("cm"), role: "agent", by, at: Date.now(), text, activity, changes, tokens: 6000 + Math.round(Math.random() * 9000) });
-      th.at = Date.now();
-    });
-    S.ui.chatBusy = null;
-    render();
-  }, 1100);
-}
-/** Chat and coding run on the API in the next step; a real workspace says so instead of a canned reply. */
-/** "owner/name" from a repo's address (or the name as it is). */
-function repoName(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  const m = url.match(/github\.com[/:]([^/]+\/[^/.]+)/);
-  return m ? m[1] : url;
-}
-/** Ask a coding tool to work on an issue: a session waiting for someone to approve it. Its id, or null. */
+
 export function startCoding(t: { id: string; key: string; title: string; project: string }, tool: CodingSession["tool"], note = ""): string | null {
-  if (agentsNotWired()) return null;
-  const id = uid("cs");
-  const ask = note.trim() || t.title;
-  mutate(() => {
-    const repo = repoName(proj(t.project)?.repo);
-    D().coding.unshift({
-      id,
-      project: t.project,
-      task: t.id,
-      tool,
-      status: "awaiting_approval",
-      by: D().me,
-      at: Date.now(),
-      ...(repo ? { repo } : {}),
-      turns: [{ at: Date.now(), ask, events: [] }],
-    });
-    D().notifs.unshift({
-      id: uid("n"),
-      type: "approval",
-      by: `agent:${tool}`,
-      project: t.project,
-      task: t.id,
-      text: "is waiting to start coding",
-      snippet: `${t.key} ${t.title}`,
-      at: Date.now(),
-      read: false,
-    });
-  });
-  return id;
+  if (isLive()) return null;
+  return demoRuntime()?.startCoding(t, tool, note) ?? null;
 }
-function agentsNotWired(): boolean {
-  if (!isLive()) return false;
-  toast("Chat with the agents comes to your workspace in the next update. Try it in the demo workspace.", { kind: "info", ms: 5000 });
-  return true;
-}
-/* ---------- coding sessions ---------- */
-/** The sample workspace's coding approval. A real workspace decides a turn through the API (useDecideCoding). */
+
 export function decideCoding(cs: CodingSession, approve: boolean, reason = "") {
-  if (isLive() || cs.status !== "awaiting_approval") return;
-  mutate(() => {
-    cs.status = approve ? "running" : "rejected";
-    if (approve)
-      cs.branch = `dotrix/${task(cs.task)!.key.toLowerCase()}-${task(cs.task)!
-        .title.toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .slice(0, 30)}`;
-    if (approve) cs.turns.at(-1)!.events.push("Checked out the default branch", "Reading the code");
-    else cs.turns.at(-1)!.summary = reason ? `Rejected: ${reason}` : "Rejected";
-    D().notifs.forEach((n) => n.task === cs.task && n.type === "approval" && (n.read = true));
-    D().audit.unshift({
-      id: uid("au"),
-      at: Date.now(),
-      by: D().me,
-      action: approve ? "coding.approved" : "coding.rejected",
-      target: task(cs.task)!.key,
-      project: cs.project,
-    });
-  });
-  toast(approve ? `${toolName(cs.tool)} is coding ${task(cs.task)!.key}` : "Coding rejected", { ms: 2200 });
+  if (!isLive()) demoRuntime()?.decideCoding(cs, approve, reason);
 }
-/* ---------- a run stopped at its model's limit ---------- */
-/** Where a conversation stopped at its model's limit (the seeded data's message for it). */
-function limitedMessage(threadId: string | undefined): { th: Thread; msg: ChatMessage } | null {
-  const th = D().threads.find((t) => t.id === threadId);
-  const msg = th?.messages.findLast((m) => m.limit && !m.limit.continued);
-  return th && msg ? { th, msg } : null;
-}
-/** Continue a run that stopped at its model's limit: now, or once the limit resets. In a real
- * workspace it's the API's `.../continue`; on the seeded data it carries on here. */
+
+/** Continue a run that stopped at its model's limit: now, or once the limit resets. */
 export function continueLimited(at: { thread?: string; project?: string; run?: string; notif?: string }, whenReset: boolean) {
   const done = () => {
     if (at.notif) mutate(() => D().notifs.forEach((n) => n.id === at.notif && (n.read = true)));
@@ -238,28 +67,9 @@ export function continueLimited(at: { thread?: string; project?: string; run?: s
       .catch((e: unknown) => toast(e instanceof Error && e.message ? e.message : "It couldn't continue", { kind: "err" }));
     return;
   }
-  const found = limitedMessage(at.thread);
-  if (!found) return done();
-  const { th, msg } = found;
-  if (whenReset) {
-    mutate(() => (msg.limit!.whenReset = true));
-    done();
-    return toast("It'll continue when the limit resets");
-  }
-  mutate(() => {
-    msg.limit!.continued = true;
-    th.messages.push({
-      id: uid("cm"),
-      role: "agent",
-      by: msg.by,
-      at: Date.now(),
-      activity: ["Picked up where it stopped", "Read requirements/navigation.md"],
-      text: "Picking up where I stopped: two things block the handoff. **The navigation spec** waits for your approval, and **WEB-139** (the hero component) hasn't started.",
-    });
-  });
-  done();
-  toast("Continuing where it stopped");
+  demoRuntime()?.continueLimited(at, whenReset, done);
 }
+
 const toasted = new Set<string>();
 /** A real workspace opening with a run stopped at its model's limit (the last 12 hours, unread):
  * a toast with Continue, once per session. */
@@ -276,6 +86,3 @@ export function limitToasts() {
     });
   }
 }
-/* ---------- a coding session's menu ---------- */
-/** Its sandbox stops; its conversation, branch, and PR stay, and a new turn resumes it. */
-/** Its turns, screenshots, and saved conversation go; the branch and PR stay on GitHub. */

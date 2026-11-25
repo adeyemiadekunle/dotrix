@@ -65,7 +65,7 @@ import { currentSlug, go } from "../core/nav";
 import { MOD, MONL, TODAY, WD, addD, dOff, diffD, fmtDate, iso, parse } from "../core/utils";
 import { D, S, canSee, logAct as logActSub, me, mem, mutate, pColor, proj, render, task, people } from "../data/store";
 import { useMembers, useProjects } from "../data/lists";
-import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
+import { CODING_AGENT, CODING_TOOLS } from "../core/team";
 import type { Task } from "../data/types";
 import { Av, PrIcon, StIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";

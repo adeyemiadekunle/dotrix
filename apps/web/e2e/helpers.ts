@@ -14,14 +14,27 @@ export function newUser(name = "Ada Tester") {
   return { name, email: `e2e-${tag}@example.com`, password: PASSWORD };
 }
 
+/** Confirm the signed-in e2e user's email using the latest console verification token. */
+export async function verifyEmail(page: Page) {
+  const tokenRes = await page.request.get("/api/e2e/verification-token", { headers: WRITE });
+  expect(tokenRes.status()).toBe(200);
+  const { token } = (await tokenRes.json()) as { token: string };
+  const verified = await page.request.post("/v1/auth/verify-email", { headers: WRITE, data: { token } });
+  expect(verified.status()).toBe(204);
+}
+
 export async function signUp(page: Page, user = newUser()) {
   // Independent workspace tests opt out of first-account setup; onboarding has its own flow tests.
-  await page.goto("/signup?next=%2F");
+  await page.goto("/signup");
   await page.getByLabel("Name", { exact: true }).fill(user.name);
   await page.getByLabel("Email", { exact: true }).fill(user.email);
   await page.getByLabel("Password", { exact: true }).fill(user.password);
   await page.getByRole("button", { name: "Create account" }).click();
-  // Explicit return destinations bypass first-account setup for independent workspace tests.
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole("heading", { name: "Verify your email", exact: true })).toBeVisible();
+  await verifyEmail(page);
+  const workspaces = (await (await page.request.get("/v1/workspaces")).json()) as { slug: string }[];
+  await page.goto(`/w/${workspaces[0]!.slug}`);
   await expect(page).toHaveURL(/\/w\/[^/]+$/);
   return user;
 }

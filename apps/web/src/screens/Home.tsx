@@ -152,13 +152,12 @@ export function Home() {
     .filter((m) => diffD(parse(m.date)!, TODAY) >= 0)
     .sort((a, b) => (a.date > b.date ? 1 : -1))
     .slice(0, 4);
+  const firstName = S.prefs.name.trim().split(/\s+/)[0];
   return (
     <div className="page">
       <div className="ph">
         <div>
-          <h1>
-            {greeting()}, {S.prefs.name.split(" ")[0]}
-          </h1>
+          <h1>{firstName ? `${greeting()}, ${firstName}` : greeting()}</h1>
           <p>
             <span className="num">
               {WDL[TODAY.getDay()]}, {MONL[TODAY.getMonth()]} {TODAY.getDate()}
@@ -274,7 +273,14 @@ export function Home() {
                       : "Add a task to get things moving."
                   }
                   cls="sm"
-                />
+                >
+                  {tab !== "overdue" && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => newTask()}>
+                      <Ic n="plus" s={13} />
+                      New task
+                    </button>
+                  )}
+                </Empty>
               )}
               {lists[tab].length > 7 && (
                 <button className="addrow" style={{ paddingLeft: 14, borderTop: "1px solid var(--divider)", borderBottom: 0 }} onClick={() => go("mytasks")}>
@@ -292,72 +298,85 @@ export function Home() {
                 </button>
               </div>
             </div>
-            {tableOverflow && (
-              <div className="home-table-hint">
-                Scroll to see more columns <Ic n="arrow-right" s={12} />
-              </div>
-            )}
-            <div
-              ref={tableRef}
-              className="home-table-scroll"
-              role="region"
-              aria-label={tableOverflow ? "Project progress, scroll to see more columns" : "Project progress"}
-              tabIndex={tableOverflow ? 0 : undefined}
-            >
-              <table className="perm-t" style={{ minWidth: 560 }}>
-                <thead>
-                  <tr>
-                    <th style={{ paddingLeft: 14 }}>Project</th>
-                    <th style={{ textAlign: "left" }}>Status</th>
-                    <th style={{ textAlign: "left", width: "26%" }}>Progress</th>
-                    <th>Open</th>
-                    <th>Overdue</th>
-                    <th style={{ textAlign: "left" }}>Due</th>
-                    {!personal && <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeP.map((p) => {
-                    const pr = progressOf(p.id);
-                    const pts = all.filter((t) => t.project === p.id);
-                    const ov = pts.filter(isOver).length;
-                    return (
-                      <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => go("project", { id: p.key, tab: "overview" })}>
-                        <td style={{ paddingLeft: 14 }}>
-                          <span className="row">
-                            <PIcon p={p} s={14} />
-                            <b style={{ fontWeight: 500 }}>{p.name}</b>
-                          </span>
-                        </td>
-                        <td style={{ textAlign: "left" }}>
-                          <PStatus s={p.status} />
-                        </td>
-                        <td>
-                          <span className="row">
-                            <ProgBar v={pr} cls={p.status === "risk" ? "red" : ""} />
-                            <span className="num faint" style={{ fontSize: 11.5, width: 30 }}>
-                              {pr}%
-                            </span>
-                          </span>
-                        </td>
-                        <td className="num">{pts.filter((t) => t.status !== "done").length}</td>
-                        <td className="num" style={{ color: ov ? "var(--red)" : "var(--text-3)" }}>
-                          {ov}
-                        </td>
-                        <td style={{ textAlign: "left", whiteSpace: "nowrap" }} className="num muted">
-                          {fmtDate(p.due)}
-                        </td>
-                        {!personal && (
-                          <td style={{ textAlign: "right", paddingRight: 14 }}>
-                            <AvStack ids={p.members} max={3} />
-                          </td>
-                        )}
+            {!activeP.length ? (
+              <Empty icon="folder-kanban" title="No active projects" text="Create a project to organize tasks, documents, and agent work." cls="sm">
+                {allowed("projects:manage") && (
+                  <button className="btn btn-secondary btn-sm" onClick={newProject}>
+                    <Ic n="folder-plus" s={13} />
+                    New project
+                  </button>
+                )}
+              </Empty>
+            ) : (
+              <>
+                {tableOverflow && (
+                  <div className="home-table-hint">
+                    Scroll to see more columns <Ic n="arrow-right" s={12} />
+                  </div>
+                )}
+                <div
+                  ref={tableRef}
+                  className="home-table-scroll"
+                  role="region"
+                  aria-label={tableOverflow ? "Project progress, scroll to see more columns" : "Project progress"}
+                  tabIndex={tableOverflow ? 0 : undefined}
+                >
+                  <table className="perm-t" style={{ minWidth: 560 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ paddingLeft: 14 }}>Project</th>
+                        <th style={{ textAlign: "left" }}>Status</th>
+                        <th style={{ textAlign: "left", width: "26%" }}>Progress</th>
+                        <th>Open</th>
+                        <th>Overdue</th>
+                        <th style={{ textAlign: "left" }}>Due</th>
+                        {!personal && <th style={{ textAlign: "right", paddingRight: 14 }}>Team</th>}
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {activeP.map((p) => {
+                        const pr = progressOf(p.id);
+                        const pts = all.filter((t) => t.project === p.id);
+                        const ov = pts.filter(isOver).length;
+                        return (
+                          <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => go("project", { id: p.key, tab: "overview" })}>
+                            <td style={{ paddingLeft: 14 }}>
+                              <span className="row">
+                                <PIcon p={p} s={14} />
+                                <b style={{ fontWeight: 500 }}>{p.name}</b>
+                              </span>
+                            </td>
+                            <td style={{ textAlign: "left" }}>
+                              <PStatus s={p.status} />
+                            </td>
+                            <td>
+                              <span className="row">
+                                <ProgBar v={pr} cls={p.status === "risk" ? "red" : ""} />
+                                <span className="num faint" style={{ fontSize: 11.5, width: 30 }}>
+                                  {pr}%
+                                </span>
+                              </span>
+                            </td>
+                            <td className="num">{pts.filter((t) => t.status !== "done").length}</td>
+                            <td className="num" style={{ color: ov ? "var(--red)" : "var(--text-3)" }}>
+                              {ov}
+                            </td>
+                            <td style={{ textAlign: "left", whiteSpace: "nowrap" }} className="num muted">
+                              {fmtDate(p.due)}
+                            </td>
+                            {!personal && (
+                              <td style={{ textAlign: "right", paddingRight: 14 }}>
+                                <AvStack ids={p.members} max={3} />
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </section>
           <section className="panel">
             <div className="panel-h">

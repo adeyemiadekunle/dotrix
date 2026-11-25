@@ -1,17 +1,17 @@
-// Store for React: one state (the seeded workspace, your
-// preferences, each view's filters, and UI state such as the open drawer or popover), saved in
-// this browser. Components read it with useStudio() and re-render on any change
-// render loop; changes go through mutate(). Wiring the API replaces the seed and the actions,
-// not the screens.
+// Store for React: live workspaces read from TanStack Query slots (data/live.ts), while
+// UI preferences, view filters, and ephemeral overlay state live here. Demo seed data is
+// isolated in ../demo/runtime and loaded only on /demo or /w/dotrix.
 import { useSyncExternalStore } from "react";
 
+import type { CodingSession as LiveCodingSession } from "@/lib/coding";
 import { PCOLORS } from "../core/constants";
+import { AGENTS, CODING_TOOLS } from "../core/team";
 import { TODAY, diffD, iso, parse, uid } from "../core/utils";
-import { AGENTS, CODING_TOOLS } from "./seed-dotrix";
-import { seed } from "./seed";
-import type { Data, Filter, Project, Task } from "./types";
+import type { CodingSession, Data, Filter, Project, Task } from "./types";
 
-const STORE_KEY = "dotrix.studio.v2"; // v2: the seeded workspace is Dotrix
+const PREFS_KEY = "dotrix.prefs.v1";
+const LEGACY_STORE_KEY = "dotrix.studio.v2";
+
 export const DEFAULT_PREFS = {
   theme: "system" as "system" | "light" | "dark",
   accent: "graphite",
@@ -23,8 +23,8 @@ export const DEFAULT_PREFS = {
   motion: "system",
   home: "home",
   openTasks: "drawer" as "drawer" | "full",
-  name: "Tanjim Islam",
-  title: "Head of Product",
+  name: "",
+  title: "",
 };
 export type Prefs = typeof DEFAULT_PREFS;
 
@@ -41,35 +41,85 @@ export interface View {
 export type Pop = { type: string; anchor: DOMRect; [k: string]: unknown } | null;
 export type Modal = { type: string; [k: string]: unknown };
 
-interface Saved {
-  data: Data;
-  prefs: Prefs;
-  views: Record<string, View>;
-  collapsed: boolean;
+export interface DemoHooks {
+  saveData: (data: Data) => void;
+  reset: () => void;
+  openRequest: (q: { thread?: string; task?: string }) => void;
+  codingSessions: (data: Data) => LiveCodingSession[];
+  decideChange: (changeId: string, approve: boolean, reason?: string) => void;
+  alwaysAllow: (changeId: string) => void;
+  answerCheckpoint: (changeId: string, answer: "continue" | "steer" | "stop", note?: string) => void;
+  startCoding: (t: { id: string; key: string; title: string; project: string }, tool: CodingSession["tool"], note?: string) => string | null;
+  decideCoding: (cs: CodingSession, approve: boolean, reason?: string) => void;
+  continueLimited: (at: { thread?: string; notif?: string }, whenReset: boolean, markNotifRead: () => void) => void;
 }
 
-function load(): Saved | null {
+let demoHooks: DemoHooks | null = null;
+export function registerDemoHooks(hooks: DemoHooks) {
+  demoHooks = hooks;
+}
+export const demoRuntime = () => demoHooks;
+
+export function emptyData(): Data {
+  return {
+    ws: { id: "", name: "dotrix", plan: "Personal", url: "", c: "#1D1C1A" },
+    workspaces: [],
+    me: "",
+    members: [],
+    projects: [],
+    tasks: [],
+    comments: [],
+    activity: [],
+    notifs: [],
+    files: [],
+    projOrder: [],
+    savedViews: [],
+    recentSearches: [],
+    sessions: [],
+    notifPrefs: {},
+    agents: [],
+    threads: [],
+    knowledge: [],
+    coding: [],
+    audit: [],
+    automations: [],
+  };
+}
+
+interface SavedPrefs {
+  prefs?: Partial<Prefs>;
+  views?: Record<string, View>;
+  collapsed?: boolean;
+}
+
+function loadPrefs(): SavedPrefs | null {
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(PREFS_KEY) ?? localStorage.getItem(LEGACY_STORE_KEY);
     if (raw) {
-      const j = JSON.parse(raw) as Saved;
-      if (j?.data?.tasks && j.data.threads) return j;
+      const j = JSON.parse(raw) as SavedPrefs;
+      if (j && typeof j === "object") {
+        // Never hydrate demo user identity ("Tanjim Islam") into live preferences.
+        const prefs = { ...(j.prefs ?? {}) };
+        if (prefs.name === "Tanjim Islam") delete prefs.name;
+        if (prefs.title === "Head of Product") delete prefs.title;
+        return { prefs, views: j.views, collapsed: j.collapsed };
+      }
     }
   } catch {
-    /* storage blocked or corrupt: start from the seed */
+    /* storage blocked or corrupt */
   }
   return null;
 }
-const saved = load();
+const saved = loadPrefs();
 
 export const S = {
-  data: saved?.data ?? seed(),
+  data: emptyData(),
   prefs: { ...DEFAULT_PREFS, ...(saved?.prefs ?? {}) } as Prefs,
   views: saved?.views ?? ({} as Record<string, View>),
   ui: {
     collapsed: Boolean(saved?.collapsed),
     mnav: false,
-    expanded: { p1: true } as Record<string, boolean>,
+    expanded: {} as Record<string, boolean>,
     drawer: null as string | null,
     drawerFull: false,
     drawerTab: "comments" as "comments" | "activity",
@@ -85,7 +135,6 @@ export const S = {
     drafts: {} as Record<string, string>,
     subOpen: null as null | { tid: string; sid: string },
     mention: null as null | { tid: string; q: string },
-    // each page's own controls (kept in the store, so they survive navigating away)
     calDate: iso(TODAY),
     fileQ: "",
     fileType: "all",
@@ -100,11 +149,10 @@ export const S = {
     inboxSel: null as string | null,
     myTab: "mine" as "mine" | "starred" | "archived",
     agentSel: null as string | null,
-    // dotrix: chat
     chatBusy: null as string | null,
     chatQ: "",
     codingQ: "",
-    showArchivedSessions: false, // Coding lists its archived sessions instead
+    showArchivedSessions: false,
     searchQ: "",
     searchCat: "all",
     myView: "list" as "list" | "calendar",
@@ -115,9 +163,7 @@ export const S = {
     actFilter: "all",
     actWho: "all",
     settings: "profile",
-    /** the agents panel as a sheet, on narrower screens */
     agentsSheet: false,
-    /** corner notices closed this session (by key) */
     noticesShut: [] as string[],
   },
 };
@@ -130,11 +176,8 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
-/** What this browser keeps: the demo's data (a real workspace's lives in the API; data/live.ts). */
-const persist = { data: (): Data => S.data };
 
-/** A live workspace's data, mirrored in from the TanStack queries by the StoreBridge — null on the
- *  demo, so S.data keeps the demo's seed untouched while you're signed in. */
+/** A live workspace's data, mirrored in from the TanStack queries by the StoreBridge — null outside live workspaces. */
 let liveData: Data | null = null;
 export function setLiveData(d: Data | null) {
   liveData = d;
@@ -143,16 +186,17 @@ function writeNow() {
   clearTimeout(saveTimer);
   saveTimer = undefined;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ data: persist.data(), prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed }));
+    const persistedPrefs = liveData ? S.prefs : { ...S.prefs, name: "", title: "" };
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ prefs: persistedPrefs, views: S.views, collapsed: S.ui.collapsed }));
   } catch {
     /* storage full or blocked: keep working in memory */
   }
+  if (!liveData && demoHooks) demoHooks.saveData(S.data);
 }
 export function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(writeNow, 150);
 }
-// A change made just before a reload or navigating away is still written.
 if (typeof window !== "undefined") addEventListener("pagehide", () => saveTimer !== undefined && writeNow());
 /** Re-render whoever reads the store (UI-only changes: popovers, selection, the drawer). */
 export function render() {
@@ -170,7 +214,6 @@ export function useStudio() {
   useSyncExternalStore(subscribe, () => version);
   return S;
 }
-/** Start over from the seed (Settings → Reset demo data). */
 
 /* ---------- lookups ---------- */
 export const D = () => liveData ?? S.data;
@@ -204,7 +247,6 @@ export function who(id: string | null | undefined): { id: string; name: string; 
   if (!id) return null;
   const m = mem(id);
   if (m) return { id, name: m.name, c: m.c, agent: false };
-  // A real workspace's agents come from the API; the seed's team is the demo's fallback only.
   const a = (D().agents ?? []).find((x) => x.handle === id) ?? (!liveData ? AGENTS.find((x) => x.handle === id) : undefined);
   if (a) return { id, name: a.name, c: a.c, agent: true };
   const tool = CODING_TOOLS.find((x) => x.id === id);
@@ -217,7 +259,6 @@ export const toolName = (tool: string) => who(`agent:${tool}`)?.name ?? tool;
 
 /* ---------- activity ---------- */
 export function logAct(verb: string, t?: Task | null, extra = "") {
-  // A real workspace's activity comes from the API (its lists are the query cache).
   if (liveData) return;
   D().activity.unshift({ id: uid("a"), by: D().me, verb, task: t?.id ?? null, project: t?.project ?? null, at: Date.now(), extra });
   if (t) t.updated = Date.now();

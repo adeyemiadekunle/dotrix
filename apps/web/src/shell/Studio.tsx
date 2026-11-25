@@ -9,7 +9,7 @@ import { applyPrefs } from "../core/theme";
 import { DotsLoader, Ic } from "../core/icons";
 import { WS, back, currentSlug, go, useRoute, type Route } from "../core/nav";
 import { limitToasts } from "../core/agents";
-import { live, loadWorkspace, onLoaded, showDemo } from "../data/live";
+import { live, loadWorkspace, onLoaded } from "../data/live";
 import { loadInvites } from "../data/account";
 import { D, S, projByKey, useStudio } from "../data/store";
 import { Drawer } from "../overlays/Drawer";
@@ -157,15 +157,19 @@ export function Studio() {
     installDragDrop();
     installKeyboard();
   }, []);
-  // The demo's address shows the seeded workspace; any other is one of yours, from the API.
+  // Only /demo or /w/dotrix loads the isolated demo chunk; every other workspace comes from the API.
   useEffect(() => {
-    if (slug === WS) return showDemo();
+    if (slug === WS) {
+      void import("../demo/runtime").then((m) => m.mountDemo());
+      return;
+    }
     if (!hasSession()) return location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
     if (live.slug === slug && live.mode !== "error") return;
     setMissing(null);
     void loadWorkspace(slug).then((found) => !found && setMissing(slug));
   }, [slug]);
   useEffect(() => {
+    if (slug === WS && live.mode !== "demo") return void (document.title = "dotrix");
     if (slug !== WS && live.mode !== "live") return void (document.title = "dotrix"); // still loading
     let t = routeName(route) || "Not found";
     if (route === "project") {
@@ -175,6 +179,18 @@ export function Studio() {
     if (route === "member") t = D().members.find((m) => m.id === params.id)?.name ?? t;
     document.title = `${t} · ${D().ws.name}`;
   });
+  if (slug === WS && live.mode !== "demo") {
+    return (
+      <div className="fullstate" style={{ minHeight: "100svh" }} aria-busy="true">
+        <div className="box" role="status">
+          <DotsLoader px={44} />
+          <span className="faint" style={{ fontSize: 13 }}>
+            Loading demo workspace…
+          </span>
+        </div>
+      </div>
+    );
+  }
   if (slug !== WS) {
     if (missing === slug)
       return (

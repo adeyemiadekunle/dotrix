@@ -1,78 +1,12 @@
-// dotrix's part of the seeded workspace: its agents, chat threads (with changes waiting for a
-// decision), each project's knowledge (.dotrix/), coding sessions, the audit log, automations;
-// and on the seed's data, issue types and the agents' notifications and activity.
+// Demo workspace Dotrix extensions: sample threads, proposed changes, knowledge (.dotrix/),
+// coding sessions, audit events, and automations. Built-in identities come from ../core/team.
+import { AGENTS, CODING_AGENT, CODING_TOOLS } from "../core/team";
 import { minsAgo } from "../core/utils";
-import type { Activity, Agent, AuditEvent, Automation, CodingSession, KnowledgeFile, Notif, Task, Thread } from "./types";
+import type { Activity, AuditEvent, Automation, CodingSession, KnowledgeFile, Notif, Task, Thread } from "../data/types";
+
+export { AGENTS, CODING_AGENT, CODING_TOOLS };
 
 type Base = { tasks: Task[]; notifs: Notif[]; activity: Activity[] };
-
-export const AGENTS: Agent[] = [
-  {
-    handle: "auto",
-    name: "Nova",
-    role: "Lead",
-    desc: "Plans the work, hands it to the right agent, and brings it together.",
-    icon: "sparkles",
-    c: "#E0A92E",
-    builtIn: true,
-    tools: ["knowledge.read", "board.write", "graph.read", "code.read"],
-  },
-  {
-    handle: "product",
-    name: "Lyra",
-    role: "Product",
-    desc: "Requirements, user stories, acceptance criteria.",
-    icon: "target",
-    c: "#3D9E6A",
-    builtIn: true,
-    tools: ["knowledge.write", "board.write"],
-  },
-  {
-    handle: "architecture",
-    name: "Orion",
-    role: "Architecture",
-    desc: "Impact of a change, options, decisions (ADRs).",
-    icon: "layers",
-    c: "#3B82C4",
-    builtIn: true,
-    tools: ["knowledge.write", "code.read", "graph.read"],
-  },
-  {
-    handle: "research",
-    name: "Vega",
-    role: "Research",
-    desc: "Reads the web and our documents; claims with sources.",
-    icon: "search",
-    c: "#5AA9D6",
-    builtIn: true,
-    tools: ["web.search", "knowledge.read"],
-  },
-  {
-    handle: "reviewer",
-    name: "Juno",
-    role: "Review",
-    desc: "Checks work against requirements; read-only.",
-    icon: "shield-check",
-    c: "#D0628B",
-    builtIn: true,
-    customised: true,
-    tools: ["knowledge.read", "code.read"],
-  },
-  {
-    handle: "documentation",
-    name: "Echo",
-    role: "Documentation",
-    desc: "Keeps documents current after changes.",
-    icon: "file-text",
-    c: "#8C6FD6",
-    builtIn: true,
-    tools: ["knowledge.write"],
-  },
-];
-/** Kai, the coding agent: assignable like people, it opens pull requests. Whatever engine codes for it
- * (OpenCode; Claude Code or Codex underneath), people see Kai, so every engine's id answers to Kai. */
-export const CODING_AGENT = { id: "agent:coding-agent", name: "Kai", c: "#3D6B8C" };
-export const CODING_TOOLS = [CODING_AGENT, ...["claude-code", "codex", "opencode", "fx"].map((engine) => ({ ...CODING_AGENT, id: `agent:${engine}` }))];
 
 const diffNav = ` # Navigation
 
@@ -471,7 +405,6 @@ const AUTOMATIONS: Automation[] = [
 ];
 
 export function seedDotrix(base: Base) {
-  // Issue types on the seed's tasks: an epic per big piece, stories under it.
   const byId = new Map(base.tasks.map((t) => [t.id, t]));
   for (const [id, type] of [
     ["t3", "story"],
@@ -486,7 +419,6 @@ export function seedDotrix(base: Base) {
     const t = byId.get(id);
     if (t) t.type = type;
   }
-  // Agents' items in the inbox: changes waiting, a plan to steer, a finding.
   const notifs: Notif[] = [
     {
       id: "na1",
@@ -550,7 +482,7 @@ export function seedDotrix(base: Base) {
     { id: "aa3", by: "agent:claude-code", verb: "opened PR #42 for", task: "t18", project: "p1", at: minsAgo(2880), extra: "" },
   ];
   return {
-    agents: AGENTS,
+    agents: [...AGENTS.map((a) => (a.handle === "reviewer" ? { ...a, customised: true } : a))],
     threads: THREADS,
     knowledge: KNOWLEDGE,
     coding: CODING,

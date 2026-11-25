@@ -140,11 +140,24 @@ export function Knowledge({ p, view = "docs" }: { p: Project; view?: "docs" | "f
       <div className="toolbar">{seg}</div>
       <div className="page knowledge-documents">
         {!files.length ? (
-          <Empty
-            icon="book-open"
-            title="No documents yet"
-            text="The project's requirements, decisions, and research live here, kept current by the agents. Upload documents under Files, or ask in Chat."
-          />
+          <div className="panel">
+            <Empty
+              icon="book-open"
+              title="No documents yet"
+              text="The project's requirements, decisions, and research live here, kept current by the agents. Upload documents under Files, or ask in Chat."
+            >
+              <div className="row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                <ActionButton className="btn btn-primary btn-sm" onClick={() => go("chat", {}, { search: `project=${p.key}` })}>
+                  <Ic n="message-square" s={13} />
+                  Ask in Chat
+                </ActionButton>
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "knowledge" }, { search: "view=files" })}>
+                  <Ic n="upload" s={13} />
+                  Open Files
+                </ActionButton>
+              </div>
+            </Empty>
+          </div>
         ) : (
           <div className={`kn-grid grid min-w-0 items-start gap-4 sm:grid-cols-[240px_minmax(0,1fr)] ${browsing ? "browsing" : ""}`}>
             <div className="kn-mobile-nav rounded-lg border border-border bg-surface p-3 text-primary">

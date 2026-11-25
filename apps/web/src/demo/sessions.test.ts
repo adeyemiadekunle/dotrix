@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { seed } from "../data/seed";
-import { demoCodingSessions } from "./demoSessions";
 import { sessionHref } from "../../lib/coding";
+import { seed } from "./seed";
+import { demoCodingSessions } from "./sessions";
 
 describe("sample session parity", () => {
   it("preserves project, issue, status and history when adapting sample sessions", () => {

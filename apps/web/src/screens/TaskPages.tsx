@@ -6,7 +6,7 @@ import { TODAY, ago, dOff, diffD, parse } from "../core/utils";
 import { isLive, taskPatched } from "../data/live";
 import { useAllTasks, useArchivedTasks, useMyTasks, useStarredTasks } from "../data/tasks";
 import { D, S, isOver, mutate, proj, render } from "../data/store";
-import { tasksLabel } from "../core/features";
+import { personal, tasksLabel } from "../core/features";
 import { ListView, MiniRow } from "../components/TaskList";
 import { applyView, groupTasks, viewOf, ViewToolbar, type Group } from "../shell/viewEngine";
 import { Empty, StIcon } from "../ui/helpers";
@@ -37,7 +37,8 @@ export function MyTasks() {
   const setView = (v: typeof view) => ((S.ui.myTab = v), render());
   const v = viewOf(k);
   // In a personal workspace every task is yours, assigned or not (core/features.ts).
-  const mine = applyView(useMyTasks().tasks, v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v);
+  const rawTasks = useMyTasks().tasks;
+  const mine = applyView(rawTasks, v.sort.f === "manual" ? { ...v, sort: { f: "due", dir: 1 } } : v);
   const groups: Group[] = [
     {
       key: "overdue",
@@ -97,7 +98,7 @@ export function MyTasks() {
       <div className="tabs" style={{ margin: "0 24px 10px" }}>
         {(
           [
-            ["mine", "Assigned to me"],
+            ["mine", personal() ? "All tasks" : "Assigned to me"],
             ["starred", "Starred"],
             ["archived", "Archived"],
           ] as const
@@ -110,9 +111,22 @@ export function MyTasks() {
       {view === "mine" ? (
         <>
           <ViewToolbar k={k} group={false} />
-          <div className="list-wrap">
-            <ListView groups={groups} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
-          </div>
+          {!rawTasks.length ? (
+            <div style={{ padding: "16px 24px 24px" }}>
+              <div className="panel">
+                <Empty icon="list-checks" title="No tasks here" text="Add a task to get things moving.">
+                  <button className="btn btn-primary btn-sm" onClick={() => newTask({ assignee: D().me })}>
+                    <Ic n="plus" s={14} />
+                    New task
+                  </button>
+                </Empty>
+              </div>
+            </div>
+          ) : (
+            <div className="list-wrap">
+              <ListView groups={groups} k={k} cols={["project", "status", "priority", "due"]} complete drag={false} />
+            </div>
+          )}
         </>
       ) : view === "starred" ? (
         <Starred />

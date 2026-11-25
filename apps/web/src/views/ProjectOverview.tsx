@@ -67,7 +67,21 @@ export function ProjectOverview({ p }: { p: Project }) {
               </div>
             </div>
             <div className="panel-b" style={{ fontSize: 14, lineHeight: 1.6, color: "var(--text)" }}>
-              {p.desc}
+              {p.desc?.trim() && p.desc.trim() !== "No description yet." ? (
+                p.desc
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10 }}>
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    No project purpose saved yet. Capture the problem, intended users, and goal so you and your agents share context.
+                  </span>
+                  {allowed("projects:manage") && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => editProject(p.id)}>
+                      <Ic n="pencil" s={13} />
+                      Add project purpose
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </section>
           {isLive() && p.repo && (
@@ -313,7 +327,9 @@ export function ProjectActivity({ p }: { p: Project }) {
           </div>
         ))
       ) : (
-        <Empty icon="activity" title="No activity yet" text="Changes to this project will appear here." />
+        <div className="panel">
+          <Empty icon="activity" title="No activity yet" text="Changes to this project will appear here." />
+        </div>
       )}
     </div>
   );

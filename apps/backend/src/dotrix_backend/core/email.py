@@ -47,7 +47,13 @@ class EmailSendError(Exception):
 class ConsoleEmailSender:
     """Development only: writes emails to the log (links include tokens)."""
 
+    def __init__(self) -> None:
+        self.last_by_recipient: dict[str, EmailMessage] = {}
+
     async def send(self, message: EmailMessage) -> None:
+        if len(self.last_by_recipient) >= 256:
+            self.last_by_recipient.pop(next(iter(self.last_by_recipient)))
+        self.last_by_recipient[message.to.lower()] = message
         logger.info("email to=%s subject=%s\n%s", message.to, message.subject, message.body)
 
 

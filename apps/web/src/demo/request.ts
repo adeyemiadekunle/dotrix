@@ -1,5 +1,5 @@
 import { D } from "../data/store";
-import { go } from "./nav";
+import { go } from "../core/nav";
 
 /** The demo's agent requests can be reviewed in Inbox; Chat uses the live API. */
 export function openDemoRequest({ thread, task }: { thread?: string; task?: string }) {

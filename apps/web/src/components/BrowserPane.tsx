@@ -12,7 +12,7 @@ import { createElement, memo, useCallback, useEffect, useRef, useState, type For
 import { hostOf, toAddress } from "../core/browserUrl";
 import { desktopBrowser, setBrowserSettings as setSettings, useBrowserSettings, type KaiTabRequest } from "../core/desktop";
 import { Ic } from "../core/icons";
-import { CODING_AGENT } from "../data/seed-dotrix";
+import { CODING_AGENT } from "../core/team";
 import { toast } from "../ui/toast";
 import { PanelFrame } from "./SidePanel";
 
