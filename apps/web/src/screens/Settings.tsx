@@ -21,7 +21,7 @@ import {
   type DevCommand,
 } from "../core/desktop";
 import { CODING_AGENT } from "../core/team";
-import { organisations, personal, tasksLabel } from "../core/features";
+import { teams, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
@@ -438,17 +438,17 @@ function Workspace() {
         </div>
       </form>
       <StorageUsage />
-      {d.ws.kind === "personal" && organisations() && (
+      {d.ws.kind === "personal" && teams() && (
         <div className="sblock">
           <h2>Work with a team</h2>
-          <SRow t="Create an organisation" d="Keep this workspace personal. Create a separate organisation, then move selected projects when needed.">
+          <SRow t="Create a Team workspace" d="Keep this workspace personal. Manage projects and assign tasks in a separate Team workspace.">
             {isLive() ? (
               <a className="btn btn-secondary" href="/onboarding?mode=project&team=1">
-                Create organisation workspace
+                Create Team workspace
               </a>
             ) : (
               <ActionButton className="btn btn-secondary" onClick={() => toast("Sample workspace setup is read-only")}>
-                Create organisation workspace
+                Create Team workspace
               </ActionButton>
             )}
           </SRow>
@@ -863,7 +863,7 @@ function Agents() {
     <>
       <div className="row" style={{ marginBottom: 12 }}>
         <span className="muted" style={{ fontSize: 13 }}>
-          {agents.length + 1} built-in agents · Nova leads the team
+          {agents.length + 1} built-in agents · {D().ws.kind === "team" ? "Tools for Chat and Codes" : "Nova leads your agent team"}
         </span>
       </div>
       <UnattendedPause />
@@ -2554,39 +2554,48 @@ function LiveSessions() {
 /** What members can do, in a real workspace: the grants owners and admins set. */
 function LivePermissions() {
   const ws = live.ws!;
-  const admin = ws.role === "owner" || ws.role === "admin";
   const grants = ws.member_permissions ?? [];
+  const [saving, setSaving] = useState(false);
+
+  const saveGrant = async (permission: (typeof grants)[number], enabled: boolean) => {
+    setSaving(true);
+    try {
+      await memberPermissionsSaved(enabled ? [...grants, permission] : grants.filter((grant) => grant !== permission));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <>
-      {ws.kind === "personal" ? (
-        <div className="alert info" style={{ marginBottom: 14 }}>
-          <Ic n="info" s={15} />
-          <span>A personal workspace is just for you. Create a separate organisation workspace to invite people and decide what they can do.</span>
-        </div>
-      ) : null}
       <div className="sblock" style={{ marginTop: 0 }}>
-        <h2>What members can do with the agents</h2>
+        <h2>Member grants</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Off by default: a member's request that would change something waits for an owner or admin. Guests never get these.
+          These grants apply to everyone with the Member role.
         </p>
-        {GRANTABLE.map(([perm, t, d]) => (
-          <SRow key={perm} t={t} d={d}>
+        {GRANTABLE.filter(([perm]) => perm !== "agents:code").map(([perm, title, description]) => (
+          <SRow key={perm} t={title} d={description}>
             <SelectionInput
               type="checkbox"
               className="toggle"
               checked={grants.includes(perm)}
-              disabled={!admin}
-              onChange={(e) => void memberPermissionsSaved(e.target.checked ? [...grants, perm] : grants.filter((x) => x !== perm))}
-              aria-label={t}
+              disabled={saving}
+              onChange={(event) => void saveGrant(perm, event.target.checked)}
+              aria-label={title}
             />
           </SRow>
         ))}
       </div>
       <div className="sblock">
         <h2>Role permissions</h2>
-        <div style={{ marginTop: 12 }}>
-          <PermsTable />
-        </div>
+        <p className="muted" style={{ fontSize: 13 }}>
+          To change a person’s role, open{" "}
+          <button className="link" onClick={() => go("settings", { sec: "members" })}>
+            Members
+          </button>
+          .
+        </p>
+        <PermsTable />
       </div>
     </>
   );
@@ -2888,6 +2897,12 @@ function Body({ sec }: { sec: string }) {
             <ActionButton className="btn btn-secondary" onClick={() => go("members")}>
               Open member directory
             </ActionButton>
+            {allowed("workspace:manage") && (
+              <ActionButton className="btn btn-secondary" onClick={() => go("settings", { sec: "permissions" })}>
+                <Ic n="shield" s={14} />
+                Manage permissions
+              </ActionButton>
+            )}
           </div>
           <div className="panel" style={{ overflow: "hidden" }}>
             {d.members.map((m) => (
@@ -3265,7 +3280,7 @@ const LEADS: Record<string, string> = {
   datetime: "How dates and times appear across the workspace.",
   members: `people have access to this workspace.`,
   projects: "Defaults for new projects and archived work.",
-  permissions: "Control what each role can do.",
+  permissions: "Review role permissions and change optional grants for Team Members.",
   agents: "The agents every project uses: what they may do, their model, and their instructions. Versioned and audited.",
   rules: "Rules every agent follows, and skills they can use, across every project.",
   automations: "Agents that run on a schedule or when something happens. Their changes still wait for approval.",
@@ -3307,7 +3322,7 @@ const SEC_TABS: Record<string, [string, string][]> = {
   ],
 };
 
-/** Pages only an organisation has. */
+/** Pages only a Team workspace has. */
 const TEAM_ONLY = new Set(["members", "permissions"]);
 
 const ITEM_NEEDS: Record<string, Perm> = {
@@ -3321,9 +3336,9 @@ export function Settings() {
   const { params } = useRoute();
   const asked = params.sec || S.ui.settings || "profile";
   const renamed = asked === "devices" ? "sessions" : asked === "models" ? "my-models" : asked;
-  // A personal workspace is just yours: no members or roles to manage (an old link opens your profile).
-  const sec = personal() && TEAM_ONLY.has(renamed) ? "profile" : renamed;
   const admin = allowed("workspace:manage");
+  const unavailable = (personal() && TEAM_ONLY.has(renamed)) || (renamed === "permissions" && !admin);
+  const sec = unavailable ? "profile" : renamed;
   // Pages only some people may open: shown to them alone (the API refuses the rest anyway).
   const shown = (k: string) => (ITEM_NEEDS[k] ? allowed(ITEM_NEEDS[k]) : true) && !(personal() && TEAM_ONLY.has(k));
   const page = SEC_PAGE[sec] ?? sec;

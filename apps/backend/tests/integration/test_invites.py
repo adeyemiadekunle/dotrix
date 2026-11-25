@@ -39,7 +39,7 @@ async def test_email_invite_flow(
     assert preview.status_code == 200
     assert preview.json() | {"expires_at": None} == {
         "workspace_name": "Kunemi",
-        "workspace_kind": "organization",
+        "workspace_kind": "team",
         "role": "admin",
         "invited_by": "Ada",
         "email": "bob@example.com",
@@ -127,17 +127,17 @@ async def test_a_personal_workspace_invites_nobody(signup, db_client: AsyncClien
         res = await db_client.post(
             f"{ws(personal)}/invites", json={"email": "bob@example.com", "role": role}, headers=ada.headers
         )
-        assert res.status_code == 409 and res.json()["type"].endswith("/invites_need_organization")
+        assert res.status_code == 409 and res.json()["type"].endswith("/invites_need_team")
         assert "just for you" in res.json()["detail"]
     link = await db_client.post(f"{ws(personal)}/invites/links", json={"role": "guest"}, headers=ada.headers)
     assert link.status_code == 409
 
 
-async def test_a_separate_organisation_invites_while_personal_stays_private(signup, db_client: AsyncClient) -> None:
+async def test_a_separate_team_workspace_invites_while_personal_stays_private(signup, db_client: AsyncClient) -> None:
     ada = await signup()
     personal = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()[0]
-    res = await db_client.post("/v1/me/onboarding-workspace", json={"kind": "organization", "name": "Inviting team"}, headers=ada.headers)
-    assert res.status_code == 200 and res.json()["kind"] == "organization"
+    res = await db_client.post("/v1/me/onboarding-workspace", json={"kind": "team", "name": "Inviting team"}, headers=ada.headers)
+    assert res.status_code == 200 and res.json()["kind"] == "team"
     assert (await db_client.post(f"{ws(res.json())}/invites", json={"email": "bob@example.com"}, headers=ada.headers)).status_code == 201
     assert (await db_client.post(f"{ws(personal)}/invites", json={"email": "bob@example.com"}, headers=ada.headers)).status_code == 409
 

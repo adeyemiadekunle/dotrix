@@ -2,6 +2,8 @@
 // (data-drag-card, data-drop-col, data-col-body), list rows (a row's handle data-drag-row; the row
 // data-task-row, data-group, data-lkey), sidebar projects (data-drag-proj, data-proj-drop), and
 // files onto drop zones and the drawer (data-dropzone, data-dropzone-task).
+import { canManageIssues } from "./can";
+import { personal } from "./features";
 import { PR, ST } from "./constants";
 import { applyPatch } from "./actions";
 import { isLive, taskRanked } from "../data/live";
@@ -180,7 +182,9 @@ export function installDragDrop() {
         const g = v.group;
         if (g === "status" && d.group in ST) patch.status = d.group as Task["status"];
         if (g === "priority" && d.group in PR) patch.priority = d.group as Task["priority"];
-        if (g === "assignee") patch.assignee = d.group === "none" ? null : d.group;
+        if (g === "assignee" && canManageIssues() && (!isLive() || personal() || !d.group.startsWith("agent:"))) {
+          patch.assignee = d.group === "none" ? null : d.group;
+        }
         if (g === "project" && proj(d.group)) patch.project = d.group;
       }
       let switched = false;

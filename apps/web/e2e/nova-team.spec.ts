@@ -14,7 +14,7 @@ test("the fixed team is listed, and Juno opens in Chat without a side panel", as
 
 test("Kai's instructions stay protected and additional guidance is editable", async ({ page }) => {
   await page.goto("/w/dotrix/settings/agents");
-  await expect(page.getByText("7 built-in agents · Nova leads the team")).toBeVisible();
+  await expect(page.getByText(/^7 built-in agents/)).toBeVisible();
   await page.getByRole("button", { name: /Kai Coding/ }).click();
   await expect(page.getByLabel("Built-in instructions")).toHaveAttribute("readonly", "");
   await page.getByLabel("Additional instructions").fill("Explain the changes clearly.");

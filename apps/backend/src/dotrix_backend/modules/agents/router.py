@@ -94,9 +94,9 @@ async def create_run(
     It runs in the background: poll the run until `status` is `completed`, `failed`, or
     `awaiting_approval`. Agents stay in Chat Mode unless you instruct a change, and every write
     pauses for approval. Pass `thread_id` to continue a conversation; a new one may pick its
-    `model` (fixed from then on: 409 `model_locked` for another on an existing conversation;
-    403 without agents:choose_model; 422 `model_not_available`). 503 `model_unavailable` if the
-    model has no API key."""
+    `model` from its requester's connected providers. A conversation keeps that model
+    (409 `model_locked` for a different model on follow-up). A model outside the requester's
+    available choices returns 422 `model_not_available`."""
     available = available_models(settings, access.project.model, connected=connected)
     return await agents.create_run(access, data, available=available)
 
@@ -236,8 +236,9 @@ async def decide_approvals(
 ) -> AgentRunRead:
     """Decide every pending action of a paused run (one decision each), then the run resumes.
     Changes are approved or rejected, with the reason sent back to the agent; they need the
-    approve permission, and changes to `architecture/` an owner or admin (403 otherwise, and
-    the run keeps waiting). A checkpoint (`checkpoint`, the agent's plan before a large job)
+    approve permission. Team Members may decide their own runs and can be delegated approvals
+    for other people's runs. Applying Knowledge changes or closing a Team issue needs an Owner
+    or Admin. A checkpoint (`checkpoint`, the agent's plan before a large job)
     is answered by whoever asked, or anyone who may approve: approve to continue, `steer` with
     the changes as `reason`, or reject to stop. Your decision is recorded next to who
     instructed the run."""

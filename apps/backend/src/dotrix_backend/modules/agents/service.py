@@ -20,15 +20,20 @@ from dotrix_backend.modules.auth.models import User
 from dotrix_backend.modules.issues.service import IssueService
 from dotrix_backend.modules.knowledge.models import AuthorType
 from dotrix_backend.modules.knowledge.service import Actor, KnowledgeService
-from dotrix_backend.modules.model_keys.service import may_choose, run_keys
+from dotrix_backend.modules.model_keys.service import run_keys
 from dotrix_backend.modules.notifications.notify import Notifier
 from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import visible_to
 from dotrix_backend.modules.research.models import ResearchSource
 from dotrix_backend.modules.workspaces.approval_modes import effective
-from dotrix_backend.modules.workspaces.models import Membership
-from dotrix_backend.modules.workspaces.permissions import Permission, can
+from dotrix_backend.modules.workspaces.models import Membership, WorkspaceKind
+from dotrix_backend.modules.workspaces.permissions import (
+    Permission,
+    can,
+    can_approve_run,
+    can_manage_issues,
+)
 from dotrix_engine.agent import PM_ROLE
 from dotrix_engine.catalog import action_for
 from dotrix_engine.outputs import ACTIONS as OUTPUT_ACTIONS
@@ -36,6 +41,7 @@ from dotrix_engine.permissions import DOCS, REVIEWER
 from dotrix_engine.web.note import note_path, render_note
 
 from .events import events_after
+from .llm import ModelNotAvailable
 from .models import (
     ACTIVE_STATUSES,
     AgentApproval,
@@ -89,6 +95,7 @@ from .specialist_sessions import (
     specialist_result_visible,
 )
 from .titles import title_from_message
+from .unattended import team_admin_approval
 
 # The architecture is set up by owners and admins; only they approve changes to it.
 PROTECTED_PREFIXES = ("/dotrix/architecture/",)
@@ -136,10 +143,6 @@ class ModelLocked(Conflict):
 
 class RuntimeLocked(Conflict):
     code = "runtime_locked"
-
-
-class ModelNotAvailable(Unprocessable):
-    code = "model_not_available"
 
 
 class UnknownAgent(Unprocessable):
@@ -209,7 +212,7 @@ class AgentService:
         if interactive:
             data = data.model_copy(update={"agent": "auto", "work_mode": data.work_mode or WorkMode.DISCUSS})
         thread_id = data.thread_id or uuid7()
-        # The person's own keys run what they start (where allowed); automations use the workspace's.
+        # Use the requester's own keys for chat and scheduled work.
         run_key = await run_keys(
             self.session, self.runner.secrets, project.workspace_id, member.user_id
         )
@@ -239,19 +242,13 @@ class AgentService:
                 handle = PM_ROLE if data.agent in ("auto", PM_ROLE) else data.agent
                 pref = (await preferences_for(self.session, project.workspace_id, member.user_id)).get(handle)
                 preferred = (pref.model if pref else None) or (user.default_model if user else None)
-                if preferred and may_choose(member, preferred, run_key.personal) and (
+                if preferred and preferred.partition(":")[0] in run_key.keys and (
                     available is None or preferred in available
                 ):
                     model = preferred
             model = model or project.model
-            if model != project.model:
-                if not may_choose(member, model, run_key.personal):
-                    raise Forbidden(
-                        "Only owners and admins (or members the workspace allows) choose the model, "
-                        "unless it runs on your own key"
-                    )
-                if available is not None and model not in available:
-                    raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
+            if model != project.model and available is not None and model not in available:
+                raise ModelNotAvailable(f"{model} can't run here; choose one of: {', '.join(available) or 'none'}")
             runtime = data.chat_runtime
             if runtime is None:
                 from .fx_pilot import fx_pilot_providers
@@ -626,18 +623,12 @@ class AgentService:
             )
         )
         changes = [a for a in pending if a.tool != CHECKPOINT]
-        if changes and not can(member, Permission.APPROVE_ACTIONS):
+        if changes and not can_approve_run(member, run.requested_by_id):
             raise Forbidden("Your role can't approve changes; an owner or admin decides them")
         if len(changes) < len(pending) and not (
-            run.requested_by_id == member.user_id or can(member, Permission.APPROVE_ACTIONS)
+            run.requested_by_id == member.user_id or can_approve_run(member, run.requested_by_id)
         ):
             raise Forbidden("Only whoever asked, or someone who may approve, answers this run's checkpoint")
-        protected = [a.target for a in pending if (a.target or "").startswith(PROTECTED_PREFIXES)]
-        if protected and not can(member, Permission.MANAGE_PROJECTS):
-            raise Forbidden(
-                f"Changes to the project's architecture ({', '.join(protected)}) need an owner or "
-                "admin to approve; the run is waiting for them"
-            )
         by_id = {d.approval_id: d for d in data.decisions}
         if len(by_id) != len(data.decisions) or set(by_id) != {a.id for a in pending}:
             raise Unprocessable(
@@ -646,6 +637,12 @@ class AgentService:
             )
         for approval in pending:
             decision = by_id[approval.id]
+            if decision.decision == "approve":
+                if member.workspace.kind is WorkspaceKind.TEAM and not can_manage_issues(member):
+                    if reason := team_admin_approval(approval.tool, approval.args):
+                        raise Forbidden(reason)
+                if (approval.target or "").startswith(PROTECTED_PREFIXES) and not can(member, Permission.MANAGE_PROJECTS):
+                    raise Forbidden("Changes to the project's architecture need an Owner or Admin to approve")
             if decision.decision == "steer" and (approval.tool != CHECKPOINT or not (decision.reason or "").strip()):
                 raise Unprocessable("Steer only answers a checkpoint, with the changes as the reason")
 

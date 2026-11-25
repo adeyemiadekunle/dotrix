@@ -75,9 +75,10 @@ def _actor(access: ProjectAccess, agent: AgentAssignee | None = None) -> IssueAc
 async def create_issue(data: IssueCreate, access: Editor, session: SessionDep, coding: Coding) -> IssueRead:
     """Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance
     criteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,
-    or bug; other types may sit under an epic. Assigning the built-in coding agent needs the
-    instruct-coding-agent permission. Assigning Kai, the coding agent (`coding-agent`; its
-    older names `claude-code` and `codex` still work), also starts a coding session, waiting for approval, where coding is set up."""
+    or bug; other types may sit under an epic. In Team workspaces, only Owners and Admins
+    can create issues and assign them to people who can access the project. In Personal,
+    assigning Kai (`coding-agent`, `claude-code`, or `codex`) also starts a coding session
+    awaiting approval where coding is set up."""
     issue = await IssueService(session).create(access.project, _actor(access, data.as_agent), data)
     if data.as_agent is None and data.assignee_agent in CODING_AGENTS:
         await coding.start_for_assignment(access, issue.key)
@@ -142,21 +143,23 @@ async def list_epics(access: ProjectViewer, session: SessionDep) -> list[EpicPro
     return await IssueService(session).epics(access.project)
 
 
-@router.get("/next", responses=errors(422))
+@router.get("/next", responses=errors(403, 422))
 async def next_issue(
     access: ProjectViewer,
     session: SessionDep,
     as_agent: AgentAssignee | None = Query(default=None, description="Ask for this agent, e.g. claude-code"),
 ) -> IssueRead:
     """What to work on: your (or the agent's) in-progress issue first, so a crashed session
-    resumes; otherwise the best ready issue. 404 `nothing_ready` when there's none."""
+    resumes; otherwise the best ready issue. Team Members only see their own assignments
+    here. Agent mode is for Personal workspaces. 404 `nothing_ready` when there's none."""
     return await IssueService(session).next(access.project, _actor(access, as_agent), as_agent)
 
 
 @router.post("/claim", responses=errors(403, 409, 422))
 async def claim_issue(data: ClaimRequest, access: Editor, session: SessionDep) -> IssueRead:
     """Atomically take a ready issue (a given key, or the next one) and start it: it's assigned
-    to you or the agent and moves to `in_progress`. Two claimers never get the same issue."""
+    to you or the agent and moves to `in_progress`. Team Members can start issues assigned
+    to them. Two claimers never get the same issue."""
     return await IssueService(session).claim(access.project, _actor(access), data)
 
 
@@ -170,8 +173,9 @@ async def get_issue(key: str, access: ProjectViewer, session: SessionDep) -> Iss
 async def update_issue(key: str, data: IssueUpdate, access: Editor, session: SessionDep, coding: Coding) -> IssueRead:
     """Change fields; only what you send changes, and every change is logged (old → new).
     `depends_on` replaces the list and can't create a cycle. Only a person moves an issue to
-    `done`; coding tools (`as_agent`) stop at `review`. Assigning it to a coding tool starts a
-    coding session, waiting for approval, where coding is set up."""
+    `done`; coding tools (`as_agent`) stop at `review`. Only Team Owners and Admins can close
+    issues or change assignments, using people who can access the project. In Personal, assigning a coding
+    agent starts a session awaiting approval where coding is set up."""
     issues = IssueService(session)
     to_coding = data.as_agent is None and data.assignee_agent in CODING_AGENTS
     before = (await issues.get(access.project, key)).assignee_agent if to_coding else None

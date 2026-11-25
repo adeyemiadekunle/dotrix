@@ -210,14 +210,14 @@ class ProjectService:
         actor: Membership,
         target_id: uuid.UUID,
         *,
-        organisations: bool = True,
+        teams: bool = True,
         settings: Settings,
     ) -> ProjectRead:
         """Move a project, with everything in it, to another workspace where you can set up
         projects (owners and admins in both). Its key and repo must be free there, and no agent
-        run may be working or waiting on an approval. Not into an organisation while they're off."""
+        run may be working or waiting on an approval. Not into a Team workspace while they're off."""
         target = await MembershipRepository(self.session).get(target_id, actor.user_id)
-        if target is None or not organisations and target.workspace.kind is not WorkspaceKind.PERSONAL:
+        if target is None or not teams and target.workspace.kind is not WorkspaceKind.PERSONAL:
             raise NotFound("Workspace not found")
         if not can(target, Permission.MANAGE_PROJECTS):
             raise Forbidden(f"Your role there ({target.role}) can't add projects")
@@ -264,7 +264,9 @@ class ProjectService:
                 ProjectMember.user_id.not_in(select(Membership.user_id).where(Membership.workspace_id == target_id)),
             )
         )
-        unassigned, unwatched = await self._drop_people_who_cant_see(project, target_id, actor)
+        unassigned, unwatched = await self._drop_people_who_cant_see(
+            project, target_id, actor, drop_agent_assignees=target.workspace.kind is WorkspaceKind.TEAM,
+        )
         audit = AuditLog(self.session)
         for workspace_id, direction, other in (
             (source_id, "project.moved_out", target_id), (target_id, "project.moved_in", source_id)
@@ -282,11 +284,10 @@ class ProjectService:
         return ProjectRead.model_validate(project)
 
     async def _drop_people_who_cant_see(
-        self, project: Project, workspace_id: uuid.UUID, actor: Membership
+        self, project: Project, workspace_id: uuid.UUID, actor: Membership, *, drop_agent_assignees: bool = False,
     ) -> tuple[int, int]:
-        """After a move, nobody stays assigned to or watching an issue they can no longer see:
-        the new workspace's members (not guests), and for a restricted project only its owners,
-        admins, and the people added to it. Each unassignment is written to the issue's log.
+        """Clear assignments and watches for people who lose access to the project.
+        A move into Team also clears agent assignees. Each unassignment is logged.
         Returns (unassigned, watchers removed)."""
         who = select(Membership.user_id).where(Membership.workspace_id == workspace_id, Membership.role != Role.GUEST)
         if project.access is ProjectAccessLevel.RESTRICTED:
@@ -295,25 +296,28 @@ class ProjectService:
         can_see = who.scalar_subquery()
         issues = select(Issue.id).where(Issue.project_id == project.id).scalar_subquery()
 
+        unavailable_assignee = Issue.assignee_user_id.not_in(can_see)
+        if drop_agent_assignees:
+            unavailable_assignee = or_(unavailable_assignee, Issue.assignee_agent.is_not(None))
         stranded = list(
             await self.session.scalars(
                 select(Issue).where(
                     Issue.project_id == project.id,
-                    Issue.assignee_user_id.is_not(None),
-                    Issue.assignee_user_id.not_in(can_see),
+                    unavailable_assignee,
                 )
             )
         )
         now = datetime.now(UTC)
         for issue in stranded:
+            field = "assignee_agent" if issue.assignee_agent is not None else "assignee_user_id"
             self.session.add(
                 IssueEvent(
                     workspace_id=workspace_id, issue_id=issue.id, kind=IssueEventKind.UPDATED,
-                    author_user_id=actor.user_id, changes={"assignee_user_id": [str(issue.assignee_user_id), None]},
+                    author_user_id=actor.user_id, changes={field: [str(getattr(issue, field)), None]},
                     created_at=now,
                 )
             )
-            issue.assignee_user_id = None
+            setattr(issue, field, None)
             issue.updated_at = now
         watchers = await self.session.execute(
             delete(IssueWatcher).where(IssueWatcher.issue_id.in_(issues), IssueWatcher.user_id.not_in(can_see))

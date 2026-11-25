@@ -74,6 +74,7 @@ def _log_sign_in_options(settings: Settings) -> None:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_json)
+    email_sender = build_email_sender(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -89,7 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.redis = redis
             app.state.rate_limiter = build_rate_limiter(settings, redis)
             job_context = JobContext(
-                sessionmaker, settings, build_email_sender(settings), app.state.storage, app.state.embedder,
+                sessionmaker, settings, email_sender, app.state.storage, app.state.embedder,
                 app.state.checkouts,
             )
             queue, streams, local_jobs = None, None, None
@@ -164,11 +165,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     install_openapi(app, API_VERSION)
     app.state.settings = settings
-    # Reads and writes organisations' own model provider keys (encrypted at rest).
+    # Reads and writes Team workspaces' own model provider keys (encrypted at rest).
     app.state.secrets = Secrets.from_settings(settings)
     # Replaced in lifespan by a sender that queues each email as a job; until then (and in
     # tests that don't run the lifespan) emails go straight to the provider.
-    app.state.email_sender = build_email_sender(settings)
+    app.state.email_sender = email_sender
+    if settings.e2e_models:
+        app.state.e2e_email_sender = email_sender
     app.state.rate_limiter = build_rate_limiter(settings, None)
     app.state.redis = None  # the lifespan sets the pool when worker mode or Redis rate limits need one
     app.state.storage = build_storage(settings)

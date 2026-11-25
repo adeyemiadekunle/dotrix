@@ -9,6 +9,7 @@
 // app forward to it, and on macOS its buttons make the same decision without opening the app.
 import { useEffect, useRef, useState } from "react";
 
+import { canApplyAgentApproval } from "../core/can";
 import { continueLimited, decideChange, decideCoding } from "../core/agents";
 import { desktopNotify } from "../core/desktop";
 import { Ic } from "../core/icons";
@@ -231,7 +232,7 @@ export function Notices({ inPanel = false }: { inPanel?: boolean }) {
 }
 
 /** Reject and Approve buttons for a decision that resolves when it has gone through (or been refused). */
-function Decide({ approve, reject, done }: { approve: () => Promise<boolean>; reject: () => Promise<boolean>; done: () => void }) {
+function Decide({ approve, reject, done }: { approve?: () => Promise<boolean>; reject: () => Promise<boolean>; done: () => void }) {
   const [busy, setBusy] = useState(false);
   const run = (f: () => Promise<boolean>) => {
     setBusy(true);
@@ -244,9 +245,11 @@ function Decide({ approve, reject, done }: { approve: () => Promise<boolean>; re
       <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => run(reject)}>
         Reject
       </button>
-      <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(approve)}>
-        Approve
-      </button>
+      {approve && (
+        <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(approve)}>
+          Approve
+        </button>
+      )}
     </>
   );
 }
@@ -297,7 +300,13 @@ function ChangeNoticeActions({
         Open
       </button>
     );
-  return <Decide approve={() => runChangesDecided(projectId, runId, true)} reject={() => runChangesDecided(projectId, runId, false)} done={done} />;
+  return (
+    <Decide
+      approve={pending.every(canApplyAgentApproval) ? () => runChangesDecided(projectId, runId, true) : undefined}
+      reject={() => runChangesDecided(projectId, runId, false)}
+      done={done}
+    />
+  );
 }
 
 /** In the desktop app, each notice that appears while it runs becomes a system notification (what

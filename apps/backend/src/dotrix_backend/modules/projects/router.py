@@ -134,7 +134,7 @@ async def move_project(
     data: ProjectMove, access: ProjectManager, session: SessionDep, settings: SettingsDep
 ) -> ProjectRead:
     """Move a project, with its knowledge, issues, documents, and conversations, to another
-    workspace: from your personal workspace into an organisation, or back. You need to set up
+    workspace: from your personal workspace into a Team workspace, or back. You need to set up
     projects in both (owners and admins). 409 if the other workspace already has a project with
     its key or repo, or while one of its agent runs is working or waiting for approval. People
     who can't see it there are unassigned from its issues (logged) and stop watching them; linked
@@ -142,7 +142,7 @@ async def move_project(
     wouldn't fit in the other workspace's storage limit."""
     return await ProjectService(session).move(
         access.project, access.member, data.workspace_id,
-        organisations=settings.organisations_enabled, settings=settings,
+        teams=settings.teams_enabled, settings=settings,
     )
 
 

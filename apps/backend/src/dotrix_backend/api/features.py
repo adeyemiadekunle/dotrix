@@ -11,13 +11,13 @@ router = APIRouter(prefix="/features", tags=["features"])
 
 
 class Features(BaseModel):
-    organisations: bool = Field(
-        description="Organisation workspaces (teams: invites, roles, members) can be created and opened. "
-        "When false, only personal workspaces are listed and the API refuses organisations."
+    teams: bool = Field(
+        description="Team workspaces (invites, roles, members) can be created and opened. "
+        "When false, only personal workspaces are listed and the API refuses teams."
     )
 
 
 @router.get("")
 async def get_features(settings: SettingsDep) -> Features:
-    """What this server offers (`DOTRIX_ORGANISATIONS`: off on a deployed server unless turned on)."""
-    return Features(organisations=settings.organisations_enabled)
+    """What this server offers (`DOTRIX_TEAMS`: off on a deployed server unless turned on)."""
+    return Features(teams=settings.teams_enabled)

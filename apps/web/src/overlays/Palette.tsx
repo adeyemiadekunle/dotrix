@@ -6,7 +6,7 @@ import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { openTask, setPref, toggleSide } from "../core/actions";
 import { PSTAT } from "../core/constants";
 import { Ic, Logo, WsLogo } from "../core/icons";
-import { allowed, canInvite } from "../core/can";
+import { allowed, canInvite, canManageIssues } from "../core/can";
 import { personal, tasksLabel } from "../core/features";
 import { invite, newProject, newTask, openModal, shortcuts, signOut, switchWs } from "../core/more";
 import { go } from "../core/nav";
@@ -41,6 +41,7 @@ export function toggleDark() {
 
 // Commands only some people may run: shown to them alone.
 const NEEDS: Record<string, () => boolean> = {
+  "c-task": canManageIssues,
   "c-proj": () => allowed("projects:manage"),
   "c-inv": canInvite,
   "c-mem": () => !personal(),

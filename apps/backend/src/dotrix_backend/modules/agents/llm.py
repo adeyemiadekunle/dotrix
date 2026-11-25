@@ -11,7 +11,7 @@ from langchain.chat_models import init_chat_model
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
-from dotrix_backend.core.errors import DomainError
+from dotrix_backend.core.errors import DomainError, Unprocessable
 from dotrix_backend.core.model_providers import PROVIDERS, Provider
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.projects.models import Project
@@ -21,6 +21,10 @@ from dotrix_engine.agent import native_web_search
 class ModelUnavailable(DomainError):
     status_code = HTTPStatus.SERVICE_UNAVAILABLE
     code = "model_unavailable"
+
+
+class ModelNotAvailable(Unprocessable):
+    code = "model_not_available"
 
 
 # provider -> the requesting person's own key (model_keys.run_keys)

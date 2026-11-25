@@ -56,7 +56,7 @@
           "features"
         ],
         "summary": "Get Features",
-        "description": "What this server offers (`DOTRIX_ORGANISATIONS`: off on a deployed server unless turned on).",
+        "description": "What this server offers (`DOTRIX_TEAMS`: off on a deployed server unless turned on).",
         "operationId": "get_features",
         "responses": {
           "200": {
@@ -3871,7 +3871,7 @@
           "auth"
         ],
         "summary": "Choose Onboarding Workspace",
-        "description": "Save the first optional workspace choice. Personal is the default; no conversion or projects.\n403 `organisations_unavailable` for an organisation while this server has them turned off.",
+        "description": "Save the first optional workspace choice. Personal is the default; no conversion or projects.\n403 `teams_unavailable` for a Team workspace while this server has them turned off.",
         "operationId": "choose_onboarding_workspace",
         "requestBody": {
           "content": {
@@ -4693,7 +4693,7 @@
           "workspaces"
         ],
         "summary": "List Workspaces",
-        "description": "Workspaces you belong to, with your role in each. Organisations are left out while this\nserver has them turned off (`GET /v1/features`).",
+        "description": "Workspaces you belong to, with your role in each. Team workspaces are left out while this\nserver has them turned off (`GET /v1/features`).",
         "operationId": "list_workspaces",
         "responses": {
           "200": {
@@ -4732,7 +4732,7 @@
           "workspaces"
         ],
         "summary": "Create Workspace",
-        "description": "Create an organisation (a workspace for a team: invites, roles, many projects); you\nbecome its owner. Your personal workspace was created at sign-up. 403\n`organisations_unavailable` while this server has organisations turned off.",
+        "description": "Create a Team workspace (a workspace for a team: invites, roles, many projects); you\nbecome its owner. Your personal workspace was created at sign-up. 403\n`teams_unavailable` while this server has teams turned off.",
         "operationId": "create_workspace",
         "requestBody": {
           "content": {
@@ -5553,7 +5553,7 @@
           "invites"
         ],
         "summary": "Invite By Email",
-        "description": "Email an invite (valid 7 days, single use, only for that address). Inviting the same\naddress again replaces the earlier invite. Owners and admins, and only in an organisation\n(409 `invites_need_organization` in a personal workspace).",
+        "description": "Email an invite (valid 7 days, single use, only for that address). Inviting the same\naddress again replaces the earlier invite. Owners and admins, and only in a Team workspace\n(409 `invites_need_team` in a personal workspace).",
         "operationId": "invite_by_email",
         "security": [
           {
@@ -5652,7 +5652,7 @@
           "invites"
         ],
         "summary": "Create Invite Link",
-        "description": "Create a shareable invite link (member or guest only). The `url` is returned only\nhere. Owners and admins, and only in an organisation (409 `invites_need_organization` in\na personal workspace).",
+        "description": "Create a shareable invite link (member or guest only). The `url` is returned only\nhere. Owners and admins, and only in a Team workspace (409 `invites_need_team` in\na personal workspace).",
         "operationId": "create_invite_link",
         "security": [
           {
@@ -6721,7 +6721,7 @@
           "projects"
         ],
         "summary": "Move Project",
-        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into an organisation, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. People\nwho can't see it there are unassigned from its issues (logged) and stop watching them; linked\ncheckouts follow the move on their next command. 413 `storage_full` when its uploads\nwouldn't fit in the other workspace's storage limit.",
+        "description": "Move a project, with its knowledge, issues, documents, and conversations, to another\nworkspace: from your personal workspace into a Team workspace, or back. You need to set up\nprojects in both (owners and admins). 409 if the other workspace already has a project with\nits key or repo, or while one of its agent runs is working or waiting for approval. People\nwho can't see it there are unassigned from its issues (logged) and stop watching them; linked\ncheckouts follow the move on their next command. 413 `storage_full` when its uploads\nwouldn't fit in the other workspace's storage limit.",
         "operationId": "move_project",
         "security": [
           {
@@ -10239,7 +10239,7 @@
           "agents"
         ],
         "summary": "Save My Agent Preference",
-        "description": "How you like an agent to work (up to 2,000 characters, added to its instructions) and its\nmodel, for the runs you start. Within limits: it can't change the agent's tools, folder\naccess, or what it may do without asking. A model needs the workspace's permission to\nchoose models, unless your own key runs it (403). Empty instructions and no model: removed.",
+        "description": "How you like an agent to work (up to 2,000 characters, added to its instructions) and its\nmodel, for the runs you start. Within limits: it can't change the agent's tools, folder\naccess, or what it may do without asking. Pick a model from your connected providers.\nEmpty instructions and no model remove the preference.",
         "operationId": "save_my_agent_preference",
         "security": [
           {
@@ -10501,7 +10501,7 @@
           "agents"
         ],
         "summary": "Create Run",
-        "description": "Send a message to the project's agents: `agent` picks who answers (`auto`, the Project\nManager with the specialists it needs, or one specialist, who leads and may ask the others).\nIt runs in the background: poll the run until `status` is `completed`, `failed`, or\n`awaiting_approval`. Agents stay in Chat Mode unless you instruct a change, and every write\npauses for approval. Pass `thread_id` to continue a conversation; a new one may pick its\n`model` (fixed from then on: 409 `model_locked` for another on an existing conversation;\n403 without agents:choose_model; 422 `model_not_available`). 503 `model_unavailable` if the\nmodel has no API key.",
+        "description": "Send a message to the project's agents: `agent` picks who answers (`auto`, the Project\nManager with the specialists it needs, or one specialist, who leads and may ask the others).\nIt runs in the background: poll the run until `status` is `completed`, `failed`, or\n`awaiting_approval`. Agents stay in Chat Mode unless you instruct a change, and every write\npauses for approval. Pass `thread_id` to continue a conversation; a new one may pick its\n`model` from its requester's connected providers. A conversation keeps that model\n(409 `model_locked` for a different model on follow-up). A model outside the requester's\navailable choices returns 422 `model_not_available`.",
         "operationId": "create_run",
         "security": [
           {
@@ -11913,7 +11913,7 @@
           "agents"
         ],
         "summary": "Decide Approvals",
-        "description": "Decide every pending action of a paused run (one decision each), then the run resumes.\nChanges are approved or rejected, with the reason sent back to the agent; they need the\napprove permission, and changes to `architecture/` an owner or admin (403 otherwise, and\nthe run keeps waiting). A checkpoint (`checkpoint`, the agent's plan before a large job)\nis answered by whoever asked, or anyone who may approve: approve to continue, `steer` with\nthe changes as `reason`, or reject to stop. Your decision is recorded next to who\ninstructed the run.",
+        "description": "Decide every pending action of a paused run (one decision each), then the run resumes.\nChanges are approved or rejected, with the reason sent back to the agent; they need the\napprove permission. Team Members may decide their own runs and can be delegated approvals\nfor other people's runs. Applying Knowledge changes or closing a Team issue needs an Owner\nor Admin. A checkpoint (`checkpoint`, the agent's plan before a large job)\nis answered by whoever asked, or anyone who may approve: approve to continue, `steer` with\nthe changes as `reason`, or reject to stop. Your decision is recorded next to who\ninstructed the run.",
         "operationId": "decide_approvals",
         "security": [
           {
@@ -16025,7 +16025,7 @@
           "issues"
         ],
         "summary": "Create Issue",
-        "description": "Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance\ncriteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,\nor bug; other types may sit under an epic. Assigning the built-in coding agent needs the\ninstruct-coding-agent permission. Assigning Kai, the coding agent (`coding-agent`; its\nolder names `claude-code` and `codex` still work), also starts a coding session, waiting for approval, where coding is set up.",
+        "description": "Create an issue. It gets the next key (`KUN-43`), never reused. Stories need acceptance\ncriteria and bugs need repro steps in the description. Sub-tasks need a parent story, task,\nor bug; other types may sit under an epic. In Team workspaces, only Owners and Admins\ncan create issues and assign them to people who can access the project. In Personal,\nassigning Kai (`coding-agent`, `claude-code`, or `codex`) also starts a coding session\nawaiting approval where coding is set up.",
         "operationId": "create_issue",
         "security": [
           {
@@ -16684,7 +16684,7 @@
           "issues"
         ],
         "summary": "Next Issue",
-        "description": "What to work on: your (or the agent's) in-progress issue first, so a crashed session\nresumes; otherwise the best ready issue. 404 `nothing_ready` when there's none.",
+        "description": "What to work on: your (or the agent's) in-progress issue first, so a crashed session\nresumes; otherwise the best ready issue. Team Members only see their own assignments\nhere. Agent mode is for Personal workspaces. 404 `nothing_ready` when there's none.",
         "operationId": "next_issue",
         "security": [
           {
@@ -16762,6 +16762,16 @@
               }
             }
           },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Request body or parameters failed validation",
             "content": {
@@ -16781,7 +16791,7 @@
           "issues"
         ],
         "summary": "Claim Issue",
-        "description": "Atomically take a ready issue (a given key, or the next one) and start it: it's assigned\nto you or the agent and moves to `in_progress`. Two claimers never get the same issue.",
+        "description": "Atomically take a ready issue (a given key, or the next one) and start it: it's assigned\nto you or the agent and moves to `in_progress`. Team Members can start issues assigned\nto them. Two claimers never get the same issue.",
         "operationId": "claim_issue",
         "security": [
           {
@@ -16976,7 +16986,7 @@
           "issues"
         ],
         "summary": "Update Issue",
-        "description": "Change fields; only what you send changes, and every change is logged (old \u2192 new).\n`depends_on` replaces the list and can't create a cycle. Only a person moves an issue to\n`done`; coding tools (`as_agent`) stop at `review`. Assigning it to a coding tool starts a\ncoding session, waiting for approval, where coding is set up.",
+        "description": "Change fields; only what you send changes, and every change is logged (old \u2192 new).\n`depends_on` replaces the list and can't create a cycle. Only a person moves an issue to\n`done`; coding tools (`as_agent`) stop at `review`. Only Team Owners and Admins can close\nissues or change assignments, using people who can access the project. In Personal, assigning a coding\nagent starts a session awaiting approval where coding is set up.",
         "operationId": "update_issue",
         "security": [
           {
@@ -33692,15 +33702,15 @@
       },
       "Features": {
         "properties": {
-          "organisations": {
+          "teams": {
             "type": "boolean",
-            "title": "Organisations",
-            "description": "Organisation workspaces (teams: invites, roles, members) can be created and opened. When false, only personal workspaces are listed and the API refuses organisations."
+            "title": "Teams",
+            "description": "Team workspaces (invites, roles, members) can be created and opened. When false, only personal workspaces are listed and the API refuses teams."
           }
         },
         "type": "object",
         "required": [
-          "organisations"
+          "teams"
         ],
         "title": "Features"
       },
@@ -33845,7 +33855,7 @@
             "type": "string",
             "enum": [
               "personal",
-              "organization"
+              "team"
             ],
             "title": "Kind",
             "default": "personal"
@@ -37108,8 +37118,7 @@
           "workspace:manage",
           "members:manage",
           "workspace:billing",
-          "usage:view",
-          "agents:choose_model"
+          "usage:view"
         ],
         "title": "Permission"
       },
@@ -39369,7 +39378,7 @@
               }
             ],
             "title": "Model",
-            "description": "For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use the project's model."
+            "description": "For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; available through your connected provider). Fixed for the conversation. Omit to use your preference or the project default."
           },
           "chat_runtime": {
             "anyOf": [
@@ -42291,9 +42300,9 @@
           },
           "kind": {
             "type": "string",
-            "const": "organization",
+            "const": "team",
             "title": "Kind",
-            "default": "organization"
+            "default": "team"
           }
         },
         "type": "object",
@@ -42511,7 +42520,7 @@
         "type": "string",
         "enum": [
           "personal",
-          "organization"
+          "team"
         ],
         "title": "WorkspaceKind"
       },
@@ -42629,7 +42638,7 @@
               }
             ],
             "title": "Model",
-            "description": "For a new conversation only"
+            "description": "For a new conversation only. Choose a model from your connected providers."
           }
         },
         "type": "object",
@@ -42835,7 +42844,7 @@
               }
             ],
             "title": "Member Permissions",
-            "description": "What members may do beyond chatting, brainstorming, and working the board: any of `knowledge:write` (edit documents), `agents:approve` (approve agent changes), `agents:code` (instruct the coding agent). Empty: owners and admins only."
+            "description": "Additional Member grants. `agents:approve` delegates approval of eligible work requested by other people. `agents:code` is also accepted for existing configurations."
           },
           "unattended_paused": {
             "anyOf": [
@@ -43003,7 +43012,7 @@
           },
           "kind": {
             "$ref": "#/components/schemas/WorkspaceKind",
-            "description": "personal (just you) or organization (a team that invites people)"
+            "description": "personal (just you) or team (a shared workspace)"
           },
           "created_at": {
             "type": "string",
@@ -43031,7 +43040,7 @@
           },
           "default_approval_mode": {
             "$ref": "#/components/schemas/ApprovalMode",
-            "description": "What a new conversation or coding session starts on in the app: Accept edits in a personal workspace, Manual in an organisation (never above the cap)",
+            "description": "What a new conversation or coding session starts on in the app: Accept edits in a personal workspace, Manual in a Team workspace (never above the cap)",
             "default": "manual"
           },
           "role": {
@@ -43081,7 +43090,7 @@
     },
     {
       "name": "workspaces",
-      "description": "Workspaces, the tenant everything belongs to: your personal one (just you) or organisations (a team: invites, roles, many projects). Members, roles, ownership transfer."
+      "description": "Workspaces, the tenant everything belongs to: your personal one (just you) or Team workspaces (invites, roles, many projects). Members, roles, ownership transfer."
     },
     {
       "name": "invites",
@@ -43089,7 +43098,7 @@
     },
     {
       "name": "models",
-      "description": "An organisation's own model provider keys (Anthropic, OpenAI, Google), stored encrypted and used for its agents' runs, and when a provider last refused a run for its limits."
+      "description": "A Team workspace's own model provider keys (Anthropic, OpenAI, Google), stored encrypted and used for its agents' runs, and when a provider last refused a run for its limits."
     },
     {
       "name": "projects",
@@ -43153,7 +43162,7 @@
     },
     {
       "name": "admin",
-      "description": "The Admin app's own accounts and reads: sign-up of the first account with the deployment's setup token (others are made from the server's command line), httpOnly cookie sessions, workspace observability, audit, and creating an organisation workspace."
+      "description": "The Admin app's own accounts and reads: sign-up of the first account with the deployment's setup token (others are made from the server's command line), httpOnly cookie sessions, workspace observability, audit, and creating a Team workspace."
     },
     {
       "name": "health",

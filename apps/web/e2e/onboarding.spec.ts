@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { newUser, pickSelect, signUp } from "./helpers";
+import { newUser, pickSelect, signUp, verificationToken } from "./helpers";
 
 test("new accounts save a first project, resume setup and connect a personal model without recreating the workspace", async ({ page }) => {
   const person = newUser();
@@ -15,11 +15,10 @@ test("new accounts save a first project, resume setup and connect a personal mod
   await page.goto("/");
   await expect(page).toHaveURL(/\/onboarding$/);
   await expect(page.getByRole("heading", { name: "Verify your email", exact: true })).toBeVisible();
+  const originalToken = await verificationToken(page);
   await page.getByRole("button", { name: "Resend verification email", exact: true }).click();
   await expect(page.getByRole("status")).toContainText(`Sent a new verification email to ${person.email}`);
-  const tokenRes = await page.request.get("/api/e2e/verification-token", { headers: { "X-Requested-With": "e2e" } });
-  expect(tokenRes.status()).toBe(200);
-  const { token } = (await tokenRes.json()) as { token: string };
+  const token = await verificationToken(page, originalToken);
   await page.getByLabel("Verification token or link", { exact: true }).fill(token);
   await page.getByRole("button", { name: "Verify and continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toBeVisible();
@@ -106,7 +105,7 @@ test("team workspace creation is explicit and its saved project resumes after re
   await signUp(page);
   await page.goto("/onboarding");
   await page.getByRole("button", { name: "Setting up for a team?", exact: true }).click();
-  await page.getByLabel("Organisation name", { exact: true }).fill("Delivery team");
+  await page.getByLabel("Team name", { exact: true }).fill("Delivery team");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "How do you want to start?" })).toBeVisible();
   await page.getByRole("radio", { name: "Connect an existing repository", exact: true }).check();
@@ -124,7 +123,7 @@ test("team workspace creation is explicit and its saved project resumes after re
     const projects = await (await fetch(`/v1/workspaces/${workspaceId}/projects`)).json();
     return { kinds: ws.map((item: { kind: string }) => item.kind).sort(), projects: projects.map((item: { key: string }) => item.key) };
   }, saved.searchParams.get("workspace"));
-  expect(state).toEqual({ kinds: ["organization", "personal"], projects: ["TEAM"] });
+  expect(state).toEqual({ kinds: ["personal", "team"], projects: ["TEAM"] });
 });
 
 test("later projects use the shared setup in the selected workspace and recover a lost save response", async ({ page }) => {
@@ -201,9 +200,7 @@ test("new invitees join the intended project without creating a personal project
   await signUp(page);
   const setup = await page.evaluate(async () => {
     const headers = { "Content-Type": "application/json", "X-Requested-With": "e2e" };
-    const team = await (
-      await fetch("/v1/workspaces", { method: "POST", headers, body: JSON.stringify({ name: "Inviting team", kind: "organization" }) })
-    ).json();
+    const team = await (await fetch("/v1/workspaces", { method: "POST", headers, body: JSON.stringify({ name: "Inviting team", kind: "team" }) })).json();
     const project = await (
       await fetch(`/v1/workspaces/${team.id}/projects`, {
         method: "POST",
@@ -269,7 +266,7 @@ test("a lost team-workspace save response resumes the saved team instead of crea
     const workspaces = await (await fetch("/v1/workspaces")).json();
     const projects = await (await fetch(`/v1/workspaces/${id}/projects`)).json();
     return {
-      teams: workspaces.filter((workspace: { kind: string }) => workspace.kind === "organization").length,
+      teams: workspaces.filter((workspace: { kind: string }) => workspace.kind === "team").length,
       keys: projects.map((project: { key: string }) => project.key),
     };
   }, new URL(page.url()).searchParams.get("workspace"));

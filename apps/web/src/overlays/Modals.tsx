@@ -5,7 +5,7 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 import { SelectField } from "@dotrix/ui/components/select";
 
 import { applyPatch, copy, createTask, openPop, openTask } from "../core/actions";
-import { allowed } from "../core/can";
+import { allowed, canManageIssues } from "../core/can";
 import { PCOLORS, PICONS } from "../core/constants";
 import { Ic } from "../core/icons";
 import { closeModal, createProject, escapeHtml, restore, snapshot, TEMPLATES } from "../core/more";
@@ -15,7 +15,7 @@ import type { Schemas } from "@/lib/api";
 
 import { inviteLinkCreated, invitesSent, models, projectAgentModels, projectAgentModelsSaved, projectMemberSet, projectMembers, useApi } from "../data/account";
 import { filesAttached, isLive, live, projectChanged } from "../data/live";
-import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, type Modal } from "../data/store";
+import { D, S, mem, mutate, pColor, proj, render, task, tasksOf, who, type Modal } from "../data/store";
 import { useMembers } from "../data/lists";
 import { personal, tasksLabel } from "../core/features";
 import type { FileItem, Member, Task } from "../data/types";
@@ -179,6 +179,7 @@ function TaskModal({ m }: { m: Modal }) {
     render();
   };
   const submit = () => {
+    if (!m.edit && !canManageIssues()) return;
     const title = f.title.trim();
     if (!title) {
       m.err = "Give the task a name";
@@ -288,10 +289,12 @@ function TaskModal({ m }: { m: Modal }) {
           <FormChip pop="status" label="Status">
             <StPill st={f.status} />
           </FormChip>
-          <FormChip pop="assignee" label="Assignee">
-            <Av id={f.assignee} cls="sm" tip={false} />
-            {mem(f.assignee)?.name || "Assignee"}
-          </FormChip>
+          {canManageIssues() && (
+            <FormChip pop="assignee" label="Assignee">
+              <Av id={f.assignee} cls="sm" tip={false} />
+              {who(f.assignee)?.name || "Assignee"}
+            </FormChip>
+          )}
           <FormChip pop="priority" label="Priority">
             <PrPill p={f.priority} />
           </FormChip>
@@ -313,10 +316,12 @@ function TaskModal({ m }: { m: Modal }) {
               </>
             )}
           </FormChip>
-          <FormChip pop="recur" label="Repeat">
-            <Ic n="repeat" s={13} />
-            {f.recur || "Repeat"}
-          </FormChip>
+          {canManageIssues() && (
+            <FormChip pop="recur" label="Repeat">
+              <Ic n="repeat" s={13} />
+              {f.recur || "Repeat"}
+            </FormChip>
+          )}
         </div>
         <div className="field">
           <span className="label">Subtasks</span>
@@ -1092,7 +1097,7 @@ function InviteModal() {
   const [emails, setEmails] = useState((m.draft as string) || "");
   const [role, setRole] = useState("Member");
   const err = m.err as string | undefined;
-  // A personal workspace is just for its owner: only organisations invite.
+  // A personal workspace is just for its owner: only teams invite.
   const personal = isLive() && live.ws?.kind === "personal";
   const submit = () => {
     if (personal) return;
@@ -1180,9 +1185,7 @@ function InviteModal() {
         {personal ? (
           <div className="alert warn">
             <Ic n="info" s={14} />
-            <span>
-              A personal workspace is just for you. Create a separate organisation workspace to invite people, then move selected projects explicitly.
-            </span>
+            <span>A personal workspace is just for you. Create a Team workspace to invite people and assign tasks.</span>
           </div>
         ) : (
           <div className="alert info">

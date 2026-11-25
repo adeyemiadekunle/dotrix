@@ -28,28 +28,28 @@ async def test_skip_reuses_personal_and_persists_without_creating_projects(db_cl
     assert not list(await db_session.scalars(select(Project)))
 
 
-async def test_organisation_choice_is_owned_separate_and_retry_safe(db_client, signup):
+async def test_team_workspace_choice_is_owned_separate_and_retry_safe(db_client, signup):
     person = await signup()
     personal = (await db_client.get("/v1/workspaces", headers=person.headers)).json()[0]
-    body = {"kind": "organization", "name": "  Studio team  "}
+    body = {"kind": "team", "name": "  Studio team  "}
     chosen = await db_client.post(URL, headers=person.headers, json=body)
     assert chosen.status_code == 200, chosen.text
     org = chosen.json()
-    assert org["kind"] == "organization" and org["role"] == "owner" and org["name"] == "Studio team"
+    assert org["kind"] == "team" and org["role"] == "owner" and org["name"] == "Studio team"
     assert org["id"] != personal["id"]
     assert (await db_client.post(URL, headers=person.headers, json=body)).json()["id"] == org["id"]
     listed = (await db_client.get("/v1/workspaces", headers=person.headers)).json()
     assert len(listed) == 2 and next(w for w in listed if w["id"] == personal["id"])["kind"] == "personal"
     assert (await db_client.get("/v1/me", headers=person.headers)).json()["onboarding_workspace_id"] == org["id"]
-    assert (await db_client.post(URL, headers=person.headers, json={"kind": "organization", "name": "Other"})).status_code == 409
+    assert (await db_client.post(URL, headers=person.headers, json={"kind": "team", "name": "Other"})).status_code == 409
     assert (await db_client.post(URL, headers=person.headers, json={"kind": "personal"})).status_code == 409
     assert len((await db_client.get("/v1/workspaces", headers=person.headers)).json()) == 2
 
 
 @pytest.mark.parametrize("body", [
-    {"kind": "organization"}, {"kind": "organization", "name": "  "},
+    {"kind": "team"}, {"kind": "team", "name": "  "},
     {"kind": "personal", "name": "Unexpected team"}, {"kind": "other"},
-    {"kind": "organization", "name": "Team", "workspace_id": str(uuid.uuid4())},
+    {"kind": "team", "name": "Team", "workspace_id": str(uuid.uuid4())},
 ])
 async def test_invalid_or_foreign_workspace_choices_do_not_create_teams(db_client, signup, body):
     person = await signup()
@@ -62,14 +62,14 @@ async def test_choice_belongs_to_current_user_and_requires_authentication(db_cli
     owner = await signup()
     other = await signup(email="other@example.com")
     assert (await db_client.post(URL, json={})).status_code == 401
-    selected = await db_client.post(URL, headers=owner.headers, json={"kind": "organization", "name": "Private founder"})
+    selected = await db_client.post(URL, headers=owner.headers, json={"kind": "team", "name": "Private founder"})
     assert selected.status_code == 200
     assert (await db_client.get("/v1/me", headers=other.headers)).json()["onboarding_workspace_id"] is None
     own = (await db_client.post(URL, headers=other.headers, json={})).json()
     assert own["kind"] == "personal" and own["id"] != selected.json()["id"]
 
 
-async def test_concurrent_registration_retries_create_only_one_organisation(engine):
+async def test_concurrent_registration_retries_create_only_one_team_workspace(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     user_id = uuid.uuid4()
     async with factory() as session:
@@ -82,12 +82,12 @@ async def test_concurrent_registration_retries_create_only_one_organisation(engi
         async def choose():
             async with factory() as session:
                 user = await session.get(User, user_id)
-                return await WorkspaceService(session).choose_first(user, FirstWorkspaceChoice(kind="organization", name="Concurrent team"))
+                return await WorkspaceService(session).choose_first(user, FirstWorkspaceChoice(kind="team", name="Concurrent team"))
         first, second = await asyncio.gather(choose(), choose())
         assert first.id == second.id
         async with factory() as session:
             assert await session.scalar(select(func.count()).select_from(Workspace).where(
-                Workspace.created_by_id == user_id, Workspace.kind == WorkspaceKind.ORGANIZATION,
+                Workspace.created_by_id == user_id, Workspace.kind == WorkspaceKind.TEAM,
             )) == 1
     finally:
         async with factory() as session:

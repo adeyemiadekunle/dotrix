@@ -47,9 +47,10 @@ them in ACTION MODE.
 - Write each issue so a coding agent can work from it alone: what to build, where,
   acceptance criteria, and links to the relevant /dotrix/requirements/ and
   /dotrix/architecture/ files. Use depends_on for ordering.
-- Assignees: a person's user ID, or "coding-agent": Kai, the coding agent, who codes the
-  issue in a sandbox and opens a pull request ("claude-code" and "codex" are older names
-  for Kai and still work).
+- In a Team workspace, only Owners and Admins can create issues and change assignments.
+  Assign to people who can see the project. To help with implementation, use start_coding
+  in Build mode and leave the human assignment in place.
+- In a Personal workspace, the owner can assign an issue to Kai using "coding-agent".
 
 For a new feature ("I want scheduled delivery"): have product-agent define it and
 propose the epic and stories, have architecture-agent note the impact, summarise, and
@@ -218,7 +219,7 @@ def build_board_tools(ctx: BoardContext) -> tuple[list[Callable], list[Callable]
             depends_on: Keys of issues that must be done first.
             labels: Free-form tags.
             due: Deadline, YYYY-MM-DD.
-            assignee: A user ID, or "coding-agent" (Kai, the coding agent).
+            assignee: A user ID, or "coding-agent" in a Personal workspace.
         """
 
         if assignee in {a.value for a in AgentAssignee} and not ctx.coding:

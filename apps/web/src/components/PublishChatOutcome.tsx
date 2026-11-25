@@ -4,9 +4,8 @@ import { useRef, useState } from "react";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
 import { useAllIssues, type Scope } from "@/lib/issues";
 import { useKnowledge, useKnowledgeFile } from "@/lib/knowledge";
-import { allowed } from "../core/can";
+import { allowed, canManageIssues } from "../core/can";
 import { openTask } from "../core/actions";
-import { live } from "../data/live";
 import { proj } from "../data/store";
 import { openDocument } from "../screens/Knowledge";
 import { Markdown } from "@/components/markdown";
@@ -25,7 +24,7 @@ export function PublishChatOutcome({ scope, runId, reply }: { scope: Scope; runI
     queryFn: () => unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/agent/runs/{run_id}/publications", { params: { path } })),
   });
   const canWriteDocs = allowed("knowledge:write");
-  const canWriteTasks = !!live.ws?.permissions?.includes("issues:write");
+  const canWriteTasks = canManageIssues();
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);

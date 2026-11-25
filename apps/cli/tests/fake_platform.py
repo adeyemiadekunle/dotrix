@@ -52,7 +52,7 @@ class FakePlatform:
         self.runs_started: list[dict[str, Any]] = []
         # Workspaces the signed-in person belongs to, and the projects in them.
         self.workspaces: list[dict[str, Any]] = [
-            {"id": WS, "slug": "kunemi-ab12cd", "name": "Kunemi", "role": "owner", "kind": "organization"}
+            {"id": WS, "slug": "kunemi-ab12cd", "name": "Kunemi", "role": "owner", "kind": "team"}
         ]
         self.projects: list[dict[str, Any]] = []
         # Set to a workspace (with a "projects" list) when the linked project moved there: the

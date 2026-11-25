@@ -8,13 +8,13 @@ from dotrix_backend.modules.workspaces.models import Role
 async def test_create_and_list_workspaces(signup, create_team, db_client: AsyncClient) -> None:
     ada = await signup()
     team = await create_team(ada.headers, "Kunemi Logistics")
-    assert team["kind"] == "organization" and team["role"] == "owner"
+    assert team["kind"] == "team" and team["role"] == "owner"
     assert team["slug"].startswith("kunemi-logistics-")
 
     listed = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
     # Both rows share this test transaction's timestamp; their tie order isn't specified.
-    assert sorted(w["kind"] for w in listed) == ["organization", "personal"]
-    assert next(w for w in listed if w["kind"] == "organization")["id"] == team["id"]
+    assert sorted(w["kind"] for w in listed) == ["personal", "team"]
+    assert next(w for w in listed if w["kind"] == "team")["id"] == team["id"]
 
 
 async def test_cannot_create_a_second_personal_workspace(signup, db_client: AsyncClient) -> None:

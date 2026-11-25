@@ -183,7 +183,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
   void invalidateLiveQueries();
   render();
   try {
-    // The features first, so menus know whether organisations exist here (core/features.ts). An
+    // The features first, so menus know whether teams exist here (core/features.ts). An
     // API without the probe (older than the web) just offers none, rather than failing to load.
     const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces(), queryClient.fetchQuery(featuresQuery).catch(() => undefined)]);
     const ws = wss.find((w) => w.slug === slug);
@@ -197,12 +197,12 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     // workspaces here, and the bridge fills the rest as its queries land.
     live.dirReady = false;
     const data: Data = {
-      ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Organisation", kind: ws.kind, url: ws.slug },
+      ws: { id: ws.id, name: ws.name, c: hashTint(ws.id), plan: ws.kind === "personal" ? "Personal" : "Team", kind: ws.kind, url: ws.slug },
       workspaces: wss.map((w) => ({
         id: w.id,
         name: w.name,
         c: hashTint(w.id),
-        plan: w.kind === "personal" ? "Personal" : "Organisation",
+        plan: w.kind === "personal" ? "Personal" : "Team",
         kind: w.kind,
         slug: w.slug,
       })),
@@ -288,7 +288,7 @@ export async function homeSlug(): Promise<string | null> {
     } catch {
       /* ignore */
     }
-    return (wss.find((w) => w.slug === last) ?? wss.find((w) => w.kind === "organization") ?? wss[0])?.slug ?? null;
+    return (wss.find((w) => w.slug === last) ?? wss.find((w) => w.kind === "team") ?? wss[0])?.slug ?? null;
   } catch {
     return null;
   }
@@ -300,7 +300,7 @@ export async function startDestination(): Promise<string> {
   try {
     const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces()]);
     if (!me.email_verified) return "/onboarding";
-    if (me.onboarding_workspace_id == null && !wss.some((w) => w.kind === "organization")) {
+    if (me.onboarding_workspace_id == null && !wss.some((w) => w.kind === "team")) {
       return "/onboarding";
     }
     let last: string | null = null;
@@ -310,7 +310,7 @@ export async function startDestination(): Promise<string> {
       /* ignore */
     }
     const chosen = wss.find((w) => w.id === me.onboarding_workspace_id);
-    const slug = (wss.find((w) => w.slug === last) ?? chosen ?? wss.find((w) => w.kind === "organization") ?? wss[0])?.slug;
+    const slug = (wss.find((w) => w.slug === last) ?? chosen ?? wss.find((w) => w.kind === "team") ?? wss[0])?.slug;
     return slug ? `/w/${slug}` : "/onboarding";
   } catch {
     return "/login";

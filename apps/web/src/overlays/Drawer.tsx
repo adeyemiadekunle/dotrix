@@ -2,6 +2,7 @@
 // full page with the task's fields, description, subtasks (each with its own view), attachments,
 // comments (@mentions, reactions), and activity. dotrix adds the issue type, and coding: "Start
 // coding" asks Kai, the coding agent, to work on it, approved like any agent change.
+import { allowed, canManageIssues } from "../core/can";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { applyPatch, changeSubtasks, closeDrawer, copy, createTask, openPop, toggleDone, toggleFavTask, updateTask } from "../core/actions";
@@ -421,6 +422,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
     }
   };
   const promote = () => {
+    if (!canManageIssues()) return;
     let n: Task | undefined;
     mutate(() => {
       n = createTask({
@@ -486,7 +488,11 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
           Assignee
         </dt>
         <dd>
-          <button className={`pillbtn ${s.assignee ? "" : "empty"}`} onClick={(e) => openPop(e.currentTarget, "subassignee", { id: t.id, i })}>
+          <button
+            className={`pillbtn ${s.assignee ? "" : "empty"}`}
+            disabled={!canManageIssues()}
+            onClick={(e) => openPop(e.currentTarget, "subassignee", { id: t.id, i })}
+          >
             <Av id={s.assignee} cls="sm" tip={false} />
             <span>{s.assignee ? who(s.assignee)?.name : "Unassigned"}</span>
           </button>
@@ -531,7 +537,7 @@ function SubtaskView({ t, s }: { t: Task; s: Subtask & { note?: string } }) {
         />
       </div>
       <div className="dsec row" style={{ gap: 6, flexWrap: "wrap" }}>
-        <button className="btn btn-secondary btn-sm" onClick={promote}>
+        <button className="btn btn-secondary btn-sm" onClick={promote} disabled={!canManageIssues()}>
           <Ic n="arrow-up-right" s={13} />
           Convert to task
         </button>
@@ -585,8 +591,13 @@ function CodingSection({ t }: { t: Task }) {
       }))
     : D().coding.filter((c) => c.task === t.id);
   const latest = sessions[0];
+  const canStart = !isLive() || (allowed("agents:code") && (canManageIssues() || t.assignee === D().me) && t.status !== "done" && t.type !== "epic");
   const start = () => {
     S.ui.pop = null;
+    if (isLive()) {
+      go("codes", {}, { search: new URLSearchParams({ new: "1", issue: t.key }).toString() });
+      return;
+    }
     if (!startCoding(t, "opencode")) return;
     toast(`${CODING_AGENT.name} will start once someone approves`, { action: "Open Code", onAction: () => openInCoding("") });
   };
@@ -608,10 +619,12 @@ function CodingSection({ t }: { t: Task }) {
         <h3>Coding</h3>
         {sessions.length > 0 && <span className="cnt">{sessions.length}</span>}
         <div className="acts">
-          <button className="btn btn-sm btn-ghost" onClick={start}>
-            <Ic n="bot" s={13} />
-            Start coding
-          </button>
+          {canStart && (
+            <button className="btn btn-sm btn-ghost" onClick={start}>
+              <Ic n="bot" s={13} />
+              Start coding
+            </button>
+          )}
         </div>
       </div>
       {latest ? (
@@ -707,6 +720,7 @@ export function Drawer() {
           <button
             className={`btn btn-sm ${t.status === "done" ? "btn-secondary" : "btn-ghost"}`}
             onClick={() => toggleDone(t.id)}
+            disabled={t.status !== "done" && !canManageIssues()}
             style={t.status === "done" ? { color: "var(--green)" } : undefined}
           >
             <Ic n={t.status === "done" ? "circle-check" : "circle"} s={14} />
@@ -820,7 +834,11 @@ export function Drawer() {
                 {prop(
                   "repeat",
                   "Repeat",
-                  <button className={`pillbtn ${t.recur ? "" : "empty"}`} onClick={(e) => openPop(e.currentTarget, "recur", { id: t.id })}>
+                  <button
+                    className={`pillbtn ${t.recur ? "" : "empty"}`}
+                    disabled={!canManageIssues()}
+                    onClick={(e) => openPop(e.currentTarget, "recur", { id: t.id })}
+                  >
                     <Ic n="repeat" s={13} />
                     {t.recur || "Does not repeat"}
                   </button>,

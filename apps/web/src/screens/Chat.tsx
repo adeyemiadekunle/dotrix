@@ -80,7 +80,7 @@ import { useCrossConversations, useCrossStream, useCrossThread, useSendCross, us
 import type { Scope } from "@/lib/issues";
 import { CiSensitiveNote } from "../components/CiSensitiveNote";
 import { LimitNotice } from "../components/LimitNotice";
-import { allowed, approvalModes, defaultApproval } from "../core/can";
+import { allowed, approvalModes, defaultApproval, canManageIssues } from "../core/can";
 import { openPop, openTask } from "../core/actions";
 import { desktop, desktopBrowser, useBrowserSettings, useDesktopRunners, type DesktopRunner } from "../core/desktop";
 import { DotsLoader, Ic } from "../core/icons";
@@ -89,7 +89,7 @@ import { go, useRoute } from "../core/nav";
 import { ago, greeting } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { useLiveAllTasks, useLiveKnowledgeFiles } from "../../lib/workspace-data";
-import { D, S, canSee, me, proj, projByKey, render, task, who } from "../data/store";
+import { D, S, canSee, me, proj, projByKey, render, who } from "../data/store";
 import { useAgents, useProjects } from "../data/lists";
 import { useAllTasks } from "../data/tasks";
 import { Markdown } from "@/components/markdown";
@@ -1575,14 +1575,13 @@ function NewChat({
 /* ---------- a new coding session ---------- */
 
 export function NewSession({ issue0 }: { issue0: string | null }) {
-  // Issues a tool could work on: open ones in the projects you see, and in an organisation only yours.
+  // Members can start Codes from tasks assigned to them. Owners and Admins can use the project board.
   const projects = useProjects().items.filter((p) => canSee(p) && p.status !== "complete");
   const ps = new Set(projects.map((p) => p.id));
   const [projectId, setProjectId] = useState("");
   const [branch, setBranch] = useState("");
-  const personal = D().ws.kind === "personal";
   const { tasks } = useAllTasks();
-  const mine = tasks.filter((t) => ps.has(t.project) && t.status !== "done" && t.type !== "epic" && (personal || t.assignee === D().me));
+  const mine = tasks.filter((t) => ps.has(t.project) && t.status !== "done" && t.type !== "epic" && (canManageIssues() || t.assignee === D().me));
   // A real workspace's tasks are known by key; the sample's by id.
   const [tid, setTid] = useState(issue0 ? (isLive() ? issue0 : (tasks.find((t) => t.key === issue0)?.id ?? "")) : "");
   const [note, setNote] = useState("");
@@ -1601,7 +1600,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [note]);
-  const t = mine.find((issue) => issue.id === tid) ?? task(tid);
+  const t = mine.find((issue) => issue.id === tid);
   const ws = wsId();
   const liveSession = isLive();
   const project = projects.find((item) => item.id === projectId);
@@ -1986,7 +1985,7 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
                   ))
                 ) : (
                   <div className="faint" style={{ padding: "8px 10px", fontSize: 12.5 }}>
-                    {mine.length ? "No issue matches." : personal ? "No open issues." : "No open issues are assigned to you."}
+                    {mine.length ? "No issue matches." : canManageIssues() ? "No open issues." : "No open issues are assigned to you."}
                   </div>
                 )}
               </div>

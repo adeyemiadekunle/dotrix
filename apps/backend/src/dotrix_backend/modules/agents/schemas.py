@@ -33,8 +33,8 @@ class RunCreate(BaseModel):
         default=None,
         max_length=100,
         description="For a new conversation only: the model it runs on (one of `GET /v1/workspaces/{id}/models`; "
-        "needs agents:choose_model unless it's the project's). Fixed for the whole conversation; omit to use "
-        "the project's model.",
+        "available through your connected provider). Fixed for the conversation. Omit to use your preference "
+        "or the project default.",
     )
     chat_runtime: ChatRuntime | None = Field(
         default=None,
@@ -287,7 +287,7 @@ class WorkspaceRunCreate(BaseModel):
         "Fixed from then on; 409 `scope_locked` if a continuation sends others",
     )
     agent: AgentChoice = Field(default="auto", description="`auto` or one of the workspace's agents")
-    model: str | None = Field(default=None, max_length=100, description="For a new conversation only")
+    model: str | None = Field(default=None, max_length=100, description="For a new conversation only. Choose a model from your connected providers.")
 
 
 class WorkspaceConversation(BaseModel):

@@ -19,7 +19,7 @@ from dotrix_backend.db.base import (
 
 class WorkspaceKind(enum.StrEnum):
     PERSONAL = "personal"  # one per person, just its owner; never invites
-    ORGANIZATION = "organization"  # a team: invites, roles, many projects
+    TEAM = "team"  # a team: invites, roles, many projects
 
 
 class Role(enum.StrEnum):
@@ -50,7 +50,7 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # every run uses the workspace's key. A personal workspace always uses its owner's.
     personal_keys: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # The highest approval mode its people may work in (approval_modes.py: manual, accept_edits,
-    # auto); null: Auto in a personal workspace, Manual in an organisation.
+    # auto); null: Auto in a personal workspace, Manual in a Team workspace.
     approval_mode_cap: Mapped[str | None] = mapped_column(String(16))
     # Hosts Kai's sandboxes may reach besides the model API (coding/network.py): {"presets": [...],
     # "hosts": [...]}; owners and admins set it, each project adds its own.

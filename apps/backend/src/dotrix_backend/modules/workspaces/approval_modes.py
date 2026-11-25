@@ -33,7 +33,7 @@ _ORDER = list(ApprovalMode)
 
 def cap_of(workspace: Any) -> ApprovalMode:
     """The highest mode the workspace allows: its owners' choice, else Auto for a personal
-    workspace (it's its owner's) and Manual for an organisation. Paused: Manual."""
+    workspace (it's its owner's) and Manual for a Team workspace. Paused: Manual."""
     if workspace.unattended_paused:
         return ApprovalMode.MANUAL
     if workspace.approval_mode_cap is not None:
@@ -43,7 +43,7 @@ def cap_of(workspace: Any) -> ApprovalMode:
 
 def default_of(workspace: Any) -> ApprovalMode:
     """What a new conversation or session starts on in the app: Accept edits in a personal
-    workspace, Manual in an organisation (never above the cap)."""
+    workspace, Manual in a Team workspace (never above the cap)."""
     wanted = ApprovalMode.ACCEPT_EDITS if workspace.kind is WorkspaceKind.PERSONAL else ApprovalMode.MANUAL
     return lowest(wanted, cap_of(workspace))
 

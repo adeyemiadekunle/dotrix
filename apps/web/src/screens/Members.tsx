@@ -2,13 +2,14 @@
 // adds what each role may do with the agents (approving changes, editing documents, coding).
 import { openPop } from "../core/actions";
 import { ROLES } from "../core/constants";
-import { canInvite } from "../core/can";
+import { allowed, canInvite, canManageIssues } from "../core/can";
 import { Ic } from "../core/icons";
 import { copyEmail, invite, newTask } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, minsAgo } from "../core/utils";
 import { D, S, canSee, isOver, me, mem, render } from "../data/store";
 import { useActivity, useMembers, useProjects } from "../data/lists";
+import { isLive, live } from "../data/live";
 import { useAllTasks } from "../data/tasks";
 import { ActItem, MiniRow } from "../components/TaskList";
 import { sortTasks } from "../shell/viewEngine";
@@ -40,23 +41,29 @@ function NotFound() {
 
 // [what, Owner, Admin, Member, Guest]; "grant" = off by default, a workspace can grant it to members
 const PERMS: [string, ...(0 | 1 | "grant")[]][] = [
-  ["View projects & tasks", 1, 1, 1, 1],
-  ["Comment on tasks", 1, 1, 1, 1],
-  ["Create and edit tasks", 1, 1, 1, 0],
+  ["View workspace", 1, 1, 1, 1],
+  ["View projects & tasks", 1, 1, 1, 0],
+  ["Comment on tasks", 1, 1, 1, 0],
+  ["Create and assign tasks", 1, 1, 0, 0],
+  ["Edit tasks", 1, 1, 1, 0],
   ["Chat with the agents", 1, 1, 1, 0],
-  ["Edit documents (Knowledge)", 1, 1, "grant", 0],
-  ["Approve agents' changes", 1, 1, "grant", 0],
-  ["Start coding on a task", 1, 1, "grant", 0],
-  ["Choose the agents' model", 1, 1, "grant", 0],
+  ["Edit or approve changes to Knowledge", 1, 1, 0, 0],
+  ["Close issues", 1, 1, 0, 0],
+  ["Approve eligible work you requested", 1, 1, 1, 0],
+  ["Approve eligible work requested by teammates", 1, 1, "grant", 0],
+  ["Use Codes on assigned tasks", 1, 1, 1, 0],
   ["Create projects", 1, 1, 0, 0],
   ["Invite members", 1, 1, 0, 0],
-  ["Manage roles", 1, 1, 0, 0],
+  ["Manage member roles", 1, 1, 0, 0],
+  ["Transfer ownership", 1, 0, 0, 0],
   ["Configure agents, rules, automations", 1, 1, 0, 0],
   ["Workspace settings and audit log", 1, 1, 0, 0],
+  ["View agent usage", 1, 1, 0, 0],
   ["Billing", 1, 0, 0, 0],
   ["Delete workspace", 1, 0, 0, 0],
 ];
 export function PermsTable() {
+  const teammateApprovals = isLive() ? (live.ws?.member_permissions ?? []).includes("agents:approve") : undefined;
   return (
     <div className="panel" style={{ overflowX: "auto" }}>
       <table className="perm-t" style={{ minWidth: 560 }}>
@@ -75,8 +82,8 @@ export function PermsTable() {
               {vals.map((v, i) => (
                 <td key={i}>
                   {v === "grant" ? (
-                    <span className="badge" data-tip="Off by default; Settings → What members can do">
-                      Optional
+                    <span className="badge" data-tip="Configured in Settings → Permissions">
+                      {teammateApprovals === undefined ? "Optional" : teammateApprovals ? "Granted" : "Off"}
                     </span>
                   ) : v ? (
                     <span style={{ color: "var(--green)", display: "inline-flex" }} aria-label="Allowed">
@@ -117,6 +124,12 @@ export function Members() {
           </p>
         </div>
         <div className="acts">
+          {allowed("workspace:manage") && (
+            <button className="btn btn-secondary" onClick={() => go("settings", { sec: "permissions" })}>
+              <Ic n="shield" s={14} />
+              Manage permissions
+            </button>
+          )}
           {canInvite() && (
             <button className="btn btn-primary" onClick={invite}>
               <Ic n="user-plus" s={14} />
@@ -302,10 +315,12 @@ export function MemberPage() {
             <Ic n="copy" s={14} />
             Copy email
           </button>
-          <button className="btn btn-primary" onClick={() => newTask({ assignee: m.id })}>
-            <Ic n="plus" s={14} />
-            Assign task
-          </button>
+          {canManageIssues() && m.role !== "Guest" && (
+            <button className="btn btn-primary" onClick={() => newTask({ assignee: m.id })}>
+              <Ic n="plus" s={14} />
+              Assign task
+            </button>
+          )}
           <button className="ibtn" onClick={ctx(m.id)} aria-label="More">
             <Ic n="ellipsis" s={16} />
           </button>

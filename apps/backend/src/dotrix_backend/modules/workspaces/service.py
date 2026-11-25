@@ -17,7 +17,7 @@ from dotrix_backend.modules.projects.models import ProjectAccessLevel, ProjectMe
 from dotrix_backend.modules.projects.repository import ProjectRepository
 
 from .approval_modes import cap_of, rank
-from .availability import OrganisationsUnavailable
+from .availability import TeamsUnavailable
 from .models import Membership, Role, Workspace, WorkspaceKind
 from .permissions import Permission, can
 from .repository import MembershipRepository, WorkspaceRepository
@@ -83,36 +83,36 @@ class WorkspaceService:
         await self.session.commit()
         return WorkspaceWithRole.of(workspace, Role.OWNER)
 
-    async def list_for_user(self, user: User, *, organisations: bool = True) -> list[WorkspaceWithRole]:
+    async def list_for_user(self, user: User, *, teams: bool = True) -> list[WorkspaceWithRole]:
         return [
             WorkspaceWithRole.of(ws, role)
             for ws, role in await self.workspaces.list_for_user(user.id)
-            if organisations or ws.kind is WorkspaceKind.PERSONAL
+            if teams or ws.kind is WorkspaceKind.PERSONAL
         ]
 
     async def choose_first(
-        self, user: User, data: FirstWorkspaceChoice, *, organisations: bool = True
+        self, user: User, data: FirstWorkspaceChoice, *, teams: bool = True
     ) -> WorkspaceWithRole:
         """One saved registration choice, serialized per person; retries cannot create teams twice.
-        With organisations turned off only Personal can be chosen, and an organisation saved
+        With teams turned off only Personal can be chosen, and a Team workspace saved
         earlier gives way to it."""
-        if data.kind == "organization" and not organisations:
-            raise OrganisationsUnavailable()
+        if data.kind == "team" and not teams:
+            raise TeamsUnavailable()
         user = await self.session.scalar(select(User).where(User.id == user.id).with_for_update()
                                          .execution_options(populate_existing=True))
         if user is None or not user.is_active:
             raise NotFound("Account is no longer available")
-        if user.onboarding_workspace_id and not organisations:
+        if user.onboarding_workspace_id and not teams:
             saved = await self.session.get(Workspace, user.onboarding_workspace_id)
-            if saved is not None and saved.kind is WorkspaceKind.ORGANIZATION:
+            if saved is not None and saved.kind is WorkspaceKind.TEAM:
                 user.onboarding_workspace_id = None
         if user.onboarding_workspace_id:
             membership = await self.members.get(user.onboarding_workspace_id, user.id)
             if membership is None:
                 raise NotFound("The selected workspace is no longer available")
             workspace = await self.session.get(Workspace, user.onboarding_workspace_id)
-            if workspace.kind.value != data.kind or data.kind == "organization" and workspace.name != data.name:
-                raise Conflict("Your first workspace is already selected. Refresh to continue setup; create other organisations separately.")
+            if workspace.kind.value != data.kind or data.kind == "team" and workspace.name != data.name:
+                raise Conflict("Your first workspace is already selected. Refresh to continue setup; create other Team workspaces separately.")
             return WorkspaceWithRole.of(workspace, membership.role)
         if data.kind == "personal":
             workspace = await self.session.scalar(select(Workspace).join(Membership).where(
@@ -122,11 +122,11 @@ class WorkspaceService:
             if workspace is None:
                 workspace = await self.create_personal(user)
         else:
-            workspace = self._create(data.name, WorkspaceKind.ORGANIZATION, user)
+            workspace = self._create(data.name, WorkspaceKind.TEAM, user)
             await self.session.flush()
             owner = Membership(workspace_id=workspace.id, user_id=user.id, role=Role.OWNER)
             self.members.add(owner)
-            await self._audit(owner, "workspace.created", name=workspace.name, kind="organization", source="onboarding")
+            await self._audit(owner, "workspace.created", name=workspace.name, kind="team", source="onboarding")
         user.onboarding_workspace_id = workspace.id
         await self.session.commit()
         return WorkspaceWithRole.of(workspace, Role.OWNER)

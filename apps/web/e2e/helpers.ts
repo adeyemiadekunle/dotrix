@@ -14,11 +14,25 @@ export function newUser(name = "Ada Tester") {
   return { name, email: `e2e-${tag}@example.com`, password: PASSWORD };
 }
 
-/** Confirm the signed-in e2e user's email using the latest console verification token. */
-export async function verifyEmail(page: Page) {
-  const tokenRes = await page.request.get("/api/e2e/verification-token", { headers: WRITE });
-  expect(tokenRes.status()).toBe(200);
-  const { token } = (await tokenRes.json()) as { token: string };
+/** Wait for the verification email job, including a replacement after resending. */
+export async function verificationToken(page: Page, previous?: string) {
+  let token: string | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get("/api/e2e/verification-token", { headers: WRITE });
+        if (!response.ok()) return false;
+        ({ token } = (await response.json()) as { token: string });
+        return Boolean(token && token !== previous);
+      },
+      { message: "Waiting for a new verification email" },
+    )
+    .toBe(true);
+  return token!;
+}
+
+async function verifyEmail(page: Page) {
+  const token = await verificationToken(page);
   const verified = await page.request.post("/v1/auth/verify-email", { headers: WRITE, data: { token } });
   expect(verified.status()).toBe(204);
 }
@@ -43,7 +57,7 @@ export async function signUp(page: Page, user = newUser()) {
 export async function createOrganisation(page: Page, name = "Test organisation") {
   const response = await page.request.post("/v1/workspaces", {
     headers: { "X-Requested-With": "e2e" },
-    data: { kind: "organization", name },
+    data: { kind: "team", name },
   });
   expect(response.status()).toBe(201);
   const workspace = await response.json();

@@ -204,8 +204,8 @@ async def choose_onboarding_workspace(
     data: FirstWorkspaceChoice, user: CurrentUser, session: SessionDep, settings: SettingsDep,
 ) -> WorkspaceWithRole:
     """Save the first optional workspace choice. Personal is the default; no conversion or projects.
-    403 `organisations_unavailable` for an organisation while this server has them turned off."""
-    return await WorkspaceService(session).choose_first(user, data, organisations=settings.organisations_enabled)
+    403 `teams_unavailable` for a Team workspace while this server has them turned off."""
+    return await WorkspaceService(session).choose_first(user, data, teams=settings.teams_enabled)
 
 
 def get_session_service(session: SessionDep, settings: SettingsDep) -> SessionService:

@@ -234,8 +234,8 @@ async def test_move_a_project_from_personal_into_an_organisation_and_back(
     team = await create_team(ada.headers, "Acme")
     project = (await db_client.post(projects_url(personal), json={"key": "KUN", "name": "Kunemi"}, headers=ada.headers)).json()
     base = f"{projects_url(personal)}/{project['id']}"
-    issue = await db_client.post(f"{base}/issues", json={"type": "task", "title": "Ship it"}, headers=ada.headers)
-    assert issue.status_code == 201
+    issue = await db_client.post(f"{base}/issues", json={"title": "Ship it", "assignee_agent": "coding-agent"}, headers=ada.headers)
+    assert issue.status_code == 201 and issue.json()["assignee_agent"] == "coding-agent"
     await db_client.post(f"{base}/issues/KUN-1/comments", json={"body": "Soon"}, headers=ada.headers)
     agent_script.say("Hello.")
     run = (await db_client.post(f"{base}/agent/runs", json={"message": "Hi"}, headers=ada.headers)).json()
@@ -250,7 +250,9 @@ async def test_move_a_project_from_personal_into_an_organisation_and_back(
     assert (await db_client.get(projects_url(personal), headers=ada.headers)).json() == []
     moved = f"{projects_url(team)}/{project['id']}"
     got = (await db_client.get(f"{moved}/issues/KUN-1", headers=ada.headers)).json()
-    assert got["title"] == "Ship it"
+    assert got["title"] == "Ship it" and got["assignee_agent"] is None
+    assert any(event["changes"] and event["changes"].get("assignee_agent") == ["coding-agent", None]
+               for event in got["log"])
     files = (await db_client.get(f"{moved}/knowledge", headers=ada.headers)).json()["files"]
     assert any(f["path"] == "project.md" for f in files)
     assert [r["id"] for r in (await db_client.get(f"{moved}/agent/runs", headers=ada.headers)).json()] == [run["id"]]
