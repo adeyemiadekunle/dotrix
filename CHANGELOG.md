@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Added a read-only local admin demo with sample data for Overview, Runs, Failures, Coding, Models, and Audit log.
 - Added a Cloudflare staging deployment for the web app and API, with a Railway job worker and certificate-verified Redis connections.
 - Added Cloudflare Email Sending for transactional messages and enabled it in the Cloudflare staging deployment.
 - Added protected Cloudflare admin and marketing preview origins and rollout metrics for the API, worker, Nova, and email queue.
