@@ -34,6 +34,16 @@ def _settings(**values) -> Settings:
     return Settings(**{**base, **values})  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("agent", list(CodingAgent))
+def test_cloud_research_config_is_only_added_for_an_enabled_turn(agent: CodingAgent) -> None:
+    engine = tool_for(agent, "openai:test")
+    assert engine is not None
+    turn = "a" * 32
+    assert "research-mcp.mjs" not in " ".join(engine.command("openai:test", browser=True))
+    argv = " ".join(engine.command("openai:test", browser=True, research=(turn, True)))
+    assert "research-mcp.mjs" in argv and "playwright-mcp" in argv and turn in argv
+
+
 def test_claude_code_events_become_steps_and_tokens() -> None:
     tool, usage = ClaudeCode(), Usage()
     lines = [

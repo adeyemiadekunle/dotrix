@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Repo-root .env, so settings load the same from any working directory
@@ -306,13 +306,14 @@ class Settings(DatabaseSettings):
     # unrelated query are still "nearest"). Depends on the model: measured on
     # gemini-embedding-001, the right passage scored 0.68-0.72 and unrelated queries at most 0.56.
     embedding_min_similarity: float = Field(default=0.6, ge=0, le=1)
-    # Research on the web (docs/architecture.md). Search: "tavily" (needs the key), "native"
-    # (the model's built-in search), or "auto" (Tavily when the key is set). Agents read pages
-    # themselves either way. "fake": a canned search and site, for end-to-end tests only.
+    # Web research. Auto prefers SearXNG, then Tavily, then model-native search where supported.
+    # Page reads remain available in disabled mode. Fake is for end-to-end tests only.
     tavily_api_key: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("DOTRIX_TAVILY_API_KEY", "TAVILY_API_KEY")
     )
-    search_provider: Literal["auto", "tavily", "native", "fake"] = "auto"
+    search_provider: Literal["auto", "searxng", "tavily", "native", "disabled", "fake"] = "auto"
+    searxng_url: AnyHttpUrl | None = None
+    coding_web_tools: bool = False
     # Pages our reader can't read (JavaScript-only, blocking readers) are read by Tavily instead.
     tavily_extract: bool = True
     # Per run: web searches and pages read. Per workspace per day: Tavily credits (0: no limit).
@@ -348,6 +349,14 @@ class Settings(DatabaseSettings):
         return self.agent_scripts if self.agent_scripts is not None else not self.is_deployed
 
     @property
+    def resolved_search_provider(self) -> str:
+        if self.search_provider != "auto":
+            return self.search_provider
+        if self.searxng_url is not None:
+            return "searxng"
+        return "tavily" if self.tavily_api_key else "native"
+
+    @property
     def workspace_storage_limit_mb(self) -> int:
         if self.workspace_storage_mb is not None:
             return self.workspace_storage_mb
@@ -365,6 +374,12 @@ class Settings(DatabaseSettings):
             raise ValueError("rate_limits must be redis in staging and production (limits shared by every process)")
         if self.search_provider == "tavily" and not self.tavily_api_key:
             raise ValueError("search_provider=tavily needs DOTRIX_TAVILY_API_KEY")
+        if self.search_provider == "searxng" and self.searxng_url is None:
+            raise ValueError("search_provider=searxng needs DOTRIX_SEARXNG_URL")
+        if self.searxng_url and any(value is not None for value in (
+            self.searxng_url.username, self.searxng_url.password, self.searxng_url.query, self.searxng_url.fragment,
+        )):
+            raise ValueError("DOTRIX_SEARXNG_URL must be a service base URL without credentials, query or fragment")
         if self.search_provider == "fake" and not self.e2e_models:
             raise ValueError("search_provider=fake is for end-to-end tests (needs DOTRIX_E2E_MODELS=true)")
         if self.coding_sandbox == "docker-cloud":

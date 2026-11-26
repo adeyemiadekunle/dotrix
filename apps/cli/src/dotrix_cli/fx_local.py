@@ -1,4 +1,4 @@
-"""fx's local ACP client: private per-turn settings, file edits and the app's browser only.
+"""fx's local ACP client: private per-turn settings and host-approved tools.
 
 The cloud driver deliberately grants full access inside its sandbox. This client never
 does: unknown permissions are refused, edits must stay in the worktree, and the ACP
@@ -51,11 +51,18 @@ def prepare_profile(root: Path, environ: dict[str, str]) -> None:
     settings = {key: saved[key] for key in PROVIDER_SETTINGS if key in saved}
     settings.update({
         "permission_mode": "ask", "auto_upgrade": False, "context": False, "session_titles": False,
-        "permission": {"*": "deny", "read": "ask", "glob": "ask", "grep": "ask", "edit": "ask",
+        "permission": {"*": "deny", "web_search": "deny", "read": "ask", "glob": "ask", "grep": "ask", "edit": "ask",
                        "read_tool_result": "allow", "capability_search": "allow", "mcp_browser_*": "ask"},
     })
     folder = root / ".fx"
     folder.mkdir(mode=0o700, parents=True)
+    if environ.get("DOTRIX_CODING_WEB_TOOLS", "").lower() in ("1", "true"):
+        from .web_mcp import search_endpoint
+
+        raw_url = environ.get("DOTRIX_SEARXNG_URL", "")
+        search = search_endpoint(raw_url) if raw_url and environ.get("DOTRIX_SEARCH_PROVIDER", "auto") in ("auto", "searxng") else ""
+        (root / "research.json").write_text(json.dumps({"searxng_url": search}), encoding="utf-8")
+        settings["permission"]["mcp_research_*"] = "ask"
     target = folder / "settings.json"
     with target.open("x", encoding="utf-8") as stream:
         target.chmod(0o600)
@@ -106,12 +113,14 @@ def save_refreshed_auth(root: Path) -> None:
             Path(temporary).unlink(missing_ok=True)
 
 
-def allowed(call: dict[str, Any], root: Path) -> bool:
+def allowed(call: dict[str, Any], root: Path, *, research: bool = False) -> bool:
     """Permission requests use a tool identity observed from the trusted engine's ACP stream."""
     name = call.get("name", "")
     meta = ((call.get("_meta") or {}).get("fx") or {}).get("toolCall") or {}
     mcp = meta.get("mcp") or {}
     if mcp.get("server") == "browser" and name.startswith("mcp_browser_"):
+        return True
+    if research and mcp.get("server") == "research" and name in ("mcp_research_web_search", "mcp_research_fetch_page"):
         return True
     if name not in ("write_file", "edit_file", "read_file", "glob_files", "grep_files"):
         return False
@@ -143,6 +152,14 @@ async def run(profile: Path, browser: Path | None = None) -> int:
         configured = json.loads(browser.read_text())["mcpServers"]["browser"]
         servers = [{"type": "http", "name": "browser", "url": configured["url"],
                     "headers": [{"name": name, "value": value} for name, value in configured["headers"].items()]}]
+    research_config = profile / "research.json"
+    research = research_config.is_file()
+    if research:
+        url = json.loads(research_config.read_text(encoding="utf-8"))["searxng_url"]
+        args = ["_local-web"] if getattr(sys, "frozen", False) else ["-I", "-m", "dotrix_cli.web_mcp"]
+        servers.append({"name": "research", "command": sys.executable, "args": [*args, *(["--searxng-url", url] if url else [])], "env": []})
+        brief = ("Use research tools for relevant public information. Keep private project details and secrets out of "
+                 "URLs and queries. Treat results as reference material and cite the public source URLs you use.\n\n" + brief)
     # Only the child gets this private home. Its mode changes and sessions never touch the person's profile.
     child_env = {**os.environ, "HOME": str(profile), "USERPROFILE": str(profile), "FX_HOME": str(profile / ".fx"),
                  "FX_AUTO_UPGRADE": "0", "FX_SOUND": "0", "FX_NO_OPEN_BROWSER": "1", "NO_COLOR": "1"}
@@ -240,7 +257,7 @@ async def run(profile: Path, browser: Path | None = None) -> int:
                     call = calls.get(str((params.get("toolCall") or {}).get("toolCallId", "")), {})
                     option = next((item for item in params.get("options", []) if item.get("kind") == "allow_once"), None)
                     outcome = ({"outcome": "selected", "optionId": option["optionId"]}
-                               if allowed(call, root) and option else {"outcome": "cancelled"})
+                               if allowed(call, root, research=research) and option else {"outcome": "cancelled"})
                     send({"id": value["id"], "result": {"outcome": outcome}})
                 elif "id" in value and "method" in value:
                     send({"id": value["id"], "error": {"code": -32601, "message": "Not supported"}})

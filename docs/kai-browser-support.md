@@ -52,6 +52,30 @@ copied back. Temporary profiles are removed after successful credential handling
 There is no fx Docker Sandboxes template. Windows and live `sbx` verification remain
 open.
 
+`DOTRIX_CODING_WEB_TOOLS=true` enables Dotrix's `fetch_page` for native fx
+worktree turns and hosted Docker Cloud Build turns with model-key injection.
+Set `DOTRIX_SEARXNG_URL` to an instance that enables JSON output to also expose
+`web_search`. Set these variables on the local runner or desktop process for
+worktree turns, and on the worker for hosted turns. `DOTRIX_SEARCH_PROVIDER`
+must be `auto` or `searxng` to expose search in Codes. Page reads use public
+addresses and the existing URL checks. Search goes to the configured instance.
+Deploy a coding image that includes `research-mcp.mjs` before enabling hosted
+research.
+
+For a native worktree on Windows, set the variables in PowerShell before starting
+the runner or launching the desktop app from that shell. Replace the example URL
+with the base URL the local machine can reach.
+
+```powershell
+$env:DOTRIX_CODING_WEB_TOOLS = "true"
+$env:DOTRIX_SEARCH_PROVIDER = "searxng"
+$env:DOTRIX_SEARXNG_URL = "https://search.example.com"
+dotrix runner --isolation none
+```
+
+The root `.env.example` shows the API and worker settings. For Dokploy, use
+`deploy/dokploy.env.example` in the deployment's Environment tab.
+
 ## Verification
 
 The ordinary adapter tests check configuration, capabilities, activity parsing and

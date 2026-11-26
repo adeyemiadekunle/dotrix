@@ -83,6 +83,13 @@ def local_codex(browser_config: Path | None = typer.Option(None, "--browser-conf
     raise typer.Exit(run(browser_config))
 
 
+@app.command("_local-web", hidden=True)
+def local_web(searxng_url: str = typer.Option("", "--searxng-url")) -> None:
+    from .web_mcp import run
+
+    run(searxng_url)
+
+
 task_app = typer.Typer(help="Create, list, and update tasks on the project board.")
 calendar_app = typer.Typer(help="Calendar views derived from task due/scheduled dates.")
 handoff_app = typer.Typer(help="Hand-off instructions for coding agents (Claude Code, Codex).")

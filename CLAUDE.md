@@ -256,6 +256,8 @@ The CLI works in two modes: **linked** to a platform project (after `dotrix conn
 
 Native local runners now detect Claude Code, OpenCode, Codex and fx. Codex requires 0.169.0 or newer, disables existing MCP servers and executable extensions, and uses its workspace-write OS sandbox with command networking disabled. fx requires 0.0.16 or newer, verifies its private profile's deny-by-default policy, permits worktree file tools and the app-owned browser, and refuses shell, fetch and subagents. Its private profile excludes saved grants; refreshed sign-ins are preserved without replacing a newer external sign-in. All four native runners use the desktop Browser pane's existing caller authentication and user controls. fx has no Docker Sandboxes template. Real pinned binaries have been tested against synthetic model endpoints and the desktop MCP transport; Windows and live `sbx` checks remain open. See [browser support](docs/kai-browser-support.md).
 
+Chat can use operator-configured SearXNG with either runtime. Codes can opt in to Dotrix's public page reader and SearXNG search with `DOTRIX_CODING_WEB_TOOLS=true`. Hosted builds require Docker Cloud key injection. Native fx worktrees use the local runner's configuration and a private research MCP server. Native fx profiles deny the engine's built-in search.
+
 ## Web app (`apps/web`)
 
 Vite, React 19, TanStack Router and the typed `@dotrix/api-client`. The app is `src/`, that runs on seeded data at `/w/dotrix` and against the API in a real workspace. It is a static single-page app served on the API's origin: Vite's server forwards `/v1`, `/api` and `/health` to the API locally (`vite.config.ts`), and a reverse proxy does the same in production, so the session cookies the API sets are first-party.

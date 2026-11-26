@@ -54,6 +54,7 @@ def test_fx_copies_only_its_connection_and_auth_not_saved_full_access(tmp_path):
     assert configured["provider"] == "custom" and configured["models"] == saved["models"]
     assert configured["permission_mode"] == "ask" and configured["permission"]["*"] == "deny"
     assert configured["permission"]["edit"] == "ask" and not configured["context"]
+    assert configured["permission"]["web_search"] == "deny"
     assert "workspaces" not in configured and (source / "settings.json").read_text() == original
     assert (profile / ".fx/auth.json").read_text() == '{"token":"synthetic-login"}'
     if os.name != "nt":
@@ -65,6 +66,35 @@ def test_fx_copies_only_its_connection_and_auth_not_saved_full_access(tmp_path):
     assert "dotrix_cli.fx_local" in argv and "--profile" in argv and "own-provider-key" not in " ".join(argv)
     with pytest.raises(ValueError, match="template"):
         Tool.named("fx", isolated=True, profile=profile)
+
+
+def test_fx_never_copies_native_search_grants(tmp_path):
+    source = tmp_path / "home/.fx"
+    source.mkdir(parents=True)
+    settings = {"provider": "gateway", "permission": {"web_search": "allow", "web_fetch": "allow", "shell": "allow"}}
+    (source / "settings.json").write_text(json.dumps(settings))
+    env = {"HOME": str(source.parent), "DOTRIX_LOCAL_WEB_SEARCH": "1"}
+
+    profile = tmp_path / "private"
+    prepare_profile(profile, env)
+
+    permission = json.loads((profile / ".fx/settings.json").read_text())["permission"]
+    assert permission["web_search"] == "deny"
+    assert permission["*"] == "deny" and "web_fetch" not in permission and "shell" not in permission
+
+
+def test_fx_research_requires_local_configuration_and_observed_server(tmp_path):
+    profile = tmp_path / "private"
+    prepare_profile(profile, {"HOME": str(tmp_path), "DOTRIX_CODING_WEB_TOOLS": "true",
+                              "DOTRIX_SEARXNG_URL": "http://localhost:8080"})
+    assert json.loads((profile / "research.json").read_text()) == {"searxng_url": "http://localhost:8080"}
+    permissions = json.loads((profile / ".fx/settings.json").read_text())["permission"]
+    assert permissions["web_search"] == "deny" and permissions["mcp_research_*"] == "ask"
+    call = {"name": "mcp_research_fetch_page", "_meta": {"fx": {"toolCall": {"mcp": {"server": "research"}}}}}
+    assert allowed(call, tmp_path, research=True)
+    assert not allowed(call, tmp_path)
+    assert not allowed({"name": "mcp_research_fetch_page"}, tmp_path, research=True)
+    assert not allowed({**call, "name": "web_search"}, tmp_path, research=True)
 
 
 def test_refreshed_login_survives_cleanup_without_overwriting_a_new_sign_in(tmp_path):

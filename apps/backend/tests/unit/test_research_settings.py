@@ -32,3 +32,12 @@ def test_native_keeps_the_models_search_even_with_a_key() -> None:
 def test_tavily_needs_its_key() -> None:
     with pytest.raises(ValueError, match="needs DOTRIX_TAVILY_API_KEY"):
         settings(search_provider="tavily")
+
+
+def test_searxng_takes_precedence_over_tavily_and_does_not_use_its_credits() -> None:
+    web = build_web_research(settings(searxng_url="http://searxng:8080", tavily_api_key="tvly-test"))
+    assert web.search is not None and web.search.name == "searxng"
+    assert web.extractor is None and web.daily_credits == 0
+    assert build_web_research(settings(search_provider="disabled", searxng_url="http://searxng:8080")).search is None
+    with pytest.raises(ValueError, match="needs DOTRIX_SEARXNG_URL"):
+        settings(search_provider="searxng")

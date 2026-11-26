@@ -83,6 +83,7 @@ from .models import (
 )
 from .network import allowed_hosts, network_digest
 from .planning import parse_plan, planning_brief, readonly_command
+from .research import RESEARCH_RULE, serve_research
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
 from .slots import RunSlots, Stopped
 from .tools import BROWSER_RULE, CodingTool, Usage, run_key, tool_for
@@ -869,18 +870,30 @@ class CodingWorker:
 
         # The browser comes with the coding image: the Docker and OpenShell sandboxes, not the local one.
         browser = not plan_mode and self.sandbox is not None and self.sandbox.kind != "local" and tool.browser
+        research = None
+        if self.settings.coding_web_tools and not plan_mode and self.settings.research_max_fetches:
+            from .docker_cloud import DockerCloudSession
+
+            # Search and public page reads create an outbound channel. Keep the personal model key outside it.
+            if isinstance(box, DockerCloudSession) and box.secret is not None and box.placeholder is not None:
+                search = self.settings.resolved_search_provider == "searxng"
+                research = (uuid.uuid4().hex, bool(search and self.settings.research_max_searches))
+        command = tool.command(model, browser=browser, research=research) if research else tool.command(model, browser=browser)
+        research_job = asyncio.create_task(serve_research(box, research[0], self.settings, cancel)) if research else None
         watcher = asyncio.create_task(watch_stop())
         try:
             result = await box.exec(
-                readonly_command(tool.command(model, browser=False) + extra) if plan_mode
-                else tool.command(model, browser=browser) + extra,
-                stdin=(brief + (BROWSER_RULE if browser else "")).encode(), on_line=on_line,
+                readonly_command(command + extra) if plan_mode else command + extra,
+                stdin=(brief + (BROWSER_RULE if browser else "") + (RESEARCH_RULE if research else "")).encode(), on_line=on_line,
                 timeout=self.settings.coding_timeout_minutes * 60, cancel=cancel,
             )
             # However the turn ended: a stopped or failed one was paid for too.
             await self._totals(box, tool, tool_session, usage, reported, cost_before)
         finally:
             watcher.cancel()
+            if research_job is not None:
+                research_job.cancel()
+                await asyncio.gather(research_job, return_exceptions=True)
             await flush()
         if result.timed_out:
             raise _Stopped(f"Stopped at the time limit ({self.settings.coding_timeout_minutes} minutes)")

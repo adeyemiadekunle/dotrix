@@ -179,6 +179,8 @@ The graph derives relations from shared documents/tasks and supports neighbours,
 
 The engine's web tools expose provider-backed search and bounded page fetching; the platform stores workspace-scoped sources and cache, limits and usage. Stable per-run source identifiers support cited reports. Retrieved text is untrusted, and fetches apply URL/address, redirect, size/time and robots handling rather than granting arbitrary network access. A citation is not proof: claim verification checks cited content and reports unsupported/partial results. Research notes retain source evidence and limits.
 
+`DOTRIX_SEARCH_PROVIDER=auto` prefers an operator-configured `DOTRIX_SEARXNG_URL`, then Tavily, then model-native search where available. Select `searxng` to require a SearXNG instance with JSON results enabled, or `disabled` for page fetching alone. Both Chat runtimes can use SearXNG. Codes has a separate opt-in, `DOTRIX_CODING_WEB_TOOLS`, documented with the [runner requirements](kai-browser-support.md).
+
 Contracts specify role pipelines, checkpoints and structured findings/output schemas. Specialists submit validated results rather than treating a narrative reply as completion. Review distinguishes observed evidence, agent-reported checks and unavailable checks. Pipeline checkpoints retain the same approval policy and cannot bypass a denied capability. Research/verification implementations are in [engine web tools](../packages/engine/src/dotrix_engine/web/) and [platform research](../apps/backend/src/dotrix_backend/modules/research/).
 
 ## Validation and operations

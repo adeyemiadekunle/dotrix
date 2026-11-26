@@ -36,7 +36,7 @@ x-backend: &backend
     DOTRIX_JOBS: worker
     DOTRIX_CODE_DIR: /data/code
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
-    DOTRIX_CODING_IMAGE: dotrix-coding:latest
+    DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:latest}
     # Only two cloud turns run at once; idle caching is configured separately.
     DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
     DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app-key

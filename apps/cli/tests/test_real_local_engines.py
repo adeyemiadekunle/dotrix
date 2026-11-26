@@ -185,7 +185,7 @@ def test_real_codex_keeps_commands_in_the_worktree_and_refuses_escalation(tmp_pa
 
 
 @pytest.mark.skipif(not FX, reason="Set DOTRIX_TEST_FX to the pinned CLI")
-@pytest.mark.parametrize("operation", ["edit", "outside", "read", "outside_read", "shell", "fetch", "browser"])
+@pytest.mark.parametrize("operation", ["edit", "outside", "read", "outside_read", "shell", "fetch", "research_fetch", "browser"])
 def test_real_fx_local_permissions_and_desktop_browser(tmp_path, desktop_browser, operation):
     browser, _, log = desktop_browser
     repo = tmp_path / "repo"
@@ -203,6 +203,7 @@ def test_real_fx_local_permissions_and_desktop_browser(tmp_path, desktop_browser
             "outside": ("write_file", {"path": str(tmp_path / "outside.txt"), "content": "denied"}),
             "shell": ("shell", {"request": {"action": "run", "command": f"touch {tmp_path / 'outside.txt'}"}}),
             "fetch": ("web_fetch", {"url": model_url + "/blocked"}),
+            "research_fetch": ("mcp_research_fetch_page", {"url": model_url + "/blocked"}),
             "browser": ("mcp_browser_browser_snapshot", {}),
         }[operation]
 
@@ -219,6 +220,8 @@ def test_real_fx_local_permissions_and_desktop_browser(tmp_path, desktop_browser
         env = tool_environment("fx", {"HOME": str(original.parent), "PATH": str(Path(FX).parent) + os.pathsep + os.environ["PATH"],
                                       "LOCAL_TEST_KEY": "test-not-real", "GITHUB_TOKEN": "unrelated-host-key"})
         profile = tmp_path / "isolated"
+        if operation == "research_fetch":
+            env["DOTRIX_CODING_WEB_TOOLS"] = "true"
         prepare_profile(profile, env)
         result = subprocess.run(Tool.named("fx", browser=browser, profile=profile).argv, input="Check this task.",
                                 text=True, capture_output=True, cwd=repo, env=env, timeout=60)
@@ -232,6 +235,9 @@ def test_real_fx_local_permissions_and_desktop_browser(tmp_path, desktop_browser
             assert json.loads(log.read_text().splitlines()[0])["caller"] == "/runner"
         elif operation == "read":
             assert "WORKTREE_READ_PROOF" in json.dumps(requests)
+        elif operation == "research_fetch":
+            assert "isn't on the public internet" in json.dumps(requests)
+            assert "mcp_research_web_search" not in json.dumps(requests)
         else:
             assert '"status": "failed"' in result.stdout or "denied" in result.stdout.lower() or "not found" in result.stdout.lower()
         assert len(requests) >= 2

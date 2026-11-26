@@ -41,7 +41,7 @@ from dotrix_engine.web import (
     check_claim,
     url_key,
 )
-from dotrix_engine.web.search import PageExtractor
+from dotrix_engine.web.search import PageExtractor, SearxngSearch
 
 from .models import ResearchSource, WebPage
 
@@ -250,20 +250,23 @@ def fake_web_research() -> WebResearch:
 
 
 def build_web_research(settings: Settings) -> WebResearch:
-    provider = settings.search_provider
+    provider = settings.resolved_search_provider
     if provider == "fake":
         return fake_web_research()
-    if provider == "auto":
-        provider = "tavily" if settings.tavily_api_key else "native"
-    search: TavilySearch | None = None
+    search: SearchProvider | None = None
+    extractor: PageExtractor | None = None
     if provider == "tavily" and settings.tavily_api_key is not None:
-        search = TavilySearch(settings.tavily_api_key.get_secret_value())
+        tavily = TavilySearch(settings.tavily_api_key.get_secret_value())
+        search = tavily
+        extractor = tavily if settings.tavily_extract else None
+    if provider == "searxng" and settings.searxng_url is not None:
+        search = SearxngSearch(str(settings.searxng_url))
     return WebResearch(
         search=search,
-        extractor=search if search is not None and settings.tavily_extract else None,
+        extractor=extractor,
         max_searches=settings.research_max_searches,
         max_fetches=settings.research_max_fetches,
-        daily_credits=settings.tavily_daily_credits,
+        daily_credits=settings.tavily_daily_credits if provider == "tavily" else 0,
     )
 
 

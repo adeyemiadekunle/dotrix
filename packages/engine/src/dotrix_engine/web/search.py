@@ -1,14 +1,13 @@
-"""Web search for agents (docs/architecture.md): one provider interface, Tavily behind
-it, and a fake for tests. Results carry what a source record needs; pages are read with
-`fetch.PageFetcher`, not taken from the provider.
-"""
+"""Search adapters for SearXNG, Tavily, and synthetic runs."""
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -161,6 +160,67 @@ class TavilySearch:
                 raise SearchUnavailable("Web search couldn't run that query; try rephrasing it")
             raise SearchUnavailable("Web search is unavailable right now")
         raise SearchUnavailable("Web search is unavailable right now")  # pragma: no cover
+
+
+class SearxngSearch:
+    name = "searxng"
+
+    def __init__(self, base_url: str, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self._url = base_url.rstrip("/") + "/search"
+        self._transport = transport
+
+    async def search(
+        self, query: str, *, recency_days: int | None = None,
+        include_domains: Sequence[str] = (), exclude_domains: Sequence[str] = (),
+        limit: int = 5, depth: Depth = "basic",
+    ) -> list[SearchHit]:
+        params = {"q": query[:400], "format": "json", "categories": "general"}
+        ranges = ((1, "day"), (31, "month"), (366, "year"))
+        if recency_days is not None and recency_days > 0:
+            for days, period in ranges:
+                if recency_days <= days:
+                    params["time_range"] = period
+                    break
+        try:
+            async with asyncio.timeout(15), httpx.AsyncClient(transport=self._transport, trust_env=False) as client:
+                async with client.stream("POST", self._url, data=params) as response:
+                    response.raise_for_status()
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes(chunk_size=16_384):
+                        if len(body) + len(chunk) > 1_048_576:
+                            raise SearchUnavailable("Web search returned too much data")
+                        body.extend(chunk)
+            payload = json.loads(body)
+        except (httpx.HTTPError, ValueError, TimeoutError) as exc:
+            raise SearchUnavailable("Web search is unavailable right now") from exc
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list):
+            raise SearchUnavailable("Web search returned an invalid response")
+
+        include = tuple(domain.lower().strip(".") for domain in include_domains)
+        exclude = tuple(domain.lower().strip(".") for domain in exclude_domains)
+        hits: list[SearchHit] = []
+        seen: set[str] = set()
+        for item in results:
+            url = item.get("url") if isinstance(item, dict) else None
+            if not isinstance(url, str) or len(url) > 2048 or url in seen:
+                continue
+            try:
+                parts = urlsplit(url)
+                host = parts.hostname
+            except ValueError:
+                continue
+            if parts.scheme not in ("http", "https") or not host or parts.username is not None:
+                continue
+            if include and not any(host == domain or host.endswith("." + domain) for domain in include):
+                continue
+            if any(host == domain or host.endswith("." + domain) for domain in exclude):
+                continue
+            seen.add(url)
+            hits.append(SearchHit(url, str(item.get("title") or "")[:300], str(item.get("content") or "")[:1000]))
+            if len(hits) >= max(1, min(limit, 10)):
+                break
+        return hits
 
 
 class FakeSearch:

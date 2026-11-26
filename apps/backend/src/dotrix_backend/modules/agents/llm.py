@@ -145,7 +145,7 @@ def settings_model_factory(settings: Settings) -> ModelFactory:
         specialist = project.specialist_model
         return ModelChoice(
             model=_build(chosen, keys, thinking=settings.chat_thinking_effort),
-            web_search=native_web_search(chosen),
+            web_search=native_web_search(chosen) if settings.resolved_search_provider == "native" else None,
             specialist_model=_build(specialist, keys) if specialist and specialist != chosen else None,
         )
 

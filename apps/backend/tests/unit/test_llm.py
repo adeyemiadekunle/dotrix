@@ -70,10 +70,12 @@ def test_missing_or_empty_key_is_model_unavailable(key: str | None) -> None:
         factory(Project(model="google_genai:gemini-3.8-flash"))
 
 
-def test_factory_builds_the_projects_model() -> None:
-    choice = settings_model_factory(settings())(Project(model="google_genai:gemini-3.8-flash"), keys={"google_genai": "test-key"})
+@pytest.mark.parametrize(("search_provider", "search"), [("native", {"google_search": {}}), ("disabled", None)])
+def test_factory_builds_the_projects_model(search_provider, search) -> None:
+    configured = settings().model_copy(update={"search_provider": search_provider})
+    choice = settings_model_factory(configured)(Project(model="google_genai:gemini-3.8-flash"), keys={"google_genai": "test-key"})
     assert isinstance(choice.model, GeminiWithBuiltinTools)
-    assert choice.web_search == {"google_search": {}}
+    assert choice.web_search == search
 
 
 @pytest.mark.parametrize("model", [

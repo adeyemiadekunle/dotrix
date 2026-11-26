@@ -58,6 +58,7 @@ the audit nor the other plans.
 | [043](043-codes-show-plans-tasks-and-skills.md) | dotrix codes show prints a turn's plan, its parallel tasks, and the skills it used | P3 | S | 042 (shares codes.py) | DONE |
 | [044](044-cli-chat-plans-and-building-a-version.md) | dotrix chat lists the conversation's saved plans and builds the version you pick | P2 | S | — | DONE |
 | [045](045-runner-survives-network-blips.md) | dotrix runner keeps running through a brief network or server outage | P1 | S | — | DONE |
+| [046](046-kai-becomes-the-fx-engine.md) | Kai (the fx fork) becomes Dotrix's fx-slot chat and coding engine | P1 | L | — (spans the `kai` repo) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 
@@ -66,6 +67,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 Plans 042–045 (written 2026-11-12 at `ee73ad4`): the CLI catching up with #254 and #258 (Plan turns, chosen plans, parallel tasks, skills), and the runner's network outage lead.
 
 - All four touch only `apps/cli` (045 may add two `--json` events the desktop app already ignores). 042 and 043 both edit `codes.py`: run them one after the other. 044 and 045 are independent.
+
+Plan 046 (written 2026-11-15) spans two repos: Phase 0 happens in `kai` (rename fx→kai, versioned release pipeline to a private npm registry), Phases 1–3 in `dotrix` (fx_host package swap, coding image builds kai from a pinned commit). Needs a maintainer decision on the npm scope/registry before Phase 0 step 5.
 
 Plans 032–041 (written 2026-11-12 at `7fb2b01`): the third batch, the audit's remaining bugs, two security leads checked in the code, and the workspace storage limit.
 
