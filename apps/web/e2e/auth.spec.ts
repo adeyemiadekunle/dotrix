@@ -2,11 +2,12 @@ import { expect, test } from "@playwright/test";
 
 import { newUser, signUp } from "./helpers";
 
-// The workspace runs on seeded data until the API is wired (CLAUDE.md), so there
-// is no sign-in guard in front of it yet; the sign-in pages themselves still go through the API.
-test.fixme("signed-out visitors are sent to sign in, and come back afterwards", async ({ page }) => {
-  await page.goto("/settings");
-  await expect(page).toHaveURL(/\/login\?next=%2Fsettings/);
+test("signed-out root routes to sign in, while /demo opens the isolated demo workspace", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
+  await page.goto("/demo");
+  await expect(page).toHaveURL(/\/w\/dotrix$/);
+  await expect(page.getByRole("navigation", { name: "Main" })).toContainText("Demo");
 });
 
 test("sign up, then sign in: a wrong password is refused, the right one opens the workspace", async ({ page }) => {
@@ -21,6 +22,11 @@ test("sign up, then sign in: a wrong password is refused, the right one opens th
 
   await page.getByLabel("Password").fill(user.password);
   await page.getByRole("button", { name: "Sign in" }).click();
+  // A new account that has not saved or skipped onboarding yet resumes onboarding on sign-in.
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await page.goto("/");
   await expect(page).toHaveURL(/\/w\/[^/]+$/);
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 });

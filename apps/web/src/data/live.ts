@@ -24,7 +24,7 @@ import { fmtDate, uid } from "../core/utils";
 import { fileType } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { htmlToMd } from "./markdown";
-import { D, S, render, setLiveData } from "./store";
+import { D, S, emptyData, render, setLiveData } from "./store";
 import type { Automation, Comment, Data, FileItem, KnowledgeFile, Member, Project, Task } from "./types";
 
 type W = Schemas["WorkspaceWithRole"];
@@ -34,7 +34,7 @@ export const onLoaded: (() => void)[] = [];
 
 /** Where the store's data comes from right now. */
 export const live = {
-  mode: "demo" as "demo" | "loading" | "live" | "error",
+  mode: "idle" as "idle" | "demo" | "loading" | "live" | "error",
   slug: null as string | null,
   ws: null as W | null,
   error: "",
@@ -42,6 +42,7 @@ export const live = {
   dirReady: false,
 };
 export const isLive = () => live.mode === "live";
+export const isDemo = () => live.mode === "demo";
 
 /* ---------- writes: the cache first, then the API ---------- */
 
@@ -187,8 +188,7 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
     const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces(), queryClient.fetchQuery(featuresQuery).catch(() => undefined)]);
     const ws = wss.find((w) => w.slug === slug);
     if (!ws) {
-      live.mode = "live"; // so showDemo puts the demo's data back
-      showDemo();
+      clearLive();
       return false;
     }
     // Everything workspace-scoped — members, projects, agents, issues, notifications,
@@ -265,18 +265,19 @@ export async function loadWorkspace(slug: string): Promise<boolean> {
   }
 }
 
-/** Back to the demo workspace's data (its own address, or signing out). */
-export function showDemo() {
-  if (live.mode === "demo") return;
+/** Clear active live workspace state without loading demo seed data. */
+export function clearLive() {
   setLiveData(null);
-  live.mode = "demo";
+  S.data = emptyData();
+  live.mode = "idle";
   live.slug = null;
   live.ws = null;
+  live.dirReady = false;
   Object.assign(S.ui, { drawer: null, modals: [], pop: null, palette: null, sel: new Set<string>(), composer: null, editCell: null });
   render();
 }
 
-/** Where "/" goes: your last workspace, or your first; the demo without a session. */
+/** Where "/" goes: your last workspace, or your first; null without a session. */
 export async function homeSlug(): Promise<string | null> {
   if (!hasSession()) return null;
   try {
@@ -290,6 +291,29 @@ export async function homeSlug(): Promise<string | null> {
     return (wss.find((w) => w.slug === last) ?? wss.find((w) => w.kind === "team") ?? wss[0])?.slug ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Where "/" (and sign-in with no explicit return path) routes: /login when signed out, /onboarding until verified and set up, else your workspace. */
+export async function startDestination(): Promise<string> {
+  if (!hasSession()) return "/login";
+  try {
+    const [me, wss] = await Promise.all([unwrap(api.GET("/v1/me")), myWorkspaces()]);
+    if (!me.email_verified) return "/onboarding";
+    if (me.onboarding_workspace_id == null && !wss.some((w) => w.kind === "team")) {
+      return "/onboarding";
+    }
+    let last: string | null = null;
+    try {
+      last = localStorage.getItem("dotrix.lastWorkspace");
+    } catch {
+      /* ignore */
+    }
+    const chosen = wss.find((w) => w.id === me.onboarding_workspace_id);
+    const slug = (wss.find((w) => w.slug === last) ?? chosen ?? wss.find((w) => w.kind === "team") ?? wss[0])?.slug;
+    return slug ? `/w/${slug}` : "/onboarding";
+  } catch {
+    return "/login";
   }
 }
 

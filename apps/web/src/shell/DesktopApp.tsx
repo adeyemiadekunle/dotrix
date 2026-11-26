@@ -8,7 +8,7 @@ import { Markdown } from "@/components/markdown";
 import { desktopApp, desktopBrowser, useDesktopUpdate, type DesktopRelease, type KaiTabRequest } from "../core/desktop";
 import { Ic } from "../core/icons";
 import { go } from "../core/nav";
-import { CODING_AGENT } from "../data/seed-dotrix";
+import { CODING_AGENT } from "../core/team";
 import { openModal } from "../core/more";
 import { toast } from "../ui/toast";
 

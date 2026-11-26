@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
+import { Ic } from "../core/icons";
 import { projectDiscussionHref, projectImplementationHref, projectStart } from "../core/projectSetup";
 
 type Action = Schemas["ProjectReadiness"]["next_action"];
+type CheckState = Schemas["ProjectReadiness"]["checks"][number]["state"];
+
 const labels: Record<Action, string> = {
   purpose: "Edit project purpose",
   knowledge: "Review project knowledge",
@@ -12,13 +15,32 @@ const labels: Record<Action, string> = {
   discuss: "Discuss with Nova",
   plan: "Plan implementation",
 };
-const states = {
+
+const states: Record<CheckState, string> = {
   ready: "Saved evidence available",
   missing: "Not prepared",
   optional: "Optional",
   review: "Review needed",
   unverified: "Not verified live",
   blocked: "Needs attention",
+};
+
+const badgeTone: Record<CheckState, string> = {
+  ready: "badge green",
+  missing: "badge amber",
+  optional: "badge gray",
+  review: "badge violet",
+  unverified: "badge gray",
+  blocked: "badge red",
+};
+
+const stateIcon: Record<CheckState, { name: string; color: string }> = {
+  ready: { name: "circle-check", color: "var(--green)" },
+  missing: { name: "circle-dot", color: "var(--amber)" },
+  optional: { name: "circle-dashed", color: "var(--text-3)" },
+  review: { name: "eye", color: "var(--violet)" },
+  unverified: { name: "clock", color: "var(--text-3)" },
+  blocked: { name: "triangle-alert", color: "var(--red)" },
 };
 
 export function ProjectReadiness({
@@ -58,61 +80,121 @@ export function ProjectReadiness({
     discuss: data ? projectDiscussionHref(slug, projectKey, projectStart(data.source)) : root,
     plan: projectImplementationHref(slug, projectKey),
   };
+
+  const readyCount = data ? data.checks.filter((c) => c.state === "ready").length : 0;
+  const optionalCount = data ? data.checks.filter((c) => c.state === "optional").length : 0;
+  const trackedCount = data ? data.checks.length - optionalCount : 0;
+
   return (
-    <section className="panel" aria-label="Project readiness" style={{ marginBottom: 16 }}>
-      <div className="panel-h">
-        <h2>Project readiness</h2>
+    <section className={`panel readiness-panel ${compact ? "compact" : ""}`} aria-label="Project readiness">
+      <div className="panel-h readiness-head">
+        <div className="row" style={{ gap: 8, minWidth: 0 }}>
+          <span className="readiness-head-icon" aria-hidden="true">
+            <Ic n="compass" s={14} />
+          </span>
+          <h2>Project readiness</h2>
+          {data && (
+            <span className={`badge ${readyCount === trackedCount && trackedCount > 0 ? "green" : "gray"}`}>
+              {readyCount}/{trackedCount || data.checks.length} prepared
+            </span>
+          )}
+        </div>
+        {workspaceId && (
+          <div className="acts">
+            <button className="btn btn-ghost btn-sm" disabled={readiness.isFetching} onClick={() => void readiness.refetch()}>
+              <Ic n="refresh-cw" s={12} />
+              Refresh saved readiness
+            </button>
+          </div>
+        )}
       </div>
-      <div className="panel-b">
+
+      <div className="panel-b readiness-body">
         {!workspaceId ? (
-          <p>Illustrative sample. Sign in to see readiness from your saved project and personal model access.</p>
+          <p className="readiness-sample">Illustrative sample. Sign in to see readiness from your saved project and personal model access.</p>
         ) : (
           <>
-            <p className="muted">Saved state, not a live integration test. You can manage tasks and knowledge without connecting a model.</p>
-            {readiness.isPending && <p role="status">Loading saved readiness…</p>}
-            {readiness.isError && <p role="alert">Readiness could not be loaded: {errorMessage(readiness.error)}. Project work remains available.</p>}
+            {readiness.isPending && (
+              <p className="muted" role="status" style={{ margin: 0 }}>
+                Loading saved readiness…
+              </p>
+            )}
+            {readiness.isError && (
+              <div className="alert danger" role="alert">
+                <Ic n="triangle-alert" s={15} />
+                <span>Readiness could not be loaded: {errorMessage(readiness.error)}. Project work remains available.</span>
+              </div>
+            )}
             {data && !readiness.isError && (
               <>
-                <h3>{data.next_title}</h3>
-                <p>{data.next_detail}</p>
-                {data.next_allowed ? (
-                  <a className="btn btn-primary btn-sm" href={links[data.next_action]}>
-                    {labels[data.next_action]}
-                  </a>
-                ) : (
-                  <p>{data.next_restriction}</p>
-                )}
-                {data.next_action !== "tasks" && (
-                  <a className="btn btn-secondary btn-sm" href={links.tasks}>
-                    Open project tasks
-                  </a>
-                )}
-                <details open={!compact} style={{ marginTop: 16 }}>
-                  <summary>Readiness details</summary>
-                  <div className="stack" style={{ marginTop: 12 }}>
-                    {data.checks.map((check) => (
-                      <div key={check.key}>
-                        <b>{check.title}</b> <span className="badge">{states[check.state]}</span>
-                        <p>{check.detail}</p>
-                        {check.key === "model" && data.model_success_at && (
-                          <p className="faint">Recorded {new Date(data.model_success_at).toLocaleString()}.</p>
-                        )}
-                        {check.allowed ? (
-                          <a className="btn btn-ghost btn-sm" href={links[check.action]}>
-                            {labels[check.action]}
-                          </a>
-                        ) : (
-                          <p className="muted">{check.restriction}</p>
-                        )}
-                      </div>
-                    ))}
+                <div className="readiness-next">
+                  <div className="readiness-next-copy">
+                    <span className="readiness-eyebrow">Recommended next step</span>
+                    <h3>{data.next_title}</h3>
+                    <p>{data.next_detail}</p>
+                  </div>
+                  <div className="readiness-actions">
+                    {data.next_allowed ? (
+                      <a className="btn btn-primary btn-sm" href={links[data.next_action]}>
+                        {labels[data.next_action]}
+                      </a>
+                    ) : (
+                      <p className="muted" style={{ margin: 0 }}>
+                        {data.next_restriction}
+                      </p>
+                    )}
+                    {data.next_action !== "tasks" && (
+                      <a className="btn btn-secondary btn-sm" href={links.tasks}>
+                        Open project tasks
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <details className="readiness-details" open={!compact}>
+                  <summary className="readiness-summary">
+                    <span className="readiness-chev" aria-hidden="true">
+                      <Ic n="chevron-right" s={14} />
+                    </span>
+                    <span>Readiness details</span>
+                    <span className="readiness-meta">
+                      {readyCount} ready{optionalCount > 0 ? ` · ${optionalCount} optional` : ""}
+                    </span>
+                  </summary>
+                  <div className="readiness-list">
+                    {data.checks.map((check) => {
+                      const icon = stateIcon[check.state];
+                      return (
+                        <div key={check.key} className="readiness-row">
+                          <span className="readiness-row-ic" style={{ color: icon.color }} aria-hidden="true">
+                            <Ic n={icon.name} s={15} />
+                          </span>
+                          <div className="readiness-row-main">
+                            <div className="readiness-row-top">
+                              <b>{check.title}</b>
+                              <span className={badgeTone[check.state]}>{states[check.state]}</span>
+                            </div>
+                            <p>{check.detail}</p>
+                            {check.key === "model" && data.model_success_at && (
+                              <p className="faint readiness-stamp">Recorded {new Date(data.model_success_at).toLocaleString()}.</p>
+                            )}
+                            {!check.allowed && check.restriction && <p className="muted readiness-stamp">{check.restriction}</p>}
+                          </div>
+                          {check.allowed && (
+                            <div className="readiness-row-act">
+                              <a className="btn btn-secondary btn-sm" href={links[check.action]}>
+                                {labels[check.action]}
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </details>
               </>
             )}
-            <button className="btn btn-ghost btn-sm" disabled={readiness.isFetching} onClick={() => void readiness.refetch()}>
-              Refresh saved readiness
-            </button>
+            <p className="readiness-foot">Saved state, not a live integration test. You can manage tasks and knowledge without connecting a model.</p>
           </>
         )}
       </div>

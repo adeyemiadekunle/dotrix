@@ -6,8 +6,9 @@ import { PR } from "./constants";
 import { applyPatch, changeTask, closePop, copy, createTask, guarded, openTask } from "./actions";
 import { go, routeOf } from "./nav";
 import { dOff, uid } from "./utils";
-import { D, DEFAULT_PREFS, S, allTasks, canSee, logAct, me, mem, mutate, proj, render, save, task, tasksOf, visibleProjects, type Modal } from "../data/store";
+import { D, S, allTasks, canSee, demoRuntime, logAct, me, mem, mutate, proj, render, save, task, tasksOf, visibleProjects, type Modal } from "../data/store";
 import {
+  clearLive,
   fileDeleted,
   fileDuplicated,
   fileRenamed,
@@ -16,12 +17,10 @@ import {
   projectChanged,
   projectCreated,
   projectDeleted,
-  showDemo,
   signOutLive,
   tasksDeleted,
 } from "../data/live";
 import { inviteResent, isInvite, memberRemoved, ownershipTransferred } from "../data/account";
-import { seed } from "../data/seed";
 import { commentCount } from "../data/tasks";
 import type { Project, Task } from "../data/types";
 import { fileType } from "../ui/helpers";
@@ -647,7 +646,7 @@ export function signOut() {
   S.ui.drawer = null;
   S.ui.modals = [];
   render();
-  showDemo();
+  clearLive();
   void signOutLive(); // ends the session (if any), then the sign-in page
 }
 export function shortcuts() {
@@ -656,23 +655,7 @@ export function shortcuts() {
   openModal({ type: "shortcuts" });
 }
 export function resetDemo() {
-  S.ui.pop = null;
-  confirmDlg({
-    title: "Reset demo data?",
-    body: "All projects, tasks, and settings in this browser go back to the original sample workspace.",
-    ok: "Reset data",
-    danger: true,
-    icon: "rotate-ccw",
-    run: () => {
-      S.data = seed();
-      S.views = {};
-      S.prefs = { ...DEFAULT_PREFS, theme: S.prefs.theme };
-      S.ui.drawer = null;
-      save();
-      go("home");
-      toast("Demo data restored");
-    },
-  });
+  demoRuntime()?.reset();
 }
 export function toggleOffline() {
   S.ui.offline = !S.ui.offline;

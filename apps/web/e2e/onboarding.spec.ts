@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { newUser, pickSelect, signUp } from "./helpers";
+import { newUser, pickSelect, signUp, verificationToken } from "./helpers";
 
 test("new accounts save a first project, resume setup and connect a personal model without recreating the workspace", async ({ page }) => {
   const person = newUser();
@@ -10,8 +10,22 @@ test("new accounts save a first project, resume setup and connect a personal mod
   await page.getByLabel("Password", { exact: true }).fill(person.password);
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(page).toHaveURL(/\/onboarding/);
+  await expect(page.getByRole("heading", { name: "Verify your email", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toHaveCount(0);
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole("heading", { name: "Verify your email", exact: true })).toBeVisible();
+  const originalToken = await verificationToken(page);
+  await page.getByRole("button", { name: "Resend verification email", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText(`Sent a new verification email to ${person.email}`);
+  const token = await verificationToken(page, originalToken);
+  await page.getByLabel("Verification token or link", { exact: true }).fill(token);
+  await page.getByRole("button", { name: "Verify and continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toBeVisible();
   await expect(page.getByLabel("Your name", { exact: true })).toHaveValue(person.name);
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole("heading", { name: "Set up your profile", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Setting up for a team?", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Onboarding progress", exact: true })).toContainText("Step 1 of 6: Profile");
   await page.getByRole("button", { name: "Skip", exact: true }).click();

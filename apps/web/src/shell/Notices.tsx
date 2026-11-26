@@ -12,12 +12,11 @@ import { useEffect, useRef, useState } from "react";
 import { canApplyAgentApproval } from "../core/can";
 import { continueLimited, decideChange, decideCoding } from "../core/agents";
 import { desktopNotify } from "../core/desktop";
-import { openDemoRequest } from "../core/demoRequest";
 import { Ic } from "../core/icons";
 import { go, useRoute } from "../core/nav";
 import { waitingChanges } from "../core/presence";
-import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
-import { D, S, render, task } from "../data/store";
+import { CODING_AGENT, CODING_TOOLS } from "../core/team";
+import { D, S, demoRuntime, render, task } from "../data/store";
 import { codingRunDecided, codingSessionDecided, isLive, live, runChangesDecided } from "../data/live";
 import type { Notif } from "../data/types";
 import { Face } from "../ui/face";
@@ -66,7 +65,7 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
       text: ws.length > 1 ? `${ws.length} changes · ${ws.map((x) => x.ch.title).join(", ")}` : w.ch.title,
       mood: "needs",
       decide: one ? { approve: () => decideChange(w.ch.id, true), reject: () => decideChange(w.ch.id, false) } : undefined,
-      open: () => (isLive() ? go("chat", {}, { search: `thread=${w.th.id}` }) : openDemoRequest({ thread: w.th.id })),
+      open: () => (isLive() ? go("chat", {}, { search: `thread=${w.th.id}` }) : demoRuntime()?.openRequest({ thread: w.th.id })),
     });
   }
   // A real workspace's approvals arrive as notifications.
@@ -129,7 +128,7 @@ function notices(liveNotifs: Notif[] | undefined): Notice[] {
     const waits = cs.status === "awaiting_approval" || (isLive() && cs.status === "changes_ready");
     if (!tool || (!waits && cs.status !== "failed")) continue;
     if (waits && isLive() && notified.has(`${cs.project}:${cs.task}`)) continue;
-    const open = () => (isLive() ? go("codes", {}, { search: `session=${cs.id}` }) : openDemoRequest({ task: cs.task }));
+    const open = () => (isLive() ? go("codes", {}, { search: `session=${cs.id}` }) : demoRuntime()?.openRequest({ task: cs.task }));
     out.push(
       cs.status === "failed"
         ? {

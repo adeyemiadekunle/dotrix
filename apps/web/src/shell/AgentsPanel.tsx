@@ -7,10 +7,9 @@ import { ActionButton } from "@dotrix/ui/components/action-button";
 import { useEffect } from "react";
 
 import { Ic } from "../core/icons";
-import { openDemoRequest } from "../core/demoRequest";
 import { go } from "../core/nav";
 import { presence, today, type Presence } from "../core/presence";
-import { D, S, me, render } from "../data/store";
+import { D, S, demoRuntime, me, render } from "../data/store";
 import { Face } from "../ui/face";
 import { useAgentActivity, useBuiltinTeam } from "@/lib/team";
 import { isLive, live } from "../data/live";
@@ -30,7 +29,7 @@ const LABEL: Record<Presence["state"], string> = { needs: "Needs you", working: 
 function openWork(p: Presence) {
   S.ui.agentsSheet = false;
   if (!isLive() && (p.thread || p.session)) {
-    openDemoRequest({ thread: p.thread, task: D().coding.find((c) => c.id === p.session)?.task });
+    demoRuntime()?.openRequest({ thread: p.thread, task: D().coding.find((c) => c.id === p.session)?.task });
     return;
   }
   if (p.thread) go("chat", {}, { search: `thread=${p.thread}${p.project ? `&project=${p.project}` : ""}` });

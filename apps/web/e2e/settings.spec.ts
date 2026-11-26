@@ -45,13 +45,14 @@ test("your profile: name and what you do are saved, and your profile page shows 
 
 test("where you're signed in: each browser is listed, and another one can be signed out", async ({ page, browser }) => {
   const user = await signUp(page);
+  const workspacePath = new URL(page.url()).pathname;
   const other = await browser.newContext();
   const second = await other.newPage();
-  await second.goto("/login");
+  await second.goto(`/login?next=${encodeURIComponent(workspacePath)}`);
   await second.getByLabel("Email", { exact: true }).fill(user.email);
   await second.getByLabel("Password", { exact: true }).fill(user.password);
   await second.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(second).toHaveURL(/\/w\//);
+  await expect(second).toHaveURL(workspacePath);
 
   await settings(page, "sessions");
   await expect(page.getByText("This browser", { exact: true })).toBeVisible();

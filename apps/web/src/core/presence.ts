@@ -4,7 +4,7 @@
 import { decideChange, decideCoding } from "./agents";
 import { codingSessionDecided, isLive, runChangesDecided } from "../data/live";
 import { D, S, task } from "../data/store";
-import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
+import { CODING_AGENT, CODING_TOOLS } from "./team";
 import type { ChatMessage, CodingSession, ProposedChange, Thread } from "../data/types";
 import type { Mood } from "../ui/face";
 import type { AgentActivity } from "@/lib/team";

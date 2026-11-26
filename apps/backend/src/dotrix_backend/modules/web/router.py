@@ -19,9 +19,10 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
-from dotrix_backend.api.deps import SessionDep, SettingsDep, get_current_user
+from dotrix_backend.api.deps import CurrentUser, SessionDep, SettingsDep, get_current_user
 from dotrix_backend.core import security
-from dotrix_backend.core.errors import DomainError, Unauthorized
+from dotrix_backend.core.email import ConsoleEmailSender
+from dotrix_backend.core.errors import DomainError, NotFound, Unauthorized
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.auth.github import GitHubDep
 from dotrix_backend.modules.auth.limits import LOGIN, SIGNUP, ThrottleDep
@@ -141,6 +142,19 @@ async def web_logout(request: Request, auth: Auth) -> Response:
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_session(response)
     return response
+
+
+@router.get("/e2e/verification-token")
+async def e2e_verification_token(request: Request, user: CurrentUser) -> dict[str, str]:
+    """E2E test helper: returns the latest verification token logged for the current user."""
+    email = getattr(request.app.state, "e2e_email_sender", None)
+    if not isinstance(email, ConsoleEmailSender):
+        raise NotFound("Not found")
+    msg = email.last_by_recipient.get(user.email.lower())
+    match = re.search(r"/verify-email\?token=([^\s&\"']+)", msg.body if msg else "")
+    if not match:
+        raise NotFound("No verification email recorded")
+    return {"token": match.group(1)}
 
 
 # -- GitHub: sign in, link to your account, install the app ---------------------------------

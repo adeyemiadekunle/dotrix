@@ -20,14 +20,14 @@ import {
   type BrowserSettings,
   type DevCommand,
 } from "../core/desktop";
-import { CODING_AGENT } from "../data/seed-dotrix";
+import { CODING_AGENT } from "../core/team";
 import { teams, personal, tasksLabel } from "../core/features";
 import { Ic, WsLogo } from "../core/icons";
 import { confirmDlg, invite, promptDlg, restoreProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { storageLine } from "../core/storage";
 import { ago, dOff, fmtDate, uid } from "../core/utils";
-import { ApiError } from "@/lib/api";
+import { ApiError, api, unwrap } from "@/lib/api";
 import { useBuiltinTeam } from "@/lib/team";
 
 import {
@@ -2069,7 +2069,10 @@ function Audit() {
 function Profile() {
   const [name, setName] = useState(S.prefs.name);
   const [title, setTitle] = useState(S.prefs.title);
+  const [resending, setResending] = useState(false);
   const methods = useApi(signInMethods);
+  const meProfile = useApi(() => unwrap(api.GET("/v1/me")));
+  const emailVerified = !isLive() || meProfile.data?.email_verified !== false;
   const err = !name.trim() ? "Enter your name" : "";
   const gh = methods.data?.accounts.find((a) => a.provider === "github");
   const keep = () => {
@@ -2146,7 +2149,27 @@ function Profile() {
           Email
         </label>
         <DesignInput aria-label="Email" className="input" id="pf-email" value={me()!.email} disabled />
-        <span className="hint">Verified. Contact a workspace owner to change your sign-in email.</span>
+        {emailVerified ? (
+          <span className="hint">Verified. Contact a workspace owner to change your sign-in email.</span>
+        ) : (
+          <span className="hint row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <span>Not verified yet. Confirm your email to protect your account.</span>
+            <ActionButton
+              type="button"
+              className="link"
+              disabled={resending}
+              onClick={() => {
+                setResending(true);
+                void unwrap(api.POST("/v1/auth/verify-email/resend"))
+                  .then(() => toast("Verification email sent"))
+                  .catch((er: unknown) => toast(`Couldn't send verification email: ${errText(er)}`, { kind: "err" }))
+                  .finally(() => setResending(false));
+              }}
+            >
+              {resending ? "Sending…" : "Resend verification email"}
+            </ActionButton>
+          </span>
+        )}
       </div>
       <div className="sblock" style={{ marginTop: 4 }}>
         <h2>Sign-in methods</h2>

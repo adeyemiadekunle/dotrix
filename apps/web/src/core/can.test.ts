@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { live } from "../data/live";
 import { D } from "../data/store";
+import { mountDemo } from "../demo/runtime";
 import { allowed, approvalModes, canInvite, canManageIssues, defaultApproval } from "./can";
+
+mountDemo();
 
 type Ws = NonNullable<typeof live.ws>;
 const setLive = (permissions: string[], extra: Record<string, unknown> = {}) => {

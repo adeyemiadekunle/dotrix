@@ -8,9 +8,9 @@
 import { SelectField } from "@dotrix/ui/components/select";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
+import { api, authPost, errorMessage, hasSession, unwrap, type Schemas } from "@/lib/api";
 import { installGitHub, myDefaultModelSaved, myKeySaved, myModels } from "../data/account";
-import { AGENTS, CODING_AGENT } from "../data/seed-dotrix";
+import { AGENTS, CODING_AGENT } from "../core/team";
 import { useTeams } from "../core/features";
 import { Ic } from "../core/icons";
 import { PROJECT_STARTS, projectStart, projectDiscussionHref, projectImplementationHref, readProjectStart, type ProjectStart } from "../core/projectSetup";
@@ -28,6 +28,16 @@ const stepNames: Record<Step, string> = {
   model: "AI provider",
   ready: "Ready",
 };
+
+function extractVerifyToken(raw: string): string {
+  const trimmed = raw.trim();
+  const q = trimmed.indexOf("?");
+  if (q >= 0) {
+    const token = new URLSearchParams(trimmed.slice(q + 1)).get("token");
+    if (token) return token.trim();
+  }
+  return trimmed;
+}
 
 export function Onboarding() {
   const queryClient = useQueryClient();
@@ -63,10 +73,28 @@ export function Onboarding() {
   const [provider, setProvider] = useState("openai");
   const [apiKey, setApiKey] = useState("");
   const [repoId, setRepo] = useState("");
+  const [verifyInput, setVerifyInput] = useState("");
+  const [verifySent, setVerifySent] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const signedIn = hasSession();
   const profile = useQuery({ queryKey: ["onboarding-profile"], enabled: signedIn, queryFn: () => unwrap(api.GET("/v1/me")) });
+  const unverified = signedIn && !!profile.data && !profile.data.email_verified;
+  const refetchProfile = profile.refetch;
+  useEffect(() => {
+    if (!unverified) return;
+    const check = () => {
+      if (document.visibilityState === "visible") void refetchProfile();
+    };
+    const timer = window.setInterval(check, 4000);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [unverified, refetchProfile]);
   const workspaces = useQuery({ queryKey: ["workspaces"], enabled: signedIn, queryFn: () => unwrap(api.GET("/v1/workspaces")) });
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const knownWorkspaces = workspaces.data;
@@ -295,6 +323,73 @@ export function Onboarding() {
             Open workspace
           </a>
         </div>
+      </Frame>
+    );
+  if (unverified)
+    return (
+      <Frame art="workspace" center>
+        <form
+          className="onb2-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const token = extractVerifyToken(verifyInput);
+            if (!token) return;
+            void perform(async () => {
+              setVerifySent(false);
+              await unwrap(api.POST("/v1/auth/verify-email", { body: { token } }));
+              setVerifyInput("");
+              await profile.refetch();
+            });
+          }}
+        >
+          <Head
+            title="Verify your email"
+            sub={`We sent a verification link to ${profile.data?.email ?? "your email"}. Open the link in your inbox, or paste the verification link or token below to continue setup.`}
+          />
+          <fieldset disabled={busy} className="onb2-fields">
+            <label className="field">
+              Verification token or link
+              <input
+                className="input onb2-input mono"
+                value={verifyInput}
+                onChange={(event) => setVerifyInput(event.target.value)}
+                aria-label="Verification token or link"
+                placeholder="Paste token or /verify-email?token=…"
+                autoComplete="one-time-code"
+                spellCheck={false}
+                required
+              />
+            </label>
+          </fieldset>
+          {verifySent && <p role="status">Sent a new verification email to {profile.data?.email}.</p>}
+          {error && (
+            <p className="err" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="onb2-acts onb2-acts-wrap">
+            <button
+              type="button"
+              className="btn btn-secondary onb2-btn"
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  setVerifySent(false);
+                  await unwrap(api.POST("/v1/auth/verify-email/resend"));
+                  setVerifySent(true);
+                })
+              }
+            >
+              Resend verification email
+            </button>
+            <button type="submit" className="btn btn-primary onb2-btn" disabled={busy || !verifyInput.trim()}>
+              {busy ? "Verifying…" : "Verify and continue"}
+            </button>
+          </div>
+        </form>
+        <button type="button" className="link onb2-later" disabled={busy} onClick={() => void authPost("logout").finally(() => location.assign("/login"))}>
+          Use a different account
+        </button>
       </Frame>
     );
   const duplicateKey = projects.data?.some((item) => item.key === key);
@@ -1004,7 +1099,7 @@ export function Onboarding() {
           {error}
         </p>
       )}
-      {workspace && current !== "ready" && (
+      {workspace && current !== "ready" && !needsWorkspaceChoice && (
         <a className="onb2-later" href={`/w/${workspace.slug}`}>
           {project ? "Finish setup later" : "Back to workspace"}
         </a>

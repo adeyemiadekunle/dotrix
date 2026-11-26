@@ -49,14 +49,16 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   const v = viewOf(k);
   const { tasks: base, loading } = useProjectTasks(p.id);
   const ts = applyView(base, v);
+  const canAddTasks = canManageIssues();
+  const canImport = isLive() && canAddTasks;
   const addBtn = (
     <div className="row" style={{ gap: 8 }}>
-      {isLive() && canManageIssues() && (
+      {canImport && (
         <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "import" })}>
           Import from GitHub
         </ActionButton>
       )}
-      {canManageIssues() && (
+      {canAddTasks && (
         <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
           <Ic n="plus" s={13} />
           New task
@@ -67,21 +69,30 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
   // Still loading isn't empty: the toolbar shows alone until the tasks arrive.
   const noTasks = !loading && !base.length;
   const emptyAll = (
-    <>
+    <div className="project-empty-shell">
       <ProjectReadiness workspaceId={isLive() ? live.ws?.id : undefined} projectId={p.id} slug={live.ws?.slug ?? "dotrix"} projectKey={p.key} compact />
-      <Empty
-        icon="list-checks"
-        title="No tasks here"
-        text={canManageIssues() ? "Add a task to get things moving." : "Tasks will appear here when an Owner or Admin creates them."}
-      >
-        {canManageIssues() && (
-          <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
-            <Ic n="plus" s={14} />
-            Add task
-          </ActionButton>
-        )}
-      </Empty>
-    </>
+      <div className="panel">
+        <Empty
+          icon="list-checks"
+          title="No tasks here"
+          text={canAddTasks ? "Add a task to get things moving." : "Tasks will appear here when an Owner or Admin creates them."}
+        >
+          {canAddTasks && (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+              <ActionButton className="btn btn-primary btn-sm" onClick={() => newTask({ project: p.id })}>
+                <Ic n="plus" s={14} />
+                Add task
+              </ActionButton>
+              {canImport && (
+                <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("project", { id: p.key, tab: "import" })}>
+                  Import from GitHub
+                </ActionButton>
+              )}
+            </div>
+          )}
+        </Empty>
+      </div>
+    </div>
   );
   if (type === "board")
     return (
@@ -95,7 +106,7 @@ function TaskViewBody({ type, k, p }: { type: string; k: string; p: P }) {
     return (
       <>
         <ViewToolbar k={k} cols={LIST_COLS.map((c) => [c, LCOLS[c]![0]])} right={addBtn} />
-        <div className="list-wrap">{noTasks ? emptyAll : loading ? null : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>
+        {noTasks ? emptyAll : <div className="list-wrap">{loading ? null : <ListView groups={groupTasks(ts, v.group)} k={k} project={p.id} />}</div>}
       </>
     );
   return <Empty icon="file-question" title="Page not found" text="That view doesn't exist." />;

@@ -101,7 +101,7 @@ import { Av, PIcon } from "../ui/helpers";
 import { moodOf } from "../core/presence";
 import { Face } from "../ui/face";
 import { toast } from "../ui/toast";
-import { CODING_AGENT, CODING_TOOLS } from "../data/seed-dotrix";
+import { CODING_AGENT, CODING_TOOLS } from "../core/team";
 import { CODING_VIEWS, CodingPanes, codingPaneType, newCodingPane, useActivePane, type CodingPaneId, type CodingView } from "../components/SidePanel";
 import { BackgroundTasks, KaiBackground } from "../components/BackgroundTasks";
 import { SessionDetails, modeName } from "../components/SessionDetails";

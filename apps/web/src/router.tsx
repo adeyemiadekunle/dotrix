@@ -5,7 +5,7 @@ import { Navigate, Outlet, createRootRoute, createRoute, createRouter, lazyRoute
 import { useEffect, useState, type ReactNode } from "react";
 
 import { WS, setRouter } from "./core/nav";
-import { homeSlug } from "./data/live";
+import { startDestination } from "./data/live";
 import { NotFoundPage, RootLayout } from "./root";
 import { Studio } from "./shell/Studio";
 import AuthLayout from "../pages/(auth)/layout";
@@ -33,7 +33,7 @@ const auth = createRoute({
     </AuthLayout>
   ),
 });
-const authPage = (path: string, title: string, load: Parameters<typeof page>[0]) =>
+const authPage = <P extends string>(path: P, title: string, load: Parameters<typeof page>[0]) =>
   createRoute({ getParentRoute: () => auth, path, staticData: { title }, component: page(load) });
 const authRoutes = [
   authPage("/login", "Sign in", () => import("../pages/(auth)/login/page")),
@@ -53,15 +53,28 @@ const authRoutes = [
   }),
 ];
 
-/** "/": your last (or first) workspace when signed in, else the demo. */
+/** "/": /login when signed out, /onboarding until verified and set up, else your last (or first) workspace. */
 function Start() {
-  const [slug, setSlug] = useState<string | null>(null);
+  const [dest, setDest] = useState<string | null>(null);
   useEffect(() => {
-    void homeSlug().then((s) => setSlug(s ?? WS));
+    void startDestination().then(setDest);
   }, []);
-  return slug ? <Navigate to="/w/$ws" params={{ ws: slug }} replace /> : null;
+  if (!dest) return null;
+  if (dest === "/login") return <Navigate to="/login" replace />;
+  if (dest === "/onboarding") return <Navigate to="/onboarding" replace />;
+  return <Navigate to="/w/$ws" params={{ ws: dest.slice(3) }} replace />;
+}
+function DemoRedirect() {
+  const rest = location.pathname.replace(/^\/demo\/?/, "");
+  const suffix = rest ? `/${rest}` : "";
+  useEffect(() => {
+    void router.navigate({ href: `/w/${WS}${suffix}${location.search}`, replace: true });
+  }, [suffix]);
+  return null;
 }
 const home = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Start });
+const demoRoot = createRoute({ getParentRoute: () => rootRoute, path: "/demo", component: DemoRedirect });
+const demoAny = createRoute({ getParentRoute: () => rootRoute, path: "/demo/$", component: DemoRedirect });
 const chatUiLab = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dev/chat-ui",
@@ -71,7 +84,7 @@ const chatUiLab = createRoute({
 const workspace = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws", component: Studio });
 const workspaceAny = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws/$", component: Studio });
 
-const routeTree = rootRoute.addChildren([auth.addChildren(authRoutes), home, chatUiLab, workspace, workspaceAny]);
+const routeTree = rootRoute.addChildren([auth.addChildren(authRoutes), home, demoRoot, demoAny, chatUiLab, workspace, workspaceAny]);
 
 export const router = createRouter({
   routeTree,

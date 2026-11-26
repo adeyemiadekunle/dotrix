@@ -11,6 +11,7 @@ import { newProject } from "../core/more";
 import { go, useRoute, type Route } from "../core/nav";
 import { MOD, TODAY, diffD, parse } from "../core/utils";
 import { D, S, pColor, projByKey, render, useStudio } from "../data/store";
+import { isDemo } from "../data/live";
 import { useMembers, useNotifs, useProjects } from "../data/lists";
 import { useAllTasks } from "../data/tasks";
 import { isMine, tasksLabel } from "../core/features";
@@ -259,6 +260,11 @@ function Sidebar() {
           >
             <WsLogo w={d.ws} px={22} />
             <span className="ws-name trunc">{d.ws.name}</span>
+            {isDemo() && !sideCollapsed() && (
+              <span className="badge gray" style={{ fontSize: 10, height: 18, padding: "0 6px", flexShrink: 0 }}>
+                Demo
+              </span>
+            )}
             <span className="chev-d faint">
               <Ic n="chevrons-up-down" s={13} />
             </span>

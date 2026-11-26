@@ -62,7 +62,7 @@ function ProjectCard({ p }: { p: Project }) {
         </div>
         <PStatus s={p.status} />
       </div>
-      <div className="desc">{p.desc}</div>
+      <div className="desc">{p.desc?.trim() || <span className="faint">No description added yet.</span>}</div>
       {locked ? (
         <div className="row faint" style={{ fontSize: 12 }}>
           <Ic n="lock" s={12} />
@@ -169,7 +169,7 @@ export function Projects() {
                   {p.private && <Ic n="lock" s={12} />}
                 </div>
                 <div className="trunc faint" style={{ fontSize: 12 }}>
-                  {p.desc}
+                  {p.desc?.trim() || "No description added yet."}
                 </div>
               </div>
               <span className="hide-m">

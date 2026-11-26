@@ -6,7 +6,7 @@ import type { Schemas } from "@dotrix/api-client";
 import { PCOLORS } from "@/src/core/constants";
 import { uid } from "@/src/core/utils";
 import { mdToHtml } from "@/src/data/markdown";
-import { AGENTS } from "@/src/data/seed-dotrix";
+import { AGENTS } from "@/src/core/team";
 import type {
   Activity,
   Agent,

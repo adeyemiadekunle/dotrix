@@ -1,7 +1,7 @@
 // The seeded workspace's tasks and projects; dotrix's data is
 // added in ./seed-dotrix.ts. Tasks get an issue type here (bugs from the bug label).
 import { dOff, minsAgo, uid } from "../core/utils";
-import type { Data, Member, Project, Task } from "./types";
+import type { Data, Member, Project, Task } from "../data/types";
 import { seedDotrix } from "./seed-dotrix";
 
 export function seed(): Data {
