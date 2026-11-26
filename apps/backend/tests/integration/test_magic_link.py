@@ -2,12 +2,16 @@
 import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.email import OutboxEmailSender
 from dotrix_backend.core.ratelimit import MemoryRateLimiter
+from dotrix_backend.modules.auth.models import User
+from dotrix_backend.modules.auth.schemas import TermsVersion
 
 
 async def test_sign_in_with_an_emailed_link(db_client: AsyncClient, signup, outbox: OutboxEmailSender, email_token) -> None:
@@ -49,7 +53,7 @@ async def test_claiming_an_unverified_account_revokes_its_api_tokens(
 
 
 async def test_a_new_address_gets_a_link_to_create_its_account(
-    db_client: AsyncClient, outbox: OutboxEmailSender, email_token
+    db_client: AsyncClient, db_session: AsyncSession, outbox: OutboxEmailSender, email_token
 ) -> None:
     res = await db_client.post("/v1/auth/magic-link/request", json={"email": "Grace@Example.com"})
     assert res.status_code == 202  # the same answer as for an existing account
@@ -61,9 +65,13 @@ async def test_a_new_address_gets_a_link_to_create_its_account(
     lookup = await db_client.post("/v1/auth/magic-link/signup/lookup", json={"token": token})
     assert lookup.status_code == 200 and lookup.json() == {"email": "grace@example.com"}
 
-    created = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace"})
+    request = {"token": token, "display_name": "Grace"}
+    assert (await db_client.post("/v1/auth/magic-link/signup", json=request)).status_code == 422
+    created = await db_client.post("/v1/auth/magic-link/signup", json={**request, "terms_version": TermsVersion.CURRENT})
     assert created.status_code == 201, created.text
     body = created.json()
+    record = await db_session.get(User, UUID(body["user"]["id"]))
+    assert record and record.terms_version == TermsVersion.CURRENT and record.terms_accepted_at is not None
     assert body["user"]["email"] == "grace@example.com" and body["user"]["display_name"] == "Grace"
     assert body["user"]["email_verified"] is True  # the link proved the inbox; no verification email
     assert len(outbox.messages) == 1
@@ -76,7 +84,7 @@ async def test_a_new_address_gets_a_link_to_create_its_account(
     await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
     assert outbox.messages[-1].subject == "Your dotrix sign-in link"
     # The sign-up link works once.
-    again = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace"})
+    again = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace", "terms_version": TermsVersion.CURRENT})
     assert again.status_code == 400
     assert (await db_client.post("/v1/auth/magic-link/signup/lookup", json={"token": token})).status_code == 400
 
@@ -86,8 +94,8 @@ async def test_only_the_newest_sign_up_link_works(db_client: AsyncClient, email_
     first = email_token("/signup/finish")
     await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
     second = email_token("/signup/finish")
-    assert (await db_client.post("/v1/auth/magic-link/signup", json={"token": first, "display_name": "G"})).status_code == 400
-    assert (await db_client.post("/v1/auth/magic-link/signup", json={"token": second, "display_name": "G"})).status_code == 201
+    assert (await db_client.post("/v1/auth/magic-link/signup", json={"token": first, "display_name": "G", "terms_version": TermsVersion.CURRENT})).status_code == 400
+    assert (await db_client.post("/v1/auth/magic-link/signup", json={"token": second, "display_name": "G", "terms_version": TermsVersion.CURRENT})).status_code == 201
 
 
 async def test_a_sign_up_link_for_an_address_that_got_an_account_meanwhile(
@@ -96,14 +104,14 @@ async def test_a_sign_up_link_for_an_address_that_got_an_account_meanwhile(
     await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
     token = email_token("/signup/finish")
     await signup(email="grace@example.com", name="Grace")  # signed up with a password in the meantime
-    res = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace 2"})
+    res = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "Grace 2", "terms_version": TermsVersion.CURRENT})
     assert res.status_code == 409 and "sign in instead" in res.json()["detail"]
 
 
 async def test_sign_up_needs_a_name(db_client: AsyncClient, email_token) -> None:
     await db_client.post("/v1/auth/magic-link/request", json={"email": "grace@example.com"})
     token = email_token("/signup/finish")
-    res = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "   "})
+    res = await db_client.post("/v1/auth/magic-link/signup", json={"token": token, "display_name": "   ", "terms_version": TermsVersion.CURRENT})
     assert res.status_code == 422
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints
@@ -14,8 +15,15 @@ Email = Annotated[EmailStr, AfterValidator(str.lower)]
 Password = Annotated[str, Field(min_length=10, max_length=128)]
 DisplayName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
+class TermsVersion(StrEnum):
+    CURRENT = "2026-11-26"
 
-class SignupRequest(BaseModel):
+
+class TermsAcceptance(BaseModel):
+    terms_version: TermsVersion = Field(description="The version of the Terms of Service explicitly accepted")
+
+
+class SignupRequest(TermsAcceptance):
     email: Email
     password: Password
     display_name: DisplayName
@@ -49,13 +57,17 @@ class MagicLinkRequest(BaseModel):
     next: Annotated[str, Field(max_length=2048), AfterValidator(local_return_path)] | None = None
 
 
-class EmailSignupFinish(BaseModel):
+class EmailSignupFinish(TermsAcceptance):
     token: str = Field(max_length=256)
     display_name: DisplayName
 
 
 class EmailSignupAddress(BaseModel):
     email: str = Field(description="The address the sign-up link is for")
+
+
+class GitHubSignupStart(TermsAcceptance):
+    next: Annotated[str, Field(max_length=2048), AfterValidator(local_return_path)] | None = None
 
 
 class PasswordResetConfirm(BaseModel):
@@ -146,3 +158,7 @@ class GitHubStart(BaseModel):
 
 class GitHubFinish(BaseModel):
     code: str = Field(max_length=256, description="The `code` GitHub sent back")
+
+
+class GitHubSignInFinish(GitHubFinish):
+    terms_version: TermsVersion | None = Field(default=None, description="Required to create a new account")

@@ -6,15 +6,19 @@ import { useState, type FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
 import { Field, FormError, SubmitButton } from "@/components/form";
 import { GitHubSignIn } from "@/components/github-sign-in";
+import { TERMS_VERSION, TermsAcceptance } from "@/components/terms-acceptance";
 import { authPost, errorMessage, safeNext } from "@/lib/api";
 
-export function SignupForm({ next, github = false }: { next?: string; github?: boolean }) {
+export function SignupForm({ next, github = false, signupError }: { next?: string; github?: boolean; signupError?: string }) {
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(signupError ?? null);
+  const [accepted, setAccepted] = useState(false);
+  const destination = next ? safeNext(next) : "/onboarding";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (!form.has("accept_terms")) return;
     setPending(true);
     setError(null);
     try {
@@ -22,8 +26,23 @@ export function SignupForm({ next, github = false }: { next?: string; github?: b
         display_name: form.get("display_name"),
         email: form.get("email"),
         password: form.get("password"),
+        terms_version: TERMS_VERSION,
       });
-      window.location.assign(next ? safeNext(next) : "/onboarding");
+      window.location.assign(destination);
+    } catch (e) {
+      setError(errorMessage(e));
+      setPending(false);
+    }
+  }
+
+  async function withGitHub() {
+    if (!accepted || pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      const response = await authPost("github/signup", { terms_version: TERMS_VERSION, next: destination });
+      const { authorize_url } = (await response.json()) as { authorize_url: string };
+      window.location.assign(authorize_url);
     } catch (e) {
       setError(errorMessage(e));
       setPending(false);
@@ -46,7 +65,8 @@ export function SignupForm({ next, github = false }: { next?: string; github?: b
     >
       <form onSubmit={onSubmit} className="grid gap-4">
         <FormError message={error} />
-        {github && <GitHubSignIn next={next ?? "/onboarding"} />}
+        <TermsAcceptance onChange={setAccepted} />
+        {github && <GitHubSignIn onClick={() => void withGitHub()} disabled={!accepted || pending} />}
         <Field label="Name" name="display_name" autoComplete="name" placeholder="Ada Lovelace" required maxLength={100} />
         <Field label="Email" name="email" type="email" autoComplete="email" placeholder="you@company.com" required />
         <Field

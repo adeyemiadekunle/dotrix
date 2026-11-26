@@ -951,6 +951,7 @@ function TermsPage() {
           You need an account to create or join a dotrix workspace. Keep your credentials secure and do not share sign-in links or API tokens. Workspace owners
           manage workspace membership, approval caps, and repository connections for their workspace.
         </p>
+        <p>When you create an account, you must accept these Terms of Service. We record the version accepted (2026-11-26) and the time of acceptance.</p>
       </section>
       <section>
         <h2>2. Your model keys and third-party providers</h2>
@@ -982,7 +983,14 @@ function TermsPage() {
         </p>
       </section>
       <section>
-        <h2>6. Questions or problem reports</h2>
+        <h2>6. Service metrics and website analytics</h2>
+        <p>
+          Dotrix operators use account signup counts, Chat and Code activity, and GitHub release download totals to understand adoption and operate the service.
+          Optional website analytics depend on your separate choice in Cookie settings. See the <a href="/privacy#metrics">Privacy Policy</a> for details.
+        </p>
+      </section>
+      <section>
+        <h2>7. Questions or problem reports</h2>
         <p>
           If you spot an issue or have a question about these terms, open a public report on{" "}
           <a href={ISSUES_NEW_URL} target="_blank" rel="noreferrer">
@@ -1039,6 +1047,18 @@ function PrivacyPage() {
             GitHub Issues
           </a>{" "}
           are public—never paste API keys or private code into them.
+        </p>
+      </section>
+      <section id="metrics">
+        <h2>6. Account, usage, and download metrics</h2>
+        <p>
+          We retain the Terms of Service version and the time you accepted it with your account. Dotrix operators can view aggregate signup and activity counts,
+          run status, failures, and token and estimated cost totals in the admin console. We use these metrics to monitor service health and understand
+          adoption.
+        </p>
+        <p>
+          When you enable marketing-site analytics, Cloudflare Web Analytics measures visits and page views. GitHub supplies cumulative download counts for each
+          release asset. Those totals can include repeat downloads and updates. We do not use them to identify individual installers.
         </p>
       </section>
     </LegalShell>

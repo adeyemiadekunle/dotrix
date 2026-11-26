@@ -2,13 +2,17 @@
 GitHub itself is faked with an httpx MockTransport."""
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 import httpx
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.auth.github import GitHubOAuth, get_github
+from dotrix_backend.modules.auth.models import User
+from dotrix_backend.modules.auth.schemas import TermsVersion
 
 
 class FakeGitHub:
@@ -51,8 +55,11 @@ def github(db_client: AsyncClient) -> FakeGitHub:
     return fake
 
 
-async def finish(db_client: AsyncClient, code: str = "good-code") -> httpx.Response:
-    return await db_client.post("/v1/auth/oauth/github/finish", json={"code": code})
+async def finish(db_client: AsyncClient, code: str = "good-code", *, accept_terms: bool = False) -> httpx.Response:
+    body = {"code": code}
+    if accept_terms:
+        body["terms_version"] = TermsVersion.CURRENT
+    return await db_client.post("/v1/auth/oauth/github/finish", json=body)
 
 
 async def me(db_client: AsyncClient, res: httpx.Response) -> dict[str, Any]:
@@ -77,10 +84,15 @@ async def test_start_gives_the_authorize_url_and_state(db_client: AsyncClient, g
     assert "gh-secret" not in body["authorize_url"]
 
 
-async def test_a_new_person_gets_an_account(db_client: AsyncClient, github: FakeGitHub) -> None:
-    res = await finish(db_client)
+async def test_a_new_person_gets_an_account(db_client: AsyncClient, db_session: AsyncSession, github: FakeGitHub) -> None:
+    rejected = await finish(db_client)
+    assert rejected.status_code == 422 and rejected.json()["type"].endswith("/terms_required")
+    github.codes.add("signup-code")
+    res = await finish(db_client, "signup-code", accept_terms=True)
     assert res.status_code == 200, res.text
     user = await me(db_client, res)
+    record = await db_session.get(User, UUID(user["id"]))
+    assert record and record.terms_version == TermsVersion.CURRENT and record.terms_accepted_at is not None
     assert user["email"] == "ada@example.com" and user["display_name"] == "Ada Lovelace"
     assert user["email_verified"] is True
     headers = {"Authorization": f"Bearer {res.json()['access_token']}"}
@@ -126,7 +138,7 @@ async def test_unverified_emails_never_link(db_client: AsyncClient, signup, gith
         {"email": "ada@example.com", "primary": True, "verified": False},
         {"email": "ada-l@users.noreply.github.com", "primary": False, "verified": True},
     ]
-    res = await finish(db_client)
+    res = await finish(db_client, accept_terms=True)
     # Only the private relay address is verified: a new account on it, not Ada's.
     assert res.status_code == 200
     assert (await me(db_client, res))["email"] == "ada-l@users.noreply.github.com"
@@ -139,7 +151,7 @@ async def test_unverified_emails_never_link(db_client: AsyncClient, signup, gith
 
 
 async def test_a_bad_or_used_code_is_refused(db_client: AsyncClient, github: FakeGitHub) -> None:
-    assert (await finish(db_client)).status_code == 200
+    assert (await finish(db_client, accept_terms=True)).status_code == 200
     assert (await finish(db_client)).status_code == 401
     assert (await finish(db_client, "made-up")).status_code == 401
 

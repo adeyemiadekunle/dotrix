@@ -2,16 +2,24 @@ import { Button } from "@dotrix/ui/components/button";
 
 /** "Continue with GitHub": a plain link, since the sign-in is a series of full-page redirects
  * (app/api/auth/github). Shown only when the backend has GitHub sign-in set up. */
-export function GitHubSignIn({ next }: { next?: string }) {
+export function GitHubSignIn({ next, onClick, disabled }: { next?: string; onClick?: () => void; disabled?: boolean }) {
   const href = next ? `/api/auth/github?next=${encodeURIComponent(next)}` : "/api/auth/github";
+  const label = (
+    <>
+      <GitHubMark /> Continue with GitHub
+    </>
+  );
   return (
     <>
-      <Button variant="outline" className="w-full" asChild>
-        <a href={href}>
-          <GitHubMark />
-          Continue with GitHub
-        </a>
-      </Button>
+      {onClick ? (
+        <Button variant="outline" className="w-full" type="button" disabled={disabled} onClick={onClick}>
+          {label}
+        </Button>
+      ) : (
+        <Button variant="outline" className="w-full" asChild>
+          <a href={href}>{label}</a>
+        </Button>
+      )}
       <div className="text-muted-foreground flex items-center gap-3 text-xs">
         <span className="bg-border h-px flex-1" />
         or

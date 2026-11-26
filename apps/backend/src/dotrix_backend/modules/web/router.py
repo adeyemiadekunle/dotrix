@@ -9,9 +9,11 @@ own paths, and send the browser on (to GitHub, or back into the app with `?githu
 """
 from __future__ import annotations
 
+import hmac
 import json
 import re
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
@@ -31,12 +33,14 @@ from dotrix_backend.modules.auth.profile import ProfileService
 from dotrix_backend.modules.auth.router import Auth
 from dotrix_backend.modules.auth.schemas import (
     EmailSignupFinish,
+    GitHubSignupStart,
     LoginRequest,
     SignupRequest,
+    TermsVersion,
     TokenPair,
     TokenRequest,
 )
-from dotrix_backend.modules.auth.service import AuthService
+from dotrix_backend.modules.auth.service import AuthService, TermsRequired
 from dotrix_backend.modules.connectors.github_app import get_github_app
 from dotrix_backend.modules.connectors.schemas import InstallationAdd
 from dotrix_backend.modules.connectors.service import ConnectorService
@@ -59,6 +63,7 @@ router = APIRouter(prefix="/api", include_in_schema=False, dependencies=[Depends
 
 GITHUB_STATE_COOKIE = "pm_github_state"
 GITHUB_STATE_PATH = "/api/auth/github"
+GITHUB_STATE_TTL = 10 * 60
 GITHUB_INSTALL_COOKIE = "pm_github_install"
 GITHUB_INSTALL_PATH = "/api/github"
 INSTALL_URL = re.compile(r"^https://github\.com/apps/[\w-]+/installations/new$")
@@ -97,7 +102,7 @@ async def web_signup_link(
     data: EmailSignupFinish, auth: Auth, settings: SettingsDep, throttle: ThrottleDep
 ) -> Response:
     await throttle(SIGNUP, await auth.email_signup_address(data.token))
-    created = await auth.finish_email_signup(data.token, data.display_name)
+    created = await auth.finish_email_signup(data)
     response = JSONResponse(created.user.model_dump(mode="json"), status_code=status.HTTP_201_CREATED)
     set_session(response, created.tokens, settings)
     return response
@@ -191,6 +196,41 @@ def _read_cookie(request: Request, name: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _github_terms_proof(state: str, version: TermsVersion, accepted_at: int, settings: Settings) -> str:
+    return hmac.digest(
+        settings.jwt_secret.get_secret_value().encode(),
+        f"github-signup:{state}:{version}:{accepted_at}".encode(),
+        "sha256",
+    ).hex()
+
+
+def _set_github_state(response: Response, settings: Settings, saved: dict[str, Any]) -> None:
+    response.set_cookie(
+        GITHUB_STATE_COOKIE,
+        json.dumps(saved),
+        max_age=GITHUB_STATE_TTL,
+        path=GITHUB_STATE_PATH,
+        httponly=True,
+        secure=settings.is_deployed,
+        # Lax: sent on GitHub's top-level redirect back here, never on cross-site subrequests.
+        samesite="lax",
+    )
+
+
+@router.post("/auth/github/signup")
+async def web_github_signup(data: GitHubSignupStart, settings: SettingsDep, github: GitHubDep) -> Response:
+    """Start signup after the app's terms checkbox was accepted."""
+    state = security.generate_token()
+    accepted_at = int(datetime.now(UTC).timestamp())
+    response = JSONResponse({"authorize_url": github.authorize_url(state)})
+    _set_github_state(response, settings, {
+        "state": state, "next": data.next or "/onboarding",
+        "terms_accepted_at": accepted_at,
+        "terms_proof": _github_terms_proof(state, data.terms_version, accepted_at, settings),
+    })
+    return response
+
+
 @router.get("/auth/github")
 async def web_github_start(request: Request, settings: SettingsDep, github: GitHubDep) -> RedirectResponse:
     """Step 1: send the browser to GitHub, keeping `state` and where to go after in a cookie.
@@ -208,16 +248,7 @@ async def web_github_start(request: Request, settings: SettingsDep, github: GitH
         return _login_with_error(message, next_path)
     state = security.generate_token()
     response = _redirect(github.authorize_url(state))
-    response.set_cookie(
-        GITHUB_STATE_COOKIE,
-        json.dumps({"state": state, "next": next_path, "link": link, "install": install}),
-        max_age=10 * 60,
-        path=GITHUB_STATE_PATH,
-        httponly=True,
-        secure=settings.is_deployed,
-        # Lax: sent on GitHub's top-level redirect back here, never on cross-site subrequests.
-        samesite="lax",
-    )
+    _set_github_state(response, settings, {"state": state, "next": next_path, "link": link, "install": install})
     return response
 
 
@@ -269,7 +300,22 @@ async def web_github_callback(
         return response
 
     try:
-        tokens = await auth.sign_in_with_github(await github.profile(code))
+        proof = saved.get("terms_proof")
+        accepted_at = saved.get("terms_accepted_at")
+        now = int(datetime.now(UTC).timestamp())
+        accepted = (
+            type(accepted_at) is int and now - GITHUB_STATE_TTL <= accepted_at <= now
+            and isinstance(proof, str) and proof.isascii()
+            and hmac.compare_digest(proof, _github_terms_proof(saved["state"], TermsVersion.CURRENT, accepted_at, settings))
+        )
+        tokens = await auth.sign_in_with_github(
+            await github.profile(code), terms_version=TermsVersion.CURRENT if accepted else None,
+            terms_accepted_at=datetime.fromtimestamp(accepted_at, UTC) if accepted else None,
+        )
+    except TermsRequired as error:
+        return finish(_redirect(_with_query("/signup", {
+            "error": error.detail, **({"next": next_path} if next_path != "/" else {}),
+        })))
     except DomainError as error:
         return fail(error.detail)
     response = finish(_redirect(next_path))

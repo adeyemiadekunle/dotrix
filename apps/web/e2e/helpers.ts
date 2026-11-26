@@ -43,6 +43,7 @@ export async function signUp(page: Page, user = newUser()) {
   await page.getByLabel("Name", { exact: true }).fill(user.name);
   await page.getByLabel("Email", { exact: true }).fill(user.email);
   await page.getByLabel("Password", { exact: true }).fill(user.password);
+  await page.getByRole("checkbox", { name: /I accept the Terms of Service/ }).check();
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/\/onboarding$/);
   await expect(page.getByRole("heading", { name: "Verify your email", exact: true })).toBeVisible();

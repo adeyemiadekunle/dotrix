@@ -84,9 +84,28 @@ for (const mode of ["signup", "signin"] as const) {
     await page.route("**/v1/auth/magic-link/signup/lookup", (route) => route.fulfill({ json: { email: "return@example.com" } }));
     await page.route(`**/api/auth/${mode === "signup" ? "signup-link" : "magic-link"}`, (route) => route.fulfill({ status: 200, json: {} }));
     await page.goto(`/${mode === "signup" ? "signup/finish" : "magic-link"}?${new URLSearchParams({ token: "test-token", next: destination })}`);
-    if (mode === "signup") await page.getByLabel("Name", { exact: true }).fill("Returning invitee");
+    if (mode === "signup") {
+      await page.getByLabel("Name", { exact: true }).fill("Returning invitee");
+      const terms = page.getByRole("checkbox", { name: /I accept the Terms of Service/ });
+      await expect(terms).not.toBeChecked();
+      await page.getByRole("button", { name: "Create account", exact: true }).click();
+      await expect(terms).toBeFocused();
+      await terms.check();
+    }
     await page.getByRole("button", { name: mode === "signup" ? "Create account" : "Sign in", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/invites/accept\\?token=return-check$`));
     await expect(page.getByRole("heading", { name: "Join Return team", exact: true })).toBeVisible();
   });
 }
+test("GitHub signup waits for acceptance and sends the current terms version", async ({ page }) => {
+  await page.route("**/v1/auth/providers", (route) => route.fulfill({ json: { github: true } }));
+  await page.route("**/api/auth/github/signup", (route) => route.fulfill({ json: { authorize_url: "/login" } }));
+  await page.goto("/signup?next=%2Finvites%2Faccept%3Ftoken%3Dexample");
+  const github = page.getByRole("button", { name: "Continue with GitHub" });
+  const terms = page.getByRole("checkbox", { name: /I accept the Terms of Service/ });
+  await expect(terms).not.toBeChecked();
+  await expect(github).toBeDisabled();
+  await terms.check();
+  const [request] = await Promise.all([page.waitForRequest("**/api/auth/github/signup"), github.click()]);
+  expect(request.postDataJSON()).toEqual({ terms_version: "2026-11-26", next: "/invites/accept?token=example" });
+});

@@ -30,6 +30,7 @@ from .schemas import (
     EmailSignupAddress,
     EmailSignupFinish,
     GitHubFinish,
+    GitHubSignInFinish,
     GitHubStart,
     LoginRequest,
     MagicLinkRequest,
@@ -150,7 +151,7 @@ async def finish_email_signup(data: EmailSignupFinish, auth: Auth, throttle: Thr
     reset). Also creates the personal workspace. 409 if the address got an account meanwhile."""
     email = await auth.email_signup_address(data.token)
     await throttle(SIGNUP, email)
-    return await auth.finish_email_signup(data.token, data.display_name)
+    return await auth.finish_email_signup(data)
 
 
 @router.get("/providers")
@@ -169,11 +170,12 @@ async def start_github_sign_in(github: GitHubDep) -> GitHubStart:
 
 
 @router.post("/oauth/github/finish", responses=errors(401, 409, 422, 503))
-async def finish_github_sign_in(data: GitHubFinish, auth: Auth, github: GitHubDep) -> TokenPair:
+async def finish_github_sign_in(data: GitHubSignInFinish, auth: Auth, github: GitHubDep) -> TokenPair:
     """Exchange the `code` GitHub sent back for an access and refresh token, like login. The
     first time, links the GitHub account to the account with the same email (only one GitHub
-    has verified) or creates one, with a personal workspace. Check `state` before calling."""
-    return await auth.sign_in_with_github(await github.profile(data.code))
+    has verified) or creates one, with a personal workspace, if the current terms were accepted.
+    Check `state` before calling."""
+    return await auth.sign_in_with_github(await github.profile(data.code), terms_version=data.terms_version)
 
 
 @router.get("/oauth/github/callback", include_in_schema=False)

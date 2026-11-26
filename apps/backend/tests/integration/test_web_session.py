@@ -10,6 +10,7 @@ from httpx import AsyncClient
 
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.auth.github import GitHubOAuth, get_github
+from dotrix_backend.modules.auth.schemas import TermsVersion
 from dotrix_backend.modules.web.session import SharedRefresh
 
 WEB = {"X-Requested-With": "dotrix-web"}
@@ -18,7 +19,7 @@ PASSWORD = "correct horse battery"
 
 async def sign_up(client: AsyncClient, email: str = "ada@example.com") -> httpx.Response:
     res = await client.post(
-        "/api/auth/signup", json={"email": email, "password": PASSWORD, "display_name": "Ada"}, headers=WEB
+        "/api/auth/signup", json={"email": email, "password": PASSWORD, "display_name": "Ada", "terms_version": TermsVersion.CURRENT}, headers=WEB
     )
     assert res.status_code == 201, res.text
     return res
@@ -134,7 +135,7 @@ async def test_magic_link_and_sign_up_link_sign_in(
 ) -> None:
     await db_client.post("/v1/auth/magic-link/request", json={"email": "new@example.com"})
     res = await db_client.post(
-        "/api/auth/signup-link", json={"token": email_token("/signup/finish"), "display_name": "Grace"}, headers=WEB
+        "/api/auth/signup-link", json={"token": email_token("/signup/finish"), "display_name": "Grace", "terms_version": TermsVersion.CURRENT}, headers=WEB
     )
     assert res.status_code == 201 and res.json()["display_name"] == "Grace"
     assert (await db_client.get("/v1/me")).json()["email"] == "new@example.com"
@@ -192,8 +193,21 @@ async def start(db_client: AsyncClient, query: str = "next=/w/x") -> str:
 
 
 async def test_github_sign_in_sets_the_session(db_client: AsyncClient, github: FakeGitHub) -> None:
-    state = await start(db_client)
-    res = await db_client.get(f"/api/auth/github/callback?code=good-code&state={state}")
+    refused = await db_client.post("/api/auth/github/signup", headers=WEB, json={"next": "/w/x"})
+    assert refused.status_code == 422
+    state_without_terms = await start(db_client)
+    rejected = await db_client.get(f"/api/auth/github/callback?code=good-code&state={state_without_terms}")
+    destination = urlparse(rejected.headers["location"])
+    assert destination.path == "/signup" and parse_qs(destination.query)["next"] == ["/w/x"]
+    assert (await db_client.get("/v1/me")).status_code == 401
+
+    github.codes.add("signup-code")
+    started = await db_client.post(
+        "/api/auth/github/signup", headers=WEB, json={"next": "/w/x", "terms_version": TermsVersion.CURRENT}
+    )
+    assert started.status_code == 200
+    state = parse_qs(urlparse(started.json()["authorize_url"]).query)["state"][0]
+    res = await db_client.get(f"/api/auth/github/callback?code=signup-code&state={state}")
     assert res.status_code == 303 and res.headers["location"] == "/w/x"
     assert "dx_access" in set_cookies(res)
     assert (await db_client.get("/v1/me")).json()["email"] == "ada@example.com"

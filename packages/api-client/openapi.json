@@ -709,13 +709,13 @@
           "auth"
         ],
         "summary": "Finish Github Sign In",
-        "description": "Exchange the `code` GitHub sent back for an access and refresh token, like login. The\nfirst time, links the GitHub account to the account with the same email (only one GitHub\nhas verified) or creates one, with a personal workspace. Check `state` before calling.",
+        "description": "Exchange the `code` GitHub sent back for an access and refresh token, like login. The\nfirst time, links the GitHub account to the account with the same email (only one GitHub\nhas verified) or creates one, with a personal workspace, if the current terms were accepted.\nCheck `state` before calling.",
         "operationId": "finish_github_sign_in",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GitHubFinish"
+                "$ref": "#/components/schemas/GitHubSignInFinish"
               }
             }
           },
@@ -33367,6 +33367,10 @@
       },
       "EmailSignupFinish": {
         "properties": {
+          "terms_version": {
+            "$ref": "#/components/schemas/TermsVersion",
+            "description": "The version of the Terms of Service explicitly accepted"
+          },
           "token": {
             "type": "string",
             "maxLength": 256,
@@ -33381,6 +33385,7 @@
         },
         "type": "object",
         "required": [
+          "terms_version",
           "token",
           "display_name"
         ],
@@ -34215,6 +34220,32 @@
           "outcome"
         ],
         "title": "GitHubImportResultItem"
+      },
+      "GitHubSignInFinish": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Code",
+            "description": "The `code` GitHub sent back"
+          },
+          "terms_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermsVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required to create a new account"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "GitHubSignInFinish"
       },
       "GitHubStart": {
         "properties": {
@@ -40700,6 +40731,10 @@
       },
       "SignupRequest": {
         "properties": {
+          "terms_version": {
+            "$ref": "#/components/schemas/TermsVersion",
+            "description": "The version of the Terms of Service explicitly accepted"
+          },
           "email": {
             "type": "string",
             "format": "email",
@@ -40720,6 +40755,7 @@
         },
         "type": "object",
         "required": [
+          "terms_version",
           "email",
           "password",
           "display_name"
@@ -41583,6 +41619,13 @@
           "kind"
         ],
         "title": "TeamMemberRead"
+      },
+      "TermsVersion": {
+        "type": "string",
+        "enum": [
+          "2026-11-26"
+        ],
+        "title": "TermsVersion"
       },
       "ThreadRead": {
         "properties": {

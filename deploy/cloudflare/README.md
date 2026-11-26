@@ -51,6 +51,8 @@ The generated config attaches only the three pilot hostnames. Changing API runti
 
 ### Website analytics and downloads
 
+Publish the marketing site and API/web assets from the same revision when the Terms of Service change. Deploy the updated terms page before enabling signup with that version. The API records the accepted terms version and timestamp for new accounts.
+
 Create a separate Cloudflare Web Analytics site for each environment. Use manual beacon setup and disable automatic beacon injection and any other automatic RUM for that marketing hostname so the consent choice controls collection. Set `VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN` to the public token from the manual snippet when running `node deploy/cloudflare/build-assets.mjs`. For Dokploy, set it in the site's build environment.
 
 Set `DOTRIX_CLOUDFLARE_ANALYTICS_ACCOUNT_ID`, `DOTRIX_CLOUDFLARE_ANALYTICS_SITE_TAG` (the site's identifier, distinct from the public beacon token), and `DOTRIX_CLOUDFLARE_ANALYTICS_API_TOKEN` (account Analytics Read) on the API. In the Cloudflare pilot these are optional Worker bindings. If omitted, Admin reports the traffic source as unconfigured and still fetches the public GitHub download counts. Keep the API token in the server environment.

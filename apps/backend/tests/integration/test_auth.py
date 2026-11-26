@@ -1,14 +1,21 @@
+from uuid import UUID
+
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.email import OutboxEmailSender
+from dotrix_backend.modules.auth.models import User
+from dotrix_backend.modules.auth.schemas import TermsVersion
 
 # -- sign-up ------------------------------------------------------------------------
 
 
-async def test_signup_logs_in_and_creates_personal_workspace(signup, db_client: AsyncClient) -> None:
+async def test_signup_logs_in_and_creates_personal_workspace(signup, db_client: AsyncClient, db_session: AsyncSession) -> None:
     ada = await signup(email="Ada@Example.com")
     assert ada.email == "ada@example.com"  # normalised
     assert ada.user["email_verified"] is False
+    record = await db_session.get(User, UUID(ada.id))
+    assert record and record.terms_version == TermsVersion.CURRENT and record.terms_accepted_at is not None
 
     me = await db_client.get("/v1/me", headers=ada.headers)
     assert me.status_code == 200
@@ -16,6 +23,15 @@ async def test_signup_logs_in_and_creates_personal_workspace(signup, db_client: 
 
     workspaces = (await db_client.get("/v1/workspaces", headers=ada.headers)).json()
     assert [(w["kind"], w["role"]) for w in workspaces] == [("personal", "owner")]
+
+
+async def test_signup_rejects_missing_or_outdated_terms(db_client: AsyncClient) -> None:
+    body = {"email": "ada@example.com", "display_name": "Ada", "password": "correct horse battery"}
+    assert (await db_client.post("/v1/auth/signup", json=body)).status_code == 422
+    assert (await db_client.post("/v1/auth/signup", json={**body, "terms_version": "2020-01-01"})).status_code == 422
+    assert (await db_client.post("/v1/auth/login", json={
+        "email": body["email"], "password": body["password"],
+    })).status_code == 401
 
 
 async def test_signup_sends_verification_email(
@@ -30,7 +46,7 @@ async def test_duplicate_email_is_rejected_case_insensitively(signup, db_client:
     await signup(email="ada@example.com")
     res = await db_client.post(
         "/v1/auth/signup",
-        json={"email": "ADA@example.com", "password": "another password", "display_name": "A"},
+        json={"email": "ADA@example.com", "password": "another password", "display_name": "A", "terms_version": TermsVersion.CURRENT},
     )
     assert res.status_code == 409
 
@@ -41,7 +57,7 @@ async def test_signup_validates_input(db_client: AsyncClient) -> None:
     )
     assert res.status_code == 422
     fields = {tuple(e["loc"])[-1] for e in res.json()["errors"]}
-    assert fields == {"email", "password", "display_name"}
+    assert fields == {"email", "password", "display_name", "terms_version"}
 
 
 # -- login and tokens ---------------------------------------------------------------

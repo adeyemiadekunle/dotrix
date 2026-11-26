@@ -350,7 +350,8 @@ export interface paths {
          * Finish Github Sign In
          * @description Exchange the `code` GitHub sent back for an access and refresh token, like login. The
          *     first time, links the GitHub account to the account with the same email (only one GitHub
-         *     has verified) or creates one, with a personal workspace. Check `state` before calling.
+         *     has verified) or creates one, with a personal workspace, if the current terms were accepted.
+         *     Check `state` before calling.
          */
         post: operations["finish_github_sign_in"];
         delete?: never;
@@ -8285,6 +8286,8 @@ export interface components {
         };
         /** EmailSignupFinish */
         EmailSignupFinish: {
+            /** @description The version of the Terms of Service explicitly accepted */
+            terms_version: components["schemas"]["TermsVersion"];
             /** Token */
             token: string;
             /** Display Name */
@@ -8648,6 +8651,16 @@ export interface components {
              * @enum {string}
              */
             outcome: "created" | "already_imported" | "already_linked" | "deleted_task";
+        };
+        /** GitHubSignInFinish */
+        GitHubSignInFinish: {
+            /**
+             * Code
+             * @description The `code` GitHub sent back
+             */
+            code: string;
+            /** @description Required to create a new account */
+            terms_version?: components["schemas"]["TermsVersion"] | null;
         };
         /** GitHubStart */
         GitHubStart: {
@@ -11388,6 +11401,8 @@ export interface components {
         };
         /** SignupRequest */
         SignupRequest: {
+            /** @description The version of the Terms of Service explicitly accepted */
+            terms_version: components["schemas"]["TermsVersion"];
             /**
              * Email
              * Format: email
@@ -11736,6 +11751,11 @@ export interface components {
              */
             customised: boolean;
         };
+        /**
+         * TermsVersion
+         * @enum {string}
+         */
+        TermsVersion: "2026-11-26";
         /** ThreadRead */
         ThreadRead: {
             /**
@@ -13123,7 +13143,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GitHubFinish"];
+                "application/json": components["schemas"]["GitHubSignInFinish"];
             };
         };
         responses: {
