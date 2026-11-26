@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDownIcon } from "lucide-react";
 import { cn } from "@dotrix/ui/lib/utils";
-import { Button } from "@dotrix/ui/components/button";
+import { ChatJumpToLatestButton } from "./chat/chat-jump-to-latest-button";
 
 const NEAR_BOTTOM_PX = 48;
 
@@ -79,20 +78,17 @@ function ChatScroller({
         </div>
       </div>
       {showJump && (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-md"
-          onClick={() => {
-            pinned.current = true;
-            setShowJump(false);
-            scrollToBottom("smooth");
-          }}
-        >
-          <ArrowDownIcon />
-          {jumpLabel}
-        </Button>
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+          <ChatJumpToLatestButton
+            onClick={() => {
+              pinned.current = true;
+              setShowJump(false);
+              scrollToBottom("smooth");
+            }}
+          >
+            {jumpLabel}
+          </ChatJumpToLatestButton>
+        </div>
       )}
     </div>
   );

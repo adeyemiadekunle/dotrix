@@ -25,6 +25,8 @@ import {
 } from "@tanstack/react-table";
 import { Fragment, useState, type ReactNode } from "react";
 
+import { Empty, Loading } from "./ui";
+
 export const PAGE_SIZES = [25, 50, 100];
 
 type Align = { align?: "right" };
@@ -152,8 +154,8 @@ export function DataTable<T>({
             })
           ) : (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={columns.length} className="dt-empty">
-                {loading ? "Loading…" : empty}
+              <TableCell colSpan={columns.length} className="p-0">
+                {loading ? <Loading /> : <Empty>{empty}</Empty>}
               </TableCell>
             </TableRow>
           )}

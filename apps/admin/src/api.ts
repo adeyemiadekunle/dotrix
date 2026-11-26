@@ -2,6 +2,8 @@
 // app's session: both tokens live in httpOnly, SameSite=Strict cookies, the refresh cookie scoped to
 // /v1/admin/refresh, and browser tabs take turns rotating it (a Web Lock).
 
+import { localDemo } from "./demo-route";
+
 type Problem = { detail?: string };
 type ApiError = Error & { status?: number };
 
@@ -18,6 +20,12 @@ export async function refreshSession(): Promise<boolean> {
 }
 
 export async function rawCall<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+  if (import.meta.env.DEV && localDemo) {
+    if ((options.method ?? "GET") !== "GET") throw new Error("The admin demo is read-only.");
+    const { readDemo } = await import("./demo-data");
+    return readDemo(path) as T;
+  }
+
   const res = await fetch(`/v1${path}`, {
     method: options.method ?? "GET",
     headers: {

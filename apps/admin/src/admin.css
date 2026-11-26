@@ -140,6 +140,17 @@ body {
   gap: 16px;
 }
 
+.ad-demo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
 /* Page header */
 .page-head {
   display: flex;
@@ -606,11 +617,6 @@ body {
 }
 .dt-idle {
   opacity: 0.45;
-}
-.dt-empty {
-  padding: 28px 18px !important;
-  color: var(--text-3);
-  text-align: center;
 }
 .dt-detail td {
   background: var(--sunken);

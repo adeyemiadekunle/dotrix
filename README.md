@@ -214,6 +214,17 @@ Then sign up, open Account → Your models and connect your own provider key: ag
 
 There are no platform token budgets: each person's own key pays for their runs.
 
+### Local admin demo
+
+Run `pnpm --filter @dotrix/admin dev` and open [the admin demo](http://localhost:3300/demo).
+The six observability pages use sample data and run without an API, database, or admin account.
+
+### Chat UI development
+
+Run `pnpm --filter @dotrix/web dev` and open the [Chat UI demo](http://localhost:3000/dev/chat-ui).
+Edit the shared transcript, bubbles, and states in [`packages/ui/src/components/chat`](packages/ui/src/components/chat) to update
+the demo and the Dotrix Chat and Code screens that use them. `ChatUiLab.tsx` supplies sample content for the preview.
+
 ## Deploying
 
 Production runs on one VPS with Dokploy: [deploy/README.md](deploy/README.md) has the setup, the sizing,

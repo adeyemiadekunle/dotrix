@@ -68,7 +68,8 @@ test("demo decisions open Inbox details and their sample conversations are reada
   await expect(page.getByRole("tab", { name: /Mentions/ })).toHaveAttribute("aria-selected", "true");
 });
 
-test("a live conversation shows the Dotrix loader, then an actionable failure", async ({ page, context, baseURL }) => {
+test("a live conversation shows the transcript skeleton, then an actionable failure", async ({ page, context, baseURL }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await context.addCookies([{ name: "dx_session", value: "1", url: baseURL! }]);
   let release!: () => void;
   const pending = new Promise<void>((resolve) => (release = resolve));
@@ -106,11 +107,15 @@ test("a live conversation shows the Dotrix loader, then an actionable failure", 
   await page.goto("/w/test-workspace/chat?thread=thread1&project=TEST");
   const loading = page.getByRole("status").filter({ hasText: "Loading the conversation" });
   await expect(loading).toBeVisible();
-  await expect(loading.getByRole("img", { name: "Loading" })).toBeVisible();
-  const dot = loading.locator(".dots-loader-dot").first();
-  await expect(dot).toHaveCSS("animation-name", "dots-pulse");
+  const incoming = loading.locator('[data-slot="chat-message"][data-align="start"]').first();
+  const outgoing = loading.locator('[data-slot="chat-message"][data-align="end"]').first();
+  await expect(incoming).toHaveAttribute("aria-hidden", "true");
+  await expect(outgoing).toBeVisible();
+  const skeleton = incoming.locator('[data-slot="chat-message-content"] [data-slot="skeleton"]').first();
+  await expect(skeleton).toBeVisible();
+  await expect(skeleton).toHaveCSS("animation-name", "shimmer");
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(dot).toHaveCSS("animation-name", "none");
+  await expect(skeleton).toHaveCSS("animation-name", "none");
   release();
   await expect(page.getByText("The conversation couldn't be loaded.")).toBeVisible();
   await page.getByRole("button", { name: "Try again" }).click();

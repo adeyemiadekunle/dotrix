@@ -11,6 +11,7 @@ import { ChatMessageText } from "@dotrix/ui/components/chat/chat-message-text";
 import { ChatReactionChip } from "@dotrix/ui/components/chat/chat-reaction-chip";
 import { ChatReactionPicker } from "@dotrix/ui/components/chat/chat-reaction-picker";
 import { ChatReplyReference } from "@dotrix/ui/components/chat/chat-reply-reference";
+import { ChatTranscriptReply } from "@dotrix/ui/components/chat/chat-transcript-reply";
 import { ChatTypingIndicator } from "@dotrix/ui/components/chat/chat-typing-indicator";
 import { ChatUnreadDivider } from "@dotrix/ui/components/chat/chat-unread-divider";
 import { useChatScroll } from "@dotrix/ui/components/chat/hooks/use-chat-scroll";
@@ -120,10 +121,12 @@ export default function ChatUiLab() {
               Yes please — start with the switch pilot.
             </ChatMessage>
 
-            <ChatMessage side="incoming" author="Nova" avatar={<Avatar>N</Avatar>} actions={<MessageActions />}>
-              <ChatReplyReference author="You" preview="Yes please — start with the switch pilot." onClick={() => {}} />
-              <ChatMessageText text="On it. I'll open a branch and keep the token mapping identical so nothing else shifts." mentions={["Nova"]} />
-            </ChatMessage>
+            <ChatTranscriptReply
+              author="Nova"
+              avatar={<Avatar>N</Avatar>}
+              beforeBody={<ChatReplyReference author="You" preview="Yes please — start with the switch pilot." />}
+              body={<ChatMessageText text="On it. I'll open a branch and keep the token mapping identical so nothing else shifts." />}
+            />
 
             <ChatTypingIndicator label="Nova is typing" visible />
           </ChatConversation>

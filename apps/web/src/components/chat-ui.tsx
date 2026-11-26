@@ -54,23 +54,6 @@ export function ChatMessageList({ children, followKey }: { children: ReactNode; 
   );
 }
 
-export function ChatMessage({ sender = "assistant", className = "", children, ...props }: ComponentProps<"div"> & { sender?: string }) {
-  const kind = sender === "user" ? "user" : "agent";
-  return (
-    <div className={`chat-msg ${kind} ${className}`.trim()} data-sender={sender} {...props}>
-      {children}
-    </div>
-  );
-}
-
-export function ChatMessageBubble({ className = "", children, ...props }: ComponentProps<"div">) {
-  return (
-    <div className={`chat-bubble ${className}`.trim()} {...props}>
-      {children}
-    </div>
-  );
-}
-
 type SelectorOption = { value: string; label: string };
 type SelectorSection = { type: "section"; title?: string; options: SelectorOption[] } | SelectorOption[];
 

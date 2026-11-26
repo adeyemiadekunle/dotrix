@@ -1,4 +1,6 @@
 // The console's building blocks, on the design's tokens (design.css) and admin.css.
+import { Empty as EmptyPanel, EmptyDescription, EmptyHeader, EmptyMedia } from "@dotrix/ui/components/chat/ui/empty";
+import { InboxIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 /** Sentence case for a snake_case value: "model_limit" → "Model limit". */
@@ -156,7 +158,16 @@ export function Failed({ error }: { error: Error }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="state">{children}</p>;
+  return (
+    <EmptyPanel role="status" className="px-4 py-5 whitespace-normal md:py-6">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" className="mb-3">
+          <InboxIcon aria-hidden="true" />
+        </EmptyMedia>
+        <EmptyDescription>{children}</EmptyDescription>
+      </EmptyHeader>
+    </EmptyPanel>
+  );
 }
 
 /** A meter: the share of a whole, with the number beside it. */

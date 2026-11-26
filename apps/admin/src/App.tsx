@@ -23,6 +23,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 
 import { call, rawCall, refreshSession, send, type LoginChallenge, type Me } from "./api";
+import { DEMO_PATH, localDemo, localDemoAvailable } from "./demo-route";
 
 // The pages (and their charts and tables) load after sign-in, so the sign-in page is small and quick.
 const pages = () => import("./pages");
@@ -175,6 +176,11 @@ function Login({ onAuth }: { onAuth: () => void }) {
           Sessions last 12 hours.
         </p>
       </form>
+      {import.meta.env.DEV && localDemoAvailable && (
+        <a className="ad-auth-out" href={DEMO_PATH}>
+          Open local demo
+        </a>
+      )}
       <a className="ad-auth-out" href={APP_URL}>
         Looking for dotrix? Open the app
         <ArrowUpRightIcon size={13} />
@@ -536,12 +542,15 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
 }
 
 export function App() {
+  if (import.meta.env.DEV && localDemo) return <Console />;
+  return <SignedInApp />;
+}
+
+function SignedInApp() {
   const qc = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
   const [booting, setBooting] = useState(true);
-  const [page, go] = usePage();
   const [invite] = useState(inviteToken);
-  const [changing, setChanging] = useState(false);
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => call<Me>("/admin/me"), enabled: signedIn, retry: false });
 
@@ -582,6 +591,16 @@ export function App() {
 
   if (me.data.must_enrol) return <Enrol onDone={() => void qc.invalidateQueries({ queryKey: ["me"] })} onSignOut={signOut} />;
 
+  return <Console account={me.data} onSignOut={signOut} />;
+}
+
+function Console({ account, onSignOut }: { account?: Me; onSignOut?: () => void }) {
+  const [requestedPage, go] = usePage();
+  const [changing, setChanging] = useState(false);
+  const isOwner = account?.role === "owner";
+  const visiblePages = PAGES.filter((p) => (!p.owner || isOwner) && (account || p.id !== "workspaces"));
+  const page = visiblePages.some((p) => p.id === requestedPage) ? requestedPage : "overview";
+
   return (
     <div className="ad-shell">
       <aside className="ad-side">
@@ -590,27 +609,39 @@ export function App() {
           dotrix <em>admin</em>
         </span>
         <nav aria-label="Pages">
-          {PAGES.filter((p) => !p.owner || me.data.role === "owner").map(({ id, label, icon: I }) => (
+          {visiblePages.map(({ id, label, icon: I }) => (
             <a key={id} href={`#/${id}`} className={page === id ? "on" : undefined} aria-current={page === id ? "page" : undefined}>
               <I size={17} />
               <span>{label}</span>
             </a>
           ))}
         </nav>
-        <div className="ad-side-foot">
-          <span className="ad-who">
-            <b>{me.data.name}</b>
-            <span>{me.data.email}</span>
-          </span>
-          <button type="button" className="icon-btn" onClick={() => setChanging(true)} title="Change password" aria-label="Change password">
-            <LockKeyholeIcon size={17} />
-          </button>
-          <button type="button" className="icon-btn" onClick={signOut} title="Sign out" aria-label="Sign out">
-            <LogOutIcon size={17} />
-          </button>
-        </div>
+        {account && (
+          <div className="ad-side-foot">
+            <span className="ad-who">
+              <b>{account.name}</b>
+              <span>{account.email}</span>
+            </span>
+            <button type="button" className="icon-btn" onClick={() => setChanging(true)} title="Change password" aria-label="Change password">
+              <LockKeyholeIcon size={17} />
+            </button>
+            <button type="button" className="icon-btn" onClick={onSignOut} title="Sign out" aria-label="Sign out">
+              <LogOutIcon size={17} />
+            </button>
+          </div>
+        )}
       </aside>
       <main className="ad-main">
+        {import.meta.env.DEV && !account && (
+          <div className="ad-demo-banner">
+            <span>
+              <strong>Admin demo</strong> · Sample data
+            </span>
+            <a className="link" href="/">
+              Exit demo
+            </a>
+          </div>
+        )}
         <Suspense fallback={<p className="state">Loading…</p>}>
           {page === "overview" && <Overview go={go} />}
           {page === "runs" && <Runs />}
@@ -619,11 +650,11 @@ export function App() {
           {page === "models" && <ModelsPage />}
           {page === "workspaces" && <WorkspacesPage />}
           {page === "audit" && <AuditPage />}
-          {page === "trail" && me.data.role === "owner" && <TrailPage />}
-          {page === "admins" && me.data.role === "owner" && <AdminsPage meId={me.data.id} />}
+          {page === "trail" && isOwner && <TrailPage />}
+          {page === "admins" && isOwner && <AdminsPage meId={account.id} />}
         </Suspense>
       </main>
-      {changing && <ChangePassword onClose={() => setChanging(false)} />}
+      {account && changing && <ChangePassword onClose={() => setChanging(false)} />}
     </div>
   );
 }
