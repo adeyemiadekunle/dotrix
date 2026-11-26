@@ -40,16 +40,38 @@ const AdminsPage = lazy(() => pages().then((m) => ({ default: m.AdminsPage })));
 /** Where people who use dotrix sign in: the web app (`VITE_APP_URL`, set at build time). */
 const APP_URL = (import.meta.env.VITE_APP_URL as string | undefined) ?? "https://app.dotrix.cc";
 
-const PAGES: { id: string; label: string; icon: LucideIcon; owner?: boolean }[] = [
-  { id: "overview", label: "Overview", icon: ChartColumnIcon },
-  { id: "runs", label: "Runs", icon: ListIcon },
-  { id: "failures", label: "Failures", icon: OctagonAlertIcon },
-  { id: "coding", label: "Coding", icon: CodeIcon },
-  { id: "models", label: "Models", icon: CpuIcon },
-  { id: "workspaces", label: "Workspaces", icon: LayoutGridIcon },
-  { id: "audit", label: "Audit log", icon: ScrollIcon },
-  { id: "admins", label: "Admins", icon: UsersIcon, owner: true },
-  { id: "trail", label: "Admin activity", icon: FingerprintIcon, owner: true },
+type AdminPage = { id: string; label: string; icon: LucideIcon; owner?: boolean; liveOnly?: boolean };
+
+const NAV_GROUPS: { title?: string; pages: AdminPage[] }[] = [
+  { pages: [{ id: "overview", label: "Overview", icon: ChartColumnIcon }] },
+  {
+    title: "Operations",
+    pages: [
+      { id: "runs", label: "Runs", icon: ListIcon },
+      { id: "failures", label: "Failures", icon: OctagonAlertIcon },
+    ],
+  },
+  {
+    title: "Agent usage",
+    pages: [
+      { id: "coding", label: "Coding", icon: CodeIcon },
+      { id: "models", label: "Models", icon: CpuIcon },
+    ],
+  },
+  {
+    title: "Governance",
+    pages: [
+      { id: "workspaces", label: "Workspaces", icon: LayoutGridIcon, liveOnly: true },
+      { id: "audit", label: "Audit log", icon: ScrollIcon },
+    ],
+  },
+  {
+    title: "Administration",
+    pages: [
+      { id: "admins", label: "Admins", icon: UsersIcon, owner: true },
+      { id: "trail", label: "Admin activity", icon: FingerprintIcon, owner: true },
+    ],
+  },
 ];
 
 function Mark({ size = 20 }: { size?: number }) {
@@ -66,7 +88,7 @@ function Mark({ size = 20 }: { size?: number }) {
 function usePage(): [string, (p: string) => void] {
   const read = () => {
     const id = location.hash.replace(/^#\/?/, "").split("?")[0];
-    return PAGES.some((p) => p.id === id) ? id : "overview";
+    return id || "overview";
   };
   const [page, setPage] = useState(read);
   useEffect(() => {
@@ -598,8 +620,11 @@ function Console({ account, onSignOut }: { account?: Me; onSignOut?: () => void 
   const [requestedPage, go] = usePage();
   const [changing, setChanging] = useState(false);
   const isOwner = account?.role === "owner";
-  const visiblePages = PAGES.filter((p) => (!p.owner || isOwner) && (account || p.id !== "workspaces"));
-  const page = visiblePages.some((p) => p.id === requestedPage) ? requestedPage : "overview";
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    pages: group.pages.filter((p) => (!p.owner || isOwner) && (!p.liveOnly || account)),
+  })).filter((group) => group.pages.length > 0);
+  const page = visibleGroups.some((group) => group.pages.some((p) => p.id === requestedPage)) ? requestedPage : "overview";
 
   return (
     <div className="ad-shell">
@@ -609,11 +634,20 @@ function Console({ account, onSignOut }: { account?: Me; onSignOut?: () => void 
           dotrix <em>admin</em>
         </span>
         <nav aria-label="Pages">
-          {visiblePages.map(({ id, label, icon: I }) => (
-            <a key={id} href={`#/${id}`} className={page === id ? "on" : undefined} aria-current={page === id ? "page" : undefined}>
-              <I size={17} />
-              <span>{label}</span>
-            </a>
+          {visibleGroups.map(({ title, pages }) => (
+            <div className="ad-nav-group" key={title ?? "overview"}>
+              {title && <h2>{title}</h2>}
+              <ul aria-label={title}>
+                {pages.map(({ id, label, icon: I }) => (
+                  <li key={id}>
+                    <a href={`#/${id}`} className={page === id ? "on" : undefined} aria-current={page === id ? "page" : undefined}>
+                      <I size={17} aria-hidden="true" />
+                      <span>{label}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
         </nav>
         {account && (
