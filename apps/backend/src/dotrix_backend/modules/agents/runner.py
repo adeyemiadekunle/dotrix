@@ -322,10 +322,10 @@ class AgentRunner:
         return asyncio.create_task(renew())
 
     async def _record(
-        self, run_id: uuid.UUID, workspace_id: uuid.UUID, token: int, payload: dict[str, Any],
+        self, run_id: uuid.UUID, workspace_id: uuid.UUID, token: int, payload: dict[str, Any], *, observe_nova: bool,
     ) -> RecordingStream:
         """The step's live stream, every piece of it also kept (events.py)."""
-        recording = RecordingStream(await self.streams.open(run_id),
+        recording = RecordingStream(await self.streams.open(run_id, observe_nova=observe_nova),
                                     RunRecorder(self.session_factory, workspace_id, run_id, token))
         await recording.begin({"attempt": token, "step": payload["kind"], "recovered": bool(payload.get("recovered"))})
         return recording
@@ -672,7 +672,7 @@ class AgentRunner:
                 # (if one is set) before each step, not before each model call.
                 if usage.budget is not None and usage.used >= usage.budget:
                     raise TokenBudgetExceeded(usage.used, usage.budget)
-                recording = await self._record(run_id, workspace_id, token, payload)
+                recording = await self._record(run_id, workspace_id, token, payload, observe_nova=kind is RunKind.CHAT and not child)
                 if payload["kind"] == "delegation_ready":
                     await recording.activity(WEIGHING_SPECIALISTS)
                 fx_writing = [False]  # "Writing the reply" said since the last other activity
@@ -912,7 +912,9 @@ class AgentRunner:
                     await self._fail(run_id, "A required specialist result is no longer available under the current permissions",
                                      usage, discard_specialist_result=True)
                     return
-            stream = recording = await self._record(run_id, workspace_id, token, payload)
+            stream = recording = await self._record(
+                run_id, workspace_id, token, payload, observe_nova=kind is RunKind.CHAT and not child,
+            )
             script_recording.append(recording)
             if payload["kind"] == "delegation_ready":
                 await stream.activity(WEIGHING_SPECIALISTS)
@@ -1096,7 +1098,7 @@ class AgentRunner:
             config = {"configurable": {"thread_id": str(thread_id)}, "recursion_limit": RECURSION_LIMIT,
                       "callbacks": [usage]}
             graph_input: Any = {"messages": [{"role": "user", "content": payload["message"]}]}
-            stream = recording = await self._record(run_id, workspace_id, token, payload)
+            stream = recording = await self._record(run_id, workspace_id, token, payload, observe_nova=True)
             result = None
             if retry:
                 graph_input, result = await _continue_from_checkpoint(agent, config, payload, graph_input)

@@ -1,0 +1,34 @@
+{
+  "name": "dotrix-cloudflare-staging",
+  "main": "./worker.mjs",
+  "compatibility_date": "2026-11-25",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "DOTRIX_APP_URL": "https://cf-pilot.dotrix.cc",
+    "DOTRIX_ADMIN_URL": "https://cf-admin-pilot.dotrix.cc",
+    "DOTRIX_SITE_URL": "https://cf-site-pilot.dotrix.cc"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "run_worker_first": true
+  },
+  "containers": [
+    {
+      "class_name": "DotrixApi",
+      "scheduling_policy": "durable_object",
+      "images": {}
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "BACKEND", "class_name": "DotrixApi" }]
+  },
+  "exports": {
+    "DotrixApi": { "type": "durable-object", "storage": "sqlite" }
+  }
+}

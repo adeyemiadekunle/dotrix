@@ -5,13 +5,14 @@ import path from "node:path";
 
 const DEV_SERVER = "http://localhost:3000";
 
-export function webUrl(): string {
-  if (process.env.DOTRIX_WEB_URL) return process.env.DOTRIX_WEB_URL;
+function buildConfig(): { webUrl?: unknown; staging?: unknown } {
   try {
-    const built = JSON.parse(fs.readFileSync(path.join(__dirname, "build.json"), "utf8")) as { webUrl?: unknown };
-    if (typeof built.webUrl === "string" && built.webUrl) return built.webUrl;
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "build.json"), "utf8"));
   } catch {
-    // Not a release build: the dev server.
+    return {};
   }
-  return DEV_SERVER;
 }
+
+const build = buildConfig();
+export const webUrl = () => process.env.DOTRIX_WEB_URL || (typeof build.webUrl === "string" && build.webUrl) || DEV_SERVER;
+export const stagingBuild = () => build.staging === true;

@@ -36911,6 +36911,73 @@
         "title": "ObservedRun",
         "description": "One agent run or coding turn in the unified run history."
       },
+      "OperationsSnapshot": {
+        "properties": {
+          "worker_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Revision"
+          },
+          "worker_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Heartbeat At"
+          },
+          "email_last_accepted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Last Accepted At"
+          },
+          "email_retries_today": {
+            "type": "integer",
+            "title": "Email Retries Today",
+            "default": 0
+          },
+          "email_permanent_failures_today": {
+            "type": "integer",
+            "title": "Email Permanent Failures Today",
+            "default": 0
+          },
+          "first_nova_event_samples_today": {
+            "type": "integer",
+            "title": "First Nova Event Samples Today",
+            "default": 0
+          },
+          "first_nova_event_mean_ms_today": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Nova Event Mean Ms Today"
+          }
+        },
+        "type": "object",
+        "title": "OperationsSnapshot"
+      },
       "OutputItemUpdate": {
         "properties": {
           "state": {
@@ -37453,6 +37520,27 @@
             "type": "string",
             "title": "Version"
           },
+          "api_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Revision"
+          },
+          "operations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationsSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "environment": {
             "type": "string",
             "title": "Environment"
@@ -37503,6 +37591,17 @@
             ],
             "title": "Worker Last Took At",
             "description": "When a worker last took a run off the queue"
+          },
+          "last_queue_wait_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Queue Wait Ms"
           },
           "runs_running": {
             "type": "integer",

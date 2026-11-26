@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from dotrix_backend.core.operations import OperationsSnapshot
 from dotrix_backend.modules.observe.schemas import ObservedRun
 
 
@@ -165,6 +166,8 @@ class PlatformHealth(BaseModel):
 
     generated_at: datetime
     version: str
+    api_revision: str | None = None
+    operations: OperationsSnapshot | None = None
     environment: str
     jobs: str = Field(description="Where background work runs: local, worker, or inline")
     sandbox: str = Field(description="Where cloud coding turns run: docker, docker-cloud, openshell, local, or off")
@@ -173,6 +176,7 @@ class PlatformHealth(BaseModel):
     queue_oldest_seconds: float | None
     queue_discarded_24h: int
     worker_last_took_at: datetime | None = Field(description="When a worker last took a run off the queue")
+    last_queue_wait_ms: float | None = None
     runs_running: int
     runs_queued: int
     stuck: list[StuckRun]

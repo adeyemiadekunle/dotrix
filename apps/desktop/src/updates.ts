@@ -19,7 +19,10 @@ export class Updates {
   private current: UpdateState = { state: "off" };
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private beforeInstall: () => Promise<void>) {}
+  constructor(
+    private beforeInstall: () => Promise<void>,
+    private enabled = true,
+  ) {}
 
   get state(): UpdateState {
     return this.current;
@@ -31,7 +34,7 @@ export class Updates {
   }
 
   start(): void {
-    if (!app.isPackaged) return;
+    if (!this.enabled || !app.isPackaged) return;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = false;
@@ -54,7 +57,7 @@ export class Updates {
   }
 
   async check(): Promise<UpdateState> {
-    if (!app.isPackaged || this.current.state === "ready" || this.current.state === "downloading") return this.current;
+    if (!this.enabled || !app.isPackaged || this.current.state === "ready" || this.current.state === "downloading") return this.current;
     try {
       await autoUpdater.checkForUpdates();
     } catch {

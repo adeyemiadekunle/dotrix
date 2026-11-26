@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added a portable Windows staging build with its own profile and automatic updates disabled.
+
 ## [0.4.0] - 2026-11-21
 
 - Open a local Code worktree in VS Code or VS Code Insiders, or switch an idle managed worktree to a new local branch from Files.

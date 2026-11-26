@@ -5,7 +5,7 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "env": ["NODE_ENV", "VITE_APP_URL", "VITE_DOWNLOADS_URL", "DOTRIX_API_URL", "DOTRIX_WEB_URL", "DOTRIX_WEB_OUT_DIR"]
+      "env": ["NODE_ENV", "VITE_APP_URL", "VITE_SITE_URL", "VITE_DOWNLOADS_URL", "DOTRIX_API_URL", "DOTRIX_WEB_URL", "DOTRIX_WEB_OUT_DIR"]
     },
     "dev": {
       "cache": false,

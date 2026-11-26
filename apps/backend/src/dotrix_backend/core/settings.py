@@ -61,10 +61,12 @@ class Settings(DatabaseSettings):
 
     # "staging" and "production" are deployed: secure cookies, and the checks in _safe_for_production.
     env: Literal["development", "test", "staging", "production"] = "development"
+    deployment_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{7,64}$")
     log_level: str = "INFO"
     log_json: bool = True
     # 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 first and stalls.
     redis_url: str = "redis://127.0.0.1:6379/0"
+    redis_ca_pem: str | None = None
     cors_origins: list[str] = ["http://localhost:3000"]
     # Swagger UI (/docs), ReDoc (/redoc), and /openapi.json. Turn off to hide the API surface.
     docs_enabled: bool = True
@@ -103,9 +105,9 @@ class Settings(DatabaseSettings):
 
     # Base URL of the web app, used to build links in emails.
     app_url: str = "http://localhost:3000"
-    # Outgoing email: "console" logs it (development only; links carry tokens), "sendly" sends
-    # it through Sendly (https://developer.sendlyai.com). Unset: Sendly when its key is set.
-    email_backend: Literal["console", "sendly"] | None = None
+    # Console logs email in development. Select Cloudflare explicitly for its Email Sending API.
+    # Unset retains the existing default: Sendly when its key is set, otherwise console.
+    email_backend: Literal["console", "sendly", "cloudflare"] | None = None
     # The From address, e.g. "dotrix <no-reply@yourdomain.com>", on a domain verified with the
     # provider. Unset: the provider account's default (Sendly's shared address with a test key).
     email_from: str | None = None
@@ -115,6 +117,8 @@ class Settings(DatabaseSettings):
         validation_alias=AliasChoices("DOTRIX_SENDLY_API_KEY", "SENDLY_API_KEY", "SENDLY_EMAIL"),
     )
     sendly_api_url: str = "https://api.sendlyai.com"
+    cloudflare_email_account_id: str | None = None
+    cloudflare_email_api_token: SecretStr | None = None
 
     # Sign in with GitHub (a GitHub App or OAuth App). Both unset: the option isn't offered.
     github_client_id: str | None = Field(
@@ -371,6 +375,14 @@ class Settings(DatabaseSettings):
             self.email_backend = "sendly" if self.sendly_api_key else "console"
         if self.email_backend == "sendly" and not self.sendly_api_key:
             raise ValueError("email_backend=sendly needs DOTRIX_SENDLY_API_KEY")
+        if self.email_backend == "cloudflare":
+            account_id = self.cloudflare_email_account_id or ""
+            if len(account_id) != 32 or any(char not in "0123456789abcdefABCDEF" for char in account_id):
+                raise ValueError("email_backend=cloudflare needs a valid DOTRIX_CLOUDFLARE_EMAIL_ACCOUNT_ID")
+            if not self.cloudflare_email_api_token:
+                raise ValueError("email_backend=cloudflare needs DOTRIX_CLOUDFLARE_EMAIL_API_TOKEN")
+            if not self.email_from:
+                raise ValueError("email_backend=cloudflare needs DOTRIX_EMAIL_FROM")
         if self.is_deployed and self.email_backend == "console":
             raise ValueError("email_backend=console logs tokens; not allowed in staging or production")
         if self.is_deployed and self.rate_limits != "redis":

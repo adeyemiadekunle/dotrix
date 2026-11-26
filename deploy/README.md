@@ -6,6 +6,8 @@ storage). Coding turns run in sandboxes, on Docker Cloud (recommended) or the sa
 Docker. Nobody who uses dotrix installs anything; each person connects their own model key in
 Account → Your models.
 
+For the separate managed staging deployment, see the [Cloudflare pilot runbook](cloudflare/README.md).
+
 ```
 VPS
 └── Docker
