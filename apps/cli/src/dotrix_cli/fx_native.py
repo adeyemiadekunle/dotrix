@@ -583,7 +583,7 @@ async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *
             'or Windows AppContainer is required'
         )
     target, key, model = anthropic if anthropic else connection(profile, dict(os.environ))
-    expected_version = '2.1.296' if anthropic else '0.0.17'
+    expected_version = '2.1.296' if anthropic else '0.0.18'
     _validate_browser(browser)
     if sys.platform == 'linux':
         launcher = _launch_linux

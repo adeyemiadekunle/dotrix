@@ -234,8 +234,8 @@ One ordered list for the solo beta and the move to the Kai runtime (`adeyemiadek
 | 0. Released fx 0.0.17 baseline | Done |
 | 1. Shared execution contract and saved-state compatibility | Done. Sessions saved by libfx 0.0.16 and earlier fork builds still read. |
 | 2. Provider capabilities and separate Chat and Code policies | Built. Live checks: NVIDIA only. Anthropic, OpenAI and Google on paid models are open. |
-| 3. Chat on the fork's libfx | Done: `@kunemi-group/kai@0.0.17-kai.3` (default for compatible providers). |
-| 4. Cloud and local coding on the fork's fx | Done: `0.0.17-kai.3` pinned in the coding image (default for compatible models). A paid turn inside the gVisor sandbox is open. |
+| 3. Chat on the fork's libfx | Done: `@kunemi-group/kai@0.0.18-kai.1` (default for compatible providers). |
+| 4. Cloud and local coding on the fork's fx | Done: `0.0.18-kai.1` pinned in the coding image (default for compatible models). A paid turn inside the gVisor sandbox is open. |
 | 5. Workers, skills, browser and background tasks | Done for the beta: worker profiles and limits, pinned skills, the Browser pane, background tasks. |
 | 6. Kai by default; legacy engines retired | Before the beta (below) |
 | 7. Kai branding and final names | After the beta |

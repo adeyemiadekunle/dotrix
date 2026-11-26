@@ -31,19 +31,19 @@ RUN npm install -g @opencode/cli@${OPENCODE_VERSION} && opencode --version
 RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/* && rg --version
 
 # fx (DOTRIX_CODING_FX=true): Kai on an OpenAI-compatible provider, driven over ACP by fx-acp.mjs. It is the
-# Kai runtime's fx command (adeyemiadekunle/kai-runtime, fx 0.0.17 with its changes: `project_config` and
+# Kai runtime's fx command (adeyemiadekunle/kai-runtime, fx 0.0.18 with its changes since 0.0.17: `project_config` and
 # `max_subagents`, which the driver sets, and Kai's workers' profiles listed over ACP with their `max_steps` and
 # `max_tokens`, from 0.0.17-kai.2; the commands Kai leaves running named over ACP and listed by `fx/shells`, which
-# fx-host.mjs reads between turns, from 0.0.17-kai.3), published to GitHub Packages as @kunemi-group/kai-cli-linux-<cpu>,
+# fx-host.mjs reads between turns, from 0.0.17-kai.3; on fx 0.0.18 from 0.0.18-kai.1), published to GitHub Packages as @kunemi-group/kai-cli-linux-<cpu>,
 # and pinned by version and by its binary's SHA-256 (the package's fx.sha256). The install needs a GitHub token
 # with read:packages as the build secret kai_packages_token; it never reaches the image or the sandbox:
 #
 #   docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding
 #
 # Its profiles are dotrix-fx-*.yaml. Needs npm.pkg.github.com reachable where the image is built, never in the sandbox.
-ARG KAI_CLI_VERSION=0.0.17-kai.3
-ARG KAI_CLI_SHA256_X64=6ce9b806c38a32a571895fbec10c2a256bef1531a3b7db6996f90e994e4d0287
-ARG KAI_CLI_SHA256_ARM64=c85b79e3c7f31381b96fce2bc5d1a207068098c3cec4d79a52090be0c5616387
+ARG KAI_CLI_VERSION=0.0.18-kai.1
+ARG KAI_CLI_SHA256_X64=000f69f6201e2df537fe091f018974cc17a52375c77896e2b8731679e27aa50e
+ARG KAI_CLI_SHA256_ARM64=dd50a6d6e53c5884ba2e67d289804acd51cb8070d3456025e1aae30cbfa97fdc
 RUN --mount=type=secret,id=kai_packages_token,required=true set -eu; \
   case "$(uname -m)" in x86_64) cpu=x64; sum="$KAI_CLI_SHA256_X64" ;; aarch64|arm64) cpu=arm64; sum="$KAI_CLI_SHA256_ARM64" ;; *) echo "fx: unsupported $(uname -m)"; exit 1 ;; esac; \
   work=$(mktemp -d) && cd "$work"; \

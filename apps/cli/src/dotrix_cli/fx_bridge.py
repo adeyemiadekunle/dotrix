@@ -93,7 +93,7 @@ def frame_read(channel):
 
 
 def require_kai_fx(binary):
-    """Refuse an fx without the Kai runtime's `project_config` off. Upstream fx 0.0.17 reports the same version
+    """Refuse an fx without the Kai runtime's `project_config` off. Upstream fx reports the same version
     but has no such setting, so it would read the repository's .fx.json, skills, .mcp.json and AGENTS.md; here
     the profile and FX_PROJECT_CONFIG=0 turn it off."""
     setting = subprocess.run([binary, 'config', 'get', 'project_config'], capture_output=True, text=True, timeout=15)
@@ -205,7 +205,7 @@ def main():
         git(f'--git-dir={git_dir}', '-c', 'user.name=Dotrix', '-c', 'user.email=dotrix@localhost',
             'commit', '--allow-empty', '--no-verify', '-qm', 'Sandbox baseline')
     version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=15, check=True).stdout.strip()
-    expected = '2.1.296' if claude else '0.0.17'
+    expected = '2.1.296' if claude else '0.0.18'
     if version.split()[0] != expected:
         raise ValueError('Native execution requires the tested coding runtime')
     if not claude:

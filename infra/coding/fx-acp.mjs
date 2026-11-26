@@ -264,7 +264,7 @@ for (const worker of workerProfiles ?? []) {
 }
 
 const fxEnv = { ...process.env, FX_AUTO_UPGRADE: "0", FX_PROJECT_CONFIG: "0", FX_SOUND: "0", FX_DISABLE_KEYCHAIN: "1", FX_NO_OPEN_BROWSER: "1", NO_COLOR: "1" };
-// Upstream fx 0.0.17 reports the same version as the Kai runtime's fx but has no project_config, so it would
+// Upstream fx reports the same version as the Kai runtime's fx but has no project_config, so it would
 // take the repository's configuration: run only an fx that knows the setting and has it off.
 const setting = spawnSync(fxBin, ["config", "get", "project_config"], { env: fxEnv, encoding: "utf8", timeout: 15_000 });
 if (setting.error) fail(`The coding engine didn't start (${setting.error.code ?? "error"})`);
