@@ -33,12 +33,12 @@ x-backend: &backend
     DOTRIX_APP_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
     DOTRIX_WEB_URL: http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}
     DOTRIX_CORS_ORIGINS: '["http://localhost:${DOTRIX_DOCKER_WEB_PORT:-3080}"]'
-    DOTRIX_SEARXNG_URL: http://searxng:8080
-    DOTRIX_SEARCH_PROVIDER: searxng
+    DOTRIX_SEARXNG_URL: ${DOTRIX_COMPOSE_SEARXNG_URL:-http://searxng:8080}
+    DOTRIX_SEARCH_PROVIDER: ${DOTRIX_SEARCH_PROVIDER:-searxng}
     DOTRIX_JOBS: worker
     DOTRIX_CODE_DIR: /data/code
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
-    DOTRIX_CODING_IMAGE: dotrix-coding:latest
+    DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:latest}
     # Only two cloud turns run at once; idle caching is configured separately.
     DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
     DOTRIX_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app-key

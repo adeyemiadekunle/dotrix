@@ -34,6 +34,16 @@ def _settings(**values) -> Settings:
     return Settings(**{**base, **values})  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("agent", list(CodingAgent))
+def test_hosted_research_keeps_the_selected_browser_and_is_opt_in(agent: CodingAgent) -> None:
+    engine = tool_for(agent, "openai:test")
+    assert engine is not None
+    session = "a" * 32
+    assert "research-mcp.mjs" not in " ".join(engine.command("openai:test", browser=True))
+    argv = " ".join(engine.command("openai:test", browser=True, browser_engine="agent-browser", research=(session, True)))
+    assert "agent-browser-mcp.mjs" in argv and "research-mcp.mjs" in argv and session in argv
+
+
 def test_claude_code_events_become_steps_and_tokens() -> None:
     tool, usage = ClaudeCode(), Usage()
     lines = [

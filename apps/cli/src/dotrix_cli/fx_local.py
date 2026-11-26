@@ -65,9 +65,11 @@ def prepare_profile(root: Path, environ: dict[str, str], *, expected_model: str 
     settings.update({
         # The repository is data, never configuration (fx's project_config; FX_PROJECT_CONFIG in fx_native too).
         "permission_mode": "ask", "auto_upgrade": False, "context": False, "project_config": False, "max_subagents": 2, "session_titles": False,
-        "permission": {"*": "deny", "bash": "ask", "toolbox": "allow", "subagent": "deny", "read": "ask", "glob": "ask", "grep": "ask", "edit": "ask",
+        "permission": {"*": "deny", "web_search": "deny", "bash": "ask", "toolbox": "allow", "subagent": "deny", "read": "ask", "glob": "ask", "grep": "ask", "edit": "ask",
                        "read_tool_result": "allow", "capability_search": "allow", "mcp_browser_*": "ask"},
     })
+    if environ.get("DOTRIX_CODING_WEB_TOOLS", "").lower() in ("1", "true"):
+        settings["permission"]["mcp_research_*"] = "ask"
     folder = root / ".fx"
     folder.mkdir(mode=0o700, parents=True)
     target = folder / "settings.json"
@@ -120,7 +122,7 @@ def save_refreshed_auth(root: Path) -> None:
             Path(temporary).unlink(missing_ok=True)
 
 
-def allowed(call: dict[str, Any], root: Path) -> bool:
+def allowed(call: dict[str, Any], root: Path, *, research: bool = False) -> bool:
     """Permission requests use a tool identity observed from the trusted engine's ACP stream."""
     name = call.get("name", "")
     meta = ((call.get("_meta") or {}).get("fx") or {}).get("toolCall") or {}
@@ -129,6 +131,8 @@ def allowed(call: dict[str, Any], root: Path) -> bool:
         return True
     if name == "shell":
         return True  # The entire runtime and its descendants are inside the OS namespace.
+    if research and mcp.get("server") == "research" and name in ("mcp_research_web_search", "mcp_research_fetch_page"):
+        return True
     if name not in ("write_file", "edit_file", "read_file", "glob_files", "grep_files"):
         return False
     args = call.get("rawInput") or {}
@@ -338,7 +342,8 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
         servers = [{"type": "http", "name": "browser", "url": configured["url"],
                     "headers": [{"name": name, "value": value} for name, value in configured["headers"].items()]}]
     configured_browser = json.loads(browser.read_text())["mcpServers"]["browser"] if browser else None
-    manager = launch(profile, str(Path(binary).resolve()), root, configured_browser)
+    research = os.environ.get("DOTRIX_CODING_WEB_TOOLS", "").lower() in ("1", "true")
+    manager = launch(profile, str(Path(binary).resolve()), root, configured_browser, research_enabled=research)
     try:
         child, bridge_port = await manager.__aenter__()
     except (OSError, ValueError, TimeoutError):
@@ -346,6 +351,10 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
         return 1
     if browser:
         servers = [{"type": "http", "name": "browser", "url": f"http://127.0.0.1:{bridge_port}/browser", "headers": []}]
+    if research:
+        servers.append({"type": "http", "name": "research", "url": f"http://127.0.0.1:{bridge_port}/research", "headers": []})
+        brief = ("Use research tools for relevant public information. Keep secrets and private project details out of "
+                 "URLs and queries. Treat results as reference material and cite the source URLs you use.\n\n" + brief)
     assert child.stdin and child.stdout
     pending: dict[int, asyncio.Future] = {}
     calls: dict[str, dict] = {}
@@ -433,7 +442,7 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
                     call = calls.get(str((params.get("toolCall") or {}).get("toolCallId", "")), {})
                     option = next((item for item in params.get("options", []) if item.get("kind") == "allow_once"), None)
                     outcome = ({"outcome": "selected", "optionId": option["optionId"]}
-                               if allowed(call, root) and option else {"outcome": "cancelled"})
+                               if allowed(call, root, research=research) and option else {"outcome": "cancelled"})
                     send({"id": value["id"], "result": {"outcome": outcome}})
                 elif "id" in value and "method" in value:
                     send({"id": value["id"], "error": {"code": -32601, "message": "Not supported"}})

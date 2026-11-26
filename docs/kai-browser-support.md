@@ -97,6 +97,26 @@ that needs user input or fails ends the turn as failed, preventing publication.
 There is no fx Docker Sandboxes template. Windows and live `sbx` verification remain
 open.
 
+## Web research in Code
+
+Set `DOTRIX_CODING_WEB_TOOLS=true` to offer `fetch_page` in native Kai worktrees
+and hosted Docker Cloud Build turns with model-key injection. A SearXNG base URL
+with JSON enabled also offers `web_search` when the search provider is `auto` or
+`searxng`. Page reads accept public addresses and use Dotrix's existing URL
+checks. Hosted workers need a coding image that includes `research-mcp.mjs`.
+
+For native worktrees, set the variables before launching the CLI runner or the
+desktop app. For hosted work, use the API and worker configuration in the root
+environment example or the Dokploy example. Compose defaults to its private
+SearXNG instance.
+
+```powershell
+$env:DOTRIX_CODING_WEB_TOOLS = "true"
+$env:DOTRIX_SEARCH_PROVIDER = "searxng"
+$env:DOTRIX_SEARXNG_URL = "http://127.0.0.1:8081"
+dotrix runner --isolation none
+```
+
 ## Verification
 
 The ordinary adapter tests check configuration, capabilities, activity parsing and

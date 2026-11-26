@@ -336,6 +336,7 @@ class Settings(DatabaseSettings):
     # Auto selects SearXNG when its service URL is configured. Fake is for E2E only.
     search_provider: Literal["auto", "searxng", "native", "fake"] = "auto"
     searxng_url: str | None = None
+    coding_web_tools: bool = False
     research_max_searches: int = Field(default=10, ge=0, le=100)
     research_max_fetches: int = Field(default=20, ge=0, le=200)
     # Where background work executes (agent runs, emails, password-reset requests):

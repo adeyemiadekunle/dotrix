@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Added optional public web search and page reading for Kai on native worktrees and supported hosted builds.
 - Required explicit Terms of Service acceptance at signup and recorded its version and timestamp on new accounts. Documented admin and marketing metrics in the Terms and Privacy Policy.
 - Added marketing-site cookie consent and Admin Overview metrics for opted-in website traffic and GitHub Desktop and CLI downloads.
 - Added a read-only local admin demo with sample data for Overview, Runs, Failures, Coding, Models, and Audit log.
