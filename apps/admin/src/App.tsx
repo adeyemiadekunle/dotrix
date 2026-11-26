@@ -3,6 +3,7 @@
 // every workspace, without what people wrote.
 import {
   ArrowUpRightIcon,
+  BlocksIcon,
   ChartColumnIcon,
   CodeIcon,
   CpuIcon,
@@ -36,11 +37,12 @@ const WorkspacesPage = lazy(() => pages().then((m) => ({ default: m.WorkspacesPa
 const AuditPage = lazy(() => pages().then((m) => ({ default: m.AuditPage })));
 const TrailPage = lazy(() => pages().then((m) => ({ default: m.TrailPage })));
 const AdminsPage = lazy(() => pages().then((m) => ({ default: m.AdminsPage })));
+const DemoComponents = import.meta.env.DEV ? lazy(() => import("./DemoComponents")) : null;
 
 /** Where people who use dotrix sign in: the web app (`VITE_APP_URL`, set at build time). */
 const APP_URL = (import.meta.env.VITE_APP_URL as string | undefined) ?? "https://app.dotrix.cc";
 
-const PAGES: { id: string; label: string; icon: LucideIcon; owner?: boolean }[] = [
+const PAGES: { id: string; label: string; icon: LucideIcon; owner?: boolean; demoOnly?: boolean }[] = [
   { id: "overview", label: "Overview", icon: ChartColumnIcon },
   { id: "runs", label: "Runs", icon: ListIcon },
   { id: "failures", label: "Failures", icon: OctagonAlertIcon },
@@ -50,6 +52,7 @@ const PAGES: { id: string; label: string; icon: LucideIcon; owner?: boolean }[] 
   { id: "audit", label: "Audit log", icon: ScrollIcon },
   { id: "admins", label: "Admins", icon: UsersIcon, owner: true },
   { id: "trail", label: "Admin activity", icon: FingerprintIcon, owner: true },
+  ...(import.meta.env.DEV ? [{ id: "components", label: "Components", icon: BlocksIcon, demoOnly: true }] : []),
 ];
 
 function Mark({ size = 20 }: { size?: number }) {
@@ -598,7 +601,7 @@ function Console({ account, onSignOut }: { account?: Me; onSignOut?: () => void 
   const [requestedPage, go] = usePage();
   const [changing, setChanging] = useState(false);
   const isOwner = account?.role === "owner";
-  const visiblePages = PAGES.filter((p) => (!p.owner || isOwner) && (account || p.id !== "workspaces"));
+  const visiblePages = PAGES.filter((p) => (!p.owner || isOwner) && (account ? !p.demoOnly : p.id !== "workspaces"));
   const page = visiblePages.some((p) => p.id === requestedPage) ? requestedPage : "overview";
 
   return (
@@ -652,6 +655,7 @@ function Console({ account, onSignOut }: { account?: Me; onSignOut?: () => void 
           {page === "audit" && <AuditPage />}
           {page === "trail" && isOwner && <TrailPage />}
           {page === "admins" && isOwner && <AdminsPage meId={account.id} />}
+          {import.meta.env.DEV && page === "components" && DemoComponents && <DemoComponents />}
         </Suspense>
       </main>
       {account && changing && <ChangePassword onClose={() => setChanging(false)} />}

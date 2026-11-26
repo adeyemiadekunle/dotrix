@@ -43,6 +43,7 @@ export const ROUTE_NAMES: Record<string, string> = {
   archive: "Archive",
   chat: "Chat",
   codes: "Code",
+  components: "Components",
 };
 
 /** A page's name. */
@@ -295,6 +296,7 @@ function Sidebar() {
         <SItem route="projects" label="Projects" icon="folder-kanban" />
         <SItem route="activity" label="Activity" icon="activity" />
         <SItem route="skills" label="Skills" icon="scroll-text" />
+        {isDemo() && <SItem route="components" label="Components" icon="package" />}
         <div className="sgroup" id="side-projects">
           <div className="sgroup-h">
             <span>Projects</span>

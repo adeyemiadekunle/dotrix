@@ -78,8 +78,7 @@ const demoAny = createRoute({ getParentRoute: () => rootRoute, path: "/demo/$", 
 const chatUiLab = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dev/chat-ui",
-  staticData: { title: "chat/ui lab" },
-  component: page(() => import("./screens/ChatUiLab")),
+  component: () => <Navigate to="/w/$ws/$" params={{ ws: WS, _splat: "components" }} replace />,
 });
 const workspace = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws", component: Studio });
 const workspaceAny = createRoute({ getParentRoute: () => rootRoute, path: "/w/$ws/$", component: Studio });

@@ -36,6 +36,7 @@ const CASES: Record<Route, Params> = {
   archive: {},
   chat: {},
   codes: {},
+  components: {},
 };
 
 describe("href and routeOf", () => {

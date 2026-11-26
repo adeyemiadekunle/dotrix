@@ -219,6 +219,9 @@ There are no platform token budgets: each person's own key pays for their runs.
 Run `pnpm --filter @dotrix/admin dev` and open [the admin demo](http://localhost:3300/demo).
 The six observability pages use sample data and run without an API, database, or admin account.
 
+Open **Components** in either demo to try the shared UI-SDK chat gallery and see examples from that app.
+The web demo is at `/demo/components` and the local admin showcase is at `http://localhost:3300/demo#/components`.
+
 ## Deploying
 
 Production runs on one VPS with Dokploy: [deploy/README.md](deploy/README.md) has the setup, the sizing,
