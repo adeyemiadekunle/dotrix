@@ -34,16 +34,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -
 # Kai runtime's fx command (adeyemiadekunle/kai-runtime, fx 0.0.18 with its changes since 0.0.17: `project_config` and
 # `max_subagents`, which the driver sets, and Kai's workers' profiles listed over ACP with their `max_steps` and
 # `max_tokens`, from 0.0.17-kai.2; the commands Kai leaves running named over ACP and listed by `fx/shells`, which
-# fx-host.mjs reads between turns, from 0.0.17-kai.3; on fx 0.0.18 from 0.0.18-kai.1), published to GitHub Packages as @kunemi-group/kai-cli-linux-<cpu>,
+# fx-host.mjs reads between turns, from 0.0.17-kai.3; on fx 0.0.18 from 0.0.18-kai.1, reporting its whole release as fx --version from 0.0.18-kai.2), published to GitHub Packages as @kunemi-group/kai-cli-linux-<cpu>,
 # and pinned by version and by its binary's SHA-256 (the package's fx.sha256). The install needs a GitHub token
 # with read:packages as the build secret kai_packages_token; it never reaches the image or the sandbox:
 #
 #   docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding
 #
 # Its profiles are dotrix-fx-*.yaml. Needs npm.pkg.github.com reachable where the image is built, never in the sandbox.
-ARG KAI_CLI_VERSION=0.0.18-kai.1
-ARG KAI_CLI_SHA256_X64=000f69f6201e2df537fe091f018974cc17a52375c77896e2b8731679e27aa50e
-ARG KAI_CLI_SHA256_ARM64=dd50a6d6e53c5884ba2e67d289804acd51cb8070d3456025e1aae30cbfa97fdc
+ARG KAI_CLI_VERSION=0.0.18-kai.2
+ARG KAI_CLI_SHA256_X64=96be47be1ea2f07c7b2949e4d808dd8d40548ad1ddd602bd065c43098e9cbc04
+ARG KAI_CLI_SHA256_ARM64=65fff18ae81e4a6732398df8d163e8904417eb7aa10023ab0badf264d801f3ff
 RUN --mount=type=secret,id=kai_packages_token,required=true set -eu; \
   case "$(uname -m)" in x86_64) cpu=x64; sum="$KAI_CLI_SHA256_X64" ;; aarch64|arm64) cpu=arm64; sum="$KAI_CLI_SHA256_ARM64" ;; *) echo "fx: unsupported $(uname -m)"; exit 1 ;; esac; \
   work=$(mktemp -d) && cd "$work"; \

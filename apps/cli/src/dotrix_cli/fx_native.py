@@ -29,6 +29,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from . import win_sandbox
+from .fx_bridge import CLAUDE_CODE_VERSION, KAI_FX_VERSION
 
 FRAME_LIMIT = 24 * 1024 * 1024
 SAFE_HEADERS = {'accept', 'content-type', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id', 'anthropic-version', 'anthropic-beta'}
@@ -583,7 +584,7 @@ async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *
             'or Windows AppContainer is required'
         )
     target, key, model = anthropic if anthropic else connection(profile, dict(os.environ))
-    expected_version = '2.1.296' if anthropic else '0.0.18'
+    expected_version = CLAUDE_CODE_VERSION if anthropic else KAI_FX_VERSION
     _validate_browser(browser)
     if sys.platform == 'linux':
         launcher = _launch_linux
