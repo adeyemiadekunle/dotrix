@@ -7,7 +7,9 @@ ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH ELECTRON_SKIP_BINARY_DOWNLOAD=1 CI=1
 RUN corepack enable && corepack prepare pnpm@11.1.2 --activate
 ARG VITE_APP_URL=https://app.dotrix.cc
 ARG VITE_DOWNLOADS_URL=https://github.com/adeyemiadekunle/dotrix/releases/latest
+ARG VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN=
 ENV VITE_APP_URL=$VITE_APP_URL VITE_DOWNLOADS_URL=$VITE_DOWNLOADS_URL
+ENV VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN=$VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN
 WORKDIR /src
 COPY . .
 RUN pnpm install --frozen-lockfile --filter "@dotrix/site..." \

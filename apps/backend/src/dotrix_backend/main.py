@@ -36,6 +36,7 @@ from .jobs import (
     INDEX_INTERVAL_SECONDS,
     JOBS,
 )
+from .modules.admin.growth import GrowthMetrics
 from .modules.agents.checkpoints import open_checkpointer
 from .modules.agents.llm import settings_model_factory
 from .modules.agents.queue import RunQueue
@@ -165,6 +166,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     install_openapi(app, API_VERSION)
     app.state.settings = settings
+    app.state.growth_metrics = GrowthMetrics(settings)
     # Reads and writes Team workspaces' own model provider keys (encrypted at rest).
     app.state.secrets = Secrets.from_settings(settings)
     # Replaced in lifespan by a sender that queues each email as a job; until then (and in

@@ -173,6 +173,11 @@ export type Counts = {
   document_bytes: number;
 };
 
+export type GrowthSnapshot = {
+  traffic: { status: "ready" | "unconfigured" | "unavailable"; page_views: number | null; visits: number | null };
+  downloads: { status: "ready" | "unavailable"; desktop: number | null; cli: number | null };
+};
+
 export type Day = {
   day: string;
   chat_runs: number;

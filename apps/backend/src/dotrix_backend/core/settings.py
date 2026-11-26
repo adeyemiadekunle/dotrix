@@ -91,6 +91,9 @@ class Settings(DatabaseSettings):
     # The admin console's own address, used for links in admin emails (invites). Unset: invites
     # can't be emailed, and the API returns the link's path for the owner to pass on.
     admin_url: str | None = None
+    cloudflare_analytics_account_id: str | None = None
+    cloudflare_analytics_site_tag: str | None = None
+    cloudflare_analytics_api_token: SecretStr | None = None
     # Who is emailed when the deployment needs attention (comma-separated or a JSON list). Empty: the
     # admin console's active owners.
     alert_emails: Annotated[list[str], NoDecode] = []

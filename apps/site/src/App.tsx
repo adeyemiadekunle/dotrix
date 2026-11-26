@@ -28,6 +28,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { APP_URL, DOWNLOADS_URL } from "./config";
+import { useCookieConsent } from "./CookieConsent";
 import { Face, Mark } from "./Face";
 
 const SIGN_IN = `${APP_URL}/login`;
@@ -1018,11 +1019,15 @@ function PrivacyPage() {
           records session summaries, changed files, commands, and audit events needed to review and recover runs.
         </p>
       </section>
-      <section>
+      <section id="cookies">
         <h2>4. Cookies and local storage</h2>
         <p>
           dotrix uses essential session cookies and browser storage for authentication state, theme preferences, and pane layout state. Embedded browser-pane
           sessions keep cookies local to the desktop app settings you control.
+        </p>
+        <p>
+          The marketing site remembers your analytics choice for up to 180 days. If you accept, Cloudflare Web Analytics measures page views and visits. You can
+          change your choice using Cookie settings in the footer.
         </p>
       </section>
       <section>
@@ -1040,7 +1045,7 @@ function PrivacyPage() {
   );
 }
 
-function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: string }) {
+function Footer({ onHome = true, route = "/", cookieSettings }: { onHome?: boolean; route?: string; cookieSettings: ReactNode }) {
   const sec = (id: string) => (onHome ? `#${id}` : `/#${id}`);
   return (
     <footer className="footer">
@@ -1113,6 +1118,7 @@ function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: stri
             <a href="/privacy" aria-current={route === "/privacy" ? "page" : undefined}>
               Privacy
             </a>
+            {cookieSettings}
             <a href={GITHUB_URL} target="_blank" rel="noreferrer">
               GitHub
             </a>
@@ -1124,6 +1130,7 @@ function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: stri
 }
 
 export function App({ pathname = "/" }: { pathname?: string }) {
+  const { settings: cookieSettings, banner } = useCookieConsent();
   const route = pathname.replace(/\/+$/, "") || "/";
   const onHome = route === "/";
   useEffect(() => {
@@ -1180,7 +1187,8 @@ export function App({ pathname = "/" }: { pathname?: string }) {
           </>
         )}
       </main>
-      <Footer onHome={onHome} route={route} />
+      <Footer onHome={onHome} route={route} cookieSettings={cookieSettings} />
+      {banner}
     </>
   );
 }

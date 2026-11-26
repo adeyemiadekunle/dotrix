@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dotrix_backend.core.model_prices import cost_of
+from dotrix_backend.modules.admin.schemas import GrowthSnapshot, ReleaseDownloads, WebsiteTraffic
 from dotrix_backend.modules.agents.models import RunStatus
 from dotrix_backend.modules.audit.models import AuditEvent, AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
@@ -38,6 +39,26 @@ async def test_bootstrap_only_while_no_account_exists(db_client: AsyncClient) ->
     await _admin(db_client)
     assert (await db_client.get("/v1/admin/bootstrap")).json()["enabled"] is False
     assert (await db_client.post("/v1/admin/signup", json=ADMIN)).status_code == 403
+
+
+async def test_growth_requires_an_admin_session(db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def growth() -> GrowthSnapshot:
+        return GrowthSnapshot(
+            traffic=WebsiteTraffic(status="unconfigured"),
+            downloads=ReleaseDownloads(status="ready", desktop=5, cli=8),
+        )
+
+    path = "/v1/admin/observe/growth"
+    metrics = db_client._transport.app.state.growth_metrics  # type: ignore[attr-defined]
+    monkeypatch.setattr(metrics, "snapshot", growth)
+    assert (await db_client.get(path)).status_code == 401
+    await _admin(db_client)
+    response = await db_client.get(path)
+    assert response.status_code == 200
+    assert response.json() == {
+        "traffic": {"status": "unconfigured", "page_views": None, "visits": None},
+        "downloads": {"status": "ready", "desktop": 5, "cli": 8},
+    }
 
 
 async def test_signup_needs_the_bootstrap_token_when_one_is_set(

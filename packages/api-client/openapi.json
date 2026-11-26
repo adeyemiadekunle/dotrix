@@ -2626,6 +2626,66 @@
         }
       }
     },
+    "/v1/admin/observe/growth": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Observe Growth",
+        "description": "Opted-in website traffic over seven days and cumulative GitHub release downloads.",
+        "operationId": "observe_growth",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowthSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/observe/failures": {
       "get": {
         "tags": [
@@ -34211,6 +34271,22 @@
         ],
         "title": "GitHubStatus"
       },
+      "GrowthSnapshot": {
+        "properties": {
+          "traffic": {
+            "$ref": "#/components/schemas/WebsiteTraffic"
+          },
+          "downloads": {
+            "$ref": "#/components/schemas/ReleaseDownloads"
+          }
+        },
+        "type": "object",
+        "required": [
+          "traffic",
+          "downloads"
+        ],
+        "title": "GrowthSnapshot"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -38691,6 +38767,45 @@
         ],
         "title": "RefreshRequest"
       },
+      "ReleaseDownloads": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "desktop": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desktop"
+          },
+          "cli": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cli"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ReleaseDownloads"
+      },
       "RepoBaselineRead": {
         "properties": {
           "digest": {
@@ -42084,6 +42199,46 @@
           "flagged"
         ],
         "title": "WebUsageRead"
+      },
+      "WebsiteTraffic": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unconfigured",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "page_views": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Views"
+          },
+          "visits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "WebsiteTraffic"
       },
       "WorkMode": {
         "type": "string",

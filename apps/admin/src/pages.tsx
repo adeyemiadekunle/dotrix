@@ -31,6 +31,7 @@ import {
   type DependencyCheck,
   type FailureGroup,
   type Failures,
+  type GrowthSnapshot,
   type Health,
   type Me,
   type ModelRow,
@@ -234,6 +235,59 @@ const TONE_ICON: Record<Tone, ReactNode> = {
   muted: <CircleCheckIcon size={16} />,
 };
 
+function GrowthCards() {
+  const q = useQuery({
+    queryKey: ["growth"],
+    queryFn: () => call<GrowthSnapshot>("/admin/observe/growth"),
+    refetchInterval: 300_000,
+    staleTime: 300_000,
+  });
+  if (q.isPending)
+    return (
+      <Card title="Website and downloads">
+        <Loading />
+      </Card>
+    );
+  if (q.isError)
+    return (
+      <Card title="Website and downloads">
+        <Failed error={q.error} />
+      </Card>
+    );
+  const { traffic, downloads } = q.data;
+
+  return (
+    <div className="grid-2">
+      <Card title="Website traffic">
+        {traffic.status === "ready" ? (
+          <>
+            <div className="grid-2">
+              <Tile label="Visits" value={num(traffic.visits)} />
+              <Tile label="Page views" value={num(traffic.page_views)} />
+            </div>
+            <p className="note">Last 7 days. Cloudflare counts traffic from people who accepted analytics.</p>
+          </>
+        ) : (
+          <Empty>{traffic.status === "unconfigured" ? "Cloudflare Web Analytics is not connected." : "Website traffic is temporarily unavailable."}</Empty>
+        )}
+      </Card>
+      <Card title="Release downloads">
+        {downloads.status === "ready" ? (
+          <>
+            <div className="grid-2">
+              <Tile label="Desktop installers" value={num(downloads.desktop)} />
+              <Tile label="CLI archives" value={num(downloads.cli)} />
+            </div>
+            <p className="note">Cumulative GitHub stable release asset downloads, including repeats and updates.</p>
+          </>
+        ) : (
+          <Empty>GitHub download counts are temporarily unavailable.</Empty>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export function Overview({ go }: { go: (page: string) => void }) {
   const now = useTick();
   const [days, setDays] = useState(14);
@@ -381,6 +435,7 @@ export function Overview({ go }: { go: (page: string) => void }) {
         </Card>
       </div>
       <Card title="Sign-ups per day">{!trends.data ? <Loading /> : <SignupsChart days={t} />}</Card>
+      <GrowthCards />
     </>
   );
 }

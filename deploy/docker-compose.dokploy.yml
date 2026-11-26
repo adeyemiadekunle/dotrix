@@ -25,6 +25,9 @@ x-dotrix: &dotrix
     DOTRIX_JWT_SECRET: ${DOTRIX_JWT_SECRET:?}
     DOTRIX_ADMIN_BOOTSTRAP_TOKEN: ${DOTRIX_ADMIN_BOOTSTRAP_TOKEN:-}
     DOTRIX_ADMIN_URL: ${DOTRIX_ADMIN_URL:-}
+    DOTRIX_CLOUDFLARE_ANALYTICS_ACCOUNT_ID: ${DOTRIX_CLOUDFLARE_ANALYTICS_ACCOUNT_ID:-}
+    DOTRIX_CLOUDFLARE_ANALYTICS_SITE_TAG: ${DOTRIX_CLOUDFLARE_ANALYTICS_SITE_TAG:-}
+    DOTRIX_CLOUDFLARE_ANALYTICS_API_TOKEN: ${DOTRIX_CLOUDFLARE_ANALYTICS_API_TOKEN:-}
     DOTRIX_ALERT_EMAILS: ${DOTRIX_ALERT_EMAILS:-}
     DOTRIX_ALERT_INTERVAL_MINUTES: ${DOTRIX_ALERT_INTERVAL_MINUTES:-5}
     # Uploads per workspace in MB (0: unlimited); empty keeps the deployed default, 1024.
@@ -86,6 +89,7 @@ services:
       dockerfile: deploy/site.Dockerfile
       args:
         VITE_APP_URL: ${DOTRIX_APP_URL}
+        VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN: ${VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN:-}
     restart: unless-stopped
 
   # The admin console for whoever operates dotrix: its own origin and sign-in; only /v1/admin reaches
