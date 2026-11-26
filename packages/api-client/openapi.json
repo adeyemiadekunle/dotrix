@@ -709,13 +709,13 @@
           "auth"
         ],
         "summary": "Finish Github Sign In",
-        "description": "Exchange the `code` GitHub sent back for an access and refresh token, like login. The\nfirst time, links the GitHub account to the account with the same email (only one GitHub\nhas verified) or creates one, with a personal workspace. Check `state` before calling.",
+        "description": "Exchange the `code` GitHub sent back for an access and refresh token, like login. The\nfirst time, links the GitHub account to the account with the same email (only one GitHub\nhas verified) or creates one, with a personal workspace, if the current terms were accepted.\nCheck `state` before calling.",
         "operationId": "finish_github_sign_in",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GitHubFinish"
+                "$ref": "#/components/schemas/GitHubSignInFinish"
               }
             }
           },
@@ -2615,6 +2615,66 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/observe/growth": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Observe Growth",
+        "description": "Opted-in website traffic over seven days and cumulative GitHub release downloads.",
+        "operationId": "observe_growth",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowthSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -33307,6 +33367,10 @@
       },
       "EmailSignupFinish": {
         "properties": {
+          "terms_version": {
+            "$ref": "#/components/schemas/TermsVersion",
+            "description": "The version of the Terms of Service explicitly accepted"
+          },
           "token": {
             "type": "string",
             "maxLength": 256,
@@ -33321,6 +33385,7 @@
         },
         "type": "object",
         "required": [
+          "terms_version",
           "token",
           "display_name"
         ],
@@ -34156,6 +34221,32 @@
         ],
         "title": "GitHubImportResultItem"
       },
+      "GitHubSignInFinish": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Code",
+            "description": "The `code` GitHub sent back"
+          },
+          "terms_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TermsVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required to create a new account"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "GitHubSignInFinish"
+      },
       "GitHubStart": {
         "properties": {
           "authorize_url": {
@@ -34210,6 +34301,22 @@
           "installations"
         ],
         "title": "GitHubStatus"
+      },
+      "GrowthSnapshot": {
+        "properties": {
+          "traffic": {
+            "$ref": "#/components/schemas/WebsiteTraffic"
+          },
+          "downloads": {
+            "$ref": "#/components/schemas/ReleaseDownloads"
+          }
+        },
+        "type": "object",
+        "required": [
+          "traffic",
+          "downloads"
+        ],
+        "title": "GrowthSnapshot"
       },
       "Health": {
         "properties": {
@@ -38691,6 +38798,45 @@
         ],
         "title": "RefreshRequest"
       },
+      "ReleaseDownloads": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "desktop": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desktop"
+          },
+          "cli": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cli"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ReleaseDownloads"
+      },
       "RepoBaselineRead": {
         "properties": {
           "digest": {
@@ -40585,6 +40731,10 @@
       },
       "SignupRequest": {
         "properties": {
+          "terms_version": {
+            "$ref": "#/components/schemas/TermsVersion",
+            "description": "The version of the Terms of Service explicitly accepted"
+          },
           "email": {
             "type": "string",
             "format": "email",
@@ -40605,6 +40755,7 @@
         },
         "type": "object",
         "required": [
+          "terms_version",
           "email",
           "password",
           "display_name"
@@ -41469,6 +41620,13 @@
         ],
         "title": "TeamMemberRead"
       },
+      "TermsVersion": {
+        "type": "string",
+        "enum": [
+          "2026-11-26"
+        ],
+        "title": "TermsVersion"
+      },
       "ThreadRead": {
         "properties": {
           "thread_id": {
@@ -42084,6 +42242,46 @@
           "flagged"
         ],
         "title": "WebUsageRead"
+      },
+      "WebsiteTraffic": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unconfigured",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "page_views": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Views"
+          },
+          "visits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "WebsiteTraffic"
       },
       "WorkMode": {
         "type": "string",

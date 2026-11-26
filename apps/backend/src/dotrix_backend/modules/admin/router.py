@@ -20,6 +20,7 @@ from dotrix_backend.modules.admin.schemas import (
     CodingBreakdown,
     DayStats,
     FailureReport,
+    GrowthSnapshot,
     ModelUsage,
     PlatformCounts,
     PlatformHealth,
@@ -361,6 +362,12 @@ async def observe_counts(admin: AdminDep, platform: Platform, days: Days = 7) ->
 async def observe_trends(admin: AdminDep, platform: Platform, days: Days = 14) -> list[DayStats]:
     """Each UTC day: chat runs and coding turns started and failed, tokens, coding cost, and sign-ups."""
     return await platform.trends(days)
+
+
+@router.get("/observe/growth")
+async def observe_growth(admin: AdminDep, request: Request) -> GrowthSnapshot:
+    """Opted-in website traffic over seven days and cumulative GitHub release downloads."""
+    return await request.app.state.growth_metrics.snapshot()
 
 
 @router.get("/observe/failures", responses=errors(422))

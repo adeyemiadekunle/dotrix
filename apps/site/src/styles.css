@@ -1964,3 +1964,61 @@ html.js .reveal.in .stagger-item:hover {
     transform: none;
   }
 }
+
+.cookie-consent {
+  position: fixed;
+  z-index: 70;
+  inset-inline-end: 20px;
+  inset-block-end: 20px;
+  width: min(530px, calc(100% - 40px));
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 8px 36px rgba(17, 19, 24, 0.18);
+}
+.cookie-consent h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 650;
+}
+.cookie-consent p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.cookie-consent a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cookie-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cookie-settings {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cookie-settings:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 500px) {
+  .cookie-consent {
+    inset-inline-end: 12px;
+    inset-block-end: max(12px, env(safe-area-inset-bottom));
+    width: calc(100% - 24px);
+    padding: 16px;
+  }
+  .cookie-actions > button {
+    flex: 1;
+  }
+}

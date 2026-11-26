@@ -11,6 +11,23 @@ from dotrix_backend.core.operations import OperationsSnapshot
 from dotrix_backend.modules.observe.schemas import ObservedRun
 
 
+class WebsiteTraffic(BaseModel):
+    status: Literal["ready", "unconfigured", "unavailable"]
+    page_views: int | None = None
+    visits: int | None = None
+
+
+class ReleaseDownloads(BaseModel):
+    status: Literal["ready", "unavailable"]
+    desktop: int | None = None
+    cli: int | None = None
+
+
+class GrowthSnapshot(BaseModel):
+    traffic: WebsiteTraffic
+    downloads: ReleaseDownloads
+
+
 class AdminSignup(BaseModel):
     """Create the first admin account. On a deployed server this needs the deployment's
     bootstrap token (DOTRIX_ADMIN_BOOTSTRAP_TOKEN). The admin has its own credentials,

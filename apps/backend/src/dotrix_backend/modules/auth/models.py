@@ -20,6 +20,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Null for accounts that only sign in via OAuth or magic link.
     password_hash: Mapped[str | None] = mapped_column(String(255))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    terms_version: Mapped[str | None] = mapped_column(String(32))
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_active: Mapped[bool] = mapped_column(default=True, server_default=true())
     # What they do ("Product designer"), shown next to their name.
     title: Mapped[str | None] = mapped_column(String(100))

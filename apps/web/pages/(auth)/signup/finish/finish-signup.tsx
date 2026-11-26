@@ -5,11 +5,12 @@ import { useState, type FormEvent } from "react";
 
 import { AuthCard } from "@/components/auth-card";
 import { Field, FormError, SubmitButton } from "@/components/form";
+import { TERMS_VERSION, TermsAcceptance } from "@/components/terms-acceptance";
 import { api, authPost, errorMessage, safeNext, unwrap } from "@/lib/api";
 
 /**
  * Finish creating an account from an emailed link: the address is already proved, so all that's
- * left is a name. Nothing happens until the form is sent (mail scanners open links).
+ * left is a name and the terms. Nothing happens until the form is sent (mail scanners open links).
  */
 export function FinishSignup({ token, next }: { token: string; next?: string | null }) {
   const [pending, setPending] = useState(false);
@@ -24,10 +25,11 @@ export function FinishSignup({ token, next }: { token: string; next?: string | n
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (!form.has("accept_terms")) return;
     setPending(true);
     setError(null);
     try {
-      await authPost("signup-link", { token, display_name: form.get("display_name") });
+      await authPost("signup-link", { token, display_name: form.get("display_name"), terms_version: TERMS_VERSION });
       // A full load, so the server sees the new session cookie.
       window.location.assign(next ? safeNext(next) : "/onboarding");
     } catch (e) {
@@ -66,6 +68,7 @@ export function FinishSignup({ token, next }: { token: string; next?: string | n
         <form onSubmit={onSubmit} className="grid gap-4">
           <FormError message={error} />
           <Field label="Name" name="display_name" autoComplete="name" placeholder="Ada Lovelace" required maxLength={100} autoFocus />
+          <TermsAcceptance />
           <SubmitButton pending={pending} className="w-full">
             Create account
           </SubmitButton>

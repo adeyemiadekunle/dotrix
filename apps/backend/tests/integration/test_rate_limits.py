@@ -7,6 +7,7 @@ from httpx import AsyncClient
 
 from dotrix_backend.core.email import OutboxEmailSender
 from dotrix_backend.core.ratelimit import MemoryRateLimiter
+from dotrix_backend.modules.auth.schemas import TermsVersion
 
 
 @pytest.fixture
@@ -85,7 +86,7 @@ async def test_signup_and_verification_resend_are_limited(db_client: AsyncClient
     assert (await db_client.post("/v1/auth/verify-email/resend", headers=ada.headers)).status_code == 429
 
     for n in range(9):  # 10 per IP per hour, counting Ada's
-        body = {"email": f"new{n}@example.com", "password": "correct horse battery", "display_name": "N"}
+        body = {"email": f"new{n}@example.com", "password": "correct horse battery", "display_name": "N", "terms_version": TermsVersion.CURRENT}
         assert (await db_client.post("/v1/auth/signup", json=body)).status_code == 201
-    body = {"email": "one-more@example.com", "password": "correct horse battery", "display_name": "N"}
+    body = {"email": "one-more@example.com", "password": "correct horse battery", "display_name": "N", "terms_version": TermsVersion.CURRENT}
     assert (await db_client.post("/v1/auth/signup", json=body)).status_code == 429

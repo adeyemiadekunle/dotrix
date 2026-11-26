@@ -7,3 +7,5 @@ export const APP_URL = ((env.VITE_APP_URL as string | undefined) || "https://app
 export const SITE_URL = ((env.VITE_SITE_URL as string | undefined) || "https://dotrix.cc").replace(/\/$/, "");
 /** Component releases: desktop installers and standalone CLI archives have separate entries. */
 export const DOWNLOADS_URL = (env.VITE_DOWNLOADS_URL as string | undefined) ?? "https://github.com/adeyemiadekunle/dotrix/releases";
+/** Public beacon token for the consent-gated marketing analytics site. */
+export const WEB_ANALYTICS_TOKEN = (env.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN as string | undefined)?.trim();

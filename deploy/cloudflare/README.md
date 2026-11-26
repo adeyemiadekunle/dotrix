@@ -49,6 +49,16 @@ npx wrangler@4.136.0 deploy --config deploy/cloudflare/wrangler.generated.json \
 
 The generated config attaches only the three pilot hostnames. Changing API runtime secrets requires a fresh container process. For a controlled rotation, redeploy, let the instance sleep, and verify the next start.
 
+### Website analytics and downloads
+
+Publish the marketing site and API/web assets from the same revision when the Terms of Service change. Deploy the updated terms page before enabling signup with that version. The API records the accepted terms version and timestamp for new accounts.
+
+Create a separate Cloudflare Web Analytics site for each environment. Use manual beacon setup and disable automatic beacon injection and any other automatic RUM for that marketing hostname so the consent choice controls collection. Set `VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN` to the public token from the manual snippet when running `node deploy/cloudflare/build-assets.mjs`. For Dokploy, set it in the site's build environment.
+
+Set `DOTRIX_CLOUDFLARE_ANALYTICS_ACCOUNT_ID`, `DOTRIX_CLOUDFLARE_ANALYTICS_SITE_TAG` (the site's identifier, distinct from the public beacon token), and `DOTRIX_CLOUDFLARE_ANALYTICS_API_TOKEN` (account Analytics Read) on the API. In the Cloudflare pilot these are optional Worker bindings. If omitted, Admin reports the traffic source as unconfigured and still fetches the public GitHub download counts. Keep the API token in the server environment.
+
+On a clean browser profile, confirm the marketing page sends no Cloudflare analytics requests before consent or after rejection. Accept analytics, verify the beacon loads, then reject via Cookie settings and confirm it remains off after reload. Allow time for the aggregate to appear in Admin → Overview. GitHub download totals include supported installer and archive assets from stable releases and can include repeated downloads and desktop updates.
+
 ## Verify and record results
 
 1. Request `/health` and `/health/ready` on the app origin. Check that the readiness response reports Postgres reachable. Visit a deep workspace URL directly. On the marketing preview, open the signup link and confirm it points to the pilot. Confirm the app origin returns 404 for `/v1/admin/bootstrap` and the admin hostname requires Cloudflare Access before admin login and 2FA.

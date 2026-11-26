@@ -10,7 +10,7 @@ from uuid_utils.compat import uuid7
 
 from dotrix_backend.core import email_templates, security
 from dotrix_backend.core.email import EmailSender
-from dotrix_backend.core.errors import Conflict, InvalidLink, Unauthorized
+from dotrix_backend.core.errors import Conflict, InvalidLink, Unauthorized, Unprocessable
 from dotrix_backend.core.jobs import Jobs
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.api_tokens.repository import ApiTokenRepository
@@ -35,10 +35,12 @@ from .repository import (
     UserRepository,
 )
 from .schemas import (
+    EmailSignupFinish,
     LoginRequest,
     PasswordResetConfirm,
     SignupRequest,
     SignupResponse,
+    TermsVersion,
     TokenPair,
     UserRead,
 )
@@ -47,6 +49,13 @@ from .sessions import ClientInfo, describe
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+class TermsRequired(Unprocessable):
+    code = "terms_required"
+
+    def __init__(self) -> None:
+        super().__init__("Accept the Terms of Service to create a Dotrix account.")
 
 
 class AuthService:
@@ -74,6 +83,8 @@ class AuthService:
             email=data.email,
             display_name=data.display_name,
             password_hash=security.hash_password(data.password),
+            terms_version=data.terms_version,
+            terms_accepted_at=_now(),
         )
         self.users.add(user)
         try:
@@ -195,18 +206,21 @@ class AuthService:
             raise InvalidLink()
         return signup.email
 
-    async def finish_email_signup(self, token: str, display_name: str) -> SignupResponse:
+    async def finish_email_signup(self, data: EmailSignupFinish) -> SignupResponse:
         """Create the account a sign-up link is for: verified (the link proved the inbox), no
         password (sign in by link, or set one with "Forgot password?"), a personal workspace."""
         now = _now()
-        signup = await self.signups.get_by_hash_for_update(security.hash_token(token))
+        signup = await self.signups.get_by_hash_for_update(security.hash_token(data.token))
         if signup is None or signup.used_at is not None or signup.expires_at <= now:
             raise InvalidLink()
         signup.used_at = now
         if await self.users.get_by_email(signup.email):
             await self.session.commit()  # the link is used up either way
             raise Conflict("An account with this email already exists; sign in instead")
-        user = User(email=signup.email, display_name=display_name, password_hash=None, email_verified_at=now)
+        user = User(
+            email=signup.email, display_name=data.display_name, password_hash=None, email_verified_at=now,
+            terms_version=data.terms_version, terms_accepted_at=now,
+        )
         self.users.add(user)
         try:
             await self.session.flush()
@@ -233,7 +247,10 @@ class AuthService:
 
     # -- sign in with GitHub ------------------------------------------------------
 
-    async def sign_in_with_github(self, profile: GitHubProfile) -> TokenPair:
+    async def sign_in_with_github(
+        self, profile: GitHubProfile, *, terms_version: TermsVersion | None = None,
+        terms_accepted_at: datetime | None = None,
+    ) -> TokenPair:
         """Sign in the account linked to this GitHub account. The first time, link it to the
         account with the same email (only an address GitHub has verified), or create one:
         verified, no password, with a personal workspace."""
@@ -252,8 +269,13 @@ class AuthService:
                 )
             user = await self.users.get_by_email(profile.verified_email)
             if user is None:
+                if terms_version != TermsVersion.CURRENT:
+                    raise TermsRequired()
                 name = (profile.name or profile.login).strip()[:100] or profile.login
-                user = User(email=profile.verified_email, display_name=name, password_hash=None, email_verified_at=now)
+                user = User(
+                    email=profile.verified_email, display_name=name, password_hash=None, email_verified_at=now,
+                    terms_version=terms_version, terms_accepted_at=terms_accepted_at or now,
+                )
                 self.users.add(user)
                 try:
                     await self.session.flush()

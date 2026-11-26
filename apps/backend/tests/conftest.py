@@ -39,6 +39,7 @@ from dotrix_backend.jobs import JOBS
 from dotrix_backend.main import create_app
 from dotrix_backend.modules.agents.llm import ModelChoice, ModelUnavailable
 from dotrix_backend.modules.agents.runner import AgentRunner
+from dotrix_backend.modules.auth.schemas import TermsVersion
 from dotrix_backend.modules.code.checkouts import CodeCheckouts
 from dotrix_backend.modules.workspaces.models import Membership, Role
 from dotrix_engine.testing import ScriptedChatModel
@@ -266,7 +267,7 @@ def signup(db_client: AsyncClient) -> Callable[..., Awaitable[SignedUp]]:
         email: str = "ada@example.com", password: str = "correct horse battery", name: str = "Ada"
     ) -> SignedUp:
         res = await db_client.post(
-            "/v1/auth/signup", json={"email": email, "password": password, "display_name": name}
+            "/v1/auth/signup", json={"email": email, "password": password, "display_name": name, "terms_version": TermsVersion.CURRENT}
         )
         assert res.status_code == 201, res.text
         return SignedUp(res.json(), password)

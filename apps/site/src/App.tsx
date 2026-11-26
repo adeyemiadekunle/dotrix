@@ -28,6 +28,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { APP_URL, DOWNLOADS_URL } from "./config";
+import { useCookieConsent } from "./CookieConsent";
 import { Face, Mark } from "./Face";
 
 const SIGN_IN = `${APP_URL}/login`;
@@ -950,6 +951,7 @@ function TermsPage() {
           You need an account to create or join a dotrix workspace. Keep your credentials secure and do not share sign-in links or API tokens. Workspace owners
           manage workspace membership, approval caps, and repository connections for their workspace.
         </p>
+        <p>When you create an account, you must accept these Terms of Service. We record the version accepted (2026-11-26) and the time of acceptance.</p>
       </section>
       <section>
         <h2>2. Your model keys and third-party providers</h2>
@@ -981,7 +983,14 @@ function TermsPage() {
         </p>
       </section>
       <section>
-        <h2>6. Questions or problem reports</h2>
+        <h2>6. Service metrics and website analytics</h2>
+        <p>
+          Dotrix operators use account signup counts, Chat and Code activity, and GitHub release download totals to understand adoption and operate the service.
+          Optional website analytics depend on your separate choice in Cookie settings. See the <a href="/privacy#metrics">Privacy Policy</a> for details.
+        </p>
+      </section>
+      <section>
+        <h2>7. Questions or problem reports</h2>
         <p>
           If you spot an issue or have a question about these terms, open a public report on{" "}
           <a href={ISSUES_NEW_URL} target="_blank" rel="noreferrer">
@@ -1018,11 +1027,15 @@ function PrivacyPage() {
           records session summaries, changed files, commands, and audit events needed to review and recover runs.
         </p>
       </section>
-      <section>
+      <section id="cookies">
         <h2>4. Cookies and local storage</h2>
         <p>
           dotrix uses essential session cookies and browser storage for authentication state, theme preferences, and pane layout state. Embedded browser-pane
           sessions keep cookies local to the desktop app settings you control.
+        </p>
+        <p>
+          The marketing site remembers your analytics choice for up to 180 days. If you accept, Cloudflare Web Analytics measures page views and visits. You can
+          change your choice using Cookie settings in the footer.
         </p>
       </section>
       <section>
@@ -1036,11 +1049,23 @@ function PrivacyPage() {
           are public—never paste API keys or private code into them.
         </p>
       </section>
+      <section id="metrics">
+        <h2>6. Account, usage, and download metrics</h2>
+        <p>
+          We retain the Terms of Service version and the time you accepted it with your account. Dotrix operators can view aggregate signup and activity counts,
+          run status, failures, and token and estimated cost totals in the admin console. We use these metrics to monitor service health and understand
+          adoption.
+        </p>
+        <p>
+          When you enable marketing-site analytics, Cloudflare Web Analytics measures visits and page views. GitHub supplies cumulative download counts for each
+          release asset. Those totals can include repeat downloads and updates. We do not use them to identify individual installers.
+        </p>
+      </section>
     </LegalShell>
   );
 }
 
-function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: string }) {
+function Footer({ onHome = true, route = "/", cookieSettings }: { onHome?: boolean; route?: string; cookieSettings: ReactNode }) {
   const sec = (id: string) => (onHome ? `#${id}` : `/#${id}`);
   return (
     <footer className="footer">
@@ -1113,6 +1138,7 @@ function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: stri
             <a href="/privacy" aria-current={route === "/privacy" ? "page" : undefined}>
               Privacy
             </a>
+            {cookieSettings}
             <a href={GITHUB_URL} target="_blank" rel="noreferrer">
               GitHub
             </a>
@@ -1124,6 +1150,7 @@ function Footer({ onHome = true, route = "/" }: { onHome?: boolean; route?: stri
 }
 
 export function App({ pathname = "/" }: { pathname?: string }) {
+  const { settings: cookieSettings, banner } = useCookieConsent();
   const route = pathname.replace(/\/+$/, "") || "/";
   const onHome = route === "/";
   useEffect(() => {
@@ -1180,7 +1207,8 @@ export function App({ pathname = "/" }: { pathname?: string }) {
           </>
         )}
       </main>
-      <Footer onHome={onHome} route={route} />
+      <Footer onHome={onHome} route={route} cookieSettings={cookieSettings} />
+      {banner}
     </>
   );
 }

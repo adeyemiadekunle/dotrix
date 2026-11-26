@@ -1,4 +1,4 @@
-import type { AdminAlerts, AuditEvent, CodingRow, Counts, Day, Failures, Health, ModelRow, Page, Run } from "./api";
+import type { AdminAlerts, AuditEvent, CodingRow, Counts, Day, Failures, GrowthSnapshot, Health, ModelRow, Page, Run } from "./api";
 
 const now = Date.now();
 const minute = 60_000;
@@ -70,6 +70,11 @@ const counts: Counts = {
 };
 
 const codingEngine = "claude-code";
+
+const growth: GrowthSnapshot = {
+  traffic: { status: "ready", page_views: 1_824, visits: 1_206 },
+  downloads: { status: "ready", desktop: 394, cli: 281 },
+};
 
 const runs: Run[] = Array.from({ length: 36 }, (_, index) => {
   const kind = index % 2 === 0 ? "chat" : "coding";
@@ -220,6 +225,8 @@ export function readDemo(path: string) {
       return counts;
     case "/admin/observe/trends":
       return trends(days);
+    case "/admin/observe/growth":
+      return growth;
     case "/admin/observe/failures":
       return failures(days);
     case "/admin/observe/coding":

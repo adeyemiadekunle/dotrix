@@ -8,6 +8,7 @@ test("new accounts save a first project, resume setup and connect a personal mod
   await page.getByLabel("Name", { exact: true }).fill(person.name);
   await page.getByLabel("Email", { exact: true }).fill(person.email);
   await page.getByLabel("Password", { exact: true }).fill(person.password);
+  await page.getByRole("checkbox", { name: /I accept the Terms of Service/ }).check();
   await page.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(page).toHaveURL(/\/onboarding/);
   await expect(page.getByRole("heading", { name: "Verify your email", exact: true })).toBeVisible();
@@ -223,6 +224,7 @@ test("new invitees join the intended project without creating a personal project
   await member.getByLabel("Name", { exact: true }).fill(person.name);
   await member.getByLabel("Email", { exact: true }).fill(person.email);
   await member.getByLabel("Password", { exact: true }).fill(person.password);
+  await member.getByRole("checkbox", { name: /I accept the Terms of Service/ }).check();
   await member.getByRole("button", { name: "Create account", exact: true }).click();
   await expect(member.getByRole("button", { name: "Accept and join", exact: true })).toBeVisible();
   await member.getByRole("button", { name: "Accept and join", exact: true }).click();

@@ -350,7 +350,8 @@ export interface paths {
          * Finish Github Sign In
          * @description Exchange the `code` GitHub sent back for an access and refresh token, like login. The
          *     first time, links the GitHub account to the account with the same email (only one GitHub
-         *     has verified) or creates one, with a personal workspace. Check `state` before calling.
+         *     has verified) or creates one, with a personal workspace, if the current terms were accepted.
+         *     Check `state` before calling.
          */
         post: operations["finish_github_sign_in"];
         delete?: never;
@@ -856,6 +857,26 @@ export interface paths {
          * @description Each UTC day: chat runs and coding turns started and failed, tokens, coding cost, and sign-ups.
          */
         get: operations["observe_trends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/observe/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Growth
+         * @description Opted-in website traffic over seven days and cumulative GitHub release downloads.
+         */
+        get: operations["observe_growth"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8265,6 +8286,8 @@ export interface components {
         };
         /** EmailSignupFinish */
         EmailSignupFinish: {
+            /** @description The version of the Terms of Service explicitly accepted */
+            terms_version: components["schemas"]["TermsVersion"];
             /** Token */
             token: string;
             /** Display Name */
@@ -8629,6 +8652,16 @@ export interface components {
              */
             outcome: "created" | "already_imported" | "already_linked" | "deleted_task";
         };
+        /** GitHubSignInFinish */
+        GitHubSignInFinish: {
+            /**
+             * Code
+             * @description The `code` GitHub sent back
+             */
+            code: string;
+            /** @description Required to create a new account */
+            terms_version?: components["schemas"]["TermsVersion"] | null;
+        };
         /** GitHubStart */
         GitHubStart: {
             /**
@@ -8656,6 +8689,11 @@ export interface components {
             install_url: string | null;
             /** Installations */
             installations: components["schemas"]["InstallationRead"][];
+        };
+        /** GrowthSnapshot */
+        GrowthSnapshot: {
+            traffic: components["schemas"]["WebsiteTraffic"];
+            downloads: components["schemas"]["ReleaseDownloads"];
         };
         /** Health */
         Health: {
@@ -10515,6 +10553,18 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** ReleaseDownloads */
+        ReleaseDownloads: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "unavailable";
+            /** Desktop */
+            desktop?: number | null;
+            /** Cli */
+            cli?: number | null;
+        };
         /** RepoBaselineRead */
         RepoBaselineRead: {
             /** Digest */
@@ -11351,6 +11401,8 @@ export interface components {
         };
         /** SignupRequest */
         SignupRequest: {
+            /** @description The version of the Terms of Service explicitly accepted */
+            terms_version: components["schemas"]["TermsVersion"];
             /**
              * Email
              * Format: email
@@ -11699,6 +11751,11 @@ export interface components {
              */
             customised: boolean;
         };
+        /**
+         * TermsVersion
+         * @enum {string}
+         */
+        TermsVersion: "2026-11-26";
         /** ThreadRead */
         ThreadRead: {
             /**
@@ -11942,6 +11999,18 @@ export interface components {
              * @description Source ids of pages that addressed AI agents (their text was ignored)
              */
             flagged: string[];
+        };
+        /** WebsiteTraffic */
+        WebsiteTraffic: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "unconfigured" | "unavailable";
+            /** Page Views */
+            page_views?: number | null;
+            /** Visits */
+            visits?: number | null;
         };
         /**
          * WorkMode
@@ -13074,7 +13143,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GitHubFinish"];
+                "application/json": components["schemas"]["GitHubSignInFinish"];
             };
         };
         responses: {
@@ -14456,6 +14525,46 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_growth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthSnapshot"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

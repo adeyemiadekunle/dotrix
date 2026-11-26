@@ -4,7 +4,7 @@ import { useSearchParams } from "@/lib/navigation";
 import { SignupForm } from "./signup-form";
 
 export default function SignupPage() {
-  const next = useSearchParams().get("next");
+  const params = useSearchParams();
   const providers = useAuthProviders();
-  return <SignupForm next={next ?? undefined} github={providers.github} />;
+  return <SignupForm next={params.get("next") ?? undefined} signupError={params.get("error") ?? undefined} github={providers.github} />;
 }
