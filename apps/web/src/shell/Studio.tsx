@@ -1,6 +1,6 @@
 // The workspace app (the render loop): your preferences on
 // <html>, the page title, the shell with the screen for the URL, and the overlay layers.
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { hasSession } from "@/lib/api";
 
@@ -63,8 +63,6 @@ const SCREENS: Partial<Record<Route, () => ReactNode>> = {
   settings: Settings,
 };
 
-const DemoComponents = lazy(() => import("../screens/DemoComponents"));
-
 /** Overview folded into Home: old links open it. */
 function ToHome() {
   useEffect(() => go("home", {}, { replace: true }), []);
@@ -122,14 +120,6 @@ function NotFound() {
 function Screen() {
   const { route } = useRoute();
   if (route === "notfound") return <NotFound />;
-  if (route === "components") {
-    if (currentSlug() !== WS) return <NotFound />;
-    return (
-      <Suspense fallback={<p role="status">Loading components…</p>}>
-        <DemoComponents />
-      </Suspense>
-    );
-  }
   const C = SCREENS[route];
   if (C) return <C />;
   return (
