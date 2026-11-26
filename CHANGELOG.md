@@ -26,6 +26,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Grouped admin navigation by operations, agent usage, governance, and administration.
 - Applied the shared coss transcript design to Chat and Code and reused its empty states in the admin console.
 - Upgraded Nova's orchestration instructions (`PM_INSTRUCTIONS`, `pm.request` stages, and `fx_pilot` delegation guidance) to curb over-delegation, enforce self-contained briefs and parallel batching, surface specialist conflicts with evidence, and include upstream `status` in dependency payloads.
 - Chat's fx host now pins `@kunemi-group/kai@0.0.17-kai.3` (matching the coding image's `0.0.17-kai.3`), with cross-version journal resumption from `0.0.17-kai.2`, `0.0.17-kai.1` and `0.0.16` (`LIBFX_ARTIFACTS`), and new runs bound as `libfx-0.0.17-kai.3-chat-3`.
