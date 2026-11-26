@@ -98,7 +98,9 @@ test("the agents answer, and a change waits for approval before it happens", asy
   await box.fill("What's open?");
   await box.press("Enter");
   await expect(page).toHaveURL(/thread=.*project=KUM/);
-  await expect(page.getByText("Test model reply: What's open?")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-sender="assistant"] [data-slot="chat-message-bubble"]').getByText("Test model reply: What's open?")).toBeVisible({
+    timeout: 30_000,
+  });
   // What the agents did stays with the reply (kept after the run), folded until asked for.
   await page.getByRole("button", { name: "Steps" }).first().click();
   await expect(page.getByRole("list", { name: "Steps" })).toBeVisible();

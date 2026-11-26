@@ -1,14 +1,16 @@
 import { useAtPicker } from "../components/AtPicker";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 import { Suggestions } from "@dotrix/ui/components/ai-elements/suggestion";
+import { ChatMessage } from "@dotrix/ui/components/chat/chat-message";
+import { ChatLoadingState } from "@dotrix/ui/components/chat/chat-states";
+import { ChatTranscriptReply } from "@dotrix/ui/components/chat/chat-transcript-reply";
+import { ChatTypingIndicator } from "@dotrix/ui/components/chat/chat-typing-indicator";
 import { Input as DesignInput } from "@dotrix/ui/components/input";
 import { Select, SelectContent, SelectField, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
 import {
   ChatComposer,
   ChatComposerInput,
   ChatLayout,
-  ChatMessage,
-  ChatMessageBubble,
   ChatMessageList,
   ChatSendButton,
   CodingOptions,
@@ -83,7 +85,7 @@ import { LimitNotice } from "../components/LimitNotice";
 import { allowed, approvalModes, defaultApproval, canManageIssues } from "../core/can";
 import { openPop, openTask } from "../core/actions";
 import { desktop, desktopBrowser, useBrowserSettings, useDesktopRunners, type DesktopRunner } from "../core/desktop";
-import { DotsLoader, Ic } from "../core/icons";
+import { Ic } from "../core/icons";
 import { newProject } from "../core/more";
 import { go, useRoute } from "../core/nav";
 import { ago, greeting } from "../core/utils";
@@ -489,82 +491,92 @@ export function Message({
     m.role === "agent" ? refsOf(projectId, m.text, m.activity, isLive() ? liveTasks : undefined, isLive() ? liveDocs : undefined) : { tasks: [], docs: [] };
   const p = proj(projectId ?? "");
   const admin = me()?.role === "Owner" || me()?.role === "Admin";
-  // Laid out as Codes lays out a session (Claude Code's): what a person wrote in a bubble on the right, its edge on
-  // the message box's; an agent's reply under its face and name, flush with the message box's left edge.
   if (m.role === "user")
     return (
-      <ChatMessage data-sender="user" sender="user" className="dotrix-message">
-        <ChatMessageBubble className="dotrix-user-bubble">{m.text}</ChatMessageBubble>
-        <div className="chat-ask-meta">
-          {tag && <span className="badge">{tag}</span>}
-          {m.by !== D().me && <span>{w?.name ?? "Someone"} ·</span>}
-          <time>{ago(m.at)}</time>
-          <ActionButton
-            className="ibtn ibtn-xs"
-            onClick={() => copyText(m.text)}
-            aria-label={m.by === D().me ? "Copy what you wrote" : "Copy message"}
-            data-tip="Copy"
-          >
-            <Ic n="copy" s={13} />
-          </ActionButton>
-          <Av id={m.by} cls="sm" tip={false} />
-        </div>
+      <>
+        <ChatMessage
+          data-sender="user"
+          side="outgoing"
+          className="chat-msg dotrix-message"
+          footer={
+            <div className="chat-ask-meta">
+              {tag && <span className="badge">{tag}</span>}
+              {m.by !== D().me && <span>{w?.name ?? "Someone"} ·</span>}
+              <time>{ago(m.at)}</time>
+              <ActionButton
+                className="ibtn ibtn-xs"
+                onClick={() => copyText(m.text)}
+                aria-label={m.by === D().me ? "Copy what you wrote" : "Copy message"}
+                data-tip="Copy"
+              >
+                <Ic n="copy" s={13} />
+              </ActionButton>
+              <Av id={m.by} cls="sm" tip={false} />
+            </div>
+          }
+        >
+          {m.text}
+        </ChatMessage>
         {children}
-      </ChatMessage>
+      </>
     );
   return (
-    <ChatMessage data-sender="assistant" sender="assistant" className="dotrix-message">
-      <div className="who">
-        <Face c={agent?.c ?? "#57544E"} size={22} mood="idle" />
-        <b>{agent?.name ?? agentName(m.by)}</b>
-        {agent && <span className="role">{agent.role}</span>}
-        <time>{ago(m.at)}</time>
-        {tag && <span className="badge">{tag}</span>}
-        {usage && (usage.mine || admin) ? (
-          <ContextUsage usage={usage} />
-        ) : m.tokens && admin ? (
-          <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>
-        ) : null}
-      </div>
-      <div className="body">
-        {m.activity && m.activity.length > 0 && <ChainOfThought steps={m.activity} />}
-        {m.text && (
-          <div className="md">
-            <Markdown
-              cite={
-                sources?.length
-                  ? (label) => {
-                      const source = sources.find((x) => x.label === label);
-                      return source ? <Citation source={source} /> : undefined;
-                    }
-                  : undefined
-              }
-            >
-              {m.text}
-            </Markdown>
-          </div>
-        )}
-        {m.role === "agent" && sources?.length ? <Sources sources={sources} /> : null}
-        {(refs.tasks.length > 0 || refs.docs.length > 0) && (
-          <div className="chat-refs">
-            {refs.tasks.map((k) => (
-              <button key={k} className="ref" onClick={() => openTask(isLive() ? k : D().tasks.find((t) => t.key === k)!.id)}>
-                <Ic n="square-check" s={12} />
-                {k}
+    <ChatTranscriptReply
+      data-sender="assistant"
+      className="chat-msg dotrix-message"
+      avatar={<Face c={agent?.c ?? "#57544E"} size={24} mood="idle" />}
+      author={
+        <div className="who">
+          <b>{agent?.name ?? agentName(m.by)}</b>
+          {agent && <span className="role">{agent.role}</span>}
+          <time>{ago(m.at)}</time>
+          {tag && <span className="badge">{tag}</span>}
+          {usage && (usage.mine || admin) ? (
+            <ContextUsage usage={usage} />
+          ) : m.tokens && admin ? (
+            <span className="faint">{(m.tokens / 1000).toFixed(1)}k tokens</span>
+          ) : null}
+        </div>
+      }
+      beforeBody={m.activity?.length ? <ChainOfThought steps={m.activity} /> : undefined}
+      bubbleProps={{ className: "md" }}
+      body={
+        m.text ? (
+          <Markdown
+            cite={
+              sources?.length
+                ? (label) => {
+                    const source = sources.find((x) => x.label === label);
+                    return source ? <Citation source={source} /> : undefined;
+                  }
+                : undefined
+            }
+          >
+            {m.text}
+          </Markdown>
+        ) : undefined
+      }
+    >
+      {m.role === "agent" && sources?.length ? <Sources sources={sources} /> : null}
+      {(refs.tasks.length > 0 || refs.docs.length > 0) && (
+        <div className="chat-refs">
+          {refs.tasks.map((k) => (
+            <button key={k} className="ref" onClick={() => openTask(isLive() ? k : D().tasks.find((t) => t.key === k)!.id)}>
+              <Ic n="square-check" s={12} />
+              {k}
+            </button>
+          ))}
+          {p &&
+            refs.docs.map((d) => (
+              <button key={d} className="ref" onClick={() => openDocument(p, d)}>
+                <Ic n="file-text" s={12} />
+                {d}
               </button>
             ))}
-            {p &&
-              refs.docs.map((d) => (
-                <button key={d} className="ref" onClick={() => openDocument(p, d)}>
-                  <Ic n="file-text" s={12} />
-                  {d}
-                </button>
-              ))}
-          </div>
-        )}
-        {children}
-      </div>
-    </ChatMessage>
+        </div>
+      )}
+      {children}
+    </ChatTranscriptReply>
   );
 }
 
@@ -1408,24 +1420,27 @@ function Conversation({ id, projectId, title }: { id: string; projectId: string 
                 </div>
               ))}
               {active && !stream.text && (
-                <div className="chat-msg agent working">
-                  <div className="who">
-                    <Face c={agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={22} mood="working" />
-                    <b>{agents.find((a) => a.handle === agent)?.name ?? agent}</b>
-                    <span className="role">{agents.find((a) => a.handle === agent)?.role}</span>
-                  </div>
-                  <div className="body">
+                <ChatMessage
+                  side="incoming"
+                  bubble={false}
+                  className="chat-msg"
+                  author={agentName(agent)}
+                  avatar={<Face c={agents.find((a) => a.handle === agent)?.c ?? "#E0A92E"} size={24} mood="working" />}
+                >
+                  {stream.activity ? (
                     <Trace className="agent-trace" aria-live="polite">
                       <TraceLine status="running">
                         <TraceIcon>
                           <Ic n="spinner-gap" cls="animate-spin" />
                         </TraceIcon>
-                        <TraceTitle>{stream.activity ?? `${agentName(agent)} is thinking…`}</TraceTitle>
+                        <TraceTitle>{stream.activity}</TraceTitle>
                       </TraceLine>
                     </Trace>
-                    {stream.thinking && !stream.text && <Reasoning text={stream.thinking} live />}
-                  </div>
-                </div>
+                  ) : (
+                    <ChatTypingIndicator label={`${agentName(agent)} is thinking…`} />
+                  )}
+                  {stream.thinking && <Reasoning text={stream.thinking} live />}
+                </ChatMessage>
               )}
             </div>
           </ChatMessageList>
@@ -2169,45 +2184,50 @@ function KaiTurn({
   const removed = turn.files_changed.reduce((n, f) => n + Number(f.removed ?? 0), 0);
   return (
     <div className="kt">
-      <div className="kt-ask">
-        <div className="kt-bubble">{asked}</div>
-        <div className="kt-meta">
-          {!mine && <span>{who(turn.requested_by_id ?? "")?.name ?? "Someone"} ·</span>}
-          <span>{ago(ms(turn.created_at))}</span>
-          <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(asked)} aria-label="Copy the request" data-tip="Copy">
-            <Ic n="copy" s={13} />
-          </ActionButton>
-        </div>
-      </div>
-      {(steps.length > 0 || replyText || turn.error) && (
-        <div className="kt-reply">
-          <div className="kt-who">
-            <Av id={CODING_AGENT.id} cls="sm" tip={false} />
-            <b>{CODING_AGENT.name}</b>
+      <ChatMessage
+        side="outgoing"
+        footer={
+          <div className="chat-ask-meta">
+            {!mine && <span>{who(turn.requested_by_id ?? "")?.name ?? "Someone"} ·</span>}
+            <span>{ago(ms(turn.created_at))}</span>
+            <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(asked)} aria-label="Copy the request" data-tip="Copy">
+              <Ic n="copy" s={13} />
+            </ActionButton>
           </div>
-          {steps.length > 0 && (
-            <Trace className="agent-trace kt-trace">
-              <TraceCollapsible>
-                <TraceCollapsibleTrigger>
-                  <TraceLine status={working ? "running" : undefined}>
-                    <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
-                    <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events, turn.status)}</TraceTitle>
-                  </TraceLine>
-                </TraceCollapsibleTrigger>
-                <TraceCollapsibleContent>
-                  <ToolCalls
-                    events={turn.events.slice(-200)}
-                    running={working}
-                    onPath={(path) => onPath(path, turn.id)}
-                    known={turn.files_changed.map(fileOf)}
-                    render={(text) => <PathLinks text={text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />}
-                  />
-                </TraceCollapsibleContent>
-              </TraceCollapsible>
-            </Trace>
-          )}
-          {replyText && (
-            <div className="md">
+        }
+      >
+        {asked}
+      </ChatMessage>
+      {(steps.length > 0 || replyText || turn.error) && (
+        <ChatTranscriptReply
+          avatar={<Av id={CODING_AGENT.id} cls="sm" tip={false} />}
+          author={CODING_AGENT.name}
+          bubbleProps={{ className: "md kt-markdown" }}
+          beforeBody={
+            steps.length > 0 ? (
+              <Trace className="agent-trace kt-trace">
+                <TraceCollapsible>
+                  <TraceCollapsibleTrigger>
+                    <TraceLine status={working ? "running" : undefined}>
+                      <TraceIcon>{working ? <Ic n="spinner-gap" cls="animate-spin" /> : <Ic n="list-checks" />}</TraceIcon>
+                      <TraceTitle>{working ? (steps.at(-1)?.text ?? "Working") : stepsSummary(turn.events, turn.status)}</TraceTitle>
+                    </TraceLine>
+                  </TraceCollapsibleTrigger>
+                  <TraceCollapsibleContent>
+                    <ToolCalls
+                      events={turn.events.slice(-200)}
+                      running={working}
+                      onPath={(path) => onPath(path, turn.id)}
+                      known={turn.files_changed.map(fileOf)}
+                      render={(text) => <PathLinks text={text} paths={turn.files_changed.map(fileOf)} onPath={(path) => onPath(path, turn.id)} />}
+                    />
+                  </TraceCollapsibleContent>
+                </TraceCollapsible>
+              </Trace>
+            ) : undefined
+          }
+          body={
+            replyText ? (
               <Markdown
                 onCode={(code) =>
                   turn.files_changed.some((f) => fileOf(f) === code.replace(/:\d+$/, "")) ? () => onPath(code.replace(/:\d+$/, ""), turn.id) : undefined
@@ -2215,8 +2235,9 @@ function KaiTurn({
               >
                 {replyText}
               </Markdown>
-            </div>
-          )}
+            ) : undefined
+          }
+        >
           {turn.error && <div className="kt-error">{turn.error}</div>}
           {(turn.screenshots ?? []).length > 0 && (
             <div className="cs-shots" aria-label="Screenshots from the browser">
@@ -2252,7 +2273,7 @@ function KaiTurn({
               </button>
             )}
           </div>
-        </div>
+        </ChatTranscriptReply>
       )}
       {turn.commit_sha && (
         <Checkpoint
@@ -3013,27 +3034,35 @@ export const Pending = ({
 }) => (
   <>
     <SessionHeader />
-    <div className="chat-scroll" style={{ display: "flex" }}>
-      <div className="chat-pending" role={loading ? "status" : undefined}>
-        {loading && <DotsLoader px={44} />}
-        <span>{text}</span>
-        {onRetry && (
-          <ActionButton className="btn btn-secondary btn-sm" onClick={onRetry}>
-            Try again
-          </ActionButton>
-        )}
-        {inbox && (
-          <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
-            Open Inbox
-          </ActionButton>
-        )}
-        {!loading && (
+    {loading ? (
+      <div className="chat-scroll">
+        <div className="chat-col">
+          <p className="muted" aria-hidden="true">
+            {text}
+          </p>
+          <ChatLoadingState label={text} />
+        </div>
+      </div>
+    ) : (
+      <div className="chat-scroll" style={{ display: "flex" }}>
+        <div className="chat-pending">
+          <span>{text}</span>
+          {onRetry && (
+            <ActionButton className="btn btn-secondary btn-sm" onClick={onRetry}>
+              Try again
+            </ActionButton>
+          )}
+          {inbox && (
+            <ActionButton className="btn btn-secondary btn-sm" onClick={() => go("inbox", {}, { search: "tab=needs" })}>
+              Open Inbox
+            </ActionButton>
+          )}
           <ActionButton className="btn btn-ghost btn-sm" onClick={back[1]}>
             {back[0]}
           </ActionButton>
-        )}
+        </div>
       </div>
-    </div>
+    )}
   </>
 );
 

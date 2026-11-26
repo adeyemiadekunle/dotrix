@@ -51,7 +51,8 @@ test("sample Chat and Codes use the shared lists and message presentation withou
   await expect(page.getByLabel("Work mode: Discuss", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Approvals", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Model", exact: true })).toBeVisible();
-  await expect(page.locator(".chat-msg").first()).toBeVisible();
+  await expect(page.locator('[data-slot="chat-message"][data-align="end"] [data-slot="chat-message-bubble"]').first()).toBeVisible();
+  await expect(page.locator('[data-slot="chat-message"][data-align="start"] [data-slot="chat-message-bubble"]').first()).toBeVisible();
   await page.goto("/w/dotrix/codes");
   await page.getByRole("button", { name: /WEB-154 Fix broken anchor links/ }).click();
   await expect(page.getByText("Sample session · Sign in to work with Kai.")).toBeVisible();
@@ -65,7 +66,7 @@ test("sample Chat and Codes use the shared lists and message presentation withou
   await followUp.press("Enter");
   await expect(followUp).toHaveValue("Check the remaining anchors");
   await expect(page.getByRole("link", { name: "Sign in to work with Kai." })).toHaveAttribute("href", "/login");
-  await expect(page.locator(".chat-msg").first()).toBeVisible();
+  await expect(page.locator('[data-slot="chat-message"][data-align="start"] [data-slot="chat-message-bubble"]').first()).toBeVisible();
   await page.getByRole("button", { name: "Show the panes", exact: true }).click();
   await expect(page.getByRole("table", { name: "Diff" })).toHaveCount(3);
   await page.getByRole("button", { name: "Open a pane", exact: true }).click();

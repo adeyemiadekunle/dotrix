@@ -618,11 +618,6 @@ body {
 .dt-idle {
   opacity: 0.45;
 }
-.dt-empty {
-  padding: 28px 18px !important;
-  color: var(--text-3);
-  text-align: center;
-}
 .dt-detail td {
   background: var(--sunken);
   white-space: normal !important;

@@ -265,16 +265,9 @@
     padding: 24px var(--gutter, 24px) 12px;
     width: 100%;
   }
-  /* A conversation as Codes shows a session (Claude Code's): a person's message in a bubble on the right, its edge
-     on the message box's; an agent's reply under its face and name, flush with the message box's left edge. */
+  /* Spacing for the shared transcript inside Dotrix conversations. */
   .chat-msg {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
     padding: 10px 0;
-  }
-  .chat-msg .body {
-    min-width: 0;
   }
   .chat-msg .who {
     display: flex;
@@ -290,22 +283,6 @@
     color: var(--text-3);
     font-size: var(--fs-xs);
   }
-  .chat-msg.user {
-    align-items: flex-end;
-    gap: 4px;
-    padding-left: 15%;
-  }
-  .chat-bubble {
-    max-width: 100%;
-    padding: 10px 16px;
-    border-radius: 18px;
-    background: var(--surface-3);
-    color: var(--text);
-    font-size: 14.5px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
   .chat-ask-meta {
     display: flex;
     align-items: center;
@@ -315,11 +292,6 @@
   }
   .chat-ask-meta .ibtn {
     opacity: 0.75;
-  }
-  @media (max-width: 720px) {
-    .chat-msg.user {
-      padding-left: 8%;
-    }
   }
   .chat-msg .md {
     font-size: 14.5px;
@@ -3004,24 +2976,6 @@ section.side-panel-body[hidden] {
   flex-direction: column;
   gap: 14px;
 }
-.kt-ask {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  padding-left: 15%;
-}
-.kt-bubble {
-  padding: 10px 16px;
-  border-radius: 18px;
-  background: var(--surface-3);
-  color: var(--text);
-  font-size: 14.5px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.kt-meta,
 .kt-actions {
   display: flex;
   align-items: center;
@@ -3029,29 +2983,12 @@ section.side-panel-body[hidden] {
   font-size: 12px;
   color: var(--text-3);
 }
-.kt-meta .ibtn,
 .kt-actions .ibtn {
   opacity: 0.75;
 }
-.kt-reply {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.kt-markdown {
   font-size: 14.5px;
   line-height: 1.6;
-}
-.kt-reply .md {
-  font-size: 14.5px;
-}
-.kt-who {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 14px;
-}
-.kt-who b {
-  font-weight: 600;
 }
 .kt-error {
   padding: 8px 12px;
@@ -3175,11 +3112,6 @@ section.side-panel-body[hidden] {
   }
   .cmp-controls-right {
     margin-left: auto;
-  }
-}
-@media (max-width: 640px) {
-  .kt-ask {
-    padding-left: 8%;
   }
 }
 /* Changes: a "viewed" check on each file's bar (as Claude Code's diff); a viewed file folds and dims. */
