@@ -141,7 +141,12 @@ test("sample workspace switches on Home and previews the repository-first Code c
   await expect(page.getByRole("textbox", { name: "What should it do" })).toBeInViewport();
   await expect(page.getByRole("link", { name: "Sign in to start coding" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Start coding" })).toBeDisabled();
-  await expect(page.getByRole("separator", { name: "Resize the list" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Code tabs" }).locator("[aria-current=page]")).toHaveText("New session");
+  const browse = page.getByRole("button", { name: "Browse sessions" });
+  await browse.click();
+  await expect(page.getByRole("textbox", { name: "Find a session" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(browse).toBeFocused();
   const model = page.getByRole("combobox", { name: "Model", exact: true });
   await model.click();
   await page.getByRole("option", { name: "Sonnet 5.5" }).click();

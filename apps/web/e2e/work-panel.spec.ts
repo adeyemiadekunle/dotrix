@@ -289,7 +289,8 @@ test("live session menus still pin using the current workspace and project scope
   await page.route("**/coding/sessions/session1", (route) =>
     route.request().method() === "PATCH" ? route.fulfill({ json: { ...session, pinned: true } }) : route.fallback(),
   );
-  await page.getByRole("button", { name: "More for TEST-1", exact: true }).click();
+  await page.getByRole("button", { name: "Browse sessions" }).click();
+  await page.getByRole("navigation", { name: "Sessions", exact: true }).getByRole("button", { name: "More for TEST-1", exact: true }).click();
   const pin = page.getByRole("menu").getByRole("button", { name: "Pin", exact: true });
   await expect(pin).toBeEnabled();
   const submitted = page.waitForRequest((request) => request.method() === "PATCH" && new URL(request.url()).pathname.endsWith("/coding/sessions/session1"));
