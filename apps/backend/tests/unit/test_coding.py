@@ -726,3 +726,17 @@ def test_opencode_s_totals_read_how_its_helpers_ended_from_the_session_export(tm
                          timeout=30, check=True)
     totals = json.loads(out.stdout)
     assert totals["helpers"] == [["ses_new", "completed"]] and [s["id"] for s in totals["turn"]] == ["msg_1", "msg_2"]
+
+
+def test_a_runner_may_report_kai_s_helpers_as_background_tasks() -> None:
+    """A local turn's helpers are listed as a cloud turn's (`background-<state>`, `ref` `worker:<id>`), and a claim says
+    the platform takes them: a runner that doesn't see it (an older platform) reports them as steps."""
+    from dotrix_backend.modules.coding.schemas import CodingClaim
+
+    beat = RunnerHeartbeat.model_validate({"lease_token": 1, "events": [
+        {"kind": "background-running", "text": "explorer: find the answer", "ref": "worker:ae4ac377"},
+        {"kind": "background-done", "text": "explorer: find the answer", "ref": "worker:ae4ac377"}]})
+    assert [e.kind for e in beat.events] == ["background-running", "background-done"]
+    with pytest.raises(ValidationError):
+        RunnerHeartbeat.model_validate({"lease_token": 1, "events": [{"kind": "background-anything", "text": "x"}]})
+    assert CodingClaim.model_fields["helper_events"].default is True

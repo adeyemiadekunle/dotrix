@@ -1150,3 +1150,36 @@ def test_codex_on_this_computer_keeps_its_helpers_capped_in_its_sandbox() -> Non
     assert "features.multi_agent=false" not in argv and "features.multi_agent_v2=false" in argv
     assert "agents.max_threads=2" in argv and "agents.max_depth=1" in argv
     assert argv[argv.index("--sandbox") + 1] == "workspace-write"  # which every helper inherits
+
+
+def test_kai_s_helpers_are_listed_as_background_tasks_when_the_platform_takes_them() -> None:
+    """A platform that says `helper_events` in its claim lists a local turn's helpers as a cloud turn's: Codes shows
+    each with the turn's background tasks. OpenCode's own events never say a helper ended (it waits for them before
+    it exits), so one still open when the tool exits ended with the turn."""
+    from dotrix_cli.runner import Outcome, helpers_left, parse_line
+
+    out = Outcome(helper_events=True)
+    for event in [
+        {"type": "system", "subtype": "task_started", "task_id": "ae4ac377", "task_type": "local_agent",
+         "subagent_type": "explorer", "description": "find the answer"},
+        {"type": "system", "subtype": "task_notification", "task_id": "ae4ac377", "status": "completed"},
+        {"type": "tool_use", "part": {"tool": "subagent", "state": {"status": "completed",
+         "input": {"agent": "reviewer", "description": "review the change"},
+         "metadata": {"metadata": {"sessionID": "ses_child", "status": "running"}}}}},
+    ]:
+        parse_line(json.dumps(event), out)
+    helpers_left(out)
+    helpers_left(out)  # once only
+    assert [(e["kind"], e["text"], e.get("ref")) for e in out.events] == [
+        ("background-running", "explorer: find the answer", "worker:ae4ac377"),
+        ("background-done", "explorer: find the answer", "worker:ae4ac377"),
+        ("tool", "Asked reviewer to review the change", None),
+        ("background-running", "reviewer: review the change", "worker:ses_child"),
+        ("background-ended", "reviewer: review the change", "worker:ses_child"),
+    ]
+    # An older platform takes none of those kinds: the same helper is a step there.
+    older = Outcome()
+    parse_line(json.dumps({"type": "system", "subtype": "task_started", "task_id": "t", "task_type": "local_agent",
+                           "subagent_type": "explorer", "description": "x"}), older)
+    helpers_left(older)
+    assert [e["kind"] for e in older.events] == ["step", "step"]

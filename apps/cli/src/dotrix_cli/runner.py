@@ -338,6 +338,9 @@ class Outcome:
     # The helpers (subagents) this turn started, by the engine's id for each, and those said to have ended.
     helpers: dict[str, str] = field(default_factory=dict)
     helpers_ended: set[str] = field(default_factory=set)
+    # The platform lists helpers with the turn's background tasks (its claim says `helper_events`): an older one
+    # takes only steps, so they're reported as steps there.
+    helper_events: bool = False
     # Claude Code: each model call's tokens, its subagents' included (a result counts only its own part of the turn).
     calls: dict[str, tuple[int, int]] = field(default_factory=dict)
     helper_calls: dict[str, str] = field(default_factory=dict)  # Claude Code: each Agent call's subagent
@@ -347,13 +350,15 @@ MAX_STEP = 160
 # How a helper ended, as each engine says it, in the words a local turn's steps use.
 HELPER_ENDS = {"completed": "finished", "failed": "failed", "errored": "failed", "error": "failed",
                "killed": "was stopped", "stopped": "was stopped", "interrupted": "was stopped", "shutdown": "was stopped"}
+HELPER_STATES = {"finished": "done", "failed": "failed", "was stopped": "stopped"}  # as Codes lists them
 
 
 def _helper_started(out: Outcome, key: str, label: str) -> None:
     key = key[:80]
     if key and key not in out.helpers:
         out.helpers[key] = _clip(label, 200)
-        out.events.append({"kind": "step", "text": f"Started a helper: {out.helpers[key]}"})
+        out.events.append({"kind": "background-running", "text": out.helpers[key], "ref": f"worker:{key}"[:64]}
+                          if out.helper_events else {"kind": "step", "text": f"Started a helper: {out.helpers[key]}"})
 
 
 def _helper_ended(out: Outcome, key: str, status: str) -> None:
@@ -361,7 +366,8 @@ def _helper_ended(out: Outcome, key: str, status: str) -> None:
     ended = HELPER_ENDS.get(status)
     if key in out.helpers and key not in out.helpers_ended and ended:
         out.helpers_ended.add(key)
-        out.events.append({"kind": "step", "text": f"A helper {ended}: {out.helpers[key]}"})
+        out.events.append({"kind": f"background-{HELPER_STATES[ended]}", "text": out.helpers[key], "ref": f"worker:{key}"[:64]}
+                          if out.helper_events else {"kind": "step", "text": f"A helper {ended}: {out.helpers[key]}"})
 MAX_OUTPUT = 8_000  # of a command's output: its start and, mostly, its end (where errors are)
 
 
@@ -455,6 +461,16 @@ def drop_steer(inbox: Path, key: str, text: str) -> bool:
         return True
     except (OSError, ValueError):
         return False
+
+
+def helpers_left(out: Outcome) -> None:
+    """Once the tool has exited: each helper it never said ended, as ended with the turn (OpenCode's on this computer,
+    whose report comes back unseen by its events; it waits for its helpers before it exits)."""
+    for key, label in out.helpers.items():
+        if key not in out.helpers_ended:
+            out.helpers_ended.add(key)
+            out.events.append({"kind": "background-ended", "text": label, "ref": f"worker:{key}"[:64]}
+                              if out.helper_events else {"kind": "step", "text": f"A helper ended with the turn: {label}"})
 
 
 def parse_line(line: str, out: Outcome) -> None:
@@ -587,6 +603,10 @@ def parse_line(line: str, out: Outcome) -> None:
         ref = str(part.get("callID") or part.get("id") or "") if command else ""
         if said := describe(str(part.get("tool")), state.get("input") or {}, out.root):
             out.events.append({"kind": "tool", "text": said, **({"ref": ref} if ref else {})})
+        child = ((state.get("metadata") or {}).get("metadata") or {}).get("sessionID")
+        if part.get("tool") == "subagent" and child:  # its subagent, working in a child session of its own
+            args = state.get("input") or {}
+            _helper_started(out, str(child), f"{args.get('agent') or 'a helper'}: {args.get('description') or ''}".rstrip(": "))
         if command and state.get("status") in ("completed", "error") and (state.get("output") or state.get("error")):
             failed = state.get("status") == "error" or (state.get("metadata") or {}).get("exit") not in (0, None)
             out.events.append(output_event(str(state.get("output") or state.get("error")), ref or None, failed=failed))
@@ -1181,7 +1201,7 @@ class LocalRunner:
                 pending.append({"kind": "step", "text": "Local worktree sandbox: shell commands and file edits; direct networking is disabled"})
             if turn.browser is not None:
                 pending.append({"kind": "step", "text": "With the Browser pane: it may open this computer's pages there"})
-        out = Outcome(root=tree)
+        out = Outcome(root=tree, helper_events=run.get("helper_events") is True)
         if "--steer-dir" in tool.argv:
             steering.update(out=out, inbox=Path(tool.argv[tool.argv.index("--steer-dir") + 1]))
         try:
@@ -1236,6 +1256,9 @@ class LocalRunner:
             await report("failed", base_sha=base_sha, error=f"Couldn't read {tool.name}'s output: {failed}")
             return
         code = await process.wait()
+        before = len(out.events)
+        helpers_left(out)  # a helper its engine never said ended (OpenCode's, here) ended with the turn
+        pending.extend(out.events[before:])
         stderr = (await errors).decode(errors="replace").strip()
         if stopped:
             await report("stopped", base_sha=base_sha, summary=out.summary)

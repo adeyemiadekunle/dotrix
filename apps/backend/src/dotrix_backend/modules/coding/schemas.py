@@ -328,7 +328,10 @@ class CodingRunnerRead(BaseModel):
 
 
 class RunnerEvent(BaseModel):
-    kind: Literal["step", "text", "tool", "output", "output-error", "error"]
+    # `background-<state>`: one of Kai's helpers (subagents), `ref` `worker:<id>`, at its latest state; Codes lists it
+    # with the turn's background tasks, as a cloud turn's.
+    kind: Literal["step", "text", "tool", "output", "output-error", "error", "background-running", "background-done",
+                  "background-failed", "background-stopped", "background-ended"]
     text: str = Field(max_length=10_000)
     ref: str | None = Field(default=None, max_length=64)
 
@@ -350,6 +353,9 @@ class CodingClaim(BaseModel):
     base_branch: str
     source_sha: str | None = Field(default=None, description="Admitted starting commit for a standalone turn")
     managed_worktree: bool = Field(default=False, description="Reuse the worktree assigned to this session and runner")
+    helper_events: bool = Field(default=True, description=(
+        "The platform takes `background-<state>` events for Kai's helpers (an older one doesn't say so, and a runner "
+        "then reports them as steps)"))
     branch: str | None = Field(description="The session's branch to build on (a follow-up), else the base branch")
 
 
