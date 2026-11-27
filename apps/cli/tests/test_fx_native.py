@@ -253,6 +253,7 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
     monkeypatch.chdir(repo)
     monkeypatch.setenv("FAKE_ACP_LOG", str(log))
     monkeypatch.setattr(fx_native, "available", lambda: True)
+    monkeypatch.setattr(fx_native, "fx_available", lambda: True)
     monkeypatch.setattr("shutil.which", lambda name: str(fake_fx) if name == "fx" else None)
 
     launches = 0
@@ -270,7 +271,7 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
             *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, env={**os.environ},
         )
-        yield proc, port or 47001
+        yield proc, port or 47001, str(root)
 
     monkeypatch.setattr(fx_native, "launch", fake_launch)
 

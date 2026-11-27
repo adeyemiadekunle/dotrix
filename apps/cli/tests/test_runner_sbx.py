@@ -165,3 +165,23 @@ async def test_isolation_choices(tmp_path: Path, monkeypatch) -> None:
     assert off.sbx is None
     with pytest.raises(ValueError):
         LocalRunner(api=Api(), repo=tmp_path, workspace_id="w", project_id="p", isolation="maybe")
+
+
+async def test_a_windows_runner_without_wsl_says_how_to_install_it(tmp_path: Path, monkeypatch) -> None:
+    """Kai's local coding on Windows runs in WSL: a runner that can't offer fx says what to install, which the desktop
+    shows as the folder's status, and still registers its other tools."""
+    monkeypatch.setattr("dotrix_cli.runner.sys.platform", "win32")
+    monkeypatch.setattr("dotrix_cli.runner.shutil.which", lambda name: "codex" if name == "codex" else None)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_available", lambda: False)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_refusal", lambda: "WSL isn't installed. Run `wsl --install`.")
+    events: list[dict] = []
+    runner = LocalRunner(api=Api(), repo=tmp_path, workspace_id="w", project_id="p", notify=events.append)
+    registered = await runner.register()
+    assert registered["tools"] == ["codex"]
+    assert [e["event"] for e in events] == ["registered", "log"]
+    assert events[-1]["text"] == "WSL isn't installed. Run `wsl --install`."
+    # Once WSL is ready, fx is offered and nothing is said.
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_available", lambda: True)
+    events.clear()
+    assert (await LocalRunner(api=Api(), repo=tmp_path, workspace_id="w", project_id="p", notify=events.append).register())["tools"] == ["codex", "fx"]
+    assert [e["event"] for e in events] == ["registered"]
