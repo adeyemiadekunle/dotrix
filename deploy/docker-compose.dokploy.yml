@@ -47,8 +47,8 @@ x-dotrix: &dotrix
     DOTRIX_GITHUB_WEBHOOK_SECRET: ${DOTRIX_GITHUB_WEBHOOK_SECRET:-}
     DOTRIX_GITHUB_CLIENT_ID: ${DOTRIX_GITHUB_CLIENT_ID:-}
     DOTRIX_GITHUB_CLIENT_SECRET: ${DOTRIX_GITHUB_CLIENT_SECRET:-}
-    DOTRIX_SEARXNG_URL: http://searxng:8080
-    DOTRIX_SEARCH_PROVIDER: searxng
+    DOTRIX_SEARXNG_URL: ${DOTRIX_COMPOSE_SEARXNG_URL:-http://searxng:8080}
+    DOTRIX_SEARCH_PROVIDER: ${DOTRIX_SEARCH_PROVIDER:-searxng}
     # Coding runs (the worker): sandboxes on Docker Cloud (docker-cloud: the image from a registry), or
     # on this host's Docker through the socket proxy below (docker: the image built here).
     DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
@@ -56,6 +56,8 @@ x-dotrix: &dotrix
     DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:${DOTRIX_VERSION:-latest}}
     DOTRIX_DOCKER_CLOUD_ID: ${DOTRIX_DOCKER_CLOUD_ID:-}
     DOTRIX_DOCKER_CLOUD_PAT: ${DOTRIX_DOCKER_CLOUD_PAT:-}
+    DOTRIX_DOCKER_CLOUD_KEY_INJECTION: ${DOTRIX_DOCKER_CLOUD_KEY_INJECTION:-true}
+    DOTRIX_CODING_WEB_TOOLS: ${DOTRIX_CODING_WEB_TOOLS:-false}
     DOTRIX_CODING_FORK_OWNER: ${DOTRIX_CODING_FORK_OWNER:?the GitHub organisation coding branches go to (deploy/README.md)}
     DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
     DOTRIX_CODING_MEMORY: ${DOTRIX_CODING_MEMORY:-3g}
