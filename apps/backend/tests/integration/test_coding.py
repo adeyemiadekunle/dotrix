@@ -2040,7 +2040,9 @@ async def test_one_runner_codes_two_sessions_turns_side_by_side_each_in_its_own_
     serving = asyncio.create_task(runner.serve(poll_seconds=0.05, stop=stop))
     try:
         for _ in range(600):
-            ready = [(await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json() for run in runs]
+            async with runner.api.lock:  # the test's requests share one database session with the runner's
+                ready = [(await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json()
+                         for run in runs]
             if all(r["status"] not in ("queued", "running") for r in ready):
                 break
             await asyncio.sleep(0.1)
