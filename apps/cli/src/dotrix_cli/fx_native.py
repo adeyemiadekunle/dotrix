@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import functools
 import json
 import os
@@ -27,7 +28,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import bundled, win_sandbox
+from . import bundled, fx_wsl, network_allow, win_sandbox
 from .frozen_entry import BRIDGE_COMMAND
 from .fx_bridge import CLAUDE_CODE_VERSION, KAI_FX_VERSION
 from .web_mcp import ResearchMcp
@@ -36,11 +37,16 @@ FRAME_LIMIT = 24 * 1024 * 1024
 SAFE_HEADERS = {'accept', 'content-type', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id', 'anthropic-version', 'anthropic-beta'}
 
 
-def filesystem_args() -> list[str]:
+SYSTEM_DIRS = ('/usr', '/bin', '/lib', '/lib64')
+# The public CA certificates, which a sandbox with an allowlist (network_allow) needs to check the hosts it reaches.
+CERT_DIRS = ('/etc/ssl', '/etc/ca-certificates', '/etc/pki')
+
+
+def filesystem_args(system_dirs: tuple[str, ...] | None = None) -> list[str]:
+    """`system_dirs` are the ones that exist on the Linux that runs Bubblewrap; by default, this computer's."""
     argv = ['--unshare-all', '--die-with-parent', '--cap-drop', 'ALL']
-    for name in ('/usr', '/bin', '/lib', '/lib64'):
-        if Path(name).exists():
-            argv += ['--ro-bind', name, name]
+    for name in system_dirs if system_dirs is not None else tuple(name for name in SYSTEM_DIRS if Path(name).exists()):
+        argv += ['--ro-bind', name, name]
     return argv + ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
 
 
@@ -50,6 +56,42 @@ def bridge_argv(helper: Path) -> list[str]:
     if getattr(sys, 'frozen', False):
         return [sys.executable, BRIDGE_COMMAND]
     return [sys.executable, str(helper)]
+
+
+def bwrap_argv(*, system_dirs: tuple[str, ...] | None, relay: str, passwd: str, group: str, root: str, profile: str,
+               binary: str, helper: str, git: str | None, git_pointer: str | None, worktree_git_is_dir: bool,
+               anthropic: bool, cert_dirs: tuple[str, ...] = (), bwrap: str = 'bwrap') -> list[str]:
+    """The Bubblewrap command for one native turn, in the paths of the Linux that runs it. `git` is the private
+    metadata folder; a native worktree's .git points outside the worktree, so neither the source checkout nor its
+    remotes, hooks or credentials are exposed: the runtime gets its own index. `git_pointer` is a file naming that
+    folder, for a worktree whose .git is a file."""
+    git_mounts = []
+    if git is not None:
+        git_mounts = ['--bind', git, '/opt/dotrix/repo.git']
+        if worktree_git_is_dir:
+            git_mounts += ['--bind', git, f'{root}/.git']
+        elif git_pointer is not None:
+            git_mounts += ['--ro-bind', git_pointer, f'{root}/.git']
+    certs = [arg for name in cert_dirs for arg in ('--ro-bind', name, name)]
+    argv = [bwrap, *filesystem_args(system_dirs), *certs, '--ro-bind', relay, '/opt/dotrix/relay.sock',
+        '--ro-bind', passwd, '/etc/passwd', '--ro-bind', group, '/etc/group',
+        '--bind', root, root, '--bind', profile, profile, *git_mounts,
+        '--ro-bind', f'{profile}/auth-source.json', f'{profile}/auth-source.json',
+        '--ro-bind', binary, '/opt/dotrix/fx', '--ro-bind', helper, '/opt/dotrix/bridge.py',
+        '--remount-ro', '/', '--chdir', root, '--', '/usr/bin/python3', '/opt/dotrix/bridge.py', '/opt/dotrix/relay.sock', profile, '/opt/dotrix/fx']
+    return [*argv, 'claude'] if anthropic else argv
+
+
+def sandbox_env(home: str, port: int | None, network: bool = False) -> dict[str, str]:
+    """The environment of the Linux sandbox: no host variables, credentials or proxies."""
+    env = {'SHELL': '/bin/bash', 'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': home, 'FX_HOME': f'{home}/.fx',
+           'LANG': 'C.UTF-8', 'NO_COLOR': '1', 'FX_AUTO_UPGRADE': '0', 'FX_PROJECT_CONFIG': '0', 'FX_DISABLE_KEYCHAIN': '1',
+           'FX_NO_OPEN_BROWSER': '1', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_CONFIG_GLOBAL': '/dev/null', 'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder'}
+    if port:
+        env['DOTRIX_BRIDGE_PORT'] = str(port)
+    if network:
+        env['DOTRIX_NETWORK_TUNNELS'] = '1'
+    return env
 
 
 @functools.lru_cache(maxsize=1)
@@ -89,6 +131,21 @@ def _macos_available() -> bool:
 @functools.lru_cache(maxsize=1)
 def _windows_available() -> bool:
     return win_sandbox.available()
+
+
+def fx_available() -> bool:
+    """Whether native fx can run here. On Windows it runs in WSL, so this is whether WSL has what it needs."""
+    if sys.platform == 'win32':
+        return fx_wsl.status().ok
+    return available()
+
+
+def fx_refusal() -> str | None:
+    """Why native fx can't run here and how to fix it, for a person; None when it can. Only Windows says how."""
+    if sys.platform == 'win32':
+        found = fx_wsl.status()
+        return None if found.ok else found.message()
+    return None
 
 
 @functools.lru_cache(maxsize=1)
@@ -218,10 +275,14 @@ class Relay:
         *,
         pipe_fds: tuple[int, int] | None = None,
         research: ResearchMcp | None = None,
+        network: tuple[network_allow.Rule, ...] = (),
     ):
         self.channel, self.model_url, self.key, self.model, self.browser = channel, model_url, key, model, browser
         self.pipe_fds = pipe_fds
         self.research = research
+        # HTTPS tunnels the sandbox's commands opened (network_allow), by request id: what the sandbox sends on each.
+        self.network = network
+        self.tunnels: dict[int, asyncio.Queue] = {}
         self.lock = asyncio.Lock()
         self.protocol = protocol
         self.work: set[asyncio.Task] = set()
@@ -276,7 +337,21 @@ class Relay:
                     if size > FRAME_LIMIT:
                         raise ValueError('Relay frame too large')
                     request = json.loads(await self.receive(size))
-                    if len(self.work) >= 8:
+                    if request.get('id') in self.tunnels:
+                        self.tunnels[request['id']].put_nowait(request)
+                        continue
+                    if 'path' not in request and 'tunnel' not in request:
+                        continue  # what the sandbox still sent on a tunnel that has closed
+                    if 'tunnel' in request:
+                        if not self.network or len(self.tunnels) >= 32:
+                            await self.send({'id': request['id'], 'status': 403, 'end': True})
+                            continue
+                        self.tunnels[request['id']] = asyncio.Queue()
+                        task = asyncio.create_task(self.tunnel(request))
+                        self.work.add(task)
+                        task.add_done_callback(self.completed)
+                        continue
+                    if len(self.work) - len(self.tunnels) >= 8:
                         await self.send({'id': request['id'], 'status': 429, 'end': True})
                         continue
                     task = asyncio.create_task(self.forward(client, request))
@@ -293,6 +368,49 @@ class Relay:
         self.work.discard(task)
         if not task.cancelled():
             task.exception()  # A disconnected sandbox must not log request contents.
+
+    async def tunnel(self, request):
+        """One HTTPS tunnel a sandboxed command asked for, opened only to a host network_allow permits."""
+        identity = request['id']
+        inbound = self.tunnels[identity]
+        writer = None
+        try:
+            try:
+                host, port = network_allow.split_target(str(request['tunnel']))
+                reader, writer = await network_allow.connect(self.network, host, port)
+            except PermissionError:
+                await self.send({'id': identity, 'status': 403})
+                return
+            except (OSError, ValueError, TimeoutError):
+                await self.send({'id': identity, 'status': 502})
+                return
+            await self.send({'id': identity, 'status': 200})
+
+            async def outward():
+                while True:
+                    item = await inbound.get()
+                    if item.get('data'):
+                        writer.write(base64.b64decode(item['data'], validate=True))
+                        await writer.drain()
+                    if item.get('end'):
+                        with contextlib.suppress(OSError):
+                            writer.write_eof()
+                        return
+
+            sending = asyncio.create_task(outward())
+            try:
+                while chunk := await reader.read(65536):
+                    await self.send({'id': identity, 'data': base64.b64encode(chunk).decode()})
+            finally:
+                sending.cancel()
+                await asyncio.gather(sending, return_exceptions=True)
+        except (OSError, ValueError):
+            pass
+        finally:
+            self.tunnels.pop(identity, None)
+            if writer is not None:
+                writer.close()
+            await self.send({'id': identity, 'end': True})
 
     async def forward(self, client, request):
         identity = request['id']
@@ -379,7 +497,7 @@ def _validate_browser(browser: dict | None) -> None:
 async def _launch_linux(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
-    research: ResearchMcp | None = None, port: int | None = None,
+    research: ResearchMcp | None = None, port: int | None = None, network: tuple = (),
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     address = str(Path(temporary.name) / 'relay.sock')
@@ -394,33 +512,19 @@ async def _launch_linux(
     listener.setblocking(False)
     parent = task = None
     helper = Path(__file__).with_name('fx_bridge.py')
-    git_mounts = []
+    metadata = pointer = None
     if (root / '.git').exists():
-        # A native worktree's .git points outside the worktree. Do not expose the
-        # source checkout, remotes, hooks or credentials; give the runtime its own index.
         metadata = profile / '.sandbox-git'
         metadata.mkdir(mode=0o700, exist_ok=True)
-        git_mounts = ['--bind', str(metadata), '/opt/dotrix/repo.git']
-        if (root / '.git').is_dir():
-            git_mounts += ['--bind', str(metadata), str(root / '.git')]
-        else:
+        if not (root / '.git').is_dir():
             pointer = Path(temporary.name) / 'git-pointer'
             pointer.write_text('gitdir: /opt/dotrix/repo.git\n')
-            git_mounts += ['--ro-bind', str(pointer), str(root / '.git')]
-
-    argv = [_linux_bwrap() or 'bwrap', *filesystem_args(), '--ro-bind', address, '/opt/dotrix/relay.sock',
-        '--ro-bind', str(passwd), '/etc/passwd', '--ro-bind', str(group), '/etc/group',
-        '--bind', str(root), str(root), '--bind', str(profile), str(profile), *git_mounts,
-        '--ro-bind', str(profile / 'auth-source.json'), str(profile / 'auth-source.json'),
-        '--ro-bind', binary, '/opt/dotrix/fx', '--ro-bind', str(helper), '/opt/dotrix/bridge.py',
-        '--remount-ro', '/', '--chdir', str(root), '--', '/usr/bin/python3', '/opt/dotrix/bridge.py', '/opt/dotrix/relay.sock', str(profile), '/opt/dotrix/fx']
-    if anthropic:
-        argv.append('claude')
-    env = {'SHELL': '/bin/bash', 'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': str(profile), 'FX_HOME': str(profile / '.fx'),
-           'LANG': 'C.UTF-8', 'NO_COLOR': '1', 'FX_AUTO_UPGRADE': '0', 'FX_PROJECT_CONFIG': '0', 'FX_DISABLE_KEYCHAIN': '1',
-           'FX_NO_OPEN_BROWSER': '1', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_CONFIG_GLOBAL': '/dev/null', 'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder'}
-    if port:
-        env['DOTRIX_BRIDGE_PORT'] = str(port)
+    argv = bwrap_argv(system_dirs=None, relay=address, passwd=str(passwd), group=str(group), root=str(root),
+        profile=str(profile), binary=binary, helper=str(helper), git=str(metadata) if metadata else None,
+        git_pointer=str(pointer) if pointer else None, worktree_git_is_dir=(root / '.git').is_dir(), anthropic=anthropic,
+        cert_dirs=tuple(name for name in CERT_DIRS if Path(name).is_dir()) if network else (),
+        bwrap=_linux_bwrap() or 'bwrap')
+    env = sandbox_env(str(profile), port, bool(network))
     process = None
     try:
         process = await asyncio.create_subprocess_exec(*argv, env=env,
@@ -429,7 +533,8 @@ async def _launch_linux(
         parent, _ = await asyncio.wait_for(asyncio.get_running_loop().sock_accept(listener), 10)
         listener.close()
         parent.setblocking(False)
-        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai', research=research)
+        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai', research=research,
+                      network=network)
         task = asyncio.create_task(relay.run())
         line = await asyncio.wait_for(process.stdout.readline(), 20)
         ready = json.loads(line)
@@ -455,7 +560,7 @@ async def _launch_linux(
 async def _launch_macos(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
-    research: ResearchMcp | None = None, port: int | None = None,
+    research: ResearchMcp | None = None, port: int | None = None, network: tuple = (),
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     temp_path = Path(temporary.name)
@@ -491,6 +596,8 @@ async def _launch_macos(
     }
     if port:
         env['DOTRIX_BRIDGE_PORT'] = str(port)
+    if network:
+        env['DOTRIX_NETWORK_TUNNELS'] = '1'
     if (root / '.git').exists():
         metadata = profile / '.sandbox-git'
         metadata.mkdir(mode=0o700, exist_ok=True)
@@ -514,7 +621,8 @@ async def _launch_macos(
         parent, _ = await asyncio.wait_for(asyncio.get_running_loop().sock_accept(listener), 10)
         listener.close()
         parent.setblocking(False)
-        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai', research=research)
+        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai', research=research,
+                      network=network)
         task = asyncio.create_task(relay.run())
         line = await asyncio.wait_for(process.stdout.readline(), 20)
         ready = json.loads(line)
@@ -540,7 +648,7 @@ async def _launch_macos(
 async def _launch_windows(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
-    research: ResearchMcp | None = None, port: int | None = None,
+    research: ResearchMcp | None = None, port: int | None = None, network: tuple = (),
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     temp_path = Path(temporary.name)
@@ -567,6 +675,8 @@ async def _launch_windows(
     }
     if port:
         env['DOTRIX_BRIDGE_PORT'] = str(port)
+    if network:
+        env['DOTRIX_NETWORK_TUNNELS'] = '1'
     if (root / '.git').exists():
         metadata = profile / '.sandbox-git'
         metadata.mkdir(exist_ok=True)
@@ -591,7 +701,7 @@ async def _launch_windows(
         relay = Relay(
             None, target, key, model, browser,
             protocol='anthropic' if anthropic else 'openai',
-            pipe_fds=(process.relay_read_fd, process.relay_write_fd), research=research,
+            pipe_fds=(process.relay_read_fd, process.relay_write_fd), research=research, network=network,
         )
         task = asyncio.create_task(relay.run())
         line = await asyncio.wait_for(process.stdout.readline(), 20)
@@ -616,16 +726,32 @@ async def _launch_windows(
 @asynccontextmanager
 async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *, anthropic: tuple[str, str, str] | None = None,
                  research_enabled: bool = False, port: int | None = None):
-    """Start the sandboxed helper. `port` asks its local bridge for the port an earlier turn used, so a resumed
-    session's connection is unchanged (fx refuses a resume when its base_url differs)."""
-    if not available():
-        raise ValueError(
+    """Start the sandboxed helper. Yields the process, the bridge's port, and the worktree's path as the engine sees
+    it (in WSL, its `/mnt/...` path). `port` asks its local bridge for the port an earlier turn used, so a resumed
+    session's connection is unchanged (fx refuses a resume when its base_url differs). On Windows, fx runs in WSL
+    (fx_wsl) and `binary` is unused: the distribution's own fx runs."""
+    wsl = sys.platform == 'win32' and not anthropic
+    if not (fx_available() if not anthropic else available()):
+        raise ValueError(fx_refusal() if wsl else (
             'Native isolation is unavailable: Linux Bubblewrap, macOS Seatbelt (sandbox-exec), '
             'or Windows AppContainer is required'
-        )
+        ))
     target, key, model = anthropic if anthropic else connection(profile, dict(os.environ))
     expected_version = CLAUDE_CODE_VERSION if anthropic else KAI_FX_VERSION
     _validate_browser(browser)
+    # Hosts the sandbox's commands may reach through the relay; none unless the person lists them (network_allow).
+    network = network_allow.from_environment()
+    endpoint = os.environ.get("DOTRIX_SEARXNG_URL") if os.environ.get("DOTRIX_SEARCH_PROVIDER", "auto") in ("auto", "searxng") else None
+    if wsl:
+        research = ResearchMcp(endpoint) if research_enabled else None
+        try:
+            async with fx_wsl.launch(profile, root, browser, target, key, model, expected_version, research, port=port,
+                                     network=network) as result:
+                yield result
+        finally:
+            if research is not None:
+                await research.aclose()
+        return
     if sys.platform == 'linux':
         launcher = _launch_linux
     elif sys.platform == 'darwin':
@@ -634,11 +760,11 @@ async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *
         launcher = _launch_windows
     else:
         raise ValueError('Native isolation is unavailable on this operating system')
-    endpoint = os.environ.get("DOTRIX_SEARXNG_URL") if os.environ.get("DOTRIX_SEARCH_PROVIDER", "auto") in ("auto", "searxng") else None
     research = ResearchMcp(endpoint) if research_enabled else None
     try:
-        async with launcher(profile, binary, root, browser, target, key, model, expected_version, bool(anthropic), research, port=port) as result:
-            yield result
+        async with launcher(profile, binary, root, browser, target, key, model, expected_version, bool(anthropic), research, port=port,
+                            network=network) as (process, bridge_port):
+            yield process, bridge_port, str(root)
     finally:
         if research is not None:
             await research.aclose()

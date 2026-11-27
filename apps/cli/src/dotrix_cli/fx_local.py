@@ -11,12 +11,13 @@ import asyncio
 import hashlib
 import json
 import os
+import posixpath
 import shutil
 import signal
 import stat
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import bundled
@@ -24,12 +25,19 @@ from . import bundled
 # The kernel boundary, not fx's wildcard permission rules, protects native work.
 # fx_native.available() refuses unsupported hosts; there is no unconfined fallback.
 NATIVE_FX_POLICY_VALIDATED = True
-NATIVE_FX_REFUSAL = ("Local execution requires OS sandbox isolation (Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer) "
+NATIVE_FX_REFUSAL = ("Local execution requires OS sandbox isolation (Linux Bubblewrap, macOS Seatbelt, or WSL 2 on Windows) "
                      "and the tested coding runtime. Use cloud coding or another local runtime on this computer.")
 if sys.platform == "linux":
     # Ubuntu 24.04 and later allow user namespaces only to the bwrap their own package installs.
     NATIVE_FX_REFUSAL += (" On Linux, install your distribution's bubblewrap package (on Ubuntu: sudo apt install "
                           "bubblewrap), which some distributions require in place of the bundled one.")
+
+
+def refusal() -> str:
+    """Why native fx can't run here, saying how to install what is missing where Dotrix knows (WSL on Windows)."""
+    from .fx_native import fx_refusal
+
+    return fx_refusal() or NATIVE_FX_REFUSAL
 
 AUTH_FILES = ("auth.json", "chatgpt-auth.json", "grok-auth.json", "api-key")
 # Kai's contract ends every brief under this heading (the backend's coding/brief.py, CONTRACT_HEADING). fx takes it
@@ -128,7 +136,7 @@ def save_refreshed_auth(root: Path) -> None:
             Path(temporary).unlink(missing_ok=True)
 
 
-def allowed(call: dict[str, Any], root: Path, *, research: bool = False) -> bool:
+def allowed(call: dict[str, Any], root: Path | PurePosixPath, *, research: bool = False) -> bool:
     """Permission requests use a tool identity observed from the trusted engine's ACP stream."""
     name = call.get("name", "")
     meta = ((call.get("_meta") or {}).get("fx") or {}).get("toolCall") or {}
@@ -145,6 +153,12 @@ def allowed(call: dict[str, Any], root: Path, *, research: bool = False) -> bool
     path = args.get("path") or args.get("file_path")
     if not isinstance(path, str) or not path.strip():
         return False
+    if not isinstance(root, Path):
+        # The engine's own paths, in WSL: this host can't resolve them, and the sandbox binds only the worktree
+        # and the profile, so a lexical check suffices.
+        posix = PurePosixPath(path)
+        posix = PurePosixPath(posixpath.normpath(str(posix if posix.is_absolute() else root / posix)))
+        return posix == root or root in posix.parents
     candidate = Path(path).expanduser()
     candidate = candidate if candidate.is_absolute() else root / candidate
     try:
@@ -304,12 +318,13 @@ def emit(kind: str, **values: Any) -> None:
 
 async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None = None,
               *, resume: bool = False, pinned_digest: str | None = None) -> int:
-    from .fx_native import available, launch
+    from .fx_native import fx_available, launch
 
-    if not NATIVE_FX_POLICY_VALIDATED or not available():
-        emit("error", message=NATIVE_FX_REFUSAL)
+    if not NATIVE_FX_POLICY_VALIDATED or not fx_available():
+        emit("error", message=refusal())
         return 1
-    binary = bundled.fx()
+    # On Windows, the WSL distribution's own fx runs (fx_wsl, checked by fx_available), so none is needed here.
+    binary = bundled.fx() or ("fx" if sys.platform == "win32" else None)
     if binary is None:
         emit("error", message="The local coding tool is not installed")
         return 1
@@ -355,10 +370,14 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
     port = saved_port if type(saved_port) is int and 1024 <= saved_port <= 65535 else None
     manager = launch(profile, str(Path(binary).resolve()), root, configured_browser, port=port, **launch_options)
     try:
-        child, bridge_port = await manager.__aenter__()
-    except (OSError, ValueError, TimeoutError):
-        emit("error", message="Could not start isolated local execution; use the tested runtime with a custom API-key connection or cloud coding")
+        child, bridge_port, engine_path = await manager.__aenter__()
+    except (OSError, ValueError, TimeoutError) as exc:
+        detail = f" ({exc})" if sys.platform == "win32" and str(exc) else ""
+        emit("error", message="Could not start isolated local execution; use the tested runtime with a custom API-key "
+                              f"connection or cloud coding{detail}")
         return 1
+    # The worktree as fx names it: on Windows, its path in WSL.
+    root = PurePosixPath(engine_path) if sys.platform == "win32" and engine_path.startswith("/") else Path(engine_path)
     if browser:
         servers = [{"type": "http", "name": "browser", "url": f"http://127.0.0.1:{bridge_port}/browser", "headers": []}]
     if research:

@@ -5,6 +5,7 @@ macOS Seatbelt, or Windows AppContainer). The engine never inherits the relay de
 the host's provider/browser credentials.
 """
 import base64
+import contextlib
 import http.server
 import json
 import os
@@ -110,6 +111,8 @@ def main():
     profile, binary = sys.argv[2:4]
     claude = len(sys.argv) > 4 and sys.argv[4] == 'claude'
     pending, lock, sequence = {}, threading.Lock(), 0
+    # The host lists hosts commands may reach (network_allow); without one, CONNECT is refused here too.
+    tunnels = os.environ.pop('DOTRIX_NETWORK_TUNNELS', '') == '1'
 
     def reader():
         try:
@@ -178,6 +181,62 @@ def main():
 
         do_POST = do_GET = do_DELETE = handle_request
 
+        def do_CONNECT(self):
+            """An HTTPS tunnel for a command, which the host opens only to a host on its allowlist."""
+            nonlocal sequence
+            if not tunnels:
+                self.send_error(403, 'This sandbox has no network')
+                return
+            with lock:
+                if len(pending) >= 40:
+                    self.send_error(429)
+                    return
+                sequence += 1
+                identity = sequence
+                result = queue.Queue(maxsize=64)
+                pending[identity] = result
+                request = json.dumps({'id': identity, 'tunnel': self.path}).encode()
+                channel.write_all(struct.pack('!I', len(request)) + request)
+            sock = self.connection
+            try:
+                opened = result.get(timeout=30)
+                if opened.get('status') != 200:
+                    self.send_error(403 if opened.get('status') == 403 else 502,
+                                    'Dotrix allows only the hosts in DOTRIX_CODING_NETWORK_ALLOW')
+                    return
+                self.send_response(200, 'Connection Established')
+                self.end_headers()
+                self.wfile.flush()
+
+                def outward():
+                    try:
+                        while data := sock.recv(65536):
+                            frame = json.dumps({'id': identity, 'data': base64.b64encode(data).decode()}).encode()
+                            with lock:
+                                channel.write_all(struct.pack('!I', len(frame)) + frame)
+                    except OSError:
+                        pass
+                    finally:
+                        frame = json.dumps({'id': identity, 'end': True}).encode()
+                        with lock, contextlib.suppress(OSError):
+                            channel.write_all(struct.pack('!I', len(frame)) + frame)
+
+                threading.Thread(target=outward, daemon=True).start()
+                while True:
+                    event = result.get(timeout=600)
+                    if event.get('data'):
+                        sock.sendall(base64.b64decode(event['data']))
+                    if event.get('end'):
+                        break
+            except (OSError, ValueError, queue.Empty):
+                pass
+            finally:
+                with lock:
+                    pending.pop(identity, None)
+                with contextlib.suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
+                self.close_connection = True
+
     # fx refuses to resume a session whose connection's base_url changed, so a later turn asks for the port the
     # session started on (DOTRIX_BRIDGE_PORT). Linux gives every sandbox its own network, so the port is free there;
     # elsewhere a taken port falls back to a new one and that turn starts a fresh session.
@@ -194,6 +253,12 @@ def main():
         server = Server(('127.0.0.1', 0), Handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    if tunnels:
+        # Commands find the allowlist's tunnels as an ordinary HTTPS proxy; the bridge's own address stays direct.
+        proxy = f'http://127.0.0.1:{server.server_port}'
+        for name in ('HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'):
+            os.environ[name] = proxy
+        os.environ['NO_PROXY'] = os.environ['no_proxy'] = '127.0.0.1,localhost'
     if not claude:
         path = os.path.join(profile, '.fx', 'settings.json')
         with open(path) as stream:

@@ -71,11 +71,11 @@ startup/version failure stops the turn. To choose this path when `sbx` is instal
 use `dotrix runner --tool claude-code --isolation none --project /path/to/checkout`.
 `none` here disables `sbx`; the native namespace remains required for commands.
 
-Native fx requires exactly 0.0.17, Linux, Bubblewrap with working user/network
-namespaces, system Python, Bash and Git, and a custom OpenAI Chat Completions
-API-key connection configured in the person's fx settings. The configured model
-must match the coding session. OAuth/gateway sign-ins and other operating systems
-remain unavailable. Unsupported hosts fail closed; there is no unconfined fallback
+Native fx requires the Kai runtime's fx `0.0.18-kai.2`, Bubblewrap with working
+user/network namespaces, system Python, Bash and Git, and a custom OpenAI Chat
+Completions API-key connection configured in the person's fx settings. It runs on
+Linux, macOS (Seatbelt) and Windows through WSL 2. The configured model must
+match the coding session. OAuth/gateway sign-ins remain unavailable. Unsupported hosts fail closed; there is no unconfined fallback
 or environment-variable bypass. fx 0.0.17's interactive agent profiles are not an
 ACP policy boundary (`fx acp` does not accept `--profile`).
 
@@ -94,8 +94,52 @@ external hosts; web access goes through the authenticated Browser transport.
 Unknown ACP permissions and outside-worktree file permissions remain refused.
 Stop terminates the namespace, including background commands. A provider recovery
 that needs user input or fails ends the turn as failed, preventing publication.
-There is no fx Docker Sandboxes template. Windows and live `sbx` verification remain
-open.
+There is no fx Docker Sandboxes template. Live `sbx` verification remains open.
+
+### Windows through WSL
+
+fx has no Windows build, so a Windows runner runs the Linux fx, in the same
+Bubblewrap sandbox as on Linux, inside a WSL 2 distribution (the default one, or
+`DOTRIX_WSL_DISTRO`). The distribution needs `bubblewrap`, `python3`, `git`, and
+the Kai runtime's fx `0.0.18-kai.2` for Linux on its `PATH`; `DOTRIX_WSL_FX` names
+another path in the distribution. The worktree stays on the Windows drive and is
+bound into the sandbox at its `/mnt/<drive>/...` path. Each turn's private profile
+is staged on the distribution's own filesystem, because fx ignores settings that a
+mounted Windows drive reports as writable by everyone, and is copied back when the
+turn ends. The model and browser relay stays on Windows and reaches the sandbox
+over `wsl.exe` pipes, so credentials never enter WSL.
+
+When something is missing, the runner doesn't offer fx and says what to install,
+and the desktop shows it as the folder's status:
+
+- WSL isn't installed: `wsl --install` in an administrator PowerShell, then restart.
+- No distribution: `wsl --install -d Ubuntu`.
+- WSL 1: `wsl --set-version <name> 2`.
+- Missing packages: `sudo apt install bubblewrap python3 git` in the distribution.
+- Another fx release, or none: install the Kai runtime's fx `0.0.18-kai.2` for Linux.
+
+A Kai turn sent to such a runner fails with the same message. Restart the runner
+after installing; a ready distribution is then kept for the runner's lifetime.
+
+### Network allowlist for commands
+
+Commands in the native sandbox have no network by default. Set
+`DOTRIX_CODING_NETWORK_ALLOW` before starting the runner to let them reach named
+hosts over HTTPS, for example to install packages:
+
+```powershell
+$env:DOTRIX_CODING_NETWORK_ALLOW = "registry.npmjs.org, pypi.org, *.pythonhosted.org"
+dotrix runner --isolation none
+```
+
+Entries are host names: `example.com` (port 443), `*.example.com` (hosts under
+it, not the name itself), or `example.com:8443`. An address or a malformed entry
+stops the turn with an error. The sandbox's bridge offers an HTTPS proxy
+(`HTTPS_PROXY`), and the host opens each tunnel only to a listed host, on its
+port, at a public address: a listed name that resolves to a loopback, private or
+link-local address is refused. The host resolves names, and plain HTTP is not
+tunnelled. With an allowlist the sandbox also gets the system's CA certificates,
+read-only. This applies to Linux, macOS and Windows through WSL.
 
 ## Web research in Code
 
