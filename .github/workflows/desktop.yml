@@ -194,10 +194,11 @@ jobs:
           FX_AUTO_UPGRADE=0 "$cli/bin/fx" --version
           if [ -x "$cli/bin/bwrap" ]; then
             "$cli/bin/bwrap" --version
-            # The bundled bwrap sets up the same sandbox native Code asks it for.
+            # Ubuntu 24.04's AppArmor gives user namespaces only to its own /usr/bin/bwrap, so the bundled one can't
+            # make the sandbox here; native Code then uses the system's (dotrix_cli.bundled.bwrap_candidates).
             "$cli/bin/bwrap" --unshare-all --die-with-parent --ro-bind /usr /usr --symlink usr/bin /bin \
               --symlink usr/lib /lib --proc /proc --dev /dev --tmpfs /tmp -- /bin/true \
-              || echo "::warning::bwrap could not create namespaces on this runner (AppArmor or userns policy)"
+              || echo "::notice::The bundled bwrap can't make user namespaces on this runner (AppArmor); the system bwrap is used where one is installed"
           fi
       - name: Archive the standalone CLI
         run: |

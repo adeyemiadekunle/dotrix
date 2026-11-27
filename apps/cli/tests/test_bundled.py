@@ -29,14 +29,15 @@ def test_a_release_s_own_fx_and_bwrap_win_over_path(tmp_path, monkeypatch):
     folder = _release(tmp_path, monkeypatch, ["fx", "bwrap"])
     monkeypatch.setattr(bundled.shutil, "which", lambda name: f"/usr/bin/{name}")
     assert bundled.fx() == str(folder / "fx")
-    assert bundled.bwrap() == str(folder / "bwrap")
+    # The system's Bubblewrap is tried first: Ubuntu 24.04 lets only its own make user namespaces.
+    assert bundled.bwrap_candidates() == ["/usr/bin/bwrap", str(folder / "bwrap")]
 
 
 def test_without_a_bundle_path_is_used(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     monkeypatch.setattr(bundled.shutil, "which", lambda name: f"/usr/bin/{name}")
     assert bundled.fx() == "/usr/bin/fx"
-    assert bundled.bwrap() == "/usr/bin/bwrap"
+    assert bundled.bwrap_candidates() == ["/usr/bin/bwrap"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Kai's fx and Bubblewrap are bundled on Linux and macOS")
@@ -44,7 +45,28 @@ def test_a_release_without_one_program_falls_back_to_path_for_it(tmp_path, monke
     folder = _release(tmp_path, monkeypatch, ["fx"])  # macOS: no bwrap is bundled
     monkeypatch.setattr(bundled.shutil, "which", lambda name: None)
     assert bundled.fx() == str(folder / "fx")
-    assert bundled.bwrap() is None
+    assert bundled.bwrap_candidates() == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Bubblewrap is Linux only")
+def test_native_code_uses_the_first_bubblewrap_that_makes_the_sandbox(tmp_path, monkeypatch):
+    from dotrix_cli import fx_native
+
+    tried = []
+
+    def run(argv, **_):
+        tried.append(argv[0])
+        return type("Done", (), {"returncode": 0 if argv[0] == "/bundle/bwrap" else 1})()
+
+    monkeypatch.setattr(fx_native.bundled, "bwrap_candidates", lambda: ["/usr/bin/bwrap", "/bundle/bwrap"])
+    monkeypatch.setattr(fx_native.subprocess, "run", run)
+    monkeypatch.setattr(fx_native.Path, "is_file", lambda self: True)
+    fx_native._linux_bwrap.cache_clear()
+    try:
+        assert fx_native._linux_bwrap() == "/bundle/bwrap"
+        assert tried == ["/usr/bin/bwrap", "/bundle/bwrap"]
+    finally:
+        fx_native._linux_bwrap.cache_clear()
 
 
 def test_the_bundled_fx_is_the_kai_release_native_code_and_the_coding_image_pin():

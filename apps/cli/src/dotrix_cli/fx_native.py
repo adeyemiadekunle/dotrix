@@ -44,16 +44,23 @@ def filesystem_args() -> list[str]:
 
 
 @functools.lru_cache(maxsize=1)
+def _linux_bwrap() -> str | None:
+    """The first Bubblewrap (bundled.bwrap_candidates) that makes the sandbox on this machine, or None."""
+    if not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file():
+        return None
+    for binary in bundled.bwrap_candidates():
+        try:
+            result = subprocess.run([binary, *filesystem_args(), '--', '/bin/true'],
+                env={'PATH': '/usr/bin:/bin'}, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode == 0:
+            return binary
+    return None
+
+
 def _linux_available() -> bool:
-    binary = bundled.bwrap()
-    if not binary or (not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file()):
-        return False
-    try:
-        result = subprocess.run([binary, *filesystem_args(), '--', '/bin/true'],
-            env={'PATH': '/usr/bin:/bin'}, capture_output=True, timeout=10)
-        return result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+    return _linux_bwrap() is not None
 
 
 @functools.lru_cache(maxsize=1)
@@ -392,7 +399,7 @@ async def _launch_linux(
             pointer.write_text('gitdir: /opt/dotrix/repo.git\n')
             git_mounts += ['--ro-bind', str(pointer), str(root / '.git')]
 
-    argv = [bundled.bwrap() or 'bwrap', *filesystem_args(), '--ro-bind', address, '/opt/dotrix/relay.sock',
+    argv = [_linux_bwrap() or 'bwrap', *filesystem_args(), '--ro-bind', address, '/opt/dotrix/relay.sock',
         '--ro-bind', str(passwd), '/etc/passwd', '--ro-bind', str(group), '/etc/group',
         '--bind', str(root), str(root), '--bind', str(profile), str(profile), *git_mounts,
         '--ro-bind', str(profile / 'auth-source.json'), str(profile / 'auth-source.json'),

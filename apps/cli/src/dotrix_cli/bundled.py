@@ -32,6 +32,9 @@ def fx() -> str | None:
     return _bundled("fx") or shutil.which("fx")
 
 
-def bwrap() -> str | None:
-    """Linux: the bundled static Bubblewrap, else the system's."""
-    return _bundled("bwrap") or shutil.which("bwrap")
+def bwrap_candidates() -> list[str]:
+    """Linux: the Bubblewraps to try, the system's first. A distribution that limits user namespaces (Ubuntu 24.04's
+    AppArmor) allows them only to its own /usr/bin/bwrap, so a working system copy is kept; the bundled static one is
+    for a system without one, or whose copy can't make the sandbox."""
+    found = [path for path in (shutil.which("bwrap"), _bundled("bwrap")) if path]
+    return list(dict.fromkeys(found))
