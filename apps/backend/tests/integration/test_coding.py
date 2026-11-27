@@ -483,7 +483,7 @@ async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
         return pressed.is_set()
 
     async def slow_exec(self, argv, *, stdin=None, on_line=None, timeout, cancel=None):
-        if argv[0] != "claude":
+        if _claude(argv) is None:
             return await LocalSession.exec(self, argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
         pressed.set()
         assert cancel is not None
