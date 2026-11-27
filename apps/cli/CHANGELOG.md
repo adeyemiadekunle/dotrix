@@ -6,6 +6,7 @@
 
 ### Added
 
+- Local turns can start Kai's helpers (subagents), held to the turn's own limits: Claude Code's `--agents` and general-purpose subagent within `--tools`, Codex's helpers capped at two in its workspace sandbox, and on OpenCode only Kai's workers that read. Each shows as a step when it starts and ends. A file-only Claude Code turn drops `--safe-mode` (it would drop Kai's workers) for `--disable-slash-commands` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS`. Local fx turns don't have helpers yet.
 - Managed local fx coding sessions now persist `.fx` session state beside their managed worktree, resume the conversation across follow-up turns (`--resume`), and verify `profile_digest` before starting the isolated runtime (`fx_local.py`, `runner.py`).
 
 ## [0.4.0] - 2026-11-21

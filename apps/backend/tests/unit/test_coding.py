@@ -14,6 +14,7 @@ from dotrix_backend.modules.coding.models import CodingAgent
 from dotrix_backend.modules.coding.sandbox import run_process, sandbox_policy
 from dotrix_backend.modules.coding.schemas import RunnerHeartbeat, RunnerResult
 from dotrix_backend.modules.coding.tools import (
+    CLAUDE_ENV,
     OPENCODE_PROVIDERS,
     TOOLS,
     ClaudeCode,
@@ -77,7 +78,8 @@ def test_claude_code_events_become_steps_and_tokens() -> None:
     overloaded = tool.parse(json.dumps({**retry, "error_status": 529, "error": "overloaded"}), usage)
     assert overloaded.failed is None and overloaded.steps[0].text == "A model call failed (overloaded); retry 1"
     argv = tool.command("claude-opus-5-5")
-    assert argv[:3] == ["claude", "-p", "--bare"] and argv[-2:] == ["--model", "claude-opus-5-5"]
+    assert argv[:4] == ["env", *CLAUDE_ENV] and argv[-2:] == ["--model", "claude-opus-5-5"]
+    assert argv[4:8] == ["claude", "-p", "--setting-sources", ""] and "--bare" not in argv
     assert "dontAsk" in argv and "--dangerously-skip-permissions" not in argv
 
 
@@ -594,3 +596,133 @@ def test_coding_agent_legacy_rolls_back_defaults_while_allowing_explicit_fx() ->
     assert choose_agent(settings, {"xai"}) is CodingAgent.OPENCODE
     assert engine_for(settings, claude, keys, "fx") is CodingAgent.FX
     assert choose_agent(settings, {"openai"}, preferred="fx") is CodingAgent.FX
+
+
+def _flag(argv: list[str], name: str) -> str:
+    return argv[argv.index(name) + 1]
+
+
+def test_claude_code_starts_kai_s_workers_and_lists_them_with_its_background_tasks() -> None:
+    """Its subagents (`Agent`): Kai's workers by name (`--agents`) and its own general-purpose one, each within
+    `--tools`. The events are as Claude Code 2.1.323 printed them against a scripted model."""
+    tool, usage = ClaudeCode(), Usage()
+    argv = tool.command(None)
+    assert "Agent" in _flag(argv, "--tools").split(",") and "Agent" in _flag(argv, "--allowedTools").split(",")
+    agents = json.loads(_flag(argv, "--agents"))
+    assert set(agents) == {"explorer", "tester", "reviewer"}
+    assert agents["explorer"]["tools"] == ["Read", "Glob", "Grep"]
+    assert agents["tester"]["tools"] == ["Bash", "Read", "Glob", "Grep"]
+    assert agents["explorer"]["maxTurns"] == 30 and agents["explorer"]["prompt"].startswith("You are one of Kai's workers.")
+    lines = [
+        {"type": "system", "subtype": "init", "model": "claude-haiku-5-5", "tools": ["Agent", "Read"]},
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"id": "msg_1", "content": [
+            {"type": "tool_use", "id": "toolu_0001", "name": "Agent",
+             "input": {"subagent_type": "explorer", "description": "find the answer", "prompt": "What is the answer?"}}],
+            "usage": {"input_tokens": 10, "output_tokens": 1}}},
+        {"type": "system", "subtype": "task_started", "task_id": "ae4ac377f695a5bd0", "tool_use_id": "toolu_0001",
+         "description": "find the answer", "subagent_type": "explorer", "is_backgrounded": True, "task_type": "local_agent"},
+        # The helper's own messages: what it does is named for it, and its words are its report's, not Kai's.
+        {"type": "assistant", "parent_tool_use_id": "toolu_0001", "message": {"id": "msg_2", "content": [
+            {"type": "tool_use", "id": "toolu_0002", "name": "Read", "input": {"file_path": "/sandbox/repo/a.py"}},
+            {"type": "text", "text": "HELPER-REPORT: the answer is 42"}], "usage": {"input_tokens": 10, "output_tokens": 1}}},
+        {"type": "system", "subtype": "task_notification", "task_id": "ae4ac377f695a5bd0", "tool_use_id": "toolu_0001",
+         "status": "completed", "summary": "HELPER-REPORT: the answer is 42"},
+        {"type": "system", "subtype": "task_notification", "task_id": "ae4ac377f695a5bd0", "status": "completed"},
+        {"type": "system", "subtype": "task_started", "task_id": "b1", "task_type": "local_bash", "description": "npm test"},
+        # Its report comes back as another turn of the same run: not a new start.
+        {"type": "system", "subtype": "init", "model": "claude-haiku-5-5"},
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"id": "msg_3", "content": [
+            {"type": "text", "text": "The answer is 42."}], "usage": {"input_tokens": 10, "output_tokens": 1}}},
+    ]
+    steps = [(s.kind, s.text, s.ref) for line in lines for s in tool.parse(json.dumps(line), usage).steps]
+    assert steps == [
+        ("step", "Started (claude-haiku-5-5)", None),
+        ("tool", "Asked explorer to find the answer", None),
+        ("background-running", "explorer: find the answer", "worker:ae4ac377f695a5bd0"),
+        ("tool", "Read a.py (explorer)", None),
+        ("background-done", "explorer: find the answer", "worker:ae4ac377f695a5bd0"),
+        ("text", "The answer is 42.", None),
+    ]
+    assert usage.input_tokens == 30  # the helper's model calls count too
+
+
+def test_codex_s_helpers_are_capped_and_listed_with_its_background_tasks() -> None:
+    """Codex's subagents (`multi_agent`): at most two at once, none starting its own; `collab_tool_call` items as
+    Codex 0.169.0 printed them against a scripted model."""
+    tool, usage = Codex(), Usage()
+    argv = tool.command("openai:gpt-5.5")
+    assert "agents.max_threads=2" in argv and "agents.max_depth=1" in argv
+    parent, child = "01a21eaf-8f1d-7f83-a3de-4185e5f2b9d5", "01a21eaf-9024-75e2-b26b-8cb8b5688f6d"
+    lines = [
+        {"type": "item.started", "item": {"id": "item_1", "type": "collab_tool_call", "tool": "spawn_agent",
+         "sender_thread_id": parent, "receiver_thread_ids": [], "prompt": "What is the answer?", "agents_states": {},
+         "status": "in_progress"}},
+        {"type": "item.completed", "item": {"id": "item_1", "type": "collab_tool_call", "tool": "spawn_agent",
+         "sender_thread_id": parent, "receiver_thread_ids": [child], "prompt": "What is the answer?",
+         "agents_states": {child: {"status": "pending_init", "message": None}}, "status": "completed"}},
+        {"type": "item.completed", "item": {"id": "item_2", "type": "collab_tool_call", "tool": "wait",
+         "sender_thread_id": parent, "receiver_thread_ids": [child], "prompt": None,
+         "agents_states": {child: {"status": "completed", "message": "HELPER-REPORT: the answer is 42"}},
+         "status": "completed"}},
+        {"type": "item.completed", "item": {"id": "item_3", "type": "collab_tool_call", "tool": "close_agent",
+         "sender_thread_id": parent, "receiver_thread_ids": [child], "agents_states": {child: {"status": "shutdown"}}}},
+    ]
+    steps = [(s.kind, s.text, s.ref) for line in lines for s in tool.parse(json.dumps(line), usage).steps]
+    assert steps == [
+        ("tool", "Asked a helper to What is the answer?", None),
+        ("background-running", "a helper: What is the answer?", f"worker:{child}"),
+        ("background-done", "a helper: What is the answer?", f"worker:{child}"),  # closing it after isn't news
+    ]
+
+
+def test_opencode_starts_kai_s_workers_under_their_own_permissions() -> None:
+    """OpenCode runs a subagent under its own permissions, not its caller's (2.3.0): each of Kai's workers may use
+    only its own tools. Its report comes back to the turn unseen by the stream, so how it ended is read from the
+    session's export after the turn."""
+    tool, usage = OpenCode(OPENCODE_PROVIDERS["nvidia"]), Usage()
+    argv = tool.command("nvidia:test")
+    config = json.loads(next(a.partition("=")[2] for a in argv if a.startswith("OPENCODE_CONFIG_CONTENT=")))
+    agents = config["agents"]
+    assert set(agents) == {"explorer", "tester", "reviewer"} and agents["explorer"]["mode"] == "subagent"
+    rules = agents["explorer"]["permissions"]
+    assert rules[0] == {"action": "*", "resource": "*", "effect": "deny"}
+    allowed = [r["action"] for r in rules if r["effect"] == "allow"]
+    assert allowed == ["read", "glob", "grep"]
+    assert [r["action"] for r in agents["tester"]["permissions"] if r["effect"] == "allow"] == ["shell", "read", "glob", "grep"]
+    assert {"subagent", "skill", "webfetch", "websearch", "question"} <= {r["action"] for r in rules[1 + len(allowed):]}
+    child = "ses_de154d512ffexbbL1tNSzobxl6"
+    event = {"type": "tool_use", "sessionID": "ses_parent", "part": {"type": "tool", "id": "call-2", "tool": "subagent",
+             "state": {"status": "completed", "input": {"agent": "explorer", "description": "find the answer",
+                                                        "prompt": "What is the answer?"},
+                       "metadata": {"metadata": {"sessionID": child, "status": "running"}},
+                       "output": "The subagent is working in the background"}}}
+    steps = [(s.kind, s.text, s.ref) for s in tool.parse(json.dumps(event), usage).steps]
+    assert steps == [("tool", "Asked explorer to find the answer", None),
+                     ("background-running", "explorer: find the answer", f"worker:{child}")]
+    tool.read_usage(json.dumps({"cost": 0, "turn": [], "helpers": [[child, "completed"], ["ses_other", "error"]]}), usage)
+    assert [(s.kind, s.ref) for s in usage.late] == [("background-done", f"worker:{child}")]
+
+
+def test_opencode_s_totals_read_how_its_helpers_ended_from_the_session_export(tmp_path) -> None:
+    """`_OPENCODE_TOTALS` on an export shaped as OpenCode 2.3.0 wrote one: a helper's report is a `synthetic`
+    message; an earlier turn's are left out."""
+    import shutil
+    import subprocess
+
+    from dotrix_backend.modules.coding.tools import _OPENCODE_TOTALS
+
+    if not shutil.which("node"):
+        pytest.skip("Needs Node")
+    export = {"info": {"cost": 0.01}, "messages": [
+        {"type": "user", "text": "earlier"},
+        {"type": "synthetic", "text": '<subagent sessionID="ses_old" state="completed" description="x">\nold\n</subagent>'},
+        {"type": "user", "text": "Use your helper\n"},
+        {"type": "assistant", "id": "msg_1", "tokens": {"input": 10, "output": 5}},
+        {"type": "synthetic", "text": '<subagent sessionID="ses_new" state="completed" description="find">\nHELPER\n</subagent>'},
+        {"type": "assistant", "id": "msg_2", "tokens": {"input": 10, "output": 5}},
+        {"type": "idle", "outcome": "succeeded"},
+    ]}
+    out = subprocess.run(["node", "-e", _OPENCODE_TOTALS], input=json.dumps(export), capture_output=True, text=True,
+                         timeout=30, check=True)
+    totals = json.loads(out.stdout)
+    assert totals["helpers"] == [["ses_new", "completed"]] and [s["id"] for s in totals["turn"]] == ["msg_1", "msg_2"]

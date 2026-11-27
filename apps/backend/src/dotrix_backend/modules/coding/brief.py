@@ -19,6 +19,7 @@ from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.repo_knowledge.service import RepoKnowledgeService
 from dotrix_backend.modules.rules.service import WorkspaceSkills
 from dotrix_engine.builtins import role_instructions
+from dotrix_engine.coding_helpers import HELPERS_RULE
 from dotrix_engine.layout import default_rules
 from dotrix_engine.skills import (
     DEFINITION_OF_DONE,
@@ -56,6 +57,7 @@ RULES = """\
 - To leave a command running (a dev server, a watcher, a long test run), use your shell tool's own way
   of keeping it (a short wait, so it hands back an id to check it by later), never `&`, `nohup` or
   `disown`: those aren't kept, and the person can't see or stop them.
+""" + HELPERS_RULE + """
 - Finish with a short summary: what you changed, and how you checked it (tests run, results).
 - If something you need is unclear and you can't reasonably decide it yourself (what the person wants,
   a choice only they can make), don't guess: stop, and end your final message with your questions in

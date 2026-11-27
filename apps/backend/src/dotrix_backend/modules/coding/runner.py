@@ -1127,6 +1127,9 @@ class CodingWorker:
             )
             # However the turn ended: a stopped or failed one was paid for too.
             await self._totals(box, tool, tool_session, usage, reported, cost_before)
+            now = datetime.now(UTC).isoformat()  # what only the totals said (how OpenCode's subagents ended)
+            pending.extend({"at": now, "kind": s.kind, "text": s.text, **({"ref": s.ref} if s.ref else {})}
+                           for s in usage.late)
         finally:
             watcher.cancel()
             if research_job is not None:
