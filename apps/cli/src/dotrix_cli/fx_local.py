@@ -338,7 +338,10 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
         servers = [{"type": "http", "name": "browser", "url": configured["url"],
                     "headers": [{"name": name, "value": value} for name, value in configured["headers"].items()]}]
     configured_browser = json.loads(browser.read_text())["mcpServers"]["browser"] if browser else None
-    manager = launch(profile, str(Path(binary).resolve()), root, configured_browser)
+    # fx resumes a session only through the same base_url, which names the sandbox bridge's port.
+    saved_port = kept.get("bridgePort") if previous_session is not None else None
+    port = saved_port if type(saved_port) is int and 1024 <= saved_port <= 65535 else None
+    manager = launch(profile, str(Path(binary).resolve()), root, configured_browser, port=port)
     try:
         child, bridge_port = await manager.__aenter__()
     except (OSError, ValueError, TimeoutError):
@@ -488,7 +491,8 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
             session = await request("session/new", opened)
             session_id = session["sessionId"]
             profile_digest = digest_of(contract)
-            record = {"fxSession": session_id, "profileDigest": profile_digest,
+            # The bridge's port is part of the session's connection, so the next turn asks for it again.
+            record = {"fxSession": session_id, "profileDigest": profile_digest, "bridgePort": bridge_port,
                       **({"profile": contract} if contract and contract.strip() else {})}
             descriptor = os.open(record_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
