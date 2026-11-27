@@ -256,19 +256,21 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
     monkeypatch.setattr("shutil.which", lambda name: str(fake_fx) if name == "fx" else None)
 
     launches = 0
+    ports = []
 
     import os
 
     @asynccontextmanager
-    async def fake_launch(profile, binary, root, browser):
+    async def fake_launch(profile, binary, root, browser, *, port=None):
         nonlocal launches
         launches += 1
+        ports.append(port)
         argv = [sys.executable, str(Path(binary).with_suffix(".py"))] if os.name == "nt" else [binary]
         proc = await asyncio.create_subprocess_exec(
             *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, env={**os.environ},
         )
-        yield proc, 0
+        yield proc, port or 47001
 
     monkeypatch.setattr(fx_native, "launch", fake_launch)
 
@@ -294,6 +296,8 @@ async def test_local_fx_resumes_saved_session_and_enforces_profile_digest(tmp_pa
     assert await fx_local.run(profile2, resume=True, pinned_digest=digest) == 0
     out2 = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert out2[0] == {"type": "started", "resumed": True, "profileDigest": digest}
+    # fx resumes only through the same base_url, so the resumed turn asks the bridge for the first turn's port.
+    assert ports == [None, 47001]
     assert not any("OLD_REPLAY" in str(ev) for ev in out2)
 
     # Mismatched pinned digest refuses BEFORE launching sandbox/fx.
