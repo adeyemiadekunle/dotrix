@@ -178,7 +178,20 @@ def main():
 
         do_POST = do_GET = do_DELETE = handle_request
 
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    # fx refuses to resume a session whose connection's base_url changed, so a later turn asks for the port the
+    # session started on (DOTRIX_BRIDGE_PORT). Linux gives every sandbox its own network, so the port is free there;
+    # elsewhere a taken port falls back to a new one and that turn starts a fresh session.
+    requested = os.environ.pop('DOTRIX_BRIDGE_PORT', '')
+    port = int(requested) if requested.isdigit() and 1024 <= int(requested) <= 65535 else 0
+
+    class Server(http.server.ThreadingHTTPServer):
+        # On Windows, SO_REUSEADDR lets a bind share a port another program listens on; a requested port must fail.
+        allow_reuse_address = os.name != 'nt'
+
+    try:
+        server = Server(('127.0.0.1', port), Handler)
+    except OSError:
+        server = Server(('127.0.0.1', 0), Handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     if not claude:

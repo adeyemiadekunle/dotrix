@@ -363,7 +363,7 @@ def _validate_browser(browser: dict | None) -> None:
 async def _launch_linux(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
-    research: ResearchMcp | None = None,
+    research: ResearchMcp | None = None, port: int | None = None,
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     address = str(Path(temporary.name) / 'relay.sock')
@@ -403,6 +403,8 @@ async def _launch_linux(
     env = {'SHELL': '/bin/bash', 'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': str(profile), 'FX_HOME': str(profile / '.fx'),
            'LANG': 'C.UTF-8', 'NO_COLOR': '1', 'FX_AUTO_UPGRADE': '0', 'FX_PROJECT_CONFIG': '0', 'FX_DISABLE_KEYCHAIN': '1',
            'FX_NO_OPEN_BROWSER': '1', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_CONFIG_GLOBAL': '/dev/null', 'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder'}
+    if port:
+        env['DOTRIX_BRIDGE_PORT'] = str(port)
     process = None
     try:
         process = await asyncio.create_subprocess_exec(*argv, env=env,
@@ -437,7 +439,7 @@ async def _launch_linux(
 async def _launch_macos(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
-    research: ResearchMcp | None = None,
+    research: ResearchMcp | None = None, port: int | None = None,
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     temp_path = Path(temporary.name)
@@ -471,6 +473,8 @@ async def _launch_macos(
         'GIT_CONFIG_GLOBAL': '/dev/null',
         'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder',
     }
+    if port:
+        env['DOTRIX_BRIDGE_PORT'] = str(port)
     if (root / '.git').exists():
         metadata = profile / '.sandbox-git'
         metadata.mkdir(mode=0o700, exist_ok=True)
@@ -520,7 +524,7 @@ async def _launch_macos(
 async def _launch_windows(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
-    research: ResearchMcp | None = None,
+    research: ResearchMcp | None = None, port: int | None = None,
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     temp_path = Path(temporary.name)
@@ -545,6 +549,8 @@ async def _launch_windows(
         'GIT_CONFIG_GLOBAL': os.devnull,
         'DOTRIX_FX_BROKER_KEY': 'dotrix-relay-placeholder',
     }
+    if port:
+        env['DOTRIX_BRIDGE_PORT'] = str(port)
     if (root / '.git').exists():
         metadata = profile / '.sandbox-git'
         metadata.mkdir(exist_ok=True)
@@ -592,7 +598,9 @@ async def _launch_windows(
 
 @asynccontextmanager
 async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *, anthropic: tuple[str, str, str] | None = None,
-                 research_enabled: bool = False):
+                 research_enabled: bool = False, port: int | None = None):
+    """Start the sandboxed helper. `port` asks its local bridge for the port an earlier turn used, so a resumed
+    session's connection is unchanged (fx refuses a resume when its base_url differs)."""
     if not available():
         raise ValueError(
             'Native isolation is unavailable: Linux Bubblewrap, macOS Seatbelt (sandbox-exec), '
@@ -612,7 +620,7 @@ async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *
     endpoint = os.environ.get("DOTRIX_SEARXNG_URL") if os.environ.get("DOTRIX_SEARCH_PROVIDER", "auto") in ("auto", "searxng") else None
     research = ResearchMcp(endpoint) if research_enabled else None
     try:
-        async with launcher(profile, binary, root, browser, target, key, model, expected_version, bool(anthropic), research) as result:
+        async with launcher(profile, binary, root, browser, target, key, model, expected_version, bool(anthropic), research, port=port) as result:
             yield result
     finally:
         if research is not None:
