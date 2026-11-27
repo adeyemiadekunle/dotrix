@@ -22,6 +22,26 @@ export interface ToolSet {
   call(name: string, args: Record<string, unknown>, caller: string): Promise<Content[]>;
 }
 
+/** A session's own token under a caller's: its ID and an HMAC of it (dotrix_cli: runner.py `turn_token`). A runner
+ *  hands each turn's coding tool only its session's, so turns side by side in one folder are told apart and none
+ *  can act as another; checking it needs no word from the runner first. */
+export function turnToken(token: string, session: string): string {
+  return `${session}.${crypto.createHmac("sha256", token).update(session).digest("hex")}`;
+}
+
+const SESSION_MARK = "\n"; // never in a folder's path a runner is started for, nor in a session ID
+
+/** The caller for one session's turns in a caller's (a runner's folder's). */
+export function turnCaller(caller: string, session: string): string {
+  return `${caller}${SESSION_MARK}${session}`;
+}
+
+/** A caller's folder and, for a session's own token, its session. */
+export function callerParts(caller: string): { folder: string; session: string | null } {
+  const at = caller.lastIndexOf(SESSION_MARK);
+  return at < 0 ? { folder: caller, session: null } : { folder: caller.slice(0, at), session: caller.slice(at + 1) };
+}
+
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const MAX_BODY = 1_000_000;
 
@@ -105,13 +125,19 @@ export class McpServer {
     send(200, Array.isArray(message) ? answers : answers[0]);
   }
 
-  /** Whose token this is, compared in constant time; null when it's none of them. */
+  /** Whose token this is, compared in constant time; null when it's none of them. A session's own token
+   *  (`turnToken`) names that session of the caller: `turnCaller(caller, session)`. */
   private caller(header: string): string | null {
     const given = Buffer.from(header);
+    const session = /^Bearer ([0-9A-Za-z-]{1,64})\.[0-9a-f]{64}$/.exec(header)?.[1];
     let found: string | null = null;
     for (const [token, caller] of this.callers) {
       const expected = Buffer.from(`Bearer ${token}`);
       if (given.length === expected.length && crypto.timingSafeEqual(given, expected)) found = caller;
+      if (session) {
+        const derived = Buffer.from(`Bearer ${turnToken(token, session)}`);
+        if (given.length === derived.length && crypto.timingSafeEqual(given, derived)) found = turnCaller(caller, session);
+      }
     }
     return found;
   }

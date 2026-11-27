@@ -15,7 +15,7 @@ export interface DesktopRunner {
   name?: string;
   isolation?: string;
   tools?: string[];
-  turn?: { runId: string; issueKey: string; turn: number; worktree: string };
+  turns?: { runId: string; sessionId?: string; issueKey: string; turn: number; worktree: string }[];
   message?: string;
 }
 

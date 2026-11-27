@@ -582,6 +582,10 @@ def runner_command(
     command: str = typer.Option(None, "--command", help="Any other command instead: the brief on stdin, its output as events"),
     once: bool = typer.Option(False, "--once", help="Code at most one waiting turn, then exit"),
     poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
+    parallel: int = typer.Option(
+        3, "--parallel", min=1, max=16,
+        help="How many turns to code at once (each session in a worktree of its own; 1 codes them one after another)",
+    ),
     name: str = typer.Option(None, "--name", help="This checkout's name on the platform (default: the hostname and folder)"),
     worktrees: Path = typer.Option(None, "--worktrees", help="Where turns' worktrees go (default: ~/.dotrix/worktrees)"),
     as_json: bool = typer.Option(False, "--json", help="A JSON line per event, for a program running this one (the desktop app)"),
@@ -609,7 +613,7 @@ def runner_command(
     config, state, client = _linked(project)
     runner = LocalRunner(
         _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
-        isolation=isolation.strip().lower(), echo=say,
+        isolation=isolation.strip().lower(), echo=say, parallel=parallel,
         notify=_json_line if as_json else (lambda event: None), **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
     )
     try:

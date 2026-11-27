@@ -29,8 +29,16 @@ export interface RunnerStatus {
   name?: string;
   isolation?: string;
   tools?: string[];
-  turn?: { runId: string; sessionId?: string; issueKey: string; turn: number; worktree: string };
+  turns: RunnerTurn[]; // the turns it is coding now: several at once, each session in a worktree of its own
   message?: string; // why it stopped or failed, or the last thing it said
+}
+
+export interface RunnerTurn {
+  runId: string;
+  sessionId?: string;
+  issueKey: string;
+  turn: number;
+  worktree: string;
 }
 
 interface Saved {
@@ -60,8 +68,8 @@ export class Runners {
     private webUrl: string,
     /** More for a folder's runner's environment, read when it starts (the Browser pane's tools for Kai: main.ts). */
     private extraEnv: (folder: string) => Record<string, string> = () => ({}),
-    /** A folder's turn ended, or its runner stopped (main.ts stops the app Kai started for it). */
-    private turnEnded: (folder: string) => void = () => undefined,
+    /** A folder's session's turn ended, or (no session) its runner stopped: main.ts stops the app Kai started for it. */
+    private turnEnded: (folder: string, sessionId?: string) => void = () => undefined,
   ) {}
 
   private get savedFile(): string {
@@ -90,7 +98,7 @@ export class Runners {
   /** Start the runners saved on this computer (on launch). */
   resume(): void {
     for (const row of this.saved()) {
-      this.statuses.set(row.folder, { ...row, state: "starting" });
+      this.statuses.set(row.folder, { ...row, state: "starting", turns: [] });
       this.start(row.folder);
     }
     this.changed();
@@ -196,7 +204,7 @@ export class Runners {
     const linked = await this.cli(["link", folder, "--workspace", workspace, "--project", projectKey, "--api-url", this.apiUrl]);
     if (linked.code !== 0) throw new Error(lastLine(linked.stderr) ?? `Couldn't link ${folder} to ${projectKey}`);
     await this.remove(folder); // a runner already there for it ends first, or the new one couldn't start
-    const status: RunnerStatus = { folder, workspace, projectKey, state: "starting" };
+    const status: RunnerStatus = { folder, workspace, projectKey, state: "starting", turns: [] };
     this.statuses.set(folder, status);
     this.save();
     this.start(folder);
@@ -225,7 +233,7 @@ export class Runners {
   private start(folder: string): void {
     const status = this.statuses.get(folder);
     if (!status || this.processes.has(folder)) return;
-    Object.assign(status, { state: "starting", message: undefined, turn: undefined });
+    Object.assign(status, { state: "starting", message: undefined, turns: [] });
     const child = spawn(cliCommand(), ["runner", "--json", "--project", folder], { cwd: folder, env: this.env(folder), windowsHide: true });
     this.processes.set(folder, child);
     let errors = "";
@@ -243,18 +251,20 @@ export class Runners {
         });
         this.failures.delete(folder);
       } else if (event.event === "turn") {
-        status.state = "coding";
-        status.turn = {
+        const turn: RunnerTurn = {
           runId: String(event.run_id),
           sessionId: event.session_id ? String(event.session_id) : undefined,
           issueKey: String(event.issue_key),
           turn: Number(event.turn),
           worktree: String(event.worktree),
         };
+        status.turns = [...status.turns.filter((other) => other.runId !== turn.runId), turn];
+        status.state = "coding";
       } else if (event.event === "done") {
-        status.state = "waiting";
-        status.turn = undefined;
-        this.turnEnded(folder);
+        const ended = status.turns.find((turn) => turn.runId === String(event.run_id));
+        status.turns = status.turns.filter((turn) => turn !== ended);
+        if (!status.turns.length) status.state = "waiting";
+        this.turnEnded(folder, ended?.sessionId ?? (event.session_id ? String(event.session_id) : undefined));
       } else if (event.event === "log" && typeof event.text === "string") {
         status.message = event.text.trim();
       }
@@ -268,7 +278,7 @@ export class Runners {
       this.turnEnded(folder);
       if (this.quitting || this.statuses.get(folder) !== status) return;
       status.state = code === 0 ? "stopped" : "failed";
-      status.turn = undefined;
+      status.turns = [];
       status.message = lastLine(errors) ?? (code === 0 ? "Stopped" : `The runner exited (${code})`);
       this.changed();
       // Back by itself (the platform or the network may return); after a few tries it waits for Restart.

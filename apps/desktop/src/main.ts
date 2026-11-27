@@ -9,7 +9,7 @@ import { Browser } from "./browser";
 import { KaiBrowser } from "./browserKai";
 import { LocalActions, localProfile } from "./localActions";
 import { DevServers, KaiApp } from "./devServer";
-import { McpServer, type ToolSet } from "./mcp";
+import { callerParts, McpServer, turnCaller, type ToolSet } from "./mcp";
 import { readChangelog } from "./changelog";
 import { stagingBuild, webUrl } from "./config";
 import { opensOutside, staysInside } from "./links";
@@ -37,15 +37,22 @@ const runners = new Runners(
   API_URL,
   WEB_URL,
   (folder): Record<string, string> => (kaiTools?.url ? { DOTRIX_BROWSER_MCP_URL: kaiTools.url, DOTRIX_BROWSER_MCP_TOKEN: kaiTools.tokenFor(folder) } : {}),
-  (folder) => void devServers?.stop(folder),
+  (folder, sessionId) => void (sessionId ? devServers?.stop(turnCaller(folder, sessionId)) : devServers?.stopFolder(folder)),
 );
-/** The coding session and issue of the turn a folder's runner is coding now, or null. */
-const turnOf = (folder: string) => {
-  const turn = runners.list().find((runner) => runner.folder === folder)?.turn;
+/** The turn a caller (a runner's folder's session, by its token: mcp.ts) is coding now, or null. A folder's own
+ *  token stands for its one turn, when it codes only one. */
+const callerTurn = (caller: string) => {
+  const { folder, session } = callerParts(caller);
+  const turns = runners.list().find((runner) => runner.folder === folder)?.turns ?? [];
+  return session ? (turns.find((turn) => turn.sessionId === session) ?? null) : turns.length === 1 ? turns[0] : null;
+};
+/** The coding session and issue of the turn a caller is coding now, or null. */
+const turnOf = (caller: string) => {
+  const turn = callerTurn(caller);
   return turn?.sessionId ? { sessionId: turn.sessionId, issueKey: turn.issueKey } : null;
 };
-/** The worktree a folder's runner is coding in now (one the runner made), or null. */
-const worktreeOf = (folder: string) => ownWorktree(runners.list().find((runner) => runner.folder === folder)?.turn?.worktree);
+/** The worktree a caller's turn is coding in now (one the runner made), or null. */
+const worktreeOf = (caller: string) => ownWorktree(callerTurn(caller)?.worktree);
 /** The app's own page, where the pane lives. */
 const appPage = () => BrowserWindow.getAllWindows().find((win) => !win.isDestroyed() && sameOrigin(win.webContents.getURL(), WEB_URL))?.webContents ?? null;
 let stopped = false; // the runners were stopped for quitting (or restarting into an update)
