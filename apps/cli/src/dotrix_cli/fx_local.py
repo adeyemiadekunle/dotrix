@@ -1,4 +1,4 @@
-"""fx 0.0.17 local ACP client: shell/file tools inside a Linux namespace, and the app browser.
+"""fx 0.0.18 local ACP client: shell/file tools inside a Linux namespace, and the app browser.
 
 The cloud driver deliberately grants full access inside its sandbox. This client never
 does: unknown permissions are refused, edits must stay in the worktree, and the ACP

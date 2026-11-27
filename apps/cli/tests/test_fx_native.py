@@ -132,6 +132,23 @@ def test_native_execution_runs_only_the_kai_runtime_s_fx_with_project_config_off
             require_kai_fx(str(binary))
 
 
+def test_native_execution_expects_the_kai_release_the_coding_image_and_chat_pin() -> None:
+    """Local native Code runs only the Kai release the cloud runs: the coding image's fx and Chat's libfx, so a
+    pin change that misses one of the three fails here."""
+    import re
+
+    from dotrix_cli import fx_native
+    from dotrix_cli.fx_bridge import KAI_FX_VERSION
+
+    root = Path(__file__).resolve().parents[3]
+    image = re.search(r"^ARG KAI_CLI_VERSION=(\S+)$", (root / "infra/coding/Dockerfile").read_text(), re.M)
+    chat = json.loads((root / "packages/engine/src/dotrix_engine/runtimes/fx_host/package.json").read_text())
+    assert re.fullmatch(r"\d+\.\d+\.\d+-kai\.\d+", KAI_FX_VERSION)
+    assert image is not None and image.group(1) == KAI_FX_VERSION
+    assert chat["dependencies"]["libfx"] == f"npm:@kunemi-group/kai@{KAI_FX_VERSION}"
+    assert fx_native.KAI_FX_VERSION == KAI_FX_VERSION
+
+
 
 def test_kai_s_contract_splits_from_the_turn_s_task_and_the_browser_note_stays_in_the_task() -> None:
     """A local fx turn gives fx Kai's contract as the session's system profile, as a cloud turn does: the brief splits

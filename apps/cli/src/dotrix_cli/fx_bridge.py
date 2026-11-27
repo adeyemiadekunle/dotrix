@@ -16,6 +16,10 @@ import sys
 import threading
 
 LIMIT = 24 * 1024 * 1024
+# The engine versions native execution runs, exactly as each one's `--version` prints them. The Kai runtime's fx
+# reports its whole release (`0.0.18-kai.2`), so one Kai release can't stand in for another. fx_native reads these.
+KAI_FX_VERSION = '0.0.18-kai.2'
+CLAUDE_CODE_VERSION = '2.1.296'
 
 
 class _SocketChannel:
@@ -93,9 +97,9 @@ def frame_read(channel):
 
 
 def require_kai_fx(binary):
-    """Refuse an fx without the Kai runtime's `project_config` off. Upstream fx 0.0.17 reports the same version
-    but has no such setting, so it would read the repository's .fx.json, skills, .mcp.json and AGENTS.md; here
-    the profile and FX_PROJECT_CONFIG=0 turn it off."""
+    """Refuse an fx without the Kai runtime's `project_config` off. Upstream fx has no such setting, so it
+    would read the repository's .fx.json, skills, .mcp.json and AGENTS.md; here the profile and
+    FX_PROJECT_CONFIG=0 turn it off. This holds even for an fx whose version was made to read as Kai's."""
     setting = subprocess.run([binary, 'config', 'get', 'project_config'], capture_output=True, text=True, timeout=15)
     if setting.returncode != 0 or setting.stdout.strip() != 'false':
         raise ValueError("Native execution requires the Kai runtime's fx, which can ignore a repository's configuration")
@@ -205,9 +209,10 @@ def main():
         git(f'--git-dir={git_dir}', '-c', 'user.name=Dotrix', '-c', 'user.email=dotrix@localhost',
             'commit', '--allow-empty', '--no-verify', '-qm', 'Sandbox baseline')
     version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=15, check=True).stdout.strip()
-    expected = '2.1.296' if claude else '0.0.17'
+    expected = CLAUDE_CODE_VERSION if claude else KAI_FX_VERSION
     if version.split()[0] != expected:
-        raise ValueError('Native execution requires the tested coding runtime')
+        name = 'Claude Code' if claude else "the Kai runtime's fx"
+        raise ValueError(f'Native execution requires {name} {expected}, not {version.split()[0] if version else "an unknown version"}')
     if not claude:
         require_kai_fx(binary)
     print(json.dumps({'bridge_ready': True, 'port': server.server_port, 'version': expected}), flush=True)
