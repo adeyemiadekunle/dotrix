@@ -45,7 +45,7 @@ test("sample Chat and Codes use the shared lists and message presentation withou
   await message.fill("Help me plan the release\nInclude migration steps\nVerify rollback plan");
   expect((await message.boundingBox())!.height).toBeGreaterThan(compact);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
-  await page.locator(".chat-list .sitem").first().click();
+  await page.getByRole("navigation", { name: "Chat tabs" }).getByRole("button").first().click();
   await expect(page.getByText("Sample conversation · Sign in to work with Nova.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Chat options", exact: true })).toBeVisible();
   await expect(page.getByLabel("Work mode: Discuss", { exact: true })).toBeVisible();
@@ -221,17 +221,18 @@ test("sample workspace switches on Home and previews the repository-first Code c
 
 test("a live account uses the same navigation and typography without inheriting sample sessions", async ({ page }) => {
   await page.goto("/w/dotrix/codes");
-  await expect(page.locator(".cs-row").first()).toBeVisible();
-  const font = await page.locator(".chat-side h1").evaluate((element) => getComputedStyle(element).fontFamily);
+  const codeTabs = page.getByRole("navigation", { name: "Code tabs" });
+  await expect(codeTabs.getByRole("button").first()).toBeVisible();
+  const font = await page.locator(".session-tab-bar h1").evaluate((element) => getComputedStyle(element).fontFamily);
   await signUp(page);
   const slug = new URL(page.url()).pathname.split("/")[2]!;
   await page.getByRole("navigation", { name: "Main", exact: true }).getByRole("button", { name: "Chat", exact: true }).click();
-  await expect(page.locator(".chat-list .sitem")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Chat tabs" }).getByRole("button")).toHaveCount(0);
   await expect(page.getByText("Sample conversation · Sign in to work with Nova.")).toHaveCount(0);
   await page.goto(`/w/${slug}/codes`);
   await expect(page.getByRole("heading", { name: "Code", exact: true })).toBeVisible();
-  await expect(page.locator(".cs-row")).toHaveCount(0);
-  expect(await page.locator(".chat-side h1").evaluate((element) => getComputedStyle(element).fontFamily)).toBe(font);
+  await expect(codeTabs.getByRole("button")).toHaveCount(0);
+  expect(await page.locator(".session-tab-bar h1").evaluate((element) => getComputedStyle(element).fontFamily)).toBe(font);
 });
 
 for (const signedIn of [false, true]) {
@@ -245,6 +246,7 @@ for (const signedIn of [false, true]) {
       if (new URL(request.url()).pathname.startsWith("/v1/")) apiCalls.push(request.url());
     });
     await page.reload();
+    await page.getByRole("button", { name: "Browse sessions" }).click();
     await page.getByRole("button", { name: "More for WEB-154", exact: true }).click();
     const menu = page.getByRole("menu");
     await expect(menu.getByText("Sample session · Read-only", { exact: true })).toBeVisible();

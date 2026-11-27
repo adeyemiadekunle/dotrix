@@ -227,7 +227,7 @@ test("the session shows Kai, never the engine underneath", async ({ page, contex
   await expect(page.getByRole("dialog").getByRole("button", { name: "Build", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("textbox", { name: "Follow-up", exact: true })).toHaveAttribute("placeholder", /Ask Kai/);
-  await expect(page.locator(".chat-list")).not.toContainText("Codex");
+  await expect(page.getByRole("navigation", { name: "Code tabs" })).not.toContainText("Codex");
   await expect(main).not.toContainText("Codex");
 });
 

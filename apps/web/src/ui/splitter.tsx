@@ -64,25 +64,6 @@ export function useStoredSize(key: string, fallback: number, min: number, max: n
   return [size, (n) => setSize((prev) => clamp(typeof n === "function" ? n(prev) : n))];
 }
 
-/** An on/off kept in this browser (off when storage is gone). */
-export function useStoredFlag(key: string): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useState(() => {
-    try {
-      return localStorage.getItem(key) === "1";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, on ? "1" : "0");
-    } catch {
-      /* storage off: it lasts until the page reloads */
-    }
-  }, [key, on]);
-  return [on, setOn];
-}
-
 /** A short text kept in this browser (the fallback when storage is gone). */
 export function useStoredText(key: string, fallback: string): [string, (value: string) => void] {
   const [value, setValue] = useState(() => {

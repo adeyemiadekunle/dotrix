@@ -104,7 +104,7 @@ test("the agents answer, and a change waits for approval before it happens", asy
   // What the agents did stays with the reply (kept after the run), folded until asked for.
   await page.getByRole("button", { name: "Steps" }).first().click();
   await expect(page.getByRole("list", { name: "Steps" })).toBeVisible();
-  const conversations = page.getByRole("navigation", { name: "Conversations" });
+  const conversations = page.getByRole("navigation", { name: "Chat tabs" });
   await expect(conversations.getByText("What's open", { exact: true })).toBeVisible();
 
   // A new conversation for the change: it waits, and nothing happens until it's approved.
@@ -249,6 +249,7 @@ test("Chat and Code are separate pages, Code right below Chat in the sidebar", a
   await expect(page).toHaveURL(/\/codes$/);
   await expect(page.getByRole("heading", { name: "Start a session" })).toBeVisible();
   await expect(page.getByRole("button", { name: "New session" })).toBeVisible();
+  await page.getByRole("button", { name: "Browse sessions" }).click();
   await expect(page.getByRole("navigation", { name: "Sessions" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Conversations" })).toHaveCount(0);
   // An older link to a new coding session in Chat opens Codes.
