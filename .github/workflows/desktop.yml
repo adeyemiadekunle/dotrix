@@ -104,6 +104,8 @@ jobs:
       - name: The CLI starts without a sign-in
         run: |
           ./apps/desktop/resources/dotrix/dotrix.exe --help > /dev/null
+          # Native Code's Windows launcher starts the bridge as the frozen program's own command.
+          ./apps/desktop/resources/dotrix/dotrix.exe _bridge --version | grep -q '"bridge": true'
           out="$(./apps/desktop/resources/dotrix/dotrix.exe whoami 2>&1 || true)"
           echo "$out"
           echo "$out" | grep -q 'Not signed in'
@@ -191,6 +193,8 @@ jobs:
           out="$("$cli/dotrix" whoami 2>&1 || true)"
           echo "$out"
           echo "$out" | grep -q 'Not signed in'
+          # Native Code's macOS launcher starts the bridge as the frozen program's own command.
+          "$cli/dotrix" _bridge --version | grep -q '"bridge": true'
           FX_AUTO_UPGRADE=0 "$cli/bin/fx" --version
           if [ -x "$cli/bin/bwrap" ]; then
             "$cli/bin/bwrap" --version

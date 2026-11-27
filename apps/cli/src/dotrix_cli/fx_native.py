@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from . import bundled, win_sandbox
+from .frozen_entry import BRIDGE_COMMAND
 from .fx_bridge import CLAUDE_CODE_VERSION, KAI_FX_VERSION
 from .web_mcp import ResearchMcp
 
@@ -41,6 +42,14 @@ def filesystem_args() -> list[str]:
         if Path(name).exists():
             argv += ['--ro-bind', name, name]
     return argv + ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
+
+
+def bridge_argv(helper: Path) -> list[str]:
+    """How the macOS and Windows launchers start fx_bridge.py: with this Python from source, or, in the standalone
+    CLI (which has no interpreter of its own), as the frozen program's `_bridge` command (frozen_entry)."""
+    if getattr(sys, 'frozen', False):
+        return [sys.executable, BRIDGE_COMMAND]
+    return [sys.executable, str(helper)]
 
 
 @functools.lru_cache(maxsize=1)
@@ -491,7 +500,7 @@ async def _launch_macos(
 
     argv = [
         '/usr/bin/sandbox-exec', '-f', str(sbpl_path),
-        sys.executable, str(helper), str(address), str(profile), str(binary_path),
+        *bridge_argv(helper), str(address), str(profile), str(binary_path),
     ]
     if anthropic:
         argv.append('claude')
@@ -571,6 +580,7 @@ async def _launch_windows(
         process = win_sandbox.launch_appcontainer(
             python_exe=sys.executable,
             helper=helper,
+            bridge=bridge_argv(helper),
             profile=profile,
             binary=binary_path,
             root=root,

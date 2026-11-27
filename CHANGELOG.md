@@ -63,6 +63,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 - Code no longer lists **Terminal** as available for a local turn whose computer may have no sandbox. A local turn runs commands only inside Docker Sandboxes, or Linux namespaces for fx and Claude Code, which the platform can't see before the runner starts it, so Terminal now says so. Codex keeps it, in its own workspace sandbox. Found testing on a Mac, where fx is refused.
 - A turn that failed, stopped or was interrupted before using any tools no longer says "Worked on it": it says "Failed before any steps" (or stopped, or interrupted).
+- Fixed native local Code in the standalone CLI on macOS and Windows: their launchers ran the sandbox bridge with `sys.executable`, which in a frozen build is the `dotrix` program rather than Python, so the bridge never started. The CLI now runs it as its own `dotrix _bridge` command (`dotrix_cli/frozen_entry.py`), and the release builds check that it starts.
 
 ## [0.4.0] - 2026-11-21
 

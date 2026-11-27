@@ -58,7 +58,8 @@ def main() -> None:
         subprocess.run([uv, "pip", "install", "--quiet", "--no-sources", "--python", str(python), "-r", str(requirements),
                         PYINSTALLER, str(ROOT / "packages" / "engine"), str(cli)], cwd=ROOT, check=True)
         entry = work / "dotrix.py"
-        entry.write_text("from dotrix_cli.cli import app\n\nif __name__ == '__main__':\n    app()\n")
+        # The CLI, and the native Code bridge its launchers start as `dotrix _bridge` (dotrix_cli/frozen_entry.py).
+        entry.write_text("from dotrix_cli.frozen_entry import main\n\nif __name__ == '__main__':\n    main()\n")
         collect = [f"--collect-all={name}" for name in COLLECT]
         subprocess.run([str(python), "-m", "PyInstaller", str(entry), "--name", "dotrix", "--onedir", "--noconfirm",
                         "--clean", "--console", "--log-level", "WARN", "--distpath", str(work / "dist"),
