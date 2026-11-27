@@ -11,6 +11,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Added
 
+- Added running several sessions' local turns at once on one computer, as Claude Code runs its sessions: a runner codes up to three turns side by side by default (`dotrix runner --parallel N`; 1 codes them one after another), each session in a worktree of its own. In the desktop app each session's turn drives its own Browser pane tab and starts its own app, and a folder's status lists every turn in progress.
 - Added optional public web search and page reading for Kai on native worktrees and supported hosted builds.
 - Added standalone CLI builds for Linux x64, Linux arm64, and macOS arm64 that bundle what native local Code needs and the OS lacks: the Kai runtime's fx (`0.0.18-kai.2`, fetched by its pinned per-platform SHA-256) and, on Linux, a static Bubblewrap built from its pinned release. A release's own fx and bwrap win over ones on PATH (`dotrix_cli/bundled.py`). macOS Seatbelt and Windows AppContainer come with the OS; Kai has no Windows fx yet, so the Windows build bundles none.
 - Required explicit Terms of Service acceptance at signup and recorded its version and timestamp on new accounts. Documented admin and marketing metrics in the Terms and Privacy Policy.

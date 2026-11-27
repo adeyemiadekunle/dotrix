@@ -81,7 +81,7 @@ interface Hands {
 }
 
 export class KaiBrowser implements ToolSet {
-  private readonly hands = new Map<string, Hands>(); // by caller (a runner's folder)
+  private readonly hands = new Map<string, Hands>(); // by caller (a runner's folder's session: mcp.ts)
   private serial = 0;
   /** Each tab's console for the page it shows now (heard from the tab's start, so a first load's messages are there too). */
   private readonly heard = new WeakMap<WebContents, string[]>();
@@ -91,7 +91,7 @@ export class KaiBrowser implements ToolSet {
     private readonly host: () => WebContents | null,
     private readonly allowed: () => boolean,
     private readonly partition: () => string,
-    /** The coding session and issue of the turn a runner's folder is coding now, or null. */
+    /** The coding session and issue of the turn a caller (a folder's session) is coding now, or null. */
     private readonly turnOf: (caller: string) => { sessionId: string; issueKey: string } | null,
   ) {}
 

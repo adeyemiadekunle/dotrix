@@ -2,12 +2,13 @@
 The whole loop runs against the real API in the backend's tests (test_coding.py, local turns)."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 from pathlib import Path
 
-from dotrix_cli.runner import LocalRunner, Outcome, Tool, parse_line
+from dotrix_cli.runner import BROWSER_TOKEN_ENV, LocalRunner, Outcome, Tool, parse_line
 
 
 def test_unrelated_host_credentials_do_not_reach_a_tool_process(monkeypatch) -> None:
@@ -424,7 +425,7 @@ async def test_old_worktrees_are_removed_but_not_the_one_in_use(tmp_path: Path) 
     age(managed)
 
     runner = LocalRunner(api=None, repo=checkout, workspace_id="w", project_id="p", worktrees=trees, echo=lambda _: None)
-    runner._coding_in = busy
+    runner._coding_in.add(busy)
     removed = await runner.clean_worktrees()
     assert sorted(removed) == sorted([old, stray])
     assert recent.is_dir() and busy.is_dir() and (trees / "other-project").is_dir()
@@ -914,3 +915,125 @@ def test_worktree_commands_restore_binary_edits_without_overwriting_an_existing_
     assert command("cleanup").exit_code == 0
     assert command("restore").exit_code == 0
     assert (tree / "file.bin").read_bytes() == b"\0updated\xff"
+
+
+def _parallel_runner(tmp_path: Path, monkeypatch, parallel: int, sessions: int):
+    """A runner with `sessions` waiting turns, each of its own session, whose tool notes when it starts and ends."""
+    import sys
+    import uuid as uuid_module
+
+    log = tmp_path / "log"
+    log.mkdir()
+    script = (
+        "import os, sys, time\n"
+        f"log = {str(log)!r}\n"
+        "me = os.path.basename(os.getcwd())\n"
+        "open(os.path.join(log, me + '.start'), 'w').close()\n"
+        "deadline = time.time() + 5\n"  # waits a while for another turn to start beside it
+        "while time.time() < deadline and len([n for n in os.listdir(log) if n.endswith('.start')]) < 2:\n"
+        "    time.sleep(0.05)\n"
+        "open('a.txt', 'w').write('changed by ' + me)\n"
+        "seen = len([n for n in os.listdir(log) if n.endswith('.start')])\n"
+        "open(os.path.join(log, me + '.end'), 'w').write(str(seen))\n"  # how many turns had started by its end
+    )
+    monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("codex", [sys.executable, "-c", script]))
+    monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
+    waiting = [{**_RUN, "run_id": f"run-00000{i}", "issue_key": f"KUN-{i}", "tool": "codex", "managed_worktree": True,
+                "session_id": str(uuid_module.uuid4())} for i in range(sessions)]
+    results: dict[str, dict] = {}
+    done = asyncio.Event()
+
+    class Api:
+        async def post(self, path, body=None):
+            if path.endswith("/claim?managed_worktrees=true"):
+                return {"run": waiting.pop(0) if waiting else None}
+            if path.endswith("/result"):
+                results[path.split("/runs/")[1].split("/")[0]] = body
+                if len(results) == sessions:
+                    done.set()
+            return {"stop": False}
+
+    runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"original\n"}), workspace_id="w",
+                         project_id="p", runner_id="r1", tool="codex", isolation="none", worktrees=tmp_path / "trees",
+                         echo=lambda _: None, parallel=parallel)
+    return runner, results, done, log
+
+
+async def _serve_all(runner, done) -> None:
+    stop = asyncio.Event()
+    task = asyncio.create_task(runner.serve(poll_seconds=0.01, stop=stop))
+    try:
+        await asyncio.wait_for(done.wait(), 60)
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, 10)
+
+
+async def test_turns_of_different_sessions_code_side_by_side_each_in_its_own_worktree(tmp_path, monkeypatch):
+    runner, results, done, log = _parallel_runner(tmp_path, monkeypatch, parallel=2, sessions=2)
+    await _serve_all(runner, done)
+    assert [body["outcome"] for body in results.values()] == ["changes", "changes"]
+    # Each tool, as it ended, saw both turns started: they ran at the same time.
+    assert [path.read_text() for path in log.glob("*.end")] == ["2", "2"]
+    # Each changed its own worktree; the person's checkout is untouched.
+    patches = sorted(base64.b64decode(body["patch_b64"]).decode() for body in results.values())
+    assert all("+changed by " in patch for patch in patches) and patches[0] != patches[1]
+    assert (runner.repo / "a.txt").read_text() == "original\n"
+    assert runner._coding_in == set() and runner._turns == set()
+
+
+async def test_with_parallel_one_the_turns_wait_for_each_other(tmp_path, monkeypatch):
+    runner, results, done, log = _parallel_runner(tmp_path, monkeypatch, parallel=1, sessions=2)
+    await _serve_all(runner, done)
+    assert [body["outcome"] for body in results.values()] == ["changes", "changes"]
+    # The first ended alone (it waited for a turn beside it that never came); only then did the second start.
+    assert sorted(path.read_text() for path in log.glob("*.end")) == ["1", "2"]
+
+
+async def test_stopping_the_runner_stops_every_turn_in_progress(tmp_path, monkeypatch):
+    import sys
+
+    started = tmp_path / "started"
+    started.mkdir()
+    script = (f"import os, time; open(os.path.join({str(started)!r}, os.path.basename(os.getcwd())), 'w').close(); "
+              "time.sleep(60)")
+    monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("codex", [sys.executable, "-c", script]))
+    monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
+    import uuid as uuid_module
+
+    waiting = [{**_RUN, "run_id": f"run-00000{i}", "tool": "codex", "managed_worktree": True,
+                "session_id": str(uuid_module.uuid4())} for i in range(2)]
+
+    class Api:
+        async def post(self, path, body=None):
+            if path.endswith("/claim?managed_worktrees=true"):
+                return {"run": waiting.pop(0) if waiting else None}
+            return {"stop": False}
+
+    runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"a\n"}), workspace_id="w", project_id="p",
+                         runner_id="r1", tool="codex", isolation="none", worktrees=tmp_path / "trees",
+                         echo=lambda _: None, parallel=2)
+    task = asyncio.create_task(runner.serve(poll_seconds=0.01))
+    for _ in range(400):
+        if len(list(started.iterdir())) == 2:
+            break
+        await asyncio.sleep(0.05)
+    assert len(list(started.iterdir())) == 2
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 30)
+    assert runner._turns == set()
+
+
+def test_each_session_gets_a_browser_pane_token_of_its_own():
+    import hashlib
+    import hmac
+
+    from dotrix_cli.runner import BROWSER_URL_ENV, browser_tools, turn_token
+
+    environ = {BROWSER_URL_ENV: "http://127.0.0.1:4411/mcp", BROWSER_TOKEN_ENV: "folder-secret"}
+    url, token = browser_tools(environ, session="s-1")
+    assert url == "http://127.0.0.1:4411/mcp" and "folder-secret" not in token
+    assert token == f"s-1.{hmac.new(b'folder-secret', b's-1', hashlib.sha256).hexdigest()}" == turn_token("folder-secret", "s-1")
+    assert browser_tools(environ, session="s-2")[1] != token
+    assert browser_tools(environ) == (url, "folder-secret")

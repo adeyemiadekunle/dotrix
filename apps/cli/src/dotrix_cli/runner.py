@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import json
 import os
 import platform as platform_info
@@ -231,9 +232,10 @@ class Sbx:
         return True
 
 
-def browser_tools(environ: Mapping[str, str] | None = None) -> tuple[str, str] | None:
+def browser_tools(environ: Mapping[str, str] | None = None, session: str | None = None) -> tuple[str, str] | None:
     """The desktop app's Browser pane for this runner's turns (its MCP server's address and token), when the
-    app started this runner with one: only ever on this computer."""
+    app started this runner with one: only ever on this computer. With `session`, the token is that session's
+    own (`turn_token`), so the app knows which of the folder's turns calls, and a turn can't act as another."""
     environ = os.environ if environ is None else environ
     url, token = environ.get(BROWSER_URL_ENV, ""), environ.get(BROWSER_TOKEN_ENV, "")
     try:
@@ -242,7 +244,16 @@ def browser_tools(environ: Mapping[str, str] | None = None) -> tuple[str, str] |
                  and address.username is None and address.password is None and not address.fragment)
     except ValueError:
         valid = False
-    return (url, token) if valid and token else None
+    if not (valid and token):
+        return None
+    return (url, turn_token(token, session) if session else token)
+
+
+def turn_token(folder_token: str, session: str) -> str:
+    """A session's Browser pane token: its ID and an HMAC of it under the folder's token, which the desktop checks
+    (apps/desktop/src/mcp.ts `turnCaller`). The coding tool gets only this, never the folder's token."""
+    mac = hmac.new(folder_token.encode(), session.encode(), hashlib.sha256).hexdigest()
+    return f"{session}.{mac}"
 
 
 def write_browser_config(url: str, token: str) -> Path:
@@ -575,6 +586,17 @@ def touched_since(tree: Path, cutoff: float) -> bool:
 
 
 @dataclass
+class _Turn:
+    """What one turn in progress holds, cleaned up when it ends. Each turn has its own, so turns run side by side."""
+    coding_in: Path | None = None  # its worktree, never cleaned while it runs
+    sandbox: str | None = None  # its Docker sandbox, removed when it ends
+    browser_config: Path | None = None  # its MCP config for the Browser pane, removed when it ends
+    browser: tuple[str, str] | None = None  # it has the Browser pane (its server's address and token)
+    fx_profile: Path | None = None
+    fx_state_dir: Path | None = None
+
+
+@dataclass
 class LocalRunner:
     api: Api
     repo: Path  # the person's checkout (its .git is shared by the worktrees)
@@ -599,12 +621,12 @@ class LocalRunner:
     # "auto": in a Docker sandbox when sbx is installed, else a worktree only; "sbx" requires it; "none" never.
     isolation: str = "auto"
     sbx: Sbx | None = None
-    _coding_in: Path | None = None  # the worktree of the turn in progress, never cleaned
-    _sandbox: str | None = None  # the turn in progress's sandbox, removed when it ends
-    _browser_config: Path | None = None  # the turn in progress's MCP config for the Browser pane, removed when it ends
-    _browser: tuple[str, str] | None = None  # the turn in progress has the Browser pane (its server's address and token)
-    _fx_profile: Path | None = None
-    _fx_state_dir: Path | None = None
+    # How many turns `serve` codes at once: each session has its own worktree, so they never share files.
+    parallel: int = 1
+    _turns: set[asyncio.Task] = field(default_factory=set, init=False, repr=False)
+    _coding_in: set[Path] = field(default_factory=set, init=False, repr=False)  # the turns' worktrees, never cleaned
+    # The checkout's own git work (fetching, adding and removing worktrees) is one at a time: they share its refs.
+    _repo_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     def tools(self) -> list[str]:
         if self.tool:
@@ -621,6 +643,8 @@ class LocalRunner:
     def __post_init__(self) -> None:
         if self.isolation not in ("auto", "sbx", "none"):
             raise ValueError("isolation is auto, sbx or none")
+        if self.parallel < 1:
+            raise ValueError("parallel is at least 1")
         if self.sbx is None and self.isolation != "none":
             self.sbx = Sbx.found()
         if self.isolation == "none":
@@ -648,85 +672,126 @@ class LocalRunner:
                      "isolation": runner["isolation"], "tools": runner["tools"]})
         return runner
 
-    async def once(self) -> bool:
-        """Claim one turn and code it; False when none waits."""
+    async def claim(self) -> dict[str, Any] | None:
+        """The next turn for this runner, now held by it; None when none waits."""
         if self.runner_id is None:
             await self.register()
         claimed = await self.api.post(f"{self.base}/{self.runner_id}/claim?managed_worktrees=true")
-        if not claimed.get("run"):
+        return claimed.get("run") or None
+
+    async def once(self) -> bool:
+        """Claim one turn and code it; False when none waits."""
+        run = await self.claim()
+        if run is None:
             return False
+        await self.code(run)
+        return True
+
+    async def code(self, run: dict[str, Any]) -> None:
+        """Code a claimed turn with state of its own, and clean that up when it ends."""
+        turn = _Turn()
         try:
-            await self.work(claimed["run"])
+            await self.work(run, turn)
         finally:
-            if self._coding_in is not None:
+            if turn.coding_in is not None:
+                self._coding_in.discard(turn.coding_in)
                 try:
-                    os.utime(self._coding_in)  # its age counts from when the turn ended
+                    os.utime(turn.coding_in)  # its age counts from when the turn ended
                 except OSError:
                     pass
-            self._coding_in = None
-            if self._sandbox is not None and self.sbx is not None:
-                await asyncio.shield(self.sbx.remove(self._sandbox))
-            self._sandbox = None
-            if self._browser_config is not None:
-                self._browser_config.unlink(missing_ok=True)
-            self._browser_config = None
-            self._browser = None
-            if self._fx_profile is not None:
+            if turn.sandbox is not None and self.sbx is not None:
+                await asyncio.shield(self.sbx.remove(turn.sandbox))
+            if turn.browser_config is not None:
+                turn.browser_config.unlink(missing_ok=True)
+            if turn.fx_profile is not None:
                 from dotrix_cli.fx_local import save_refreshed_auth, save_session_state
 
-                if self._fx_state_dir is not None:
+                if turn.fx_state_dir is not None:
                     try:
-                        save_session_state(self._fx_profile, self._fx_state_dir)
+                        save_session_state(turn.fx_profile, turn.fx_state_dir)
                     except (OSError, ValueError):
                         self.echo("  Couldn't save the local coding session state for the next turn")
                 try:
-                    save_refreshed_auth(self._fx_profile)
+                    save_refreshed_auth(turn.fx_profile)
                 except (OSError, ValueError):
                     # Retain the private copy so a refreshed sign-in is not silently lost.
                     self.notify({"event": "warning", "text": "Could not save the refreshed local sign-in; its private profile was retained",
-                                 "profile": str(self._fx_profile)})
+                                 "profile": str(turn.fx_profile)})
                 else:
-                    shutil.rmtree(self._fx_profile, ignore_errors=True)
-            self._fx_profile = None
-            self._fx_state_dir = None
-            self.notify({"event": "done", "run_id": claimed["run"]["run_id"]})
+                    shutil.rmtree(turn.fx_profile, ignore_errors=True)
+            self.notify({"event": "done", "run_id": run["run_id"], "session_id": run.get("session_id")})
             await self.clean_worktrees()
-        return True
 
     async def clean_worktrees(self) -> list[Path]:
-        """Remove this project's worktrees untouched for `keep_days` (never the one in use); the removed."""
+        """Remove this project's worktrees untouched for `keep_days` (never one in use); the removed."""
         folder = self.worktrees / self.project_id
         if not folder.is_dir():
             return []
         cutoff = time.time() - self.keep_days * 86400
         removed: list[Path] = []
         for tree in sorted(folder.iterdir()):
-            if not tree.is_dir() or tree == self._coding_in:
+            if not tree.is_dir() or tree in self._coding_in:
                 continue
             if await asyncio.to_thread(touched_since, tree, cutoff):
                 continue
-            try:
-                await git(self.repo, "worktree", "remove", "--force", str(tree))
-            except RuntimeError:
-                shutil.rmtree(tree, ignore_errors=True)  # not this checkout's (or git lost track of it)
+            async with self._repo_lock:
+                if tree in self._coding_in:  # a turn took it up while this one waited
+                    continue
+                try:
+                    await git(self.repo, "worktree", "remove", "--force", str(tree))
+                except RuntimeError:
+                    shutil.rmtree(tree, ignore_errors=True)  # not this checkout's (or git lost track of it)
             if not tree.exists():
                 removed.append(tree)
         if removed:
-            try:
-                await git(self.repo, "worktree", "prune")
-            except RuntimeError:
-                pass
+            async with self._repo_lock:
+                try:
+                    await git(self.repo, "worktree", "prune")
+                except RuntimeError:
+                    pass
             self.echo(f"Removed {len(removed)} old worktree{'s' if len(removed) > 1 else ''}")
         return removed
 
     async def serve(self, *, poll_seconds: float = 5, stop: asyncio.Event | None = None) -> None:
+        """Code turns as they come, up to `parallel` at once, until `stop`. Stopping (or cancelling) stops the turns
+        in progress, and the tools with them."""
         stop = stop or asyncio.Event()
+        try:
+            await self._serve(poll_seconds, stop)
+        finally:
+            for task in self._turns:
+                task.cancel()
+            await asyncio.gather(*self._turns, return_exceptions=True)
+            self._turns.clear()
+
+    def _ended(self, task: asyncio.Task) -> None:
+        self._turns.discard(task)
+        if task.cancelled():
+            return
+        failed = task.exception()
+        if failed is not None and not isinstance(failed, LeaseLost):
+            # One turn's failure ends only that turn: the others go on, and the next claim says if the runner is gone.
+            self.echo(f"  A turn ended with an error: {failed}")
+
+    async def _wait(self, stop: asyncio.Event, seconds: float, *, for_turn: bool) -> None:
+        """Until `stop`, `seconds` pass, or (with `for_turn`) a turn in progress ends."""
+        stopping = asyncio.ensure_future(stop.wait())
+        try:
+            await asyncio.wait({stopping, *(self._turns if for_turn else ())}, timeout=seconds,
+                               return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            stopping.cancel()
+
+    async def _serve(self, poll_seconds: float, stop: asyncio.Event) -> None:
         await self.clean_worktrees()
         wait = BACKOFF_START
         offline = False
         while not stop.is_set():
+            if len(self._turns) >= self.parallel:
+                await self._wait(stop, poll_seconds, for_turn=True)
+                continue
             try:
-                worked = await self.once()
+                run = await self.claim()
             except LeaseLost:
                 continue
             except PlatformError as exc:
@@ -747,16 +812,17 @@ class LocalRunner:
                 wait = BACKOFF_START
                 self.echo("Connected again")
                 self.notify({"event": "online"})
-            if worked:
-                continue
-            try:
-                await asyncio.wait_for(stop.wait(), poll_seconds)
-            except TimeoutError:
-                pass
+            if run is not None:
+                task = asyncio.create_task(self.code(run))
+                self._turns.add(task)
+                task.add_done_callback(self._ended)
+                continue  # another may be waiting
+            await self._wait(stop, poll_seconds, for_turn=False)
 
-    async def work(self, run: dict[str, Any]) -> None:
+    async def work(self, run: dict[str, Any], turn: _Turn | None = None) -> None:
+        turn = turn if turn is not None else _Turn()
         if not run.get("managed_worktree") or run["project_id"] != self.project_id:
-            await self._work(run)
+            await self._work(run, turn)
             return
         tree = managed_worktree_path(self.worktrees, self.project_id, run["session_id"])
         tree.parent.mkdir(parents=True, exist_ok=True)
@@ -778,12 +844,12 @@ class LocalRunner:
             return
         # A crashed or cancelled runner may leave a child process alive. Keep the marker
         # on interruptions so a reclaimed turn never starts another writer in that folder.
-        await self._work(run, tree)
-        if self._sandbox is not None and self.sbx is not None:
-            if not await asyncio.shield(self.sbx.remove(self._sandbox)):
+        await self._work(run, turn, tree)
+        if turn.sandbox is not None and self.sbx is not None:
+            if not await asyncio.shield(self.sbx.remove(turn.sandbox)):
                 self.echo(f"  Couldn't confirm the sandbox stopped. The worktree stays reserved at {tree}")
                 return
-            self._sandbox = None
+            turn.sandbox = None
         active.unlink()
 
     async def _managed_checkout(self, tree: Path, sha: str, *, first_turn: bool) -> None:
@@ -812,7 +878,7 @@ class LocalRunner:
             raise RuntimeError("The worktree has unpublished edits. Its files were kept")
         await git(tree, "-c", f"core.hooksPath={os.devnull}", "switch", "-q", "--detach", "--no-overwrite-ignore", sha)
 
-    async def _work(self, run: dict[str, Any], managed: Path | None = None) -> None:
+    async def _work(self, run: dict[str, Any], turn: _Turn, managed: Path | None = None) -> None:
         path = f"{self.base}/{self.runner_id}/runs/{run['run_id']}"
         token = run["lease_token"]
         beat_every = self.beat_seconds if self.beat_seconds is not None else max(5.0, run["lease_seconds"] / 3)
@@ -887,35 +953,41 @@ class LocalRunner:
         ref = run.get("branch") or run["base_branch"]
         self.echo(f"{run['issue_key']} turn {run['turn']}: {run['title']}")
         fetch_ref = f"refs/dotrix/local/{run['run_id']}-{token}" if managed is not None else None
-        try:
-            if fetch_ref is None:
-                await git(self.repo, "fetch", "-q", "--no-tags", self.remote, f"refs/heads/{ref}")
+        # Turns side by side share the checkout's refs (and, for a legacy turn, its FETCH_HEAD): one at a time here.
+        failure: str | None = None
+        async with self._repo_lock:
+            try:
+                if fetch_ref is None:
+                    await git(self.repo, "fetch", "-q", "--no-tags", self.remote, f"refs/heads/{ref}")
+                else:
+                    await git(self.repo, "fetch", "-q", "--no-tags", "--no-write-fetch-head", self.remote,
+                              f"+refs/heads/{ref}:{fetch_ref}")
+                fetched = (await git(self.repo, "rev-parse", fetch_ref or "FETCH_HEAD")).strip()
+            except RuntimeError as exc:
+                failure = f"Couldn't fetch {ref} from {self.remote}: {exc}"
             else:
-                await git(self.repo, "fetch", "-q", "--no-tags", "--no-write-fetch-head", self.remote,
-                          f"+refs/heads/{ref}:{fetch_ref}")
-            fetched = (await git(self.repo, "rev-parse", fetch_ref or "FETCH_HEAD")).strip()
-        except RuntimeError as exc:
-            await report("failed", error=f"Couldn't fetch {ref} from {self.remote}: {exc}")
+                try:
+                    if (source_sha := run.get("source_sha")) and fetched != source_sha:
+                        failure = "The starting branch changed after this turn was requested"
+                    elif managed is not None:
+                        tree = managed
+                        await self._managed_checkout(tree, fetched, first_turn=run["turn"] == 1)
+                    else:
+                        # Legacy sessions preserve the existing per-attempt checkout layout.
+                        tree = self.worktrees / run["project_id"] / f"{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
+                        tree.parent.mkdir(parents=True, exist_ok=True)
+                        await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), fetched)
+                except RuntimeError as exc:
+                    failure = str(exc)
+                finally:
+                    if fetch_ref is not None:
+                        await git(self.repo, "update-ref", "-d", fetch_ref, check=False)
+            if failure is None:
+                turn.coding_in = tree
+                self._coding_in.add(tree)
+        if failure is not None:
+            await report("failed", error=failure)
             return
-        try:
-            if (source_sha := run.get("source_sha")) and fetched != source_sha:
-                await report("failed", error="The starting branch changed after this turn was requested")
-                return
-            if managed is not None:
-                tree = managed
-                await self._managed_checkout(tree, fetched, first_turn=run["turn"] == 1)
-            else:
-                # Legacy sessions preserve the existing per-attempt checkout layout.
-                tree = self.worktrees / run["project_id"] / f"{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
-                tree.parent.mkdir(parents=True, exist_ok=True)
-                await git(self.repo, "worktree", "add", "-q", "--detach", str(tree), fetched)
-        except RuntimeError as exc:
-            await report("failed", error=str(exc))
-            return
-        finally:
-            if fetch_ref is not None:
-                await git(self.repo, "update-ref", "-d", fetch_ref, check=False)
-        self._coding_in = tree
         base_sha = (await git(tree, "rev-parse", "HEAD")).strip()
         boundary = " (custom command, not isolated)" if self.command and self.sbx is None else ""
         pending.append({"kind": "step", "text": f"Worktree on {ref} at {base_sha[:7]}{boundary}"})
@@ -934,9 +1006,10 @@ class LocalRunner:
             name = run["tool"] if run["tool"] in here else here[0]
             # The desktop app's Browser pane, when it started this runner: never in a sandbox (the pane's
             # server is on this computer, which a microVM doesn't reach).
-            self._browser = browser_tools() if name in TOOLS and not isolated else None
-            if self._browser is not None and name in ("claude-code", "codex", "fx"):
-                self._browser_config = write_browser_config(*self._browser)
+            session = str(run.get("session_id") or run["run_id"])
+            turn.browser = browser_tools(session=session) if name in TOOLS and not isolated else None
+            if turn.browser is not None and name in ("claude-code", "codex", "fx"):
+                turn.browser_config = write_browser_config(*turn.browser)
             resuming_fx = False
             if name == "fx":
                 from .fx_local import (
@@ -950,22 +1023,22 @@ class LocalRunner:
                 if not NATIVE_FX_POLICY_VALIDATED or not native_fx_available():
                     await report("failed", base_sha=base_sha, error=NATIVE_FX_REFUSAL)
                     return
-                self._fx_profile = Path(tempfile.mkdtemp(prefix="dotrix-fx-local-"))
+                turn.fx_profile = Path(tempfile.mkdtemp(prefix="dotrix-fx-local-"))
                 try:
-                    prepare_profile(self._fx_profile, dict(os.environ), expected_model=run.get("model"))
+                    prepare_profile(turn.fx_profile, dict(os.environ), expected_model=run.get("model"))
                 except (OSError, ValueError) as exc:
                     await report("failed", base_sha=base_sha, error=f"Couldn't prepare the local model profile: {exc}")
                     return
                 if managed is not None:
-                    self._fx_state_dir = tree.with_suffix(".fx-session")
-                    if run.get("turn", 1) > 1 and self._fx_state_dir.is_dir():
+                    turn.fx_state_dir = tree.with_suffix(".fx-session")
+                    if run.get("turn", 1) > 1 and turn.fx_state_dir.is_dir():
                         try:
-                            restore_session_state(self._fx_profile, self._fx_state_dir)
+                            restore_session_state(turn.fx_profile, turn.fx_state_dir)
                             resuming_fx = True
                         except (OSError, ValueError) as exc:
                             await report("failed", base_sha=base_sha, error=f"Couldn't restore the local coding session: {exc}")
                             return
-            tool = Tool.named(name, isolated=isolated, browser=self._browser_config, profile=self._fx_profile, model=run.get("model"))
+            tool = Tool.named(name, isolated=isolated, browser=turn.browser_config, profile=turn.fx_profile, model=run.get("model"))
             if name == "fx":
                 # The turn's inbox for a person's messages while it works (the driver opens it, the heartbeat fills it).
                 steer_root = Path(tempfile.gettempdir()) / f"dotrix-steer-{os.getuid() if hasattr(os, 'getuid') else 'user'}"
@@ -980,14 +1053,14 @@ class LocalRunner:
         environment_tool = run["tool"] if self.command else tool.name
         if self.sbx is not None:
             # Its own microVM, from the tool's template, with only this worktree mounted.
-            self._sandbox = f"dotrix-{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
+            turn.sandbox = f"dotrix-{run['issue_key'].lower()}-{run['run_id'][-6:]}-{token}"
             try:
-                await self.sbx.start(self._sandbox, SBX_AGENTS.get(environment_tool, "shell"), tree)
+                await self.sbx.start(turn.sandbox, SBX_AGENTS.get(environment_tool, "shell"), tree)
             except (RuntimeError, OSError) as exc:
                 await report("failed", base_sha=base_sha, error=f"Couldn't start the Docker sandbox: {exc}")
                 return
             pending.append({"kind": "step", "text": "In a Docker sandbox on this computer: it may run commands there"})
-            argv = self.sbx.exec_argv(self._sandbox, tree, tool.argv)
+            argv = self.sbx.exec_argv(turn.sandbox, tree, tool.argv)
             environment = dict(os.environ)  # sbx's own; the tool in the VM gets none of it
         else:
             # The tool by its full path: on Windows `claude` and `opencode` are .cmd files, found only that way.
@@ -999,11 +1072,11 @@ class LocalRunner:
                 environment.update({key: value for key, value in os.environ.items()
                                     if key.upper() in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}})
             if tool.name == "opencode":
-                environment.update(opencode_settings(environment, self._browser))
-            if self._browser_config is not None and tool.name == "claude-code":
+                environment.update(opencode_settings(environment, turn.browser))
+            if turn.browser_config is not None and tool.name == "claude-code":
                 environment["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"  # in place of --safe-mode (Tool.named)
-            if self._browser is not None and tool.name == "codex":
-                environment[BROWSER_TOKEN_ENV] = self._browser[1]
+            if turn.browser is not None and tool.name == "codex":
+                environment[BROWSER_TOKEN_ENV] = turn.browser[1]
             if tool.name == "codex":
                 pending.append({"kind": "step", "text": "Commands stay in a local workspace sandbox with network access disabled"})
             elif tool.name == "claude-code":
@@ -1013,7 +1086,7 @@ class LocalRunner:
                                 if native_claude_available() else "Local file edits only; command isolation is unavailable"})
             elif tool.name == "fx":
                 pending.append({"kind": "step", "text": "Local worktree sandbox: shell commands and file edits; direct networking is disabled"})
-            if self._browser is not None:
+            if turn.browser is not None:
                 pending.append({"kind": "step", "text": "With the Browser pane: it may open this computer's pages there"})
         out = Outcome(root=tree)
         if "--steer-dir" in tool.argv:
@@ -1027,7 +1100,7 @@ class LocalRunner:
             await report("failed", base_sha=base_sha, error=f"Couldn't start {tool.name}: {exc}")
             return
         assert process.stdin and process.stdout and process.stderr
-        process.stdin.write(with_note(run["brief"], BROWSER_NOTE if self._browser is not None else "").encode())
+        process.stdin.write(with_note(run["brief"], BROWSER_NOTE if turn.browser is not None else "").encode())
         await process.stdin.drain()
         process.stdin.close()
         errors = asyncio.create_task(process.stderr.read())

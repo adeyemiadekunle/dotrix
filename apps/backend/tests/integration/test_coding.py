@@ -1900,7 +1900,7 @@ else:
     assert ready["status"] == ("changes_ready" if valid_setup and coding_tool != "fx" else "failed"), ready
     assert ready["agent"] == coding_tool and github.pulls == []
     assert not (checkout / "src/refunds.py").exists()
-    assert runner._fx_profile is None and runner._browser_config is None
+    assert runner._coding_in == set()  # each turn cleans up what it held (its profile, its Browser pane config)
     if coding_tool == "fx":
         assert not pointer.exists()  # Unsafe native runtime never starts.
         # This legacy fixture has neither the supported runtime nor a matching
@@ -1996,6 +1996,65 @@ async def test_a_local_turn_codes_on_the_persons_computer_and_the_platform_pushe
     assert (await db_client.delete(f"{ws}/coding/runners/{registered['id']}", headers=ada.headers)).status_code == 204
     with pytest.raises(Exception, match="Runner not found"):
         await runner.once()
+
+
+async def test_one_runner_codes_two_sessions_turns_side_by_side_each_in_its_own_worktree(
+    db_client: AsyncClient, coding, github, origin: Path, checkout: Path, tmp_path: Path
+) -> None:
+    """Like Claude Code's sessions: two sessions' local turns run at once on one computer, each in its own worktree."""
+    import asyncio
+    import shlex
+    import sys
+
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    started = tmp_path / "started"
+    started.mkdir()
+    # Each turn notes it started, waits a while for the other to start beside it, then says how many it saw.
+    script = (
+        "import json, os, pathlib, sys, time\n"
+        "sys.stdin.read()\n"
+        f"started = pathlib.Path({str(started)!r})\n"
+        "(started / os.path.basename(os.getcwd())).touch()\n"
+        "deadline = time.time() + 20\n"
+        "while time.time() < deadline and len(list(started.iterdir())) < 2:\n"
+        "    time.sleep(0.05)\n"
+        "seen = len(list(started.iterdir()))\n"
+        "pathlib.Path('src').mkdir(exist_ok=True)\n"
+        "pathlib.Path('src/turn.txt').write_text(os.path.basename(os.getcwd()) + '\\n')\n"
+        "print(json.dumps({'type': 'result', 'subtype': 'success', 'result': f'Saw {seen} turns running.', "
+        "'usage': {'input_tokens': 10, 'output_tokens': 5}}), flush=True)\n"
+    )
+    runner = _local_runner(db_client, coding, checkout, tmp_path, f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
+                           parallel=2)
+    await runner.register()
+    runs = []
+    for title in ("Refunds", "Invoices"):
+        task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": title}, headers=ada.headers)).json()
+        run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                    headers=ada.headers)).json()
+        await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+        runs.append(run)
+
+    stop = asyncio.Event()
+    serving = asyncio.create_task(runner.serve(poll_seconds=0.05, stop=stop))
+    try:
+        for _ in range(600):
+            ready = [(await db_client.get(f"{base}/coding/runs/{run['id']}", headers=ada.headers)).json() for run in runs]
+            if all(r["status"] not in ("queued", "running") for r in ready):
+                break
+            await asyncio.sleep(0.1)
+    finally:
+        stop.set()
+        await asyncio.wait_for(serving, 30)
+    assert [r["status"] for r in ready] == ["changes_ready", "changes_ready"], ready
+    assert [r["summary"] for r in ready] == ["Saw 2 turns running.", "Saw 2 turns running."]  # at the same time
+    trees = [tmp_path / "worktrees" / ".sessions" / kun["id"] / run["session_id"] for run in runs]
+    assert [r["worktree"] for r in ready] == [str(tree) for tree in trees] and trees[0] != trees[1]
+    for tree in trees:  # each wrote only its own worktree
+        assert (tree / "src/turn.txt").read_text() == f"{tree.name}\n"
+    assert not (checkout / "src/turn.txt").exists() and github.pulls == []
+    assert runner._coding_in == set()
 
 
 async def test_a_local_turn_is_checked_stopped_fenced_and_recovered(

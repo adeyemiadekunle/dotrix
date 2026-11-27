@@ -1,8 +1,9 @@
 // The app's MCP server for Kai's local tools (node --test, after tsc).
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { McpServer, type ToolSet } from "./mcp";
+import { callerParts, McpServer, turnCaller, turnToken, type ToolSet } from "./mcp";
 
 const tools: ToolSet = {
   list: (caller) => [
@@ -83,4 +84,49 @@ test("each caller has a token of its own, and the tools know who calls", async (
     result: { isError: boolean };
   };
   assert.equal(refused.result.isError, true);
+});
+
+test("a session's own token names that session of its folder, and only its folder's token makes it", async () => {
+  const session = "2f1c0e9a-6b0e-4d0b-9a59-0d3c1f6a7e21";
+  // The same construction as the runner's (dotrix_cli: runner.py `turn_token`): its ID, then HMAC-SHA256 of it in hex.
+  const mac = crypto.createHmac("sha256", "folder-secret").update(session).digest("hex");
+  assert.equal(turnToken("folder-secret", session), `${session}.${mac}`);
+  const other = server.tokenFor("/b");
+  const asSession = turnToken(other, session);
+  const who = (await (
+    await post({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "echo", arguments: { text: "hi" } } }, {}, asSession)
+  ).json()) as {
+    result: { content: { text: string }[] };
+  };
+  assert.equal(who.result.content[0]!.text, "hi");
+  // Another session's ID with this one's code, or a code made under another folder's token, is no one's.
+  assert.equal((await post({ jsonrpc: "2.0", id: 10, method: "ping" }, {}, `${"3".repeat(8)}.${asSession.split(".")[1]}`)).status, 401);
+  assert.equal((await post({ jsonrpc: "2.0", id: 11, method: "ping" }, {}, turnToken("not-a-folder-token", session))).status, 401);
+  assert.deepEqual(callerParts(turnCaller("/b", session)), { folder: "/b", session });
+  assert.deepEqual(callerParts("/b"), { folder: "/b", session: null });
+});
+
+test("tools see which session of a folder calls", async () => {
+  const seen: string[] = [];
+  const sessions = new McpServer("test", "1.0.0", {
+    list: () => [{ name: "who", description: "Says who calls", inputSchema: { type: "object" } }],
+    call: async (_name, _args, caller) => {
+      seen.push(caller);
+      return [{ type: "text", text: caller }];
+    },
+  });
+  await sessions.start();
+  try {
+    const folder = sessions.tokenFor("/repo");
+    for (const session of ["s-1", "s-2"]) {
+      await fetch(sessions.url!, {
+        method: "POST",
+        headers: { authorization: `Bearer ${turnToken(folder, session)}`, "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "who", arguments: {} } }),
+      });
+    }
+    assert.deepEqual(seen, [turnCaller("/repo", "s-1"), turnCaller("/repo", "s-2")]);
+  } finally {
+    sessions.stop();
+  }
 });
