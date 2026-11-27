@@ -98,13 +98,15 @@ def bundle_fx(target: str, out: Path, work: Path) -> None:
 BUILD_BWRAP = r"""
 set -eu
 apk add --no-cache build-base meson ninja pkgconf libcap-dev libcap-static linux-headers bash-completion >/dev/null
-cd /work && tar -xJf bubblewrap.tar.xz && cd bubblewrap-*
+# Build in the container's own /tmp: only the program and its license come back, owned by the caller.
+cd /tmp && tar -xJf /work/bubblewrap.tar.xz && cd bubblewrap-*
 LDFLAGS=-static meson setup build --prefer-static -Ddefault_library=static -Dselinux=disabled -Dman=disabled \
   -Dtests=false -Dbash_completion=disabled -Dzsh_completion=disabled >/dev/null
 ninja -C build bwrap >/dev/null
 strip build/bwrap
 cp build/bwrap /work/bwrap
 cp COPYING /work/COPYING
+chown "$HOST_UID:$HOST_GID" /work/bwrap /work/COPYING
 """
 
 
@@ -118,7 +120,8 @@ def bundle_bwrap(target: str, out: Path, work: Path) -> None:
         shutil.copyfileobj(response, stream)
     check(source, pin["sha256"], f"bubblewrap {pin['version']} source")
     arch = {"linux-x64": "linux/amd64", "linux-arm64": "linux/arm64"}[target]
-    subprocess.run([docker, "run", "--rm", "--platform", arch, "-v", f"{work}:/work", pin["builder_image"],
+    subprocess.run([docker, "run", "--rm", "--platform", arch, "-v", f"{work}:/work",
+                    "-e", f"HOST_UID={os.getuid()}", "-e", f"HOST_GID={os.getgid()}", pin["builder_image"],
                     "sh", "-c", BUILD_BWRAP], check=True)
     built = work / "bwrap"
     described = subprocess.run(["file", str(built)], capture_output=True, text=True).stdout
