@@ -30,6 +30,7 @@ import httpx
 
 from . import win_sandbox
 from .fx_bridge import CLAUDE_CODE_VERSION, KAI_FX_VERSION
+from .web_mcp import ResearchMcp
 
 FRAME_LIMIT = 24 * 1024 * 1024
 SAFE_HEADERS = {'accept', 'content-type', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id', 'anthropic-version', 'anthropic-beta'}
@@ -200,9 +201,11 @@ class Relay:
         protocol: str = 'openai',
         *,
         pipe_fds: tuple[int, int] | None = None,
+        research: ResearchMcp | None = None,
     ):
         self.channel, self.model_url, self.key, self.model, self.browser = channel, model_url, key, model, browser
         self.pipe_fds = pipe_fds
+        self.research = research
         self.lock = asyncio.Lock()
         self.protocol = protocol
         self.work: set[asyncio.Task] = set()
@@ -283,6 +286,14 @@ class Relay:
             if len(body) > 16 * 1024 * 1024:
                 raise ValueError('Request too large')
             headers = {k: v for k, v in request.get('headers', {}).items() if k.lower() in SAFE_HEADERS}
+            if request['path'] == '/research' and self.research is not None:
+                status, content = await self.research.request(request['method'], body)
+                await self.send({'id': identity, 'status': status, 'headers': {'content-type': 'application/json'}})
+                started = True
+                if content is not None:
+                    data = base64.b64encode(json.dumps(content).encode()).decode()
+                    await self.send({'id': identity, 'data': data})
+                return
             if self.protocol == 'anthropic' and request['path'] in ('/model/v1/messages', '/model/v1/messages?beta=true',
                     '/model/v1/messages/count_tokens', '/model/v1/messages/count_tokens?beta=true') and request['method'] == 'POST':
                 if json.loads(body).get('model') != self.model:
@@ -352,6 +363,7 @@ def _validate_browser(browser: dict | None) -> None:
 async def _launch_linux(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
+    research: ResearchMcp | None = None,
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     address = str(Path(temporary.name) / 'relay.sock')
@@ -399,7 +411,7 @@ async def _launch_linux(
         parent, _ = await asyncio.wait_for(asyncio.get_running_loop().sock_accept(listener), 10)
         listener.close()
         parent.setblocking(False)
-        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai')
+        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai', research=research)
         task = asyncio.create_task(relay.run())
         line = await asyncio.wait_for(process.stdout.readline(), 20)
         ready = json.loads(line)
@@ -425,6 +437,7 @@ async def _launch_linux(
 async def _launch_macos(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
+    research: ResearchMcp | None = None,
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     temp_path = Path(temporary.name)
@@ -481,7 +494,7 @@ async def _launch_macos(
         parent, _ = await asyncio.wait_for(asyncio.get_running_loop().sock_accept(listener), 10)
         listener.close()
         parent.setblocking(False)
-        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai')
+        relay = Relay(parent, target, key, model, browser, protocol='anthropic' if anthropic else 'openai', research=research)
         task = asyncio.create_task(relay.run())
         line = await asyncio.wait_for(process.stdout.readline(), 20)
         ready = json.loads(line)
@@ -507,6 +520,7 @@ async def _launch_macos(
 async def _launch_windows(
     profile: Path, binary: str, root: Path, browser: dict | None,
     target: str, key: str, model: str, expected_version: str, anthropic: bool,
+    research: ResearchMcp | None = None,
 ):
     temporary = tempfile.TemporaryDirectory(prefix='dotrix-fx-relay-')
     temp_path = Path(temporary.name)
@@ -554,7 +568,7 @@ async def _launch_windows(
         relay = Relay(
             None, target, key, model, browser,
             protocol='anthropic' if anthropic else 'openai',
-            pipe_fds=(process.relay_read_fd, process.relay_write_fd),
+            pipe_fds=(process.relay_read_fd, process.relay_write_fd), research=research,
         )
         task = asyncio.create_task(relay.run())
         line = await asyncio.wait_for(process.stdout.readline(), 20)
@@ -577,7 +591,8 @@ async def _launch_windows(
 
 
 @asynccontextmanager
-async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *, anthropic: tuple[str, str, str] | None = None):
+async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *, anthropic: tuple[str, str, str] | None = None,
+                 research_enabled: bool = False):
     if not available():
         raise ValueError(
             'Native isolation is unavailable: Linux Bubblewrap, macOS Seatbelt (sandbox-exec), '
@@ -594,5 +609,11 @@ async def launch(profile: Path, binary: str, root: Path, browser: dict | None, *
         launcher = _launch_windows
     else:
         raise ValueError('Native isolation is unavailable on this operating system')
-    async with launcher(profile, binary, root, browser, target, key, model, expected_version, bool(anthropic)) as result:
-        yield result
+    endpoint = os.environ.get("DOTRIX_SEARXNG_URL") if os.environ.get("DOTRIX_SEARCH_PROVIDER", "auto") in ("auto", "searxng") else None
+    research = ResearchMcp(endpoint) if research_enabled else None
+    try:
+        async with launcher(profile, binary, root, browser, target, key, model, expected_version, bool(anthropic), research) as result:
+            yield result
+    finally:
+        if research is not None:
+            await research.aclose()

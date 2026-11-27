@@ -158,6 +158,8 @@ Shared coding outcomes (J05): a task's Coding section can show the latest publis
 | `infra` | Local Postgres (with pgvector), Redis, SearXNG web search, RustFS for S3-compatible storage (`docker-compose.yml`) | Docker |
 | `deploy` | Production on one VPS with Dokploy: backend and web images, nginx, the compose file, the guide (`deploy/README.md`) | Docker |
 
+Code can opt in to public research through DOTRIX-owned tools. Native worktree turns use the OS-isolated runner and its host relay. Hosted Build turns require Docker Cloud key injection, with the worker performing the requests. See [Code research](docs/kai-browser-support.md#web-research-in-code).
+
 ## Commands
 
 ```bash
