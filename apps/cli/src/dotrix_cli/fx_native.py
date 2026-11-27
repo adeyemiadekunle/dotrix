@@ -16,7 +16,6 @@ import base64
 import functools
 import json
 import os
-import shutil
 import socket
 import struct
 import subprocess
@@ -28,7 +27,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import win_sandbox
+from . import bundled, win_sandbox
 from .fx_bridge import CLAUDE_CODE_VERSION, KAI_FX_VERSION
 from .web_mcp import ResearchMcp
 
@@ -46,10 +45,11 @@ def filesystem_args() -> list[str]:
 
 @functools.lru_cache(maxsize=1)
 def _linux_available() -> bool:
-    if not shutil.which('bwrap') or (not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file()):
+    binary = bundled.bwrap()
+    if not binary or (not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file()):
         return False
     try:
-        result = subprocess.run(['bwrap', *filesystem_args(), '--', '/bin/true'],
+        result = subprocess.run([binary, *filesystem_args(), '--', '/bin/true'],
             env={'PATH': '/usr/bin:/bin'}, capture_output=True, timeout=10)
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -392,7 +392,7 @@ async def _launch_linux(
             pointer.write_text('gitdir: /opt/dotrix/repo.git\n')
             git_mounts += ['--ro-bind', str(pointer), str(root / '.git')]
 
-    argv = ['bwrap', *filesystem_args(), '--ro-bind', address, '/opt/dotrix/relay.sock',
+    argv = [bundled.bwrap() or 'bwrap', *filesystem_args(), '--ro-bind', address, '/opt/dotrix/relay.sock',
         '--ro-bind', str(passwd), '/etc/passwd', '--ro-bind', str(group), '/etc/group',
         '--bind', str(root), str(root), '--bind', str(profile), str(profile), *git_mounts,
         '--ro-bind', str(profile / 'auth-source.json'), str(profile / 'auth-source.json'),

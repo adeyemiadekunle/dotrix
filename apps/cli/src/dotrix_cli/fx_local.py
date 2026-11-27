@@ -19,6 +19,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from . import bundled
+
 # The kernel boundary, not fx's wildcard permission rules, protects native work.
 # fx_native.available() refuses unsupported hosts; there is no unconfined fallback.
 NATIVE_FX_POLICY_VALIDATED = True
@@ -303,7 +305,7 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
     if not NATIVE_FX_POLICY_VALIDATED or not available():
         emit("error", message=NATIVE_FX_REFUSAL)
         return 1
-    binary = shutil.which("fx")
+    binary = bundled.fx()
     if binary is None:
         emit("error", message="The local coding tool is not installed")
         return 1

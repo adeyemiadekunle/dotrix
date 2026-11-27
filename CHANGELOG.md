@@ -12,6 +12,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 ### Added
 
 - Added optional public web search and page reading for Kai on native worktrees and supported hosted builds.
+- Added standalone CLI builds for Linux x64, Linux arm64, and macOS arm64 that bundle what native local Code needs and the OS lacks: the Kai runtime's fx (`0.0.18-kai.2`, fetched by its pinned per-platform SHA-256) and, on Linux, a static Bubblewrap built from its pinned release. A release's own fx and bwrap win over ones on PATH (`dotrix_cli/bundled.py`). macOS Seatbelt and Windows AppContainer come with the OS; Kai has no Windows fx yet, so the Windows build bundles none.
 - Required explicit Terms of Service acceptance at signup and recorded its version and timestamp on new accounts. Documented admin and marketing metrics in the Terms and Privacy Policy.
 - Added marketing-site cookie consent and Admin Overview metrics for opted-in website traffic and GitHub Desktop and CLI downloads.
 - Added a read-only local admin demo with sample data for Overview, Runs, Failures, Coding, Models, and Audit log.
