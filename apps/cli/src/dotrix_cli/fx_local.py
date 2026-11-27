@@ -343,7 +343,8 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
                     "headers": [{"name": name, "value": value} for name, value in configured["headers"].items()]}]
     configured_browser = json.loads(browser.read_text())["mcpServers"]["browser"] if browser else None
     research = os.environ.get("DOTRIX_CODING_WEB_TOOLS", "").lower() in ("1", "true")
-    manager = launch(profile, str(Path(binary).resolve()), root, configured_browser, research_enabled=research)
+    launch_options = {"research_enabled": True} if research else {}
+    manager = launch(profile, str(Path(binary).resolve()), root, configured_browser, **launch_options)
     try:
         child, bridge_port = await manager.__aenter__()
     except (OSError, ValueError, TimeoutError):
