@@ -128,7 +128,7 @@ def test_the_kai_runtime_is_admitted_only_as_its_own_package(tmp_path):
     assert installed_libfx_version(_host(tmp_path / "kai-installed", kai, installed="0.0.17-kai.1")) == "0.0.17-kai.1"
     for refused in ("0.0.17-kai.1", "npm:@someone/kai@0.0.17-kai.1", "npm:@kunemi-group/kai@0.0.16"):
         with pytest.raises(RuntimeError):
-            libfx_version(_host(tmp_path / refused.replace("/", "_").replace("@", "_"), refused))
+            libfx_version(_host(tmp_path / refused.replace("/", "_").replace("@", "_").replace(":", "_"), refused))
     # A package other than the one its version is published as, installed in its place.
     for name, version in (("libfx", "0.0.17-kai.1"), ("@kunemi-group/kai", "0.0.16"), ("@someone/kai", "0.0.17-kai.1")):
         with pytest.raises(RuntimeError, match="not a libfx artifact"):

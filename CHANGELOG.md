@@ -41,6 +41,10 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Fixed
 
+- Fixed Chat on the fx engine failing to start on Windows. libfx has no native addon there, and its WebAssembly build needs JavaScript Promise Integration, which Node 24 turns on only with `--experimental-wasm-jspi`; the Chat host now passes that flag on Windows.
+
+- Corrected the architecture notes, which still named fx `0.0.17` as the version native local Code requires. It is the Kai runtime's fx `0.0.18-kai.2`.
+
 - Fixed follow-up turns of native local Code starting a new conversation. fx refuses to resume a session whose connection's `base_url` changed, and the sandbox bridge took a new port every turn. The session record now keeps the bridge's port (`bridgePort`), and a resumed turn asks for it again (`DOTRIX_BRIDGE_PORT`). On macOS and Windows, a port taken in the meantime still starts a new conversation.
 
 - Revamped the shared Chat and Code composers, moved approval mode selection out of the `+` options menu into its own toolbar select, made mode indicators non-interactive badges, replaced the `NewChat` context card and remaining web/admin native `<select>` elements with `SelectField`, narrowed scrollbars to `6px`, and exposed `Settings → Browser` in desktop mode.
