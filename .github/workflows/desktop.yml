@@ -104,6 +104,8 @@ jobs:
       - name: The CLI starts without a sign-in
         run: |
           ./apps/desktop/resources/dotrix/dotrix.exe --help > /dev/null
+          # Native Code's Windows launcher starts the bridge as the frozen program's own command.
+          ./apps/desktop/resources/dotrix/dotrix.exe _bridge --version | grep -q '"bridge": true'
           out="$(./apps/desktop/resources/dotrix/dotrix.exe whoami 2>&1 || true)"
           echo "$out"
           echo "$out" | grep -q 'Not signed in'
@@ -134,9 +136,91 @@ jobs:
           path: out/*
           if-no-files-found: error
 
+  # The standalone CLI for Linux and macOS, with what native local Code needs and the OS lacks: the Kai runtime's
+  # fx on both, and a static Bubblewrap on Linux (apps/cli/scripts/bundle_tools.py). macOS's Seatbelt and
+  # Windows's AppContainer come with the OS. Kai has no Windows fx yet, so the Windows build bundles none.
+  unix-cli:
+    needs: changes
+    if: >-
+      (github.event_name == 'pull_request' && needs.changes.outputs.desktop == 'true') ||
+      github.event_name == 'workflow_dispatch' || inputs.release_tag != '' ||
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'cli-v'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-15
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      DOTRIX_WEB_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.staging && 'https://cf-pilot.dotrix.cc' || vars.DOTRIX_APP_URL || (github.event_name == 'pull_request' && 'https://dotrix.example.com' || '') }}
+      DOTRIX_STAGING_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.staging == true }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag || github.sha }}
+      - name: Version and release target
+        run: |
+          if [ "$DOTRIX_STAGING_BUILD" = true ] && [ -n "$RELEASE_TAG" ]; then
+            echo '::error::Staging artifacts cannot be attached to a public release'
+            exit 1
+          fi
+          test -n "$DOTRIX_WEB_URL" || { echo '::error::Set DOTRIX_APP_URL to the public API/web origin'; exit 1; }
+          cli_version="$(python3 scripts/release.py version --component cli)"
+          echo "CLI_VERSION=$cli_version" >> "$GITHUB_ENV"
+          if [ -n "$RELEASE_TAG" ] && [[ "$RELEASE_TAG" == cli-v* ]]; then
+            test "$RELEASE_TAG" = "cli-v$cli_version" || { echo '::error::Release tag does not match the CLI version'; exit 1; }
+          fi
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: The standalone CLI
+        run: uv run --no-project python apps/cli/scripts/standalone.py --api-url "$DOTRIX_WEB_URL"
+      - name: Bundle Kai's fx (and Bubblewrap on Linux)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.KAI_PACKAGES_TOKEN }}
+        run: python3 apps/cli/scripts/bundle_tools.py --out apps/desktop/resources/dotrix
+      - name: The CLI starts without a sign-in, and its bundle runs
+        run: |
+          cli=apps/desktop/resources/dotrix
+          "$cli/dotrix" --help > /dev/null
+          out="$("$cli/dotrix" whoami 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -q 'Not signed in'
+          # Native Code's macOS launcher starts the bridge as the frozen program's own command.
+          "$cli/dotrix" _bridge --version | grep -q '"bridge": true'
+          FX_AUTO_UPGRADE=0 "$cli/bin/fx" --version
+          if [ -x "$cli/bin/bwrap" ]; then
+            "$cli/bin/bwrap" --version
+            # Ubuntu 24.04's AppArmor gives user namespaces only to its own /usr/bin/bwrap, so the bundled one can't
+            # make the sandbox here; native Code then uses the system's (dotrix_cli.bundled.bwrap_candidates).
+            "$cli/bin/bwrap" --unshare-all --die-with-parent --ro-bind /usr /usr --symlink usr/bin /bin \
+              --symlink usr/lib /lib --proc /proc --dev /dev --tmpfs /tmp -- /bin/true \
+              || echo "::notice::The bundled bwrap can't make user namespaces on this runner (AppArmor); the system bwrap is used where one is installed"
+          fi
+      - name: Archive the standalone CLI
+        run: |
+          mkdir -p out
+          suffix="${{ matrix.platform }}"
+          if [ "$DOTRIX_STAGING_BUILD" = true ]; then suffix="staging-$suffix"; fi
+          tar -czf "out/dotrix-cli-$CLI_VERSION-$suffix.tar.gz" -C apps/desktop/resources dotrix
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dotrix-cli-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+
   attach:
-    needs: windows
-    if: github.event_name == 'release' || (inputs.release_tag != '' && !(github.event_name == 'workflow_dispatch' && inputs.staging))
+    needs: [windows, unix-cli]
+    if: >-
+      always() && needs.windows.result == 'success' && needs.unix-cli.result != 'failure' &&
+      (github.event_name == 'release' || (inputs.release_tag != '' && !(github.event_name == 'workflow_dispatch' && inputs.staging)))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -144,6 +228,12 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.windows.outputs.artifact_name }}
+          path: out
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.unix-cli.result == 'success'
+        with:
+          pattern: dotrix-cli-*
+          merge-multiple: true
           path: out
       - name: Attach only to the validated component release
         env:
@@ -154,7 +244,7 @@ jobs:
 
   desktop-checks:
     if: always()
-    needs: [changes, windows]
+    needs: [changes, windows, unix-cli]
     runs-on: ubuntu-latest
     steps:
       - name: Selected desktop/CLI checks passed

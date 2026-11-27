@@ -393,7 +393,10 @@ def launch_appcontainer(
     temp_dir: Path,
     env: dict[str, str],
     extra_args: list[str] | None = None,
+    bridge: list[str] | None = None,
 ) -> WindowsSandboxProcess:
+    """`bridge` is how to start fx_bridge.py (fx_native.bridge_argv): `[python_exe, helper]` from source, or the
+    frozen CLI's `[dotrix.exe, "_bridge"]`, whose first item is also the program CreateProcessW runs."""
     if sys.platform != "win32":
         raise RuntimeError("Windows AppContainer isolation is only available on Windows")
 
@@ -486,7 +489,7 @@ def launch_appcontainer(
         si.lpAttributeList = ctypes.cast(attr_buf, wintypes.LPVOID)
 
         argv = [
-            python_exe, str(helper),
+            *(bridge or [python_exe, str(helper)]),
             f"--pipe-fds={relay_to_child_r}:{relay_to_host_w}",
             str(profile), str(binary), *(extra_args or []),
         ]

@@ -1,0 +1,19 @@
+{
+  "kai_fx": {
+    "version": "0.0.18-kai.2",
+    "package": "@kunemi-group/kai-cli-{platform}",
+    "registry": "https://npm.pkg.github.com",
+    "sha256": {
+      "linux-x64": "96be47be1ea2f07c7b2949e4d808dd8d40548ad1ddd602bd065c43098e9cbc04",
+      "linux-arm64": "65fff18ae81e4a6732398df8d163e8904417eb7aa10023ab0badf264d801f3ff",
+      "darwin-arm64": "e34b9372bb63739595adc5d01fde2f05c705e08bc4b42985a49f57bf45c4445f",
+      "darwin-x64": "855fc860229e1a18543d9f2fc6fe0305e15377195df691185434233d95083af3"
+    }
+  },
+  "bubblewrap": {
+    "version": "0.13.1",
+    "url": "https://github.com/containers/bubblewrap/releases/download/v0.13.1/bubblewrap-0.13.1.tar.xz",
+    "sha256": "0e85c8702248b8dd64144f594147553650cdd0e4c951690345faace79c217c4d",
+    "builder_image": "alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab"
+  }
+}

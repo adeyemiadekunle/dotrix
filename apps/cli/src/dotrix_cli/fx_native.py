@@ -16,7 +16,6 @@ import base64
 import functools
 import json
 import os
-import shutil
 import socket
 import struct
 import subprocess
@@ -28,7 +27,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import win_sandbox
+from . import bundled, win_sandbox
+from .frozen_entry import BRIDGE_COMMAND
 from .fx_bridge import CLAUDE_CODE_VERSION, KAI_FX_VERSION
 from .web_mcp import ResearchMcp
 
@@ -44,16 +44,32 @@ def filesystem_args() -> list[str]:
     return argv + ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
 
 
+def bridge_argv(helper: Path) -> list[str]:
+    """How the macOS and Windows launchers start fx_bridge.py: with this Python from source, or, in the standalone
+    CLI (which has no interpreter of its own), as the frozen program's `_bridge` command (frozen_entry)."""
+    if getattr(sys, 'frozen', False):
+        return [sys.executable, BRIDGE_COMMAND]
+    return [sys.executable, str(helper)]
+
+
 @functools.lru_cache(maxsize=1)
+def _linux_bwrap() -> str | None:
+    """The first Bubblewrap (bundled.bwrap_candidates) that makes the sandbox on this machine, or None."""
+    if not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file():
+        return None
+    for binary in bundled.bwrap_candidates():
+        try:
+            result = subprocess.run([binary, *filesystem_args(), '--', '/bin/true'],
+                env={'PATH': '/usr/bin:/bin'}, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode == 0:
+            return binary
+    return None
+
+
 def _linux_available() -> bool:
-    if not shutil.which('bwrap') or (not Path('/usr/bin/python3').is_file() or not Path('/bin/bash').is_file()):
-        return False
-    try:
-        result = subprocess.run(['bwrap', *filesystem_args(), '--', '/bin/true'],
-            env={'PATH': '/usr/bin:/bin'}, capture_output=True, timeout=10)
-        return result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+    return _linux_bwrap() is not None
 
 
 @functools.lru_cache(maxsize=1)
@@ -392,7 +408,7 @@ async def _launch_linux(
             pointer.write_text('gitdir: /opt/dotrix/repo.git\n')
             git_mounts += ['--ro-bind', str(pointer), str(root / '.git')]
 
-    argv = ['bwrap', *filesystem_args(), '--ro-bind', address, '/opt/dotrix/relay.sock',
+    argv = [_linux_bwrap() or 'bwrap', *filesystem_args(), '--ro-bind', address, '/opt/dotrix/relay.sock',
         '--ro-bind', str(passwd), '/etc/passwd', '--ro-bind', str(group), '/etc/group',
         '--bind', str(root), str(root), '--bind', str(profile), str(profile), *git_mounts,
         '--ro-bind', str(profile / 'auth-source.json'), str(profile / 'auth-source.json'),
@@ -484,7 +500,7 @@ async def _launch_macos(
 
     argv = [
         '/usr/bin/sandbox-exec', '-f', str(sbpl_path),
-        sys.executable, str(helper), str(address), str(profile), str(binary_path),
+        *bridge_argv(helper), str(address), str(profile), str(binary_path),
     ]
     if anthropic:
         argv.append('claude')
@@ -564,6 +580,7 @@ async def _launch_windows(
         process = win_sandbox.launch_appcontainer(
             python_exe=sys.executable,
             helper=helper,
+            bridge=bridge_argv(helper),
             profile=profile,
             binary=binary_path,
             root=root,

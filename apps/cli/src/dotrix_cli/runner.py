@@ -283,11 +283,13 @@ def opencode_settings(environ: Mapping[str, str], pane: tuple[str, str] | None =
 
 def found_tools() -> list[str]:
     """The coding tools on this machine's PATH, preferred first."""
+    from .bundled import fx as bundled_fx
     from .fx_local import NATIVE_FX_POLICY_VALIDATED
     from .fx_native import available as native_fx_available
 
     return [name for name, binary in (("claude-code", "claude"), ("opencode", "opencode"), ("codex", "codex"), ("fx", "fx"))
-            if shutil.which(binary) and (name != "fx" or (NATIVE_FX_POLICY_VALIDATED and native_fx_available()))]
+            if (bundled_fx() if name == "fx" else shutil.which(binary))
+            and (name != "fx" or (NATIVE_FX_POLICY_VALIDATED and native_fx_available()))]
 
 
 @dataclass

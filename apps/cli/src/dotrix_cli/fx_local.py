@@ -19,11 +19,17 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from . import bundled
+
 # The kernel boundary, not fx's wildcard permission rules, protects native work.
 # fx_native.available() refuses unsupported hosts; there is no unconfined fallback.
 NATIVE_FX_POLICY_VALIDATED = True
 NATIVE_FX_REFUSAL = ("Local execution requires OS sandbox isolation (Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer) "
                      "and the tested coding runtime. Use cloud coding or another local runtime on this computer.")
+if sys.platform == "linux":
+    # Ubuntu 24.04 and later allow user namespaces only to the bwrap their own package installs.
+    NATIVE_FX_REFUSAL += (" On Linux, install your distribution's bubblewrap package (on Ubuntu: sudo apt install "
+                          "bubblewrap), which some distributions require in place of the bundled one.")
 
 AUTH_FILES = ("auth.json", "chatgpt-auth.json", "grok-auth.json", "api-key")
 # Kai's contract ends every brief under this heading (the backend's coding/brief.py, CONTRACT_HEADING). fx takes it
@@ -303,7 +309,7 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
     if not NATIVE_FX_POLICY_VALIDATED or not available():
         emit("error", message=NATIVE_FX_REFUSAL)
         return 1
-    binary = shutil.which("fx")
+    binary = bundled.fx()
     if binary is None:
         emit("error", message="The local coding tool is not installed")
         return 1
