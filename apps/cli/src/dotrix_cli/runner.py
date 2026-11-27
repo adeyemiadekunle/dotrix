@@ -293,14 +293,19 @@ def opencode_settings(environ: Mapping[str, str], pane: tuple[str, str] | None =
 
 
 def found_tools() -> list[str]:
-    """The coding tools on this machine's PATH, preferred first."""
+    """The coding tools on this machine's PATH, preferred first (fx: the bundled Kai runtime's, else PATH's). On
+    Windows, fx is the one in WSL (fx_wsl)."""
     from .bundled import fx as bundled_fx
     from .fx_local import NATIVE_FX_POLICY_VALIDATED
-    from .fx_native import available as native_fx_available
+    from .fx_native import fx_available
+
+    def found(name: str, binary: str) -> bool:
+        if name == "fx":
+            return NATIVE_FX_POLICY_VALIDATED and (sys.platform == "win32" or bundled_fx() is not None) and fx_available()
+        return shutil.which(binary) is not None
 
     return [name for name, binary in (("claude-code", "claude"), ("opencode", "opencode"), ("codex", "codex"), ("fx", "fx"))
-            if (bundled_fx() if name == "fx" else shutil.which(binary))
-            and (name != "fx" or (NATIVE_FX_POLICY_VALIDATED and native_fx_available()))]
+            if found(name, binary)]
 
 
 @dataclass
@@ -672,6 +677,12 @@ class LocalRunner:
         self.runner_id = runner["id"]
         self.notify({"event": "registered", "runner_id": runner["id"], "name": runner["name"],
                      "isolation": runner["isolation"], "tools": runner["tools"]})
+        if sys.platform == "win32" and "fx" not in runner["tools"] and self.tool in (None, "fx"):
+            from .fx_native import fx_refusal
+
+            missing = fx_refusal()
+            if missing:  # Kai's local coding needs WSL here: say what to install (the desktop shows it as the status)
+                self.notify({"event": "log", "text": missing})
         return runner
 
     async def claim(self) -> dict[str, Any] | None:
@@ -1029,14 +1040,14 @@ class LocalRunner:
             if name == "fx":
                 from .fx_local import (
                     NATIVE_FX_POLICY_VALIDATED,
-                    NATIVE_FX_REFUSAL,
                     prepare_profile,
+                    refusal,
                     restore_session_state,
                 )
-                from .fx_native import available as native_fx_available
+                from .fx_native import fx_available
 
-                if not NATIVE_FX_POLICY_VALIDATED or not native_fx_available():
-                    await report("failed", base_sha=base_sha, error=NATIVE_FX_REFUSAL)
+                if not NATIVE_FX_POLICY_VALIDATED or not fx_available():
+                    await report("failed", base_sha=base_sha, error=refusal())
                     return
                 turn.fx_profile = Path(tempfile.mkdtemp(prefix="dotrix-fx-local-"))
                 try:

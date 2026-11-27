@@ -83,7 +83,7 @@ async def run(browser: Path | None = None, model: str | None = None) -> int:
         cancelled = False
         previous = {}
         try:
-            async with launch(profile, str(Path(binary).resolve()), Path.cwd().resolve(), configured_browser, anthropic=upstream) as (child, _):
+            async with launch(profile, str(Path(binary).resolve()), Path.cwd().resolve(), configured_browser, anthropic=upstream) as (child, _, _):
                 assert child.stdin and child.stdout
                 def cancel(*args):
                     nonlocal cancelled

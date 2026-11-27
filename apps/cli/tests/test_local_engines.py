@@ -19,9 +19,11 @@ from dotrix_cli.toolenv import tool_environment
 
 def test_codex_is_detected_and_unsafe_native_fx_is_not_advertised(monkeypatch, tmp_path):
     monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: False)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_available", lambda: False)
     monkeypatch.setattr("shutil.which", lambda name: f"/bin/{name}" if name in ("codex", "fx") else None)
     assert found_tools() == ["codex"]
     monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: True)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_available", lambda: True)
     assert found_tools() == ["codex", "fx"]
     config = write_browser_config("http://127.0.0.1:4411/mcp", "browser-secret")
     try:
@@ -129,6 +131,8 @@ async def test_native_fx_is_refused_before_any_engine_or_model_process(monkeypat
     from dotrix_cli.fx_local import run
 
     monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: False)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_available", lambda: False)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_refusal", lambda: None)
 
     async def forbidden(*args, **kwargs):
         raise AssertionError("No engine process may start while the native network boundary is unverified")

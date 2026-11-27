@@ -702,6 +702,7 @@ async def test_a_local_fx_turn_gets_steers_from_the_heartbeat_and_reports_them(t
     monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
     monkeypatch.setattr("dotrix_cli.fx_local.NATIVE_FX_POLICY_VALIDATED", True)
     monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: True)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_available", lambda: True)
     monkeypatch.setattr("dotrix_cli.fx_local.prepare_profile", lambda *args, **kwargs: None)
     runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"a\n"}), workspace_id="w", project_id="p",
                          runner_id="r1", tool="fx", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None,
@@ -762,6 +763,7 @@ async def test_managed_local_fx_turn_persists_session_and_resumes_on_follow_up(t
     monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
     monkeypatch.setattr("dotrix_cli.fx_local.NATIVE_FX_POLICY_VALIDATED", True)
     monkeypatch.setattr("dotrix_cli.fx_native.available", lambda: True)
+    monkeypatch.setattr("dotrix_cli.fx_native.fx_available", lambda: True)
     monkeypatch.setattr("dotrix_cli.fx_local.prepare_profile", lambda p, *args, **kwargs: (p / ".fx").mkdir(parents=True, exist_ok=True))
     runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"a\n"}), workspace_id="w", project_id="p",
                          runner_id="r1", tool="fx", isolation="none", worktrees=tmp_path / "trees", echo=lambda _: None)
