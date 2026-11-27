@@ -32,6 +32,7 @@ interface Running {
 export class DevServers {
   private saved: Record<string, DevCommand>;
   private readonly running = new Map<string, Running>();
+  private readonly reserved = new Set<number>(); // ports an app is being started on, until it is in `running`
 
   constructor(private readonly file = path.join(app.getPath("userData"), "dev-servers.json")) {
     let raw: string | null = null;
@@ -72,27 +73,34 @@ export class DevServers {
     if (!saved) throw new Error("No command is saved to start this project's app.");
     await this.stop(caller);
     const port = saved.port ?? (await freePort());
-    if ([...this.running.values()].some((other) => other.port === port && other.exited === null))
+    // Checked and reserved before anything is awaited, so two sessions starting at once can't both take the port.
+    if (this.reserved.has(port) || [...this.running.values()].some((other) => other.port === port && other.exited === null))
       throw new Error(
         `Another Kai session's app for this project already runs on port ${port}, so this one couldn't start there. ` +
           "Go on without the app, and say so: the person can clear the port in Settings → Browser so each session's app gets a free one.",
       );
-    if (await answers(port))
-      throw new Error(
-        `Something on this computer already listens on port ${port} (the person's own dev server?), so the app couldn't start there. ` +
-          "Go on without the app, and say so: the person can stop it, or clear the port in Settings → Browser so a free one is picked.",
-      );
-    const output = new Lines();
-    const child = spawn(saved.command, {
-      cwd: worktree,
-      env: serverEnv(process.env, port),
-      shell: true,
-      windowsHide: true,
-      detached: process.platform !== "win32", // a group of its own, so stopping it reaches what it started
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const running: Running = { child, folder, worktree, port, command: saved.command, output, exited: null };
-    this.running.set(caller, running);
+    this.reserved.add(port);
+    let running: Running;
+    try {
+      if (await answers(port))
+        throw new Error(
+          `Something on this computer already listens on port ${port} (the person's own dev server?), so the app couldn't start there. ` +
+            "Go on without the app, and say so: the person can stop it, or clear the port in Settings → Browser so a free one is picked.",
+        );
+      const child = spawn(saved.command, {
+        cwd: worktree,
+        env: serverEnv(process.env, port),
+        shell: true,
+        windowsHide: true,
+        detached: process.platform !== "win32", // a group of its own, so stopping it reaches what it started
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      running = { child, folder, worktree, port, command: saved.command, output: new Lines(), exited: null };
+      this.running.set(caller, running);
+    } finally {
+      this.reserved.delete(port);
+    }
+    const { child, output } = running;
     child.stdout?.on("data", (chunk) => output.push(String(chunk)));
     child.stderr?.on("data", (chunk) => output.push(String(chunk)));
     child.on("error", (error) => output.push(`\n${error.message}\n`));

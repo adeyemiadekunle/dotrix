@@ -1037,3 +1037,48 @@ def test_each_session_gets_a_browser_pane_token_of_its_own():
     assert token == f"s-1.{hmac.new(b'folder-secret', b's-1', hashlib.sha256).hexdigest()}" == turn_token("folder-secret", "s-1")
     assert browser_tools(environ, session="s-2")[1] != token
     assert browser_tools(environ) == (url, "folder-secret")
+
+
+async def test_a_sessions_next_turn_waits_for_its_last_to_end_and_clean_up(tmp_path, monkeypatch):
+    import sys
+    import uuid as uuid_module
+
+    log = tmp_path / "log"
+    log.mkdir()
+    # Notes whether another turn was coding in this worktree when it started; changes nothing, so turn 2 can follow.
+    script = (
+        "import os, time\n"
+        f"log = {str(log)!r}\n"
+        "busy = os.path.join(log, 'busy')\n"
+        "overlap = os.path.exists(busy)\n"
+        "open(busy, 'w').close()\n"
+        "time.sleep(0.5)\n"
+        "os.remove(busy)\n"
+        "open(os.path.join(log, f'turn-{len(os.listdir(log))}-overlap-{overlap}'), 'w').close()\n"
+    )
+    monkeypatch.setattr(Tool, "named", lambda *args, **kwargs: Tool("codex", [sys.executable, "-c", script]))
+    monkeypatch.setattr("dotrix_cli.runner.found_tools", lambda: [])
+    session = str(uuid_module.uuid4())
+    # The platform hands out the follow-up as soon as the first turn's result is in, before it has cleaned up.
+    waiting = [{**_RUN, "run_id": f"run-00000{turn}", "turn": turn, "tool": "codex", "managed_worktree": True,
+                "session_id": session} for turn in (1, 2)]
+    results: dict[str, dict] = {}
+    done = asyncio.Event()
+
+    class Api:
+        async def post(self, path, body=None):
+            if path.endswith("/claim?managed_worktrees=true"):
+                return {"run": waiting.pop(0) if waiting else None}
+            if path.endswith("/result"):
+                results[path.split("/runs/")[1].split("/")[0]] = body
+                if len(results) == 2:
+                    done.set()
+            return {"stop": False}
+
+    runner = LocalRunner(api=Api(), repo=_checkout(tmp_path, {"a.txt": b"a\n"}), workspace_id="w", project_id="p",
+                         runner_id="r1", tool="codex", isolation="none", worktrees=tmp_path / "trees",
+                         echo=lambda _: None, parallel=2)
+    await _serve_all(runner, done)
+    assert [body["outcome"] for body in results.values()] == ["no_changes", "no_changes"], results
+    assert not any("overlap-True" in path.name for path in log.iterdir())
+    assert runner._by_session == {}

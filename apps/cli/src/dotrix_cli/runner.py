@@ -624,6 +624,8 @@ class LocalRunner:
     # How many turns `serve` codes at once: each session has its own worktree, so they never share files.
     parallel: int = 1
     _turns: set[asyncio.Task] = field(default_factory=set, init=False, repr=False)
+    # Each session's latest turn: its next waits for it, cleanup included (its worktree's marker goes last).
+    _by_session: dict[str, asyncio.Task] = field(default_factory=dict, init=False, repr=False)
     _coding_in: set[Path] = field(default_factory=set, init=False, repr=False)  # the turns' worktrees, never cleaned
     # The checkout's own git work (fetching, adding and removing worktrees) is one at a time: they share its refs.
     _repo_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
@@ -686,6 +688,12 @@ class LocalRunner:
             return False
         await self.code(run)
         return True
+
+    async def _code_after(self, before: asyncio.Task | None, run: dict[str, Any]) -> None:
+        """Code a turn once its session's previous turn has ended and cleaned up (sessions differ: at once)."""
+        if before is not None and not before.done():
+            await asyncio.wait({before})
+        await self.code(run)
 
     async def code(self, run: dict[str, Any]) -> None:
         """Code a claimed turn with state of its own, and clean that up when it ends."""
@@ -766,6 +774,9 @@ class LocalRunner:
 
     def _ended(self, task: asyncio.Task) -> None:
         self._turns.discard(task)
+        for session, latest in list(self._by_session.items()):
+            if latest is task:
+                del self._by_session[session]
         if task.cancelled():
             return
         failed = task.exception()
@@ -813,8 +824,12 @@ class LocalRunner:
                 self.echo("Connected again")
                 self.notify({"event": "online"})
             if run is not None:
-                task = asyncio.create_task(self.code(run))
+                session = str(run.get("session_id") or "") or None
+                before = self._by_session.get(session) if session else None
+                task = asyncio.create_task(self._code_after(before, run))
                 self._turns.add(task)
+                if session:
+                    self._by_session[session] = task
                 task.add_done_callback(self._ended)
                 continue  # another may be waiting
             await self._wait(stop, poll_seconds, for_turn=False)
