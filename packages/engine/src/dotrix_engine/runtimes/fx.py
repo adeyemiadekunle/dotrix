@@ -205,8 +205,11 @@ class FxRuntime:
         if local_dir is not None:
             local_dir = Path(local_dir)
             await asyncio.to_thread(_prepare_local_dir, local_dir, config, model, base_url, effort, context_window)
+        # libfx has no native addon for Windows, so it runs its WebAssembly build, which needs JavaScript Promise
+        # Integration. Node 24 has it only behind this flag, and the flag can't be set through NODE_OPTIONS.
+        node_flags = ["--experimental-wasm-jspi"] if os.name == "nt" else []
         process = await asyncio.create_subprocess_exec(
-            node, str(_HOST / "worker.mjs"), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            node, *node_flags, str(_HOST / "worker.mjs"), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024, env=host_env(),
         )
         runtime = cls(config, process, local=local_dir is not None, journal=journal, engine_session=engine_session)
