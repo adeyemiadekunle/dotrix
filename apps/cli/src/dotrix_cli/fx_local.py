@@ -372,7 +372,10 @@ async def run(profile: Path, browser: Path | None = None, steer_dir: Path | None
     try:
         child, bridge_port, engine_path = await manager.__aenter__()
     except (OSError, ValueError, TimeoutError) as exc:
-        detail = f" ({exc})" if sys.platform == "win32" and str(exc) else ""
+        # Our own WSL failures (ValueError) are worded for a person; anything else goes only to the worker's log.
+        detail = f" ({exc})" if sys.platform == "win32" and isinstance(exc, ValueError) and str(exc) else ""
+        if not detail:
+            print(f"dotrix: native launch failed: {exc!r}", file=sys.stderr, flush=True)
         emit("error", message="Could not start isolated local execution; use the tested runtime with a custom API-key "
                               f"connection or cloud coding{detail}")
         return 1

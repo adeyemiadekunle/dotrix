@@ -32,6 +32,8 @@ from .fx_bridge import KAI_FX_VERSION
 DISTRO_ENV = 'DOTRIX_WSL_DISTRO'
 # Files in the profile that the host writes and trusts; a turn's copy never replaces them.
 HOST_OWNED = ('.fx/dotrix-session.json', 'auth-source.json')
+# Characters a Windows file name can't hold, or that Windows reads as a separator or a stream (`name:stream`).
+WINDOWS_RESERVED = frozenset('\\:<>"|?*') | frozenset(chr(code) for code in range(32))
 COPY_BACK_LIMIT = 512 * 1024 * 1024
 INSTALL_WSL = 'Open PowerShell as administrator, run `wsl --install`, and restart Windows.'
 
@@ -96,13 +98,14 @@ printf '{"missing":"%s","namespaces":%s,"fx":"%s","version":"%s","dirs":"%s","ce
 @dataclass(frozen=True)
 class Status:
     """Whether native fx can run here through WSL. When it can't, `problem` says what is missing and `fix` how to
-    install it, in words for a person."""
+    install it, in words for a person, which name only Kai (never the engine). `detail` is for the worker's log."""
     distro: str | None = None
     fx: str | None = None
     system_dirs: tuple[str, ...] = ()
     cert_dirs: tuple[str, ...] = ()
     problem: str | None = None
     fix: str | None = None
+    detail: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -202,9 +205,10 @@ def _status() -> Status:
         return Status(distro=name, problem=f"Bubblewrap can't create Linux namespaces in {name}.",
                       fix='Update WSL with `wsl --update`, then restart it with `wsl --shutdown`.')
     if not facts.get('fx') or facts.get('version') != KAI_FX_VERSION:
-        have = f' (it has {facts["version"]})' if facts.get('version') else ''
-        return Status(distro=name, problem=f"{name} doesn't have the Kai runtime's fx {KAI_FX_VERSION}{have}.",
-                      fix=f"Install the Kai runtime's fx {KAI_FX_VERSION} for Linux in {name}, on its PATH.")
+        found_fx = f"fx {facts['version']} at {facts.get('fx')}" if facts.get('version') else 'no fx'
+        return Status(distro=name, problem=f"{name} doesn't have Kai's Linux runtime {KAI_FX_VERSION}.",
+                      fix=f"Install Kai's Linux runtime {KAI_FX_VERSION} in {name}, on its PATH.",
+                      detail=f'WSL {name} has {found_fx}; native fx needs {KAI_FX_VERSION}')
     return Status(distro=name, fx=facts['fx'], system_dirs=tuple(facts.get('dirs', '').split()),
                   cert_dirs=tuple(facts.get('certs', '').split()))
 
@@ -229,18 +233,38 @@ def _tar(files: dict[str, bytes], profile: Path) -> bytes:
     return buffer.getvalue()
 
 
+def _windows_alias(part: str) -> bool:
+    """A name Windows would store as another: with a separator, a stream, or a reserved character in it, or ending in
+    a dot or a space, which Windows drops (`auth-source.json.` is `auth-source.json`)."""
+    return bool(WINDOWS_RESERVED.intersection(part)) or part.endswith(('.', ' '))
+
+
+def _host_owned(relative: PurePosixPath, profile: Path, owned: list[Path]) -> bool:
+    """Whether `relative` would land on a file the host owns. Windows names are case-insensitive, and an existing
+    file is also reached by its 8.3 short name (`AUTH-S~1.JSO`), so the destination itself is compared too."""
+    if str(relative).casefold() in {name.casefold() for name in HOST_OWNED}:
+        return True
+    destination = profile.joinpath(*relative.parts)
+    try:
+        return destination.exists() and any(os.path.samefile(destination, path) for path in owned)
+    except OSError:
+        return True
+
+
 def copy_back(archive: bytes, profile: Path) -> None:
     """Writes the turn's profile over the host's, except the files the host owns. Only regular files and folders
-    inside the profile are taken."""
+    inside the profile are taken, under names that mean the same file on Windows as in Linux."""
     if len(archive) > COPY_BACK_LIMIT:
         raise ValueError('The local profile grew too large to keep')
+    owned = [path for path in (profile.joinpath(*name.split('/')) for name in HOST_OWNED) if path.exists()]
     with tarfile.open(fileobj=io.BytesIO(archive), mode='r') as source:
         members = []
         for member in source.getmembers():
             name = PurePosixPath(member.name)
             relative = PurePosixPath(*name.parts[1:]) if name.parts[:1] == ('.',) else name
             if (not (member.isfile() or member.isdir()) or relative.is_absolute() or '..' in relative.parts
-                    or str(relative) in HOST_OWNED or str(relative) == '.'):
+                    or str(relative) == '.' or any(_windows_alias(part) for part in relative.parts)
+                    or _host_owned(relative, profile, owned)):
                 continue
             member.name = str(relative)
             members.append(member)
@@ -272,7 +296,7 @@ async def launch(profile: Path, root: Path, browser: dict | None, target: str, k
         'test -d "$r" || { echo "unreachable"; exit 3; }; printf "%s\\n%s\\n" "$t" "$r"',
         'sh', str(root.resolve()),
     ], input=_tar(stage_files, profile), timeout=120)
-    lines = stage.stdout.decode('utf-8', errors='replace').split()
+    lines = stage.stdout.decode('utf-8', errors='replace').splitlines()  # a worktree path may hold spaces
     if stage.returncode == 3:
         raise ValueError(f"The worktree isn't reachable from {distro}; check that its drive is mounted in WSL")
     if stage.returncode != 0 or len(lines) < 2:

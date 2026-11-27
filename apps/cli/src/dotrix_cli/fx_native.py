@@ -141,10 +141,15 @@ def fx_available() -> bool:
 
 
 def fx_refusal() -> str | None:
-    """Why native fx can't run here and how to fix it, for a person; None when it can. Only Windows says how."""
+    """Why native fx can't run here and how to fix it, for a person, naming only Kai; None when it can. Only Windows
+    says how. What the engine itself lacks goes to the worker's log (stderr), never to the person."""
     if sys.platform == 'win32':
         found = fx_wsl.status()
-        return None if found.ok else found.message()
+        if found.ok:
+            return None
+        if found.detail:
+            print(f'dotrix: {found.detail}', file=sys.stderr, flush=True)
+        return found.message()
     return None
 
 

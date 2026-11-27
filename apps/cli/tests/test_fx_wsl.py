@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import tarfile
 from pathlib import Path, PurePosixPath
@@ -81,7 +82,22 @@ def test_another_fx_release_is_refused_naming_the_one_needed(wsl):
     answers["--list"] = _completed(_listing("* Ubuntu    Running    2"))
     answers["probe"] = _completed(_facts(version="0.0.17"))
     found = fx_wsl.status()
-    assert not found.ok and f"fx {KAI_FX_VERSION} (it has 0.0.17)" in found.problem
+    assert not found.ok and f"Kai's Linux runtime {KAI_FX_VERSION}" in found.problem
+    # People see only Kai; which engine release is there is for the worker's log.
+    assert "fx" not in found.message() and "0.0.17" not in found.message()
+    assert "fx 0.0.17" in found.detail
+
+
+def test_the_engine_is_named_only_in_the_workers_log(wsl, monkeypatch, capsys):
+    from dotrix_cli import fx_native
+
+    answers, _ = wsl
+    answers["--list"] = _completed(_listing("* Ubuntu    Running    2"))
+    answers["probe"] = _completed(_facts(fx="", version=""))
+    monkeypatch.setattr(fx_native.sys, "platform", "win32")
+    shown = fx_native.fx_refusal()
+    assert shown and "fx" not in shown and "Kai" in shown
+    assert "no fx" in capsys.readouterr().err
 
 
 def test_a_ready_distribution_is_kept_and_the_chosen_fx_is_passed_in(wsl, monkeypatch):
@@ -142,6 +158,61 @@ def test_a_turns_profile_comes_back_without_the_files_the_host_owns(tmp_path):
     assert json.loads((profile / ".fx" / "dotrix-session.json").read_text())["fxSession"] == "host"
     assert (profile / "auth-source.json").read_text() == "host"
     assert not (tmp_path / "outside.txt").exists() and not (profile / ".fx" / "link").exists()
+
+
+@pytest.mark.parametrize("name", ["./AUTH-SOURCE.JSON", "./.FX/dotrix-session.json", "./.fx\\dotrix-session.json",
+                                  "./auth-source.json.", "./auth-source.json ", "./auth-source.json:stream"])
+def test_a_name_windows_reads_as_a_host_owned_file_is_not_copied_back(tmp_path, name):
+    profile = tmp_path / "profile"
+    (profile / ".fx").mkdir(parents=True)
+    (profile / ".fx" / "dotrix-session.json").write_text("host")
+    (profile / "auth-source.json").write_text("host")
+    fx_wsl.copy_back(_archive({"./": None, name: b"sandbox", "./kept.json": b"turn"}), profile)
+    assert (profile / ".fx" / "dotrix-session.json").read_text() == "host"
+    assert (profile / "auth-source.json").read_text() == "host"
+    assert (profile / "kept.json").read_text() == "turn"
+
+
+def test_another_name_for_a_host_owned_file_is_not_copied_back(tmp_path):
+    # A hard link stands in for any other name of the same file, on every platform.
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "auth-source.json").write_text("host")
+    os.link(profile / "auth-source.json", profile / "alias.json")
+    archive = {"./alias.json": b"sandbox"}
+    if (profile / "AUTH-S~1.JSO").exists():  # Windows with 8.3 names on: the file's own short name
+        archive["./AUTH-S~1.JSO"] = b"sandbox"
+    fx_wsl.copy_back(_archive(archive), profile)
+    assert (profile / "auth-source.json").read_text() == "host"
+
+
+async def test_a_worktree_path_with_spaces_reaches_the_sandbox_whole(tmp_path, monkeypatch):
+    from dotrix_cli import fx_native
+
+    monkeypatch.setattr(fx_wsl, "_ready", fx_wsl.Status(distro="Ubuntu", fx="/usr/local/bin/fx", system_dirs=("/usr",)))
+    monkeypatch.setattr(fx_wsl, "_wsl_exe", lambda: "wsl.exe")
+    monkeypatch.setattr(fx_wsl, "_run", lambda args, **_: _completed(b"/tmp/dotrix-fx-abc\n/mnt/c/Users/Jane Doe/repo\n"))
+    monkeypatch.setattr(fx_wsl, "_finish", lambda *args: None)
+
+    class Pump:
+        stdout = io.BytesIO(b"R")
+        def kill(self): pass
+        def wait(self): return 0
+
+    monkeypatch.setattr(fx_wsl.subprocess, "Popen", lambda *args, **kwargs: Pump())
+    seen = {}
+
+    def bwrap_argv(**kwargs):
+        seen.update(kwargs)
+        raise ValueError("stop here")
+
+    monkeypatch.setattr(fx_native, "bwrap_argv", bwrap_argv)
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    with pytest.raises(ValueError, match="stop here"):
+        async with fx_wsl.launch(profile, tmp_path, None, "https://model.example/v1", "key", "m", KAI_FX_VERSION):
+            pass
+    assert seen["root"] == "/mnt/c/Users/Jane Doe/repo"
 
 
 def test_a_profile_too_large_to_keep_is_refused(tmp_path, monkeypatch):
