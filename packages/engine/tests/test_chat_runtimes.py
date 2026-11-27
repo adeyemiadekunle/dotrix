@@ -121,6 +121,8 @@ def test_the_kai_runtime_is_admitted_only_as_its_own_package(tmp_path):
     assert LIBFX_ARTIFACTS["0.0.17-kai.1"] == ("0.0.16",)
     assert LIBFX_ARTIFACTS["0.0.17-kai.2"] == ("0.0.17-kai.1", "0.0.16")
     assert LIBFX_ARTIFACTS["0.0.17-kai.3"] == ("0.0.17-kai.2", "0.0.17-kai.1", "0.0.16")
+    assert LIBFX_ARTIFACTS["0.0.18-kai.1"] == ("0.0.17-kai.3", "0.0.17-kai.2", "0.0.17-kai.1", "0.0.16")
+    assert LIBFX_ARTIFACTS["0.0.18-kai.2"] == ("0.0.18-kai.1", "0.0.17-kai.3", "0.0.17-kai.2", "0.0.17-kai.1", "0.0.16")
     kai = "npm:@kunemi-group/kai@0.0.17-kai.1"
     assert libfx_version(_host(tmp_path / "kai", kai)) == "0.0.17-kai.1"
     assert installed_libfx_version(_host(tmp_path / "kai-installed", kai, installed="0.0.17-kai.1")) == "0.0.17-kai.1"
