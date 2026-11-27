@@ -32,6 +32,7 @@ from dotrix_backend.modules.coding.tools import (
     models_for,
     tool_for,
 )
+from dotrix_engine.coding_helpers import AT_ONCE
 
 DRIVER = Path(__file__).resolve().parents[4] / "infra" / "coding" / "fx-acp.mjs"
 
@@ -470,7 +471,7 @@ def test_a_worker_s_commands_show_in_the_session_named_for_the_worker(fake_fx) -
     assert ("tool", "Ran pytest -q (tester)") in steps
     assert ("output-error", "1 failed") in steps
     settings = json.loads((Path(fake_fx["HOME"]) / ".fx" / "settings.json").read_text())
-    assert settings["max_subagents"] == 2
+    assert settings["max_subagents"] == AT_ONCE == 3
 
 
 def test_sigint_cancels_the_turn_and_it_still_ends_with_done(fake_fx) -> None:

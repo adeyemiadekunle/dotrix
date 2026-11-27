@@ -33,7 +33,7 @@ from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from dotrix_engine.coding_helpers import AT_ONCE as HELPERS_AT_ONCE
-from dotrix_engine.coding_helpers import claude_agents, opencode_agents, workers
+from dotrix_engine.coding_helpers import claude_agents, helper_share, opencode_agents, workers
 
 from .platform import PlatformError
 from .toolenv import EXECUTION_ENV, tool_environment
@@ -118,7 +118,10 @@ class Tool:
 
     @classmethod
     def named(cls, name: str, *, isolated: bool = False, browser: Path | None = None, profile: Path | None = None,
-              native: bool = False, disabled_mcp: tuple[str, ...] = (), model: str | None = None) -> Tool:
+              native: bool = False, disabled_mcp: tuple[str, ...] = (), model: str | None = None,
+              helpers: int = HELPERS_AT_ONCE) -> Tool:
+        """`helpers`: how many subagents may work at once, where the tool can be held to it (Codex; Kai's rules say it
+        for the rest): this turn's share of the runner's (`coding_helpers.helper_share`)."""
         if name == "claude-code":
             from .claude_local import command as claude_command
             from .claude_local import configured as native_claude_available
@@ -162,7 +165,8 @@ class Tool:
             if not isolated and not native:
                 driver = ([sys.executable, "_local-codex"] if getattr(sys, "frozen", False)
                           else [sys.executable, "-m", "dotrix_cli.codex_local"])
-                return cls(name, [*driver, *(["--browser-config", str(browser)] if browser is not None else [])])
+                return cls(name, [*driver, *(["--browser-config", str(browser)] if browser is not None else []),
+                                  "--helpers", str(helpers)])
             # Commands keep Codex's native OS sandbox outside sbx. Never inherit a wider
             # writable-root/network policy, project instructions, hooks, plugins or MCP servers.
             argv = ["codex", "--ask-for-approval", "never", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
@@ -176,7 +180,7 @@ class Tool:
                 # role can't change (Codex 0.169.0), and they're capped (`codex_settings`).
                 **{f"features.{key}": "false" for key in ("hooks", "plugins", "apps", "multi_agent_v2",
                                                            "browser_use", "computer_use", "shell_snapshot")},
-                "agents.max_threads": str(HELPERS_AT_ONCE), "agents.max_depth": "1",
+                "agents.max_threads": str(helpers), "agents.max_depth": "1",
             }
             servers = [f"{json.dumps(name)} = {{ enabled = false }}" for name in disabled_mcp]
             if browser is not None and not isolated:
@@ -305,6 +309,41 @@ def opencode_settings(environ: Mapping[str, str], pane: tuple[str, str] | None =
         "OPENCODE_DISABLE_PROJECT_CONFIG": "1",  # the repository's opencode.json is data, not configuration
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
     }
+
+
+GIB = 1024 ** 3
+TURN_MEMORY = 4 * GIB  # what one turn takes at most: its engine, the app it starts for the Browser pane, its tests
+MOST_TURNS = 4  # past this a person's model key, not the computer, is what runs out (the provider's rate limits)
+UNKNOWN_MEMORY_TURNS = 3
+
+
+def total_memory() -> int | None:
+    """This computer's memory in bytes, or None when it can't say."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):  # MEMORYSTATUSEX
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
+                            *((name, ctypes.c_ulonglong) for name in ("total", "available", "page_total", "page_available",
+                                                                       "virtual_total", "virtual_available", "extended"))]
+
+            status = Status()
+            status.length = ctypes.sizeof(Status)
+            return int(status.total) if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) else None
+        return int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def default_parallel(memory: int | None = None) -> int:
+    """How many turns a runner codes at once unless told (`dotrix runner --parallel`): one per `TURN_MEMORY` of this
+    computer's memory, rounded (a "16 GB" machine reports a little less), from 1 to `MOST_TURNS` (8 GB: 2, 12 GB: 3,
+    16 GB or more: 4)."""
+    memory = total_memory() if memory is None else memory
+    if not memory:
+        return UNKNOWN_MEMORY_TURNS
+    return max(1, min(MOST_TURNS, round(memory / TURN_MEMORY)))
 
 
 def found_tools() -> list[str]:
@@ -686,6 +725,7 @@ class _Turn:
     browser: tuple[str, str] | None = None  # it has the Browser pane (its server's address and token)
     fx_profile: Path | None = None
     fx_state_dir: Path | None = None
+    helpers: int = HELPERS_AT_ONCE  # its share of the runner's helpers (`coding_helpers.helper_share`)
 
 
 @dataclass
@@ -721,6 +761,10 @@ class LocalRunner:
     _coding_in: set[Path] = field(default_factory=set, init=False, repr=False)  # the turns' worktrees, never cleaned
     # The checkout's own git work (fetching, adding and removing worktrees) is one at a time: they share its refs.
     _repo_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    # Helpers the turns in progress may have working at once, together (`coding_helpers.RUNNER_AT_ONCE`): every
+    # helper's model calls go on the same key.
+    _helpers_taken: int = field(default=0, init=False, repr=False)
+    _helper_turns: int = field(default=0, init=False, repr=False)  # the turns in progress holding a share
 
     def tools(self) -> list[str]:
         if self.tool:
@@ -795,10 +839,15 @@ class LocalRunner:
 
     async def code(self, run: dict[str, Any]) -> None:
         """Code a claimed turn with state of its own, and clean that up when it ends."""
-        turn = _Turn()
+        # One helper is kept for each turn that may still start beside this one (`parallel` at once).
+        turn = _Turn(helpers=helper_share(self._helpers_taken, max(0, self.parallel - self._helper_turns - 1)))
+        self._helpers_taken += turn.helpers
+        self._helper_turns += 1
         try:
             await self.work(run, turn)
         finally:
+            self._helpers_taken -= turn.helpers
+            self._helper_turns -= 1
             if turn.coding_in is not None:
                 self._coding_in.discard(turn.coding_in)
                 try:
@@ -1151,7 +1200,8 @@ class LocalRunner:
                         except (OSError, ValueError) as exc:
                             await report("failed", base_sha=base_sha, error=f"Couldn't restore the local coding session: {exc}")
                             return
-            tool = Tool.named(name, isolated=isolated, browser=turn.browser_config, profile=turn.fx_profile, model=run.get("model"))
+            tool = Tool.named(name, isolated=isolated, browser=turn.browser_config, profile=turn.fx_profile, model=run.get("model"),
+                              helpers=turn.helpers)
             if name == "fx":
                 # The turn's inbox for a person's messages while it works (the driver opens it, the heartbeat fills it).
                 steer_root = Path(tempfile.gettempdir()) / f"dotrix-steer-{os.getuid() if hasattr(os, 'getuid') else 'user'}"

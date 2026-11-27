@@ -583,8 +583,9 @@ def runner_command(
     once: bool = typer.Option(False, "--once", help="Code at most one waiting turn, then exit"),
     poll: float = typer.Option(5.0, "--poll", help="Seconds between asks for a turn"),
     parallel: int = typer.Option(
-        3, "--parallel", min=1, max=16,
-        help="How many turns to code at once (each session in a worktree of its own; 1 codes them one after another)",
+        None, "--parallel", min=1, max=16,
+        help="How many turns to code at once (each session in a worktree of its own; 1 codes them one after another). "
+             "Default: one per 4 GB of this computer's memory, 1 to 4",
     ),
     name: str = typer.Option(None, "--name", help="This checkout's name on the platform (default: the hostname and folder)"),
     worktrees: Path = typer.Option(None, "--worktrees", help="Where turns' worktrees go (default: ~/.dotrix/worktrees)"),
@@ -602,7 +603,7 @@ def runner_command(
     Start a local turn with `dotrix code KEY`, or "On my computer" in the web app."""
     import asyncio
 
-    from .runner import LocalRunner
+    from .runner import LocalRunner, default_parallel
 
     def say(text: str) -> None:
         if as_json:
@@ -613,7 +614,7 @@ def runner_command(
     config, state, client = _linked(project)
     runner = LocalRunner(
         _AsyncApi(client), Path(config.root_dir), state.workspace_id, state.project_id, tool=tool, command=command,
-        isolation=isolation.strip().lower(), echo=say, parallel=parallel,
+        isolation=isolation.strip().lower(), echo=say, parallel=parallel or default_parallel(),
         notify=_json_line if as_json else (lambda event: None), **({"name": name} if name else {}), **({"worktrees": worktrees} if worktrees else {}),
     )
     try:

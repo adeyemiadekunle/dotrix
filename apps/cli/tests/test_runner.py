@@ -1148,7 +1148,11 @@ def test_kai_s_helpers_show_in_a_local_turn_as_steps() -> None:
 def test_codex_on_this_computer_keeps_its_helpers_capped_in_its_sandbox() -> None:
     argv = Tool.named("codex", native=True).argv
     assert "features.multi_agent=false" not in argv and "features.multi_agent_v2=false" in argv
-    assert "agents.max_threads=2" in argv and "agents.max_depth=1" in argv
+    assert "agents.max_threads=3" in argv and "agents.max_depth=1" in argv
+    # Its share of the runner's helpers, beside other turns: the driver passes it on.
+    assert "agents.max_threads=1" in Tool.named("codex", native=True, helpers=1).argv
+    driver = Tool.named("codex", helpers=2).argv
+    assert driver[driver.index("--helpers") + 1] == "2"
     assert argv[argv.index("--sandbox") + 1] == "workspace-write"  # which every helper inherits
 
 
@@ -1183,3 +1187,32 @@ def test_kai_s_helpers_are_listed_as_background_tasks_when_the_platform_takes_th
                            "subagent_type": "explorer", "description": "x"}), older)
     helpers_left(older)
     assert [e["kind"] for e in older.events] == ["step", "step"]
+
+
+def test_a_runner_codes_as_many_turns_at_once_as_this_computer_s_memory_holds() -> None:
+    """One turn per 4 GB, rounded (a "16 GB" machine reports a little less), from 1 to 4; 3 when it can't tell."""
+    from dotrix_cli.runner import GIB, default_parallel
+
+    assert [default_parallel(int(g * GIB)) for g in (2, 3.7, 7.8, 11.8, 15.8, 64)] == [1, 1, 2, 3, 4, 4]
+    assert default_parallel(0) == 3
+
+
+async def test_turns_side_by_side_share_the_runner_s_helpers(tmp_path, monkeypatch) -> None:
+    """Every helper's model calls go on the same key: a turn gets what's left of six once one is kept for each turn
+    that may still start beside it, three at most, one at least, and gives its share back when it ends."""
+    seen: list[int] = []
+    release = asyncio.Event()
+    runner = LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p", parallel=4)  # type: ignore[arg-type]
+
+    async def work(run, turn=None):
+        seen.append(turn.helpers)
+        await release.wait()
+
+    monkeypatch.setattr(runner, "work", work)
+    turns = [asyncio.create_task(runner.code({"run_id": str(i)})) for i in range(4)]
+    while len(seen) < 4:
+        await asyncio.sleep(0)
+    assert seen == [3, 1, 1, 1] and runner._helpers_taken == 6
+    release.set()
+    await asyncio.gather(*turns)
+    assert runner._helpers_taken == runner._helper_turns == 0

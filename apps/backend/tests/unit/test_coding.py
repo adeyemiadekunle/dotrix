@@ -651,7 +651,7 @@ def test_codex_s_helpers_are_capped_and_listed_with_its_background_tasks() -> No
     Codex 0.169.0 printed them against a scripted model."""
     tool, usage = Codex(), Usage()
     argv = tool.command("openai:gpt-5.5")
-    assert "agents.max_threads=2" in argv and "agents.max_depth=1" in argv
+    assert "agents.max_threads=3" in argv and "agents.max_depth=1" in argv
     parent, child = "01a21eaf-8f1d-7f83-a3de-4185e5f2b9d5", "01a21eaf-9024-75e2-b26b-8cb8b5688f6d"
     lines = [
         {"type": "item.started", "item": {"id": "item_1", "type": "collab_tool_call", "tool": "spawn_agent",
