@@ -33,6 +33,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 
 ### Changed
 
+- Moved Chat and Code conversation history into top tabs with a searchable dropdown.
 - Upgraded Kai to the Kai runtime's `0.0.18-kai.2` (fx 0.0.18): Chat on `@kunemi-group/kai@0.0.18-kai.2`, which resumes runs saved by `0.0.18-kai.1`, every `0.0.17-kai.*` artifact, and fx 0.0.16, and the coding image on `@kunemi-group/kai-cli-linux-<cpu>@0.0.18-kai.2`. Local native Code requires the exact release, which the Kai runtime now reports as `fx --version` (`0.0.18-kai.2`), and names the release it needs when it refuses another; one constant in `fx_bridge.py` holds it, and a test keeps it equal to the image and Chat pins. A prompt the content filter blocks now ends as refused rather than as an ACP error.
 - Grouped admin navigation by operations, agent usage, governance, and administration.
 - Applied the shared coss transcript design to Chat and Code and reused its empty states in the admin console.

@@ -5,7 +5,6 @@ import { ChatMessage } from "@dotrix/ui/components/chat/chat-message";
 import { ChatLoadingState } from "@dotrix/ui/components/chat/chat-states";
 import { ChatTranscriptReply } from "@dotrix/ui/components/chat/chat-transcript-reply";
 import { ChatTypingIndicator } from "@dotrix/ui/components/chat/chat-typing-indicator";
-import { Input as DesignInput } from "@dotrix/ui/components/input";
 import { Select, SelectContent, SelectField, SelectItem, SelectTrigger, SelectValue } from "@dotrix/ui/components/select";
 import {
   ChatComposer,
@@ -27,7 +26,7 @@ import {
 // Conversations and sessions come from the API (TanStack Query); projects, people, and issues still from the store.
 // URL: ?thread=ID&project=KEY (or &across=1), ?project=KEY (new chat), ?q=, ?agent=. Older ?session= and ?tab=coding links open in Codes.
 import { useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentProps } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 
 import {
   isActive,
@@ -108,7 +107,7 @@ import { CODING_VIEWS, CodingPanes, codingPaneType, newCodingPane, useActivePane
 import { BackgroundTasks, KaiBackground } from "../components/BackgroundTasks";
 import { SessionDetails, modeName } from "../components/SessionDetails";
 import { useConversationTasks, useReviewRunQueries, useReviewRuns, type SpecialistTask } from "@/lib/team";
-import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
+import { SessionTabs } from "../components/SessionTabs";
 import { ChoiceCard, type Choice } from "../components/ChoiceCard";
 import {
   ChainOfThought,
@@ -125,10 +124,9 @@ import {
   TraceList,
   type Usage,
 } from "../components/AgentTrace";
-import { Splitter, useStoredSize, useStoredText } from "../ui/splitter";
+import { useStoredText } from "../ui/splitter";
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@dotrix/ui/components/trace";
 
-const css = (o: Record<string, string | number>) => o as CSSProperties;
 const agentName = (h: string) =>
   CODING_TOOLS.some((tool) => tool.id === h || tool.id === `agent:${h}`) ? CODING_AGENT.name : (D().agents.find((a) => a.handle === h)?.name ?? h);
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
@@ -216,13 +214,16 @@ function useRows(ws: string | undefined) {
 
 const threadSearch = (r: Pick<Row, "id" | "projectKey">) => (r.projectKey ? `thread=${r.id}&project=${r.projectKey}` : `thread=${r.id}&across=1`);
 
-function ThreadRow({ row, on }: { row: Row; on: boolean }) {
+function ThreadRow({ row, on, onPick }: { row: Row; on: boolean; onPick: () => void }) {
   return (
     <ActionButton
       className={`sitem ${on ? "on" : ""}`}
       style={{ height: "auto", padding: "6px 8px", alignItems: "flex-start" }}
       aria-label={`${row.title} · ${ago(row.at)}`}
-      onClick={() => open(threadSearch(row))}
+      onClick={() => {
+        onPick();
+        open(threadSearch(row));
+      }}
     >
       <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
         <span className="trunc" style={{ display: "block", fontWeight: on ? 500 : 400 }}>
@@ -277,13 +278,12 @@ export function SessionHeader({ className = "", children, ref, ...props }: Compo
       }}
       className={`row cs-head ${className}`}
     >
-      <SessionListToggle restoreOnly />
       {children}
     </div>
   );
 }
 
-export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
+export function SessionRow({ cs, on, onPick }: { cs: CodingSession; on: boolean; onPick: () => void }) {
   const [label0, c] = STATUS[cs.status];
   const label = cs.location === "local" && cs.status === "queued" ? "Waiting for your computer" : label0;
   const title = cs.title ?? cs.issue_title;
@@ -293,7 +293,10 @@ export function SessionRow({ cs, on }: { cs: CodingSession; on: boolean }) {
         className={`sitem ${on ? "on" : ""}`}
         aria-label={`${cs.issue_key} ${title} · ${label}`}
         title={title}
-        onClick={() => openCoding(`session=${cs.session_id}`)}
+        onClick={() => {
+          onPick();
+          openCoding(`session=${cs.session_id}`);
+        }}
       >
         <span className="cs-row-copy">
           <span className="cs-row-title">
@@ -1498,12 +1501,6 @@ function NewChat({
   const sugg = pid ? SUGGESTIONS : ACROSS;
   return (
     <div className="conv new-conversation">
-      <div className="session-start-header">
-        <SessionListToggle restoreOnly />
-        <ActionButton className="ibtn chat-new-back" onClick={() => open("")} aria-label="Back to conversations">
-          <Ic n="arrow-left" s={16} />
-        </ActionButton>
-      </div>
       <div className="ns">
         <div className="ns-mid">
           <h2 className="ns-title">
@@ -1695,9 +1692,6 @@ export function NewSession({ issue0 }: { issue0: string | null }) {
   };
   return (
     <div className="ns code-start">
-      <div className="session-start-header">
-        <SessionListToggle restoreOnly />
-      </div>
       <div className="ns-mid">
         <Face c={CODING_AGENT.c} size={44} mood="idle" label={CODING_AGENT.name} />
         <h2 className="ns-title">Start a session</h2>
@@ -3005,18 +2999,6 @@ export function Session({ cs }: { cs: CodingSession }) {
   );
 }
 
-/** Whether the window matches `query` now, kept current as it's resized. */
-export function useWide(query: string): boolean {
-  const [on, setOn] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    const change = () => setOn(media.matches);
-    media.addEventListener("change", change);
-    return () => media.removeEventListener("change", change);
-  }, [query]);
-  return on;
-}
-
 const MISSING_THREAD = "This conversation isn't here: it was deleted, or isn't one you can see.";
 
 export const Pending = ({
@@ -3188,80 +3170,51 @@ function Conversations({ search }: { search: URLSearchParams }) {
       : null;
   // Conversations waiting on a decision, Kai's in them included.
   const waitingIn = new Set(allSessions.filter((c) => c.thread_id && WAITING.includes(c.status)).map((c) => c.thread_id));
-  const threads = rows
-    .filter((r) => !q || r.title.toLowerCase().includes(q))
-    .map((r) => (waitingIn.has(r.id) ? { ...r, waiting: true } : r))
-    .sort((a, b) => b.at - a.at);
-  const hasSel = Boolean(threadId || projectKey || across || search.get("q") || search.get("new"));
-  // Column widths, dragged by their edges and kept in this browser.
-  const [listW, setListW] = useStoredSize("dotrix.chat.listWidth", 240, 220, 480);
-  const sidebar = useSessionSidebar("chat", hasSel ? search.toString() : "");
+  const threads = rows.map((r) => (waitingIn.has(r.id) ? { ...r, waiting: true } : r)).sort((a, b) => b.at - a.at);
+  const matches = threads.filter((r) => !q || r.title.toLowerCase().includes(q));
   return (
-    <SessionSidebarContext value={sidebar}>
-      <div className="page flush">
-        <div
-          className={`chat-grid ${hasSel ? "has-sel" : ""} ${sidebar.listOpen ? "list-open" : ""}`}
-          style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
-        >
-          <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
-            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
-            <div style={{ height: 44, padding: "0 16px" }} className="row">
-              <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Chat</h1>
-              <span className="sp" />
-              <SessionListToggle />
-            </div>
-            <div className="chat-new">
-              <ActionButton className="btn btn-secondary" onClick={() => open("new=1")}>
-                <Ic n="square-pen" s={14} /> New chat
-              </ActionButton>
-            </div>
-            <div style={{ padding: "0 14px 8px" }}>
-              <div className="inwrap">
-                <Ic n="search" s={13} />
-                <DesignInput
-                  className="input search-sm"
-                  style={{ width: "100%" }}
-                  placeholder="Find a conversation"
-                  value={S.ui.chatQ}
-                  onChange={(e) => ((S.ui.chatQ = e.target.value), render())}
-                  aria-label="Find"
-                />
-              </div>
-            </div>
-            <nav className="chat-list" aria-label="Conversations" onClick={sidebar.closeList}>
-              {threads.length ? (
-                threads.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} />)
-              ) : (
-                <div className="faint" style={{ fontSize: 12, padding: "6px 8px" }}>
-                  {q ? "No conversation matches." : loaded ? "No conversations yet" : "Loading…"}
-                </div>
-              )}
-            </nav>
-          </aside>
-          <section className="chat-main">
-            {!isLive() && threadId ? (
-              <DemoConversation key={threadId} id={threadId} />
-            ) : threadId ? (
-              thread ? (
-                <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
-              ) : failed ? (
-                <Pending text="The conversation couldn't be loaded." onRetry={retry} />
-              ) : (
-                <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} loading={!loaded} />
-              )
+    <div className="page flush session-page">
+      <SessionTabs
+        area="chat"
+        activeId={threadId}
+        tabs={threads.map((r) => ({ id: r.id, title: r.title, waiting: r.waiting, onSelect: () => open(threadSearch(r)) }))}
+        onNew={() => open("new=1")}
+        copyLink={() => copyText(location.href)}
+        query={S.ui.chatQ}
+        setQuery={(next) => ((S.ui.chatQ = next), render())}
+      >
+        {(close) => (
+          <nav className="chat-list" aria-label="Conversations">
+            {matches.length ? (
+              matches.map((t) => <ThreadRow key={t.id} row={t} on={threadId === t.id} onPick={close} />)
             ) : (
-              <NewChat
-                key={`${projectKey}-${across}-${search.get("q")}`}
-                projectKey={projectKey}
-                across={across}
-                q={search.get("q") ?? ""}
-                agent0={search.get("agent")}
-                mode0={search.get("mode")}
-              />
+              <p className="session-list-empty">{q ? "No conversation matches." : loaded ? "No conversations yet" : "Loading…"}</p>
             )}
-          </section>
-        </div>
-      </div>
-    </SessionSidebarContext>
+          </nav>
+        )}
+      </SessionTabs>
+      <section className="chat-main">
+        {!isLive() && threadId ? (
+          <DemoConversation key={threadId} id={threadId} />
+        ) : threadId ? (
+          thread ? (
+            <Conversation key={thread.id} id={thread.id} projectId={thread.projectId} title={thread.title} />
+          ) : failed ? (
+            <Pending text="The conversation couldn't be loaded." onRetry={retry} />
+          ) : (
+            <Pending text={loaded ? MISSING_THREAD : "Loading the conversation…"} loading={!loaded} />
+          )
+        ) : (
+          <NewChat
+            key={`${projectKey}-${across}-${search.get("q")}`}
+            projectKey={projectKey}
+            across={across}
+            q={search.get("q") ?? ""}
+            agent0={search.get("agent")}
+            mode0={search.get("mode")}
+          />
+        )}
+      </section>
+    </div>
   );
 }

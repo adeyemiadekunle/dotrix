@@ -1,11 +1,10 @@
-import { Input as DesignInput } from "@dotrix/ui/components/input";
 import { ActionButton } from "@dotrix/ui/components/action-button";
 // dotrix's Codes: Kai's sessions, apart from Chat's conversations. The list holds every coding session
 // you can see in one list (pinned first, then the latest); one started from a conversation is marked,
 // links back to it, and still shows as a card there. Stopping, archiving, or deleting a session here leaves the
 // conversation alone, and the other way round.
 // URL: ?session=ID (a session, with &panel=, &turn=, &file=, &line=), ?new=1 (a new session, &issue=KEY), else the list.
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { APPROVAL_MODES, modelName, type ApprovalMode } from "@/lib/agent";
 import { useCodingSessions, type CodingRun, type CodingSession } from "@/lib/coding";
@@ -15,7 +14,6 @@ import { useRoute } from "../core/nav";
 import { ago } from "../core/utils";
 import { isLive, live } from "../data/live";
 import { D, S, demoRuntime, render } from "../data/store";
-import { Splitter, useStoredSize } from "../ui/splitter";
 import { Checkpoint } from "../components/AgentTrace";
 import { SessionDetails } from "../components/SessionDetails";
 import {
@@ -32,7 +30,6 @@ import {
   SessionHeader,
   STATUS,
   openCoding,
-  useWide,
 } from "./Chat";
 import { ChatComposer, ChatComposerInput, ChatLayout, ChatMessageList, ChatSendButton, CodingOptions } from "../components/chat-ui";
 
@@ -49,9 +46,8 @@ import {
   type CodingPaneId,
   type CodingView,
 } from "../components/SidePanel";
-import { SessionListToggle, SessionSidebarContext, useSessionSidebar } from "../components/SessionSidebar";
+import { SessionTabs } from "../components/SessionTabs";
 
-const css = (o: Record<string, string | number>) => o as CSSProperties;
 const ms = (at: string | null | undefined) => (at ? new Date(at).getTime() : Date.now());
 const toList = (): [string, () => void] => ["Back to sessions", () => openCoding("")];
 const parseDemoPanes = (value: string | null): CodingPaneId[] =>
@@ -70,88 +66,63 @@ export function Coding() {
   const all = isLive() ? (sessionsQ.data ?? []) : (demoRuntime()?.codingSessions(D()) ?? []);
   const cs = all.find((c) => c.session_id === sessionId) ?? null;
   const q = S.ui.codingQ.toLowerCase();
-  const found = all.filter((c) => !q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q));
+  const ordered = all.slice().sort((a, b) => Number(b.pinned) - Number(a.pinned) || ms(b.updated_at) - ms(a.updated_at));
+  const found = ordered.filter((c) => !q || `${c.issue_key} ${c.title ?? c.issue_title}`.toLowerCase().includes(q));
   const archivedCount = found.filter((c) => c.archived).length;
   const sessions = found.filter((c) => c.archived === Boolean(S.ui.showArchivedSessions));
-  const hasSel = Boolean(sessionId || search.get("new") || issue);
-  const [listW, setListW] = useStoredSize("dotrix.coding.listWidth", 272, 220, 480);
-  const narrowForPanes = useWide("(max-width: 1799px)");
-  const crowded = Boolean(sessionId && search.get("panel")) && narrowForPanes;
-  const sidebar = useSessionSidebar("coding", hasSel ? search.toString() : "", crowded);
-  // One list, pinned first, then the latest; each row names its issue, so its project.
-  const items = sessions
-    .slice()
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || ms(b.updated_at) - ms(a.updated_at))
-    .map((c) => <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} />);
   return (
-    <SessionSidebarContext value={sidebar}>
-      <div className="page flush">
-        <div
-          className={`chat-grid ${hasSel ? "has-sel" : ""} ${sidebar.listOpen ? "list-open" : ""}`}
-          style={css({ "--list-w": sidebar.hidden ? "0px" : `${listW}px` })}
-        >
-          <aside className="chat-side" id={sidebar.id} hidden={sidebar.hidden}>
-            <Splitter dir="col" className="edge-r" label="Resize the list" onDrag={(delta) => setListW((w) => w + delta)} />
-            <div style={{ height: 44, padding: "0 16px" }} className="row">
-              <h1 style={{ fontSize: "var(--fs-xl)", margin: 0, fontWeight: 600, letterSpacing: "-.015em" }}>Code</h1>
-              <span className="sp" />
-              <SessionListToggle />
-            </div>
-            <div className="chat-new">
-              <ActionButton className="btn btn-secondary" onClick={() => openCoding("new=1")}>
-                <Ic n="square-pen" s={14} /> New session
-              </ActionButton>
-            </div>
-            <div style={{ padding: "0 14px 8px" }}>
-              <div className="inwrap">
-                <Ic n="search" s={13} />
-                <DesignInput
-                  className="input search-sm"
-                  style={{ width: "100%" }}
-                  placeholder="Find a session"
-                  value={S.ui.codingQ}
-                  onChange={(e) => ((S.ui.codingQ = e.target.value), render())}
-                  aria-label="Find"
-                />
-              </div>
-            </div>
-            <nav className="chat-list" aria-label="Sessions" onClick={sidebar.closeList}>
-              {items.length ? (
-                items
-              ) : (
-                <div className="faint" style={{ fontSize: 12, padding: "6px 8px" }}>
-                  {q ? "No session matches." : "No sessions yet"}
-                </div>
-              )}
-              {(archivedCount > 0 || S.ui.showArchivedSessions) && (
-                <button className="linkbtn cs-archived" onClick={() => ((S.ui.showArchivedSessions = !S.ui.showArchivedSessions), render())}>
-                  {S.ui.showArchivedSessions ? "Hide archived sessions" : `Show archived sessions (${archivedCount})`}
-                </button>
-              )}
-            </nav>
-          </aside>
-          <section className="chat-main">
-            {!isLive() && sessionId ? (
-              <DemoSession key={sessionId} id={sessionId} />
-            ) : sessionId ? (
-              cs ? (
-                <Session key={cs.session_id} cs={cs} />
-              ) : sessionsQ.isError ? (
-                <Pending text="The session couldn't be loaded." onRetry={() => void sessionsQ.refetch()} back={toList()} />
-              ) : (
-                <Pending
-                  text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"}
-                  loading={!sessionsQ.isFetched}
-                  back={toList()}
-                />
-              )
+    <div className="page flush session-page">
+      <SessionTabs
+        area="code"
+        activeId={sessionId}
+        tabs={ordered
+          .filter((c) => !c.archived || c.session_id === sessionId)
+          .map((c) => ({
+            id: c.session_id,
+            title: [c.issue_key, c.title ?? c.issue_title].filter(Boolean).join(" "),
+            waiting: c.status === "awaiting_approval" || c.status === "changes_ready",
+            onSelect: () => openCoding(`session=${c.session_id}`),
+          }))}
+        onNew={() => openCoding("new=1")}
+        copyLink={() => copyText(location.href)}
+        query={S.ui.codingQ}
+        setQuery={(next) => ((S.ui.codingQ = next), render())}
+      >
+        {(close) => (
+          <nav className="chat-list" aria-label="Sessions">
+            {sessions.length ? (
+              sessions.map((c) => <SessionRow key={c.session_id} cs={c} on={sessionId === c.session_id} onPick={close} />)
             ) : (
-              <NewSession key={issue ?? ""} issue0={issue} />
+              <p className="session-list-empty">{q ? "No session matches." : "No sessions yet"}</p>
             )}
-          </section>
-        </div>
-      </div>
-    </SessionSidebarContext>
+            {(archivedCount > 0 || S.ui.showArchivedSessions) && (
+              <button className="linkbtn cs-archived" onClick={() => ((S.ui.showArchivedSessions = !S.ui.showArchivedSessions), render())}>
+                {S.ui.showArchivedSessions ? "Hide archived sessions" : `Show archived sessions (${archivedCount})`}
+              </button>
+            )}
+          </nav>
+        )}
+      </SessionTabs>
+      <section className="chat-main">
+        {!isLive() && sessionId ? (
+          <DemoSession key={sessionId} id={sessionId} />
+        ) : sessionId ? (
+          cs ? (
+            <Session key={cs.session_id} cs={cs} />
+          ) : sessionsQ.isError ? (
+            <Pending text="The session couldn't be loaded." onRetry={() => void sessionsQ.refetch()} back={toList()} />
+          ) : (
+            <Pending
+              text={sessionsQ.isFetched ? "This session isn't here: it was deleted, or isn't one you can see." : "Loading the session…"}
+              loading={!sessionsQ.isFetched}
+              back={toList()}
+            />
+          )
+        ) : (
+          <NewSession key={issue ?? ""} issue0={issue} />
+        )}
+      </section>
+    </div>
   );
 }
 

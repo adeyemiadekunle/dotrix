@@ -14,9 +14,12 @@ test("new chat is visible and preserves the full approval mode", async ({ page }
   await expect(options).toBeVisible();
   await expect(options.getByRole("button", { name: "Website Redesign", exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await page.locator(".chat-side").getByRole("button", { name: "Hide the list" }).click();
-  await expect(page.getByRole("button", { name: "Show the list", exact: true })).toBeVisible();
-  await expect(page.locator(".chat-side")).toBeHidden();
+  const browse = page.getByRole("button", { name: "Browse conversations" });
+  await browse.click();
+  await expect(page.getByRole("textbox", { name: "Find a conversation" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Find a conversation" })).toBeHidden();
+  await expect(browse).toBeFocused();
 });
 
 test("mobile Home keeps decisions and notices visible, and keyboard navigation works", async ({ page }) => {
@@ -47,8 +50,14 @@ test("mobile Home keeps decisions and notices visible, and keyboard navigation w
   await page.goto("/w/dotrix/chat");
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Back to conversations" }).click();
-  await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Browse conversations" }).click();
+  await expect(page.getByRole("navigation", { name: "Conversations" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Find a conversation" }).fill("Offline sync");
+  await page
+    .getByRole("navigation", { name: "Conversations" })
+    .getByRole("button", { name: /Offline sync/ })
+    .click();
+  await expect(page.getByRole("navigation", { name: "Chat tabs" }).locator("[aria-current=page]")).toContainText("Offline sync");
 });
 
 test("demo decisions open Inbox details and their sample conversations are readable", async ({ page }) => {
