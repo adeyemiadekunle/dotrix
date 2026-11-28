@@ -136,7 +136,8 @@ async def test_only_operator_reviewed_immutable_images_can_be_selected(db_client
 async def test_resolved_image_is_pinned_and_used_for_worker_execution(db_client, coding, claude, db_session, already_resolved):  # noqa: F811
     ada, _, ws, project, _, sandbox = coding
     sandbox.kind = "openshell"
-    sandbox.image = "sha256:" + "b" * 64
+    # OpenShell pins the approved image's full digest reference: longer than a bare content ID.
+    sandbox.image = "registry.example.com/team/coding@sha256:" + "b" * 64
     calls = []
 
     async def pin_image(reference):
@@ -156,7 +157,7 @@ async def test_resolved_image_is_pinned_and_used_for_worker_execution(db_client,
         await db_session.commit()
     result = await execute(db_client, base, ada.headers, asked)
     assert result["status"] == "changes_ready", result.get("error")
-    assert result["environment_image_id"] == "sha256:" + "b" * 64
+    assert result["environment_image_id"] == "registry.example.com/team/coding@sha256:" + "b" * 64
     assert calls == [sandbox.image if already_resolved else db_client._transport.app.state.settings.coding_image]
 
 
