@@ -275,6 +275,12 @@ Two tracks that can run side by side. The beta opens when both are done.
 - [ ] Registry access on Docker with gVisor, the deployment's sandbox. Today it refuses any turn whose session lists hosts, because the model key is inside the sandbox. Let the egress proxy allow the pinned hosts while keeping the key out, for example by having the proxy add it to model API requests.
 - [ ] Docker Cloud's network policy on a real account: exact hosts, `*.domain`, `host:port` entries and the blocked-host report.
 
+**Variables and secrets for Kai's sandboxes.** Per project, in its Environment beside the network policy; a session keeps its environment's version. Local turns never receive cloud secrets.
+
+1. [x] Variables (2026-11-28, synthetic tests only): non-secret `KEY=value` pairs in the project's Environment, in `.env` format in the "Edit environment" form, shown in the brief and set for setup, Kai's commands and verification on cloud turns. Names the sandbox or tools use, and names that look like secrets, are refused.
+2. [ ] Host secrets: the egress proxy adds a credential to requests for one host in the session's network policy, so the sandbox only ever holds a placeholder. The same proxy work keeps the model key out of the Docker with gVisor sandbox (the registry-access item above). Write-only, encrypted, audited without values; optional workspace-shared secrets that a project must reference by name.
+3. [ ] Setup-only secrets: given to the setup script and gone before Kai runs.
+
 **Production release gates.**
 
 - Every unticked item in [Readiness checks](#readiness-checks): HTTPS and secrets (you), host isolation (gVisor `runsc` on the real host), backups and restores, migrations, email and account recovery, provider and GitHub setup, and failure handling. Run the core loop check on the deployed host with fx as the default.

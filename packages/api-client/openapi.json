@@ -24466,7 +24466,7 @@
           "coding"
         ],
         "summary": "Set Cloud Environment",
-        "description": "Save an administrator's cloud environment profile using its current revision.\nStale revisions or unapproved images return 409. New cloud sessions pin the saved profile;\nexisting sessions retain their admitted snapshot. This action never starts coding or runs scripts.",
+        "description": "Save an administrator's cloud environment (name, image, scripts, variables) using its current revision, and,\nwhen `network` is given, the project's network policy with it, in one transaction. Stale revisions, unapproved\nimages and hosts outside the workspace's limit return 409; refused variable names 422. New cloud sessions pin the\nsaved environment; existing sessions keep theirs. This action never starts coding or runs scripts.",
         "operationId": "set_cloud_environment",
         "security": [
           {
@@ -24500,7 +24500,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EnvironmentUpdate"
+                "$ref": "#/components/schemas/EnvironmentSave"
               }
             }
           }
@@ -33455,6 +33455,14 @@
             "title": "Timeout Seconds",
             "default": 300
           },
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Variables",
+            "description": "Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused"
+          },
           "image_policy": {
             "type": "string",
             "enum": [
@@ -33479,7 +33487,7 @@
         ],
         "title": "EnvironmentRead"
       },
-      "EnvironmentUpdate": {
+      "EnvironmentSave": {
         "properties": {
           "revision": {
             "type": "integer",
@@ -33528,6 +33536,25 @@
             "minimum": 10.0,
             "title": "Timeout Seconds",
             "default": 300
+          },
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Variables",
+            "description": "Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxNetworkUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project's network policy, saved with the environment; None leaves it as it is"
           }
         },
         "additionalProperties": false,
@@ -33535,7 +33562,8 @@
         "required": [
           "revision"
         ],
-        "title": "EnvironmentUpdate"
+        "title": "EnvironmentSave",
+        "description": "The environment and, when given, the project's network policy, saved together from one form."
       },
       "EpicProgress": {
         "properties": {

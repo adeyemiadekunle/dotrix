@@ -4930,9 +4930,10 @@ export interface paths {
         get: operations["get_cloud_environment"];
         /**
          * Set Cloud Environment
-         * @description Save an administrator's cloud environment profile using its current revision.
-         *     Stale revisions or unapproved images return 409. New cloud sessions pin the saved profile;
-         *     existing sessions retain their admitted snapshot. This action never starts coding or runs scripts.
+         * @description Save an administrator's cloud environment (name, image, scripts, variables) using its current revision, and,
+         *     when `network` is given, the project's network policy with it, in one transaction. Stale revisions, unapproved
+         *     images and hosts outside the workspace's limit return 409; refused variable names 422. New cloud sessions pin the
+         *     saved environment; existing sessions keep theirs. This action never starts coding or runs scripts.
          */
         put: operations["set_cloud_environment"];
         post?: never;
@@ -8336,6 +8337,13 @@ export interface components {
              */
             timeout_seconds: number;
             /**
+             * Variables
+             * @description Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused
+             */
+            variables?: {
+                [key: string]: string;
+            };
+            /**
              * Image Policy
              * @default platform
              * @enum {string}
@@ -8344,8 +8352,11 @@ export interface components {
             /** Available Images */
             available_images?: string[];
         };
-        /** EnvironmentUpdate */
-        EnvironmentUpdate: {
+        /**
+         * EnvironmentSave
+         * @description The environment and, when given, the project's network policy, saved together from one form.
+         */
+        EnvironmentSave: {
             /** Revision */
             revision: number;
             /**
@@ -8375,6 +8386,15 @@ export interface components {
              * @default 300
              */
             timeout_seconds: number;
+            /**
+             * Variables
+             * @description Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused
+             */
+            variables?: {
+                [key: string]: string;
+            };
+            /** @description The project's network policy, saved with the environment; None leaves it as it is */
+            network?: components["schemas"]["SandboxNetworkUpdate"] | null;
         };
         /** EpicProgress */
         EpicProgress: {
@@ -28106,7 +28126,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EnvironmentUpdate"];
+                "application/json": components["schemas"]["EnvironmentSave"];
             };
         };
         responses: {

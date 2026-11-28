@@ -23,7 +23,7 @@ from dotrix_backend.modules.workspaces.models import Membership
 from dotrix_backend.modules.workspaces.permissions import Permission
 
 from . import inputs
-from .environments import EnvironmentRead, EnvironmentUpdate, profile, require_approved_image
+from .environments import EnvironmentRead, EnvironmentSave, profile, require_approved_image
 from .files import TurnFiles
 from .local import LocalRunners
 from .network import SandboxNetwork
@@ -470,10 +470,11 @@ async def get_cloud_environment(access: ProjectViewer, settings: SettingsDep) ->
 
 
 @router.put("/environment", responses=errors(403, 409, 422))
-async def set_cloud_environment(data: EnvironmentUpdate, access: ProjectNetworkEditor, session: SessionDep, settings: SettingsDep) -> EnvironmentRead:
-    """Save an administrator's cloud environment profile using its current revision.
-    Stale revisions or unapproved images return 409. New cloud sessions pin the saved profile;
-    existing sessions retain their admitted snapshot. This action never starts coding or runs scripts."""
+async def set_cloud_environment(data: EnvironmentSave, access: ProjectNetworkEditor, session: SessionDep, settings: SettingsDep) -> EnvironmentRead:
+    """Save an administrator's cloud environment (name, image, scripts, variables) using its current revision, and,
+    when `network` is given, the project's network policy with it, in one transaction. Stale revisions, unapproved
+    images and hosts outside the workspace's limit return 409; refused variable names 422. New cloud sessions pin the
+    saved environment; existing sessions keep theirs. This action never starts coding or runs scripts."""
     from sqlalchemy import select
 
     from dotrix_backend.core.errors import Conflict
@@ -488,10 +489,16 @@ async def set_cloud_environment(data: EnvironmentUpdate, access: ProjectNetworkE
     before = profile(project.coding_environment)
     if before.revision != data.revision:
         raise Conflict("The environment changed; reload it before saving")
-    updated = profile({**data.model_dump(), "revision": before.revision + 1})
-    project.coding_environment = updated.model_dump()
+    if data.network is not None:  # first: a refusal (outside the workspace's limit) changes nothing
+        from dotrix_backend.modules.workspaces.models import Workspace
+
+        SandboxNetwork(session).change_project(access.member, project, data.network,
+                                               await session.get(Workspace, access.member.workspace_id))
+    updated = profile({**data.model_dump(exclude={"network"}), "revision": before.revision + 1})
+    project.coding_environment = updated.model_dump(exclude={"image_policy", "available_images"})
     AuditLog(session).record(workspace_id=project.workspace_id, project_id=project.id,
         action="coding_environment.updated", target=str(project.id), actor_type=AuthorType.USER,
-        actor_user_id=access.member.user_id, details={"revision": updated.revision, "enabled": updated.enabled})
+        actor_user_id=access.member.user_id, details={"revision": updated.revision, "enabled": updated.enabled,
+                                                       "variables": sorted(updated.variables)})
     await session.commit()
     return updated.model_copy(update={"available_images": settings.coding_environment_images})

@@ -438,7 +438,7 @@ export async function cloudEnvironment(projectId: string): Promise<CloudEnvironm
     }),
   );
 }
-export async function cloudEnvironmentSaved(projectId: string, body: Schemas["EnvironmentUpdate"]): Promise<CloudEnvironment> {
+export async function cloudEnvironmentSaved(projectId: string, body: Schemas["EnvironmentSave"]): Promise<CloudEnvironment> {
   return unwrap(
     api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment", {
       params: { path: { workspace_id: live.ws!.id, project_id: projectId } },

@@ -611,7 +611,10 @@ class CodingService:
                     f"Image: {configured.image or self.settings.coding_image}\n"
                     "Administrator setup runs before Kai; verification must pass before changes can be published.\n"
                     + fence("Setup script (administrator configuration)", configured.setup_script)
-                    + fence("Verification script (administrator configuration)", configured.verify_script)))
+                    + fence("Verification script (administrator configuration)", configured.verify_script)
+                    + (fence("Variables (administrator configuration, set for setup, your commands and verification)",
+                             "\n".join(f"{k}={v}" for k, v in configured.variables.items()))
+                       if configured.variables else "")))
         if location is CodingLocation.LOCAL:
             catalog = ("## Pinned skill catalog\nUse these exact versions for this turn. Skills do not grant tools or permissions.\n"
                        + "\n\n".join(fence(f"skill {name} sha256:{item['sha256']}", item["content"])

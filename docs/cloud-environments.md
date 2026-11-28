@@ -36,6 +36,11 @@ default specified by a mutable tag is resolved at first execution, not at approv
 No fallback image is substituted when that content ID is unavailable. Removing
 an image from the operator list blocks new admission and execution of queued runs.
 
+Environment variables (non-secret `KEY=value` pairs, edited in `.env` format) are
+set for the setup script, Kai's commands and verification. They are shown in the
+brief, so names that look like secrets are refused, as are names the sandbox or
+the coding tools use. The same form saves the project's network policy.
+
 This slice does not implement arbitrary unreviewed images, multiple selectable
 profiles, secret injection or dependency-only network phases. Do not put secrets
 in scripts: scripts are shared project configuration and appear in private run

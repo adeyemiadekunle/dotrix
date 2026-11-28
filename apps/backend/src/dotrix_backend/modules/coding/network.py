@@ -118,7 +118,14 @@ class SandboxNetwork:
         return await self.workspace(member)
 
     async def set_project(self, member: Membership, project: Project, data: SandboxNetworkUpdate) -> SandboxNetworkRead:
-        workspace = await self.session.get(Workspace, member.workspace_id)
+        self.change_project(member, project, data, await self.session.get(Workspace, member.workspace_id))
+        await self.session.commit()
+        return await self.project(member, project)
+
+    def change_project(self, member: Membership, project: Project, data: SandboxNetworkUpdate,
+                       workspace: Workspace | None) -> None:
+        """Set the project's network policy, within the workspace's limit, and audit it; the caller commits (the
+        environment form saves it with the environment, in one transaction)."""
         stored = self._stored(data)
         limit = limit_of(workspace)
         outside = [h for h in expand(stored) if limit is not None and not network_policy.within(limit, h)]
@@ -130,8 +137,6 @@ class SandboxNetwork:
         if before != after:
             self._record(member, project, {"scope": "project", "added": [h for h in after if h not in before],
                                            "removed": [h for h in before if h not in after]})
-        await self.session.commit()
-        return await self.project(member, project)
 
     @staticmethod
     def _stored(data: SandboxNetworkUpdate | SandboxNetworkLimitUpdate) -> dict[str, Any] | None:
