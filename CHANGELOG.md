@@ -38,6 +38,7 @@ publishes the GitHub release. See [Branches and releases](CLAUDE.md#branches-and
 - Added `DOTRIX_SPECIALIST_CONCURRENCY` (default `4`, max `6`) and `SpecialistTask.allow_partial_dependencies` so Nova can fan out up to four independent read-only specialists in parallel and opt downstream tasks into proceeding when an upstream dependency returns `status="partial"`.
 
 ### Changed
+- `@dotrix/ui`'s chart (`components/chart.tsx`) follows shadcn/ui's current new-york-v4 registry: the chart's container gets an initial size before it measures itself (no zero-size first render), and tooltip values and names use Recharts 3's types.
 - The backend image is 1.58 GB, down from 2.37 GB: uv's download cache is a build cache mount instead of 533 MB in a layer, and the Docker CLI the worker no longer uses is gone. `deploy/README.md` records the measured image, start time, memory and throughput.
 
 - OpenShell sandboxes now take the hosts in a coding session's network policy: each becomes an endpoint in the sandbox's policy, TLS relayed as is, for any program in the sandbox (`*.domain` as OpenShell's `**.domain`). OpenShell already kept the model key out (a placeholder in the sandbox), so a listed host can't receive it; before, a turn with hosts was refused. Approved custom environment images now run on OpenShell (they required the Docker sandbox). Not yet run on a real gateway. `coding_runs.environment_image_id` is widened to 512 characters (migration `c0d146a04609`), since OpenShell records the image's full digest reference.
