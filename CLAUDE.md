@@ -58,7 +58,7 @@ An early idea is a lightweight draft project, without mandatory GitHub, dates or
 
 ## Solo-first release direction
 
-The [solo-first product direction](docs/product.md) defines the first-release experience, onboarding, scope decisions, delivery phases and release criteria. Prioritize a reliable solo developer journey from an idea or repository to a reviewed change. Keep existing workspace isolation, permissions and data; team collaboration is a later release phase. Implementation and deployment status must be verified, not inferred from this plan; [beta readiness](docs/product.md#readiness-checks) is the beta's checklist, supported configuration and known limitations (2026-11-09). The safety and authorization rules in this file continue to apply.
+The [solo-first product direction](docs/product.md) defines the first-release experience, onboarding, scope decisions, delivery phases and release criteria. Prioritize a reliable solo developer journey from an idea or repository to a reviewed change. Keep existing workspace isolation, permissions and data; team collaboration is a later release phase. Implementation and deployment status must be verified, not inferred from this plan; [product.md](docs/product.md) holds the beta's supported configuration and known limitations (2026-11-09), and [live and production checks](docs/live-checks.md) is the one checklist for what needs a paid model, a real sandbox, a real machine or the deployed host, the beta's readiness checks included. The safety and authorization rules in this file continue to apply.
 
 ## Personal workspaces launch first (2026-11-09)
 
