@@ -49,9 +49,9 @@ x-dotrix: &dotrix
     DOTRIX_GITHUB_CLIENT_SECRET: ${DOTRIX_GITHUB_CLIENT_SECRET:-}
     DOTRIX_SEARXNG_URL: ${DOTRIX_COMPOSE_SEARXNG_URL:-http://searxng:8080}
     DOTRIX_SEARCH_PROVIDER: ${DOTRIX_SEARCH_PROVIDER:-searxng}
-    # Coding runs (the worker): sandboxes on Docker Cloud (docker-cloud: the image from a registry), or
-    # on this host's Docker through the socket proxy below (docker: the image built here).
-    DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
+    # Coding runs (the worker): sandboxes on Docker Cloud, the coding image from a registry
+    # (DOTRIX_CODING_IMAGE, published by the coding-image workflow). `off` turns cloud coding off.
+    DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker-cloud}
     DOTRIX_CODING_ENVIRONMENT_IMAGES: ${DOTRIX_CODING_ENVIRONMENT_IMAGES:-[]}
     DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:${DOTRIX_VERSION:-latest}}
     DOTRIX_DOCKER_CLOUD_ID: ${DOTRIX_DOCKER_CLOUD_ID:-}
@@ -60,22 +60,15 @@ x-dotrix: &dotrix
     DOTRIX_CODING_WEB_TOOLS: ${DOTRIX_CODING_WEB_TOOLS:-false}
     DOTRIX_CODING_FORK_OWNER: ${DOTRIX_CODING_FORK_OWNER:?the GitHub organisation coding branches go to (deploy/README.md)}
     DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
-    DOTRIX_CODING_MEMORY: ${DOTRIX_CODING_MEMORY:-3g}
     DOTRIX_CODING_CPUS: ${DOTRIX_CODING_CPUS:-2}
     DOTRIX_CODING_WARM_MAX: ${DOTRIX_CODING_WARM_MAX:-1}
     DOTRIX_CODING_IDLE_MINUTES: ${DOTRIX_CODING_IDLE_MINUTES:-15}
-    DOTRIX_CODING_DOCKER_RUNTIME: ${DOTRIX_CODING_DOCKER_RUNTIME:-runsc}
 
 services:
-  # The images, built on this host (so its Docker has the coding image the worker starts).
+  # The images built on this host. The coding image comes from a registry (Docker Cloud pulls it).
   backend-image:
     image: dotrix-backend:${DOTRIX_VERSION:-latest}
     build: { context: .., dockerfile: deploy/backend.Dockerfile, secrets: [kai_packages_token] }
-    command: ["true"]
-    restart: "no"
-  coding-image:
-    image: dotrix-coding:${DOTRIX_VERSION:-latest}
-    build: { context: ../infra/coding, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
 
@@ -122,33 +115,11 @@ services:
     <<: *dotrix
     environment:
       <<: *dotrix-env
-      DOCKER_HOST: tcp://docker-proxy:2375
-    networks: [default, docker-control]
     command: ["python", "-m", "dotrix_backend.worker"]
     depends_on:
       migrate: { condition: service_completed_successfully }
       searxng: { condition: service_healthy }
-      coding-image: { condition: service_completed_successfully }
-      docker-proxy: { condition: service_started }
       redis: { condition: service_started }
-
-  # Only what the coding sandbox needs from Docker (containers, exec, networks, volumes, images),
-  # and only the worker can reach it. The socket itself is never mounted into dotrix's containers.
-  docker-proxy:
-    image: tecnativa/docker-socket-proxy:0.3.0
-    restart: unless-stopped
-    networks: [docker-control]
-    environment:
-      CONTAINERS: 1
-      EXEC: 1
-      NETWORKS: 1
-      VOLUMES: 1
-      IMAGES: 1
-      POST: 1
-      # Listen on IPv4 only: hosts without IPv6 refuse its default [::] socket, and only Docker's IPv4
-      # network reaches it.
-      DISABLE_IPV6: 1
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
 
   postgres:
     image: pgvector/pgvector:pg17-trixie
@@ -201,10 +172,6 @@ services:
 secrets:
   kai_packages_token:
     environment: KAI_PACKAGES_TOKEN
-
-networks:
-  docker-control:
-    internal: true
 
 volumes:
   pgdata:

@@ -44,7 +44,6 @@ from dotrix_backend.core.settings import Settings
 from .models import CodingAgent
 from .sandbox import (
     CAPTURE_LIMIT,
-    DOCKER_HOME,
     STDERR_TAIL,
     ExecResult,
     LineHandler,
@@ -56,6 +55,7 @@ from .tools import CodingTool
 
 logger = logging.getLogger(__name__)
 
+DOCKER_HOME = "/sandbox"  # the coding image's sandbox user's home; the repo goes in its `repo`
 API_URL = "https://connect.docker.com/sandboxes"
 TOKEN_URL = "https://hub.docker.com/v2/auth/token"  # a PAT exchanged for a short-lived access token
 TOKEN_LIFETIME = 240.0  # seconds an access token is reused before it's exchanged again

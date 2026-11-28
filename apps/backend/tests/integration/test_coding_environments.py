@@ -59,7 +59,7 @@ async def test_administrator_version_checks_and_pinned_approval(db_client, codin
 ])
 async def test_failed_environment_never_publishes(db_client, coding, claude, github, setup, verification, message):  # noqa: F811
     ada, _, ws, project, _, sandbox = coding
-    sandbox.kind = "docker"  # Scripted transport only; this does not claim real container isolation.
+    sandbox.kind = "openshell"  # Scripted transport only; this does not claim real container isolation.
     base = f"{ws}/projects/{project['id']}"
     assert (await configure(db_client, base, ada.headers, setup_script=setup, verify_script=verification)).status_code == 200
     claude.edits = {"src/payments.py": "def refund(amount):\n    return amount\n"}
@@ -73,7 +73,7 @@ async def test_failed_environment_never_publishes(db_client, coding, claude, git
 
 async def test_successful_environment_keeps_manual_changes_unpublished(db_client, coding, claude, github):  # noqa: F811
     ada, _, ws, project, _, sandbox = coding
-    sandbox.kind = "docker"
+    sandbox.kind = "openshell"
     base = f"{ws}/projects/{project['id']}"
     assert (await configure(db_client, base, ada.headers, setup_script="python3 --version",
                            verify_script="python3 -B -c 'from src.payments import refund; assert refund(7)==7'")).status_code == 200
@@ -114,7 +114,7 @@ async def test_native_sessions_do_not_receive_cloud_setup(db_client, coding, che
 
 async def test_only_operator_reviewed_immutable_images_can_be_selected(db_client, coding):  # noqa: F811
     ada, _, ws, project, _, sandbox = coding
-    sandbox.kind = "docker"
+    sandbox.kind = "openshell"
     base = f"{ws}/projects/{project['id']}"
     image = "registry.example.com/team/coding@sha256:" + "a" * 64
     assert (await configure(db_client, base, ada.headers, image="registry.example.com/team/coding:latest")).status_code == 422
@@ -135,8 +135,9 @@ async def test_only_operator_reviewed_immutable_images_can_be_selected(db_client
 @pytest.mark.parametrize("already_resolved", [False, True])
 async def test_resolved_image_is_pinned_and_used_for_worker_execution(db_client, coding, claude, db_session, already_resolved):  # noqa: F811
     ada, _, ws, project, _, sandbox = coding
-    sandbox.kind = "docker"
-    sandbox.image = "sha256:" + "b" * 64
+    sandbox.kind = "openshell"
+    # OpenShell pins the approved image's full digest reference: longer than a bare content ID.
+    sandbox.image = "registry.example.com/team/coding@sha256:" + "b" * 64
     calls = []
 
     async def pin_image(reference):
@@ -156,7 +157,7 @@ async def test_resolved_image_is_pinned_and_used_for_worker_execution(db_client,
         await db_session.commit()
     result = await execute(db_client, base, ada.headers, asked)
     assert result["status"] == "changes_ready", result.get("error")
-    assert result["environment_image_id"] == "sha256:" + "b" * 64
+    assert result["environment_image_id"] == "registry.example.com/team/coding@sha256:" + "b" * 64
     assert calls == [sandbox.image if already_resolved else db_client._transport.app.state.settings.coding_image]
 
 
@@ -239,7 +240,7 @@ async def test_variables_are_checked_pinned_and_set_for_setup_kai_and_verificati
     from dotrix_backend.modules.coding.models import CodingRun
 
     ada, _, ws, project, _, sandbox = coding
-    sandbox.kind = "docker"  # Scripted transport only; this does not claim real container isolation.
+    sandbox.kind = "openshell"  # Scripted transport only; this does not claim real container isolation.
     base = f"{ws}/projects/{project['id']}"
     for bad in ({"PATH": "/tmp"}, {"GIT_DIR": "x"}, {"NPM_TOKEN": "x"}, {"STRIPE_KEY": "x"}, {"1BAD": "x"},
                 {"LOG_LEVEL": "a\nb"}):

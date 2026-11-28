@@ -547,8 +547,8 @@ class CodingWorker:
                 require_approved_image(configured.image, self.settings.coding_environment_images)
             except Conflict as exc:
                 raise RunFailed("The environment image is no longer approved; ask the operator to review it") from exc
-            if configured.image and self.sandbox.kind != "docker":
-                raise RunFailed("Approved custom images currently require the Docker sandbox")
+            if configured.image and self.sandbox.kind != "openshell":
+                raise RunFailed("Approved custom images currently require the OpenShell sandbox")
             if hasattr(self.sandbox, "pin_image"):
                 try:
                     run_sandbox = await self.sandbox.pin_image(environment_image_id or configured.image or self.settings.coding_image)

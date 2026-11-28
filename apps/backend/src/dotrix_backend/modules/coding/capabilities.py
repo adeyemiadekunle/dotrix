@@ -22,7 +22,7 @@ def _terminal(run, planning: bool) -> tuple[bool, str | None]:
 def describe(run, settings) -> list[dict]:
     tool = tool_for(run.agent, run.model, settings)
     planning = run.work_mode == "plan"
-    browser = not planning and run.location is CodingLocation.CLOUD and settings.coding_sandbox in {"docker", "docker-cloud", "openshell"} and tool.browser
+    browser = not planning and run.location is CodingLocation.CLOUD and settings.coding_sandbox in {"docker-cloud", "openshell"} and tool.browser
     terminal, terminal_reason = _terminal(run, planning)
     return [
         {"id": "repository.read", "label": "Read repository", "available": True, "reason": None},

@@ -1,11 +1,12 @@
 """Live coding on real models: one of Kai's turns on each engine (Claude Code, Codex, OpenCode, fx) and
-provider (Anthropic, OpenAI, NVIDIA), in the Docker sandbox through its egress proxy, from the issue to the PR.
+provider (Anthropic, OpenAI, NVIDIA), in a real sandbox, from the issue to the PR.
 Each runs only when its provider's key is given (DOTRIX_LIVE_ANTHROPIC_API_KEY, DOTRIX_LIVE_OPENAI_API_KEY, DOTRIX_LIVE_NVIDIA_API_KEY)
-and the coding image is built (docker build -t dotrix-coding:latest infra/coding); each makes paid calls."""
+and a sandbox is: DOTRIX_LIVE_CODING_SANDBOX=openshell (a gateway selected for the `openshell` CLI, the coding image
+and the provider profiles imported; infra/coding/README.md) or docker-cloud (DOTRIX_DOCKER_CLOUD_ID, DOTRIX_DOCKER_CLOUD_PAT
+and DOTRIX_LIVE_CODING_IMAGE, a registry reference). Each makes paid calls."""
 import dataclasses
 import json
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,9 +21,10 @@ from apps.backend.tests.integration.test_coding import (  # noqa: F401  (fixture
     origin,
 )
 from dotrix_backend.modules.coding.runner import CodingWorker
-from dotrix_backend.modules.coding.sandbox import DockerSandbox
+from dotrix_backend.modules.coding.sandbox import build_sandbox
 
-IMAGE = "dotrix-coding:latest"
+SANDBOX = os.environ.get("DOTRIX_LIVE_CODING_SANDBOX", "")
+IMAGE = os.environ.get("DOTRIX_LIVE_CODING_IMAGE", "dotrix-coding:latest")
 KEYS = {"anthropic": "DOTRIX_LIVE_ANTHROPIC_API_KEY", "openai": "DOTRIX_LIVE_OPENAI_API_KEY",
         "nvidia": "DOTRIX_LIVE_NVIDIA_API_KEY"}
 ENGINES = [
@@ -37,11 +39,26 @@ ENGINES = [
 ]
 
 
-def _image() -> bool:
-    try:
-        return subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, check=False).returncode == 0
-    except OSError:
-        return False
+def _sandbox_ready() -> bool:
+    if SANDBOX == "openshell":
+        return True
+    if SANDBOX == "docker-cloud":
+        return bool(os.environ.get("DOTRIX_DOCKER_CLOUD_ID") and os.environ.get("DOTRIX_DOCKER_CLOUD_PAT")
+                    and "/" in IMAGE.split("@")[0])
+    return False
+
+
+def _use_sandbox(settings):
+    """The real sandbox the live tests run in (DOTRIX_LIVE_CODING_SANDBOX), from the test app's settings."""
+    from pydantic import SecretStr
+
+    settings.coding_sandbox, settings.coding_image = SANDBOX, IMAGE
+    if SANDBOX == "docker-cloud":
+        settings.docker_cloud_id = os.environ["DOTRIX_DOCKER_CLOUD_ID"]
+        settings.docker_cloud_pat = SecretStr(os.environ["DOTRIX_DOCKER_CLOUD_PAT"])
+    sandbox = build_sandbox(settings)
+    assert sandbox is not None
+    return sandbox
 
 
 def _cases():
@@ -49,21 +66,20 @@ def _cases():
         variable = KEYS[model.partition(":")[0]]
         yield pytest.param(agent, model, id=f"{agent}-{model.partition(':')[0]}", marks=[
             pytest.mark.skipif(not os.environ.get(variable), reason=f"Live model test: set {variable}"),
-            pytest.mark.skipif(not _image(), reason=f"needs Docker and {IMAGE}"),
+            pytest.mark.skipif(not _sandbox_ready(), reason="needs DOTRIX_LIVE_CODING_SANDBOX (openshell or docker-cloud)"),
         ])
 
 
 @pytest.mark.parametrize(("agent", "model"), list(_cases()))
-async def test_live_kai_turn_in_docker_opens_a_pr(
+async def test_live_kai_turn_in_a_sandbox_opens_a_pr(
     db_client: AsyncClient, coding, github, origin: Path, agent_script, agent, model,  # noqa: F811
 ) -> None:
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
-    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
     jobs = app.state.jobs
     worker: CodingWorker = jobs.ctx.coding
-    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=_use_sandbox(settings)))
     provider = model.partition(":")[0]
     await _save_key(db_client, ada.headers, provider, os.environ[KEYS[provider]])
     agent_script.say("Looks right.")
@@ -97,10 +113,9 @@ async def test_live_skills_follow_what_kai_changed(
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
-    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
     jobs = app.state.jobs
     worker: CodingWorker = jobs.ctx.coding
-    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=_use_sandbox(settings)))
     provider = model.partition(":")[0]
     await _save_key(db_client, ada.headers, provider, os.environ[KEYS[provider]])
     agent_script.say("Looks right.")
@@ -143,10 +158,9 @@ async def test_live_an_unclear_issue_never_reaches_main_unreviewed(
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
-    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
     jobs = app.state.jobs
     worker: CodingWorker = jobs.ctx.coding
-    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=dataclasses.replace(worker, sandbox=_use_sandbox(settings)))
     provider = model.partition(":")[0]
     await _save_key(db_client, ada.headers, provider, os.environ[KEYS[provider]])
     agent_script.say("This builds a checkout the issue never described; send it back with questions.")
@@ -175,10 +189,9 @@ async def test_live_kai_loads_a_pinned_skill_resource(
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app  # type: ignore[attr-defined]
     settings = app.state.settings
-    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
     worker = app.state.jobs.ctx.coding
     app.state.jobs.ctx = dataclasses.replace(app.state.jobs.ctx,
-        coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings)))
+        coding=dataclasses.replace(worker, sandbox=_use_sandbox(settings)))
     provider = model.partition(":")[0]
     await _save_key(db_client, ada.headers, provider, os.environ[KEYS[provider]])
     base = f"{ws}/projects/{kun['id']}"
@@ -212,16 +225,14 @@ async def test_live_kai_loads_a_pinned_skill_resource(
 async def test_live_nvidia_bug_and_browser(
     db_client: AsyncClient, coding, github, origin: Path, agent_script, storage, agent, model,  # noqa: F811
 ) -> None:
-    """Real provider and gVisor containers; disposable git and simulated GitHub/reviewer only."""
+    """Real provider and sandbox; disposable git and simulated GitHub/reviewer only."""
     ada, _, ws, kun, _, _ = coding
     app = db_client._transport.app
     settings = app.state.settings
-    settings.coding_sandbox, settings.coding_image = "docker", IMAGE
-    settings.coding_docker_runtime = "runsc"
     settings.coding_timeout_minutes = 5
     worker = app.state.jobs.ctx.coding
     app.state.jobs.ctx = dataclasses.replace(app.state.jobs.ctx,
-        coding=dataclasses.replace(worker, sandbox=DockerSandbox(settings), storage=storage))
+        coding=dataclasses.replace(worker, sandbox=_use_sandbox(settings), storage=storage))
     await _save_key(db_client, ada.headers, "nvidia", os.environ[KEYS["nvidia"]])
     # The test starts after setup; no external repository or GitHub write is possible.
     (origin / ".gitignore").write_text("__pycache__/\n")

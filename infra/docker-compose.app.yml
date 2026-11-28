@@ -37,7 +37,9 @@ x-backend: &backend
     DOTRIX_SEARCH_PROVIDER: ${DOTRIX_SEARCH_PROVIDER:-searxng}
     DOTRIX_JOBS: worker
     DOTRIX_CODE_DIR: /data/code
-    DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-docker}
+    # Cloud coding in development runs in OpenShell from a native worker (`pnpm dev:worker`,
+    # infra/coding/README.md); this stack's worker has no gateway, so it's off unless you set one up.
+    DOTRIX_CODING_SANDBOX: ${DOTRIX_CODING_SANDBOX:-off}
     DOTRIX_CODING_IMAGE: ${DOTRIX_CODING_IMAGE:-dotrix-coding:latest}
     # Only two cloud turns run at once; idle caching is configured separately.
     DOTRIX_CODING_MAX_RUNS: ${DOTRIX_CODING_MAX_RUNS:-2}
@@ -86,37 +88,16 @@ services:
     <<: *backend
     environment:
       <<: *backend-env
-      DOCKER_HOST: tcp://docker-proxy:2375
-    networks: [default, docker-control]
     command: ["python", "-m", "dotrix_backend.worker"]
     depends_on:
       migrate: { condition: service_completed_successfully }
       searxng: { condition: service_healthy }
-      coding-image: { condition: service_completed_successfully }
-      docker-proxy: { condition: service_started }
 
   coding-image:
     image: dotrix-coding:latest
     build: { context: ./infra/coding, secrets: [kai_packages_token] }
     command: ["true"]
     restart: "no"
-
-  # Only the worker can reach this restricted Docker API; neither API nor web gets the socket.
-  docker-proxy:
-    image: tecnativa/docker-socket-proxy:0.3.0
-    restart: unless-stopped
-    networks: [docker-control]
-    environment:
-      CONTAINERS: 1
-      EXEC: 1
-      NETWORKS: 1
-      VOLUMES: 1
-      IMAGES: 1
-      POST: 1
-      # Listen on IPv4 only: hosts without IPv6 refuse its default [::] socket, and only Docker's IPv4
-      # network reaches it.
-      DISABLE_IPV6: 1
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
 
   web:
     build: { context: ., dockerfile: deploy/web.Dockerfile }
@@ -169,7 +150,3 @@ secrets:
 
 volumes:
   codecache:
-
-networks:
-  docker-control:
-    internal: true

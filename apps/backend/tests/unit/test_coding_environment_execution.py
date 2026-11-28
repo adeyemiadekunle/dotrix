@@ -45,45 +45,13 @@ async def test_timeout_is_a_failure_and_output_is_not_in_the_error():
     assert "credential-marker" not in str(caught.value)
 
 
-async def test_resolving_an_image_does_not_mutate_the_shared_sandbox_factory():
+async def test_pinning_an_image_does_not_mutate_the_shared_sandbox_factory():
     from dotrix_backend.core.settings import Settings
-    from dotrix_backend.modules.coding.sandbox import DockerSandbox, SandboxError
+    from dotrix_backend.modules.coding.sandbox import OpenShellSandbox
 
-    sandbox = DockerSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
+    sandbox = OpenShellSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
         jwt_secret="test-only-secret-long-enough-for-settings", coding_image="dotrix-coding:latest"))
-    calls = []
-
-    async def cli(*args):
-        calls.append(args)
-        return "sha256:" + "a" * 64
-
-    sandbox.cli = cli
-    pinned = await sandbox.pin_image("reviewed/image@sha256:" + "b" * 64)
-    assert pinned is not sandbox and pinned.image == "sha256:" + "a" * 64
+    reviewed = "reviewed/image@sha256:" + "b" * 64
+    pinned = await sandbox.pin_image(reviewed)
+    assert pinned is not sandbox and pinned.image == reviewed  # a digest is already immutable
     assert sandbox.image == "dotrix-coding:latest"
-    assert calls[0][-1] == "reviewed/image@sha256:" + "b" * 64
-
-    async def invalid(*args):
-        return "mutable-tag"
-
-    sandbox.cli = invalid
-    with pytest.raises(SandboxError, match="immutable"):
-        await sandbox.pin_image("dotrix-coding:latest")
-
-
-async def test_docker_command_failure_stays_a_command_failure_while_container_is_running(monkeypatch):
-    from dotrix_backend.core.settings import Settings
-    from dotrix_backend.modules.coding.sandbox import DockerSandbox, DockerSession
-
-    result = ExecResult(7, "", "No such container (text from the command)")
-
-    async def process(argv, **kwargs):
-        if argv[1] == "exec":
-            return result
-        assert argv[1:3] == ["container", "ls"]
-        return ExecResult(0, "dotrix-test\n", "")
-
-    monkeypatch.setattr("dotrix_backend.modules.coding.sandbox.run_process", process)
-    docker = DockerSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
-        jwt_secret="test-only-secret-long-enough-for-settings"))
-    assert await DockerSession(docker, "dotrix-test").exec(["false"], timeout=5) == result

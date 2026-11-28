@@ -133,12 +133,12 @@ Demo and live share Shell, session/message rows, coding panels and Settings pres
 | Chat models (personal keys) | Anthropic, OpenAI, Google | Personal BYOK only: every run uses the person's own encrypted key, and nothing runs without one. Google works for DeepAgents conversations; fx chat on Google is not supported (libfx rejects Gemini's stream endings). |
 | Chat runtime | DeepAgents (default), fx per conversation | fx has been checked live on Anthropic only. |
 | Coding engines | Claude Code (Anthropic), Codex (OpenAI), OpenCode (Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Groq, OpenRouter, NVIDIA), fx (OpenAI-compatible providers) | A session picks a model; the engine follows it. Each engine is pinned in the coding image. |
-| Where coding runs | Cloud: Docker sandboxes on the worker with gVisor, or Docker Cloud sandboxes. Local: the desktop app or CLI runner in the person's own folder | Local turns run commands only when `sbx` (Docker Sandboxes) is installed; without it the tool only edits files. |
+| Where coding runs | Cloud: Docker Cloud sandboxes in staging and production, OpenShell in development. Local: the desktop app or CLI runner in the person's own folder | Local turns run commands only when `sbx` (Docker Sandboxes) is installed; without it the tool only edits files. |
 | Approvals | Manual, Accept edits, Auto; Nova's first handoff to Kai starts at once only in Auto | Changes to files CI runs wait for a person in every mode. |
 | Storage | 1 GB of uploads per workspace by default (`DOTRIX_WORKSPACE_STORAGE_MB`), document originals and task attachments; Settings → Workspace shows the use | An upload that doesn't fit is refused; nothing is deleted. The operator sets a workspace's own limit in the admin console. |
 | Operating it | The admin console: health of the worker, Redis, storage, email and the GitHub App; runs, failures by kind, cost by model, workspaces, audit; operator alert emails; owner and viewer admins with two-factor sign-in and an activity record | `deploy/migrate.sh` checks, backs up and applies database migrations on the server. See [deploy/README.md](../deploy/README.md). |
 | Desktop app | Windows installer and self-updates | Unsigned (SmartScreen warns). macOS later. |
-| Deployment | One VPS with Dokploy, `deploy/README.md` | Coding on the VPS requires gVisor (`DOTRIX_CODING_DOCKER_RUNTIME=runsc`) and a positive `DOTRIX_CODING_MAX_RUNS`. |
+| Deployment | One VPS with Dokploy, `deploy/README.md` | Coding runs on Docker Cloud (`DOTRIX_CODING_SANDBOX=docker-cloud`, the account, token and published image) with a positive `DOTRIX_CODING_MAX_RUNS`; no sandboxes run on the VPS. |
 
 ## Readiness checks
 
@@ -161,11 +161,10 @@ evidence lives when a check passes.
 
 ### Sandbox isolation (production)
 
-- [ ] `docker info` on the worker's daemon lists `runsc`; `DOTRIX_CODING_DOCKER_RUNTIME=runsc` is set and the API and worker start (they refuse an ordinary runtime).
-- [ ] `uv run pytest apps/backend/tests/unit/test_coding_docker.py -v` passes on that host with the built coding image.
-- [ ] One authorised coding turn on a disposable repository: the container's runtime recorded as `runsc`, the egress proxy the only way out (a request to another host from inside the sandbox is refused), the key never in the container's environment on Docker Cloud.
-- [ ] Stop ends a running turn within seconds and leaves no container behind; a worker killed mid-turn leaves the run `recovery_required`, and Recover settles it from GitHub.
-- [ ] Or, on Docker Cloud: the same turn, the network policy allowing only the model API host, the sandbox sleeping between turns and deleted after `DOTRIX_CODING_SLEEP_DAYS`.
+- [ ] `DOTRIX_CODING_SANDBOX=docker-cloud` with `DOTRIX_DOCKER_CLOUD_ID`, `DOTRIX_DOCKER_CLOUD_PAT` and `DOTRIX_CODING_IMAGE` (a published registry tag); the API and worker start.
+- [ ] One authorised coding turn on a disposable repository: the sandbox's network policy allowing only the model API host and the session's hosts (a request to another host from inside the sandbox is refused and reported), the key never in the sandbox's environment.
+- [ ] Stop ends a running turn within seconds and leaves no sandbox running; a worker killed mid-turn leaves the run `recovery_required`, and Recover settles it from GitHub.
+- [ ] The sandbox sleeps between turns, wakes for the next, and is deleted after `DOTRIX_CODING_SLEEP_DAYS`.
 
 ### Accounts and recovery (production)
 
@@ -221,7 +220,7 @@ What a beta participant should be told. Each is tracked in the [Roadmap](#roadma
 - **Repository knowledge** reads package.json, pyproject/requirements, Cargo and go.mod manifests; Gemfile, composer, Gradle and Maven are not read.
 - **Settings "not available yet":** two-factor authentication for people's accounts, push notifications, deleting a workspace, changing its address, billing.
 - **Storage:** 1 GB of uploads per workspace unless the operator raises it; two uploads at the same moment can pass the check together and go over by one file.
-- **Not verified in production:** the Docker Cloud sandbox and the gVisor host, Juno's review posting against a real PR from the deployed host, the first fx turn through the platform's own sandbox, the admin console's two-factor sign-in and alert emails, `deploy/migrate.sh` on the real server, and every row above still unticked.
+- **Not verified in production:** the Docker Cloud sandbox, Juno's review posting against a real PR from the deployed host, the first fx turn through the platform's own sandbox, the admin console's two-factor sign-in and alert emails, `deploy/migrate.sh` on the real server, and every row above still unticked.
 
 ## Roadmap
 
@@ -237,7 +236,7 @@ Decided 2026-11-21: **the beta launches with Kai's runtime as the default engine
 | 1. Shared execution contract and saved-state compatibility | Done. Sessions saved by libfx 0.0.16 and every earlier fork build still read. |
 | 2. Provider capabilities and separate Chat and Code policies | Built. Live checks: NVIDIA only. Anthropic, OpenAI and Google on paid models are open. |
 | 3. Chat on the fork's libfx | Done: `@kunemi-group/kai@0.0.18-kai.2`, the default for compatible providers. |
-| 4. Cloud and local coding on the fork's fx | Done: `0.0.18-kai.2` is pinned in the coding image and is the default for compatible models. The sandbox tests pass under gVisor with a dummy key. A paid turn inside the gVisor sandbox is open. |
+| 4. Cloud and local coding on the fork's fx | Done: `0.0.18-kai.2` is pinned in the coding image and is the default for compatible models. A paid turn in a Docker Cloud sandbox is open. |
 | 5. Workers, skills, browser and background tasks | Done: worker profiles and limits, pinned skills, the Browser pane, background tasks, and helpers on every engine. |
 | 6. Kai by default; legacy engines retired | First half mostly done: fx is the default and the rollback switches exist. Paid checks, the comparison, the full journey and a live rollback rehearsal are open. The second half comes after the beta. |
 | 7. Kai branding and final names | After the beta |
@@ -264,7 +263,7 @@ Two tracks that can run side by side. The beta opens when both are done.
 
 **Kai by default (runtime phase 6, first half).**
 
-1. Paid-model checks on fx for Chat and Code: Anthropic and OpenAI through the Live models workflow, and a paid turn inside the gVisor sandbox. This is also the first fx turn through the platform's own sandbox on the production host. Either check Google on fx chat again (kai.2 parses Gemini's tool-call stream, but Dotrix doesn't offer Google for fx yet) or keep it listed as unsupported.
+1. Paid-model checks on fx for Chat and Code: Anthropic and OpenAI through the Live models workflow, and a paid turn in a Docker Cloud sandbox. This is also the first fx turn through the platform's own sandbox. Either check Google on fx chat again (kai.2 parses Gemini's tool-call stream, but Dotrix doesn't offer Google for fx yet) or keep it listed as unsupported.
 2. Set acceptance thresholds, then compare. Run fixed tasks on fx and on the earlier defaults (DeepAgents; Claude Code, Codex, OpenCode) and measure task success, latency, cost, recovery and human intervention.
 3. The full journey on fx: Nova → Kai → Juno, with a denied action, a Stop, a worker restart and a pending approval kept across that restart.
 4. Rehearse rollback on the deployed host with the switches and runbook above: route new work back to the earlier defaults and drain or recover active runs on their recorded runtime.
@@ -272,18 +271,19 @@ Two tracks that can run side by side. The beta opens when both are done.
 **Network policy for Kai's sandboxes.** One policy, in one format, for the cloud and local runners (Settings → Environments & network).
 
 - [x] One network policy (2026-11-28, synthetic tests only): the workspace's optional limit, each project's choice within it, the choice pinned per coding session for cloud and local turns, and the local runner's `DOTRIX_CODING_NETWORK_ALLOW` able only to narrow it (`dotrix_engine/network_policy.py`, `coding/network.py`, `network_allow.for_turn`).
-- [ ] Registry access on Docker with gVisor, the deployment's sandbox. Today it refuses any turn whose session lists hosts, because the model key is inside the sandbox. Let the egress proxy allow the pinned hosts while keeping the key out, for example by having the proxy add it to model API requests.
+- [x] One sandbox per environment (2026-11-28): Docker Cloud in staging and production, OpenShell in development; the Docker sandbox (containers and an egress proxy on the worker's Docker, gVisor when deployed) is removed. OpenShell now takes the session's hosts in its policy (TLS relayed as is, for any program), since it already keeps the model key out.
+- [ ] OpenShell with project hosts on a real gateway: the policy's `tls: skip` endpoints, `**.domain` wildcards and the `/**` binary rule follow OpenShell's schema reference (v0.1.10) and haven't run on a gateway.
 - [ ] Docker Cloud's network policy on a real account: exact hosts, `*.domain`, `host:port` entries and the blocked-host report.
 
 **Variables and secrets for Kai's sandboxes.** Per project, in its Environment beside the network policy; a session keeps its environment's version. Local turns never receive cloud secrets.
 
 1. [x] Variables (2026-11-28, synthetic tests only): non-secret `KEY=value` pairs in the project's Environment, in `.env` format in the "Edit environment" form, shown in the brief and set for setup, Kai's commands and verification on cloud turns. Names the sandbox or tools use, and names that look like secrets, are refused.
-2. [ ] Host secrets: the egress proxy adds a credential to requests for one host in the session's network policy, so the sandbox only ever holds a placeholder. The same proxy work keeps the model key out of the Docker with gVisor sandbox (the registry-access item above). Write-only, encrypted, audited without values; optional workspace-shared secrets that a project must reference by name.
+2. [ ] Host secrets: a credential added outside the sandbox to requests for one host in the session's network policy, so the sandbox only ever holds a placeholder: an OpenShell provider for that host (as the model key already is), and a Docker Cloud secret injected into its requests. Write-only, encrypted, audited without values; optional workspace-shared secrets that a project must reference by name.
 3. [ ] Setup-only secrets: given to the setup script and gone before Kai runs.
 
 **Production release gates.**
 
-- Every unticked item in [Readiness checks](#readiness-checks): HTTPS and secrets (you), host isolation (gVisor `runsc` on the real host), backups and restores, migrations, email and account recovery, provider and GitHub setup, and failure handling. Run the core loop check on the deployed host with fx as the default.
+- Every unticked item in [Readiness checks](#readiness-checks): HTTPS and secrets (you), sandbox isolation (Docker Cloud on a real account), backups and restores, migrations, email and account recovery, provider and GitHub setup, and failure handling. Run the core loop check on the deployed host with fx as the default.
 - Turn the CHANGELOG's Unreleased section into a version and check What's new in an installed desktop app (Support paths).
 
 ### 2. During the beta
@@ -295,7 +295,7 @@ Two tracks that can run side by side. The beta opens when both are done.
 - Runtime-native subagent events nested inside the turn's steps. Today helpers are listed with background tasks.
 - Helpers for local fx turns. They're off today because a helper's tool calls never reach the runner's approval check.
 - [Plan 046](../plans/046-coding-workspaces.md) phase 5: continue a session in the cloud or locally from its published branch. Phase 4 also needs a check on a real provider, environment verification and dependency caching.
-- Keep `DOTRIX_CODING_PARALLEL` off until the deployment validation in [Planning and parallel execution](architecture.md#planning-and-parallel-execution) passes: the paid engines under the read-only Plan wrapper, crash, recovery and cancellation under load, and gVisor/OpenShell compatibility.
+- Keep `DOTRIX_CODING_PARALLEL` off until the deployment validation in [Planning and parallel execution](architecture.md#planning-and-parallel-execution) passes: the paid engines under the read-only Plan wrapper, crash, recovery and cancellation under load, and Docker Cloud/OpenShell compatibility.
 - PRs: a PR check that rejects `.dotrix/` in PRs from elsewhere, and the Reviewer's findings kept in `reviews/` (FR-22).
 
 **Chat**

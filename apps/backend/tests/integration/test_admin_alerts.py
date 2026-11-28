@@ -22,7 +22,7 @@ NOW = datetime(2026, 11, 12, 12, 0, tzinfo=UTC)
 
 def health(**kw) -> PlatformHealth:
     base = dict(
-        generated_at=NOW, version="0", environment="test", jobs="worker", sandbox="docker", database_ms=1.0,
+        generated_at=NOW, version="0", environment="test", jobs="worker", sandbox="docker-cloud", database_ms=1.0,
         queue_pending=0, queue_oldest_seconds=None, queue_discarded_24h=0, worker_last_took_at=None, runs_running=0,
         runs_queued=0, stuck=[], recovery_required=0, interrupted=0, sandboxes_warm=0, sandboxes_asleep=0,
         runners_online=0, runners=0, failed_24h=0, finished_24h=0, workers_alive=1,

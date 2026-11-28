@@ -206,6 +206,44 @@ def test_the_policy_reaches_nothing_by_itself() -> None:
     assert policy["landlock"]["compatibility"] == "hard_requirement"
 
 
+def test_a_sessions_hosts_become_passthrough_endpoints_for_any_program() -> None:
+    policy = sandbox_policy(["registry.npmjs.org", "*.example.com", "registry.example.com:8443"])
+    [rule] = policy["network_policies"].values()
+    assert rule["endpoints"] == [
+        {"host": "registry.npmjs.org", "port": 443, "tls": "skip"},
+        {"host": "**.example.com", "port": 443, "tls": "skip"},  # *.domain is every host under it, as in the policy
+        {"host": "registry.example.com", "port": 8443, "tls": "skip"},
+    ]
+    assert rule["binaries"] == [{"path": "/**"}]
+
+
+async def test_openshell_opens_its_sandbox_with_the_sessions_hosts(tmp_path, monkeypatch) -> None:
+    import json
+    import uuid
+
+    from dotrix_backend.core.settings import Settings
+    from dotrix_backend.modules.coding.sandbox import OpenShellSandbox
+    from dotrix_backend.modules.coding.tools import ClaudeCode
+
+    calls, policies = [], []
+
+    async def cli(self, *args, env=None):
+        calls.append(list(args))
+        if args[:2] == ("sandbox", "create"):
+            policies.append(json.loads(open(args[args.index("--policy") + 1]).read()))
+        return ""
+
+    monkeypatch.setattr(OpenShellSandbox, "cli", cli)
+    (tmp_path / "a.txt").write_text("x")
+    sandbox = OpenShellSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
+                                        jwt_secret="test-only-secret-long-enough-for-settings"))
+    session = await sandbox.open(uuid.uuid4(), tmp_path, ClaudeCode(), "sk-test", allow=["pypi.org"])
+    assert policies[0]["network_policies"]["project_hosts"]["endpoints"] == [{"host": "pypi.org", "port": 443, "tls": "skip"}]
+    assert "sk-test" not in " ".join(" ".join(c) for c in calls)  # the key goes to the provider by environment
+    await session.close()
+    assert ["sandbox", "delete", session.name] in calls
+
+
 async def test_a_process_is_streamed_and_killed_on_cancel_or_timeout() -> None:
     lines: list[str] = []
 

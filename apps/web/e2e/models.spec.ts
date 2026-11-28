@@ -163,7 +163,7 @@ test("a new coding session picks a model, starting from your default, and leaves
         available: true,
         agent: "codex",
         default_tool: "codex",
-        sandbox: "docker",
+        sandbox: "docker-cloud",
         reason: null,
         local_available: false,
         local_tools: [],

@@ -21,8 +21,11 @@ are not supported. Scheduled runs use the creator's own key.
 
 The worker gives the tool a copy of the repo and a brief, reads its changes back, then pushes a
 new branch and opens a PR through the dotrix GitHub App. This folder holds what the sandbox
-needs: the image (all four engines, git, Playwright MCP for the agent's own browser, and the
-egress proxy) and the OpenShell provider profiles for the model keys.
+needs: the image (all four engines, git, and Playwright MCP for the agent's own browser) and the
+OpenShell provider profiles for the model keys.
+
+Two sandboxes run it: **OpenShell in development** (a gateway you run, below) and **Docker Cloud in staging and
+production**. The Docker sandbox that ran containers on the worker's own Docker was removed on 2026-11-28.
 
 ## A run, from start to PR
 
@@ -78,11 +81,12 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   3. On each repo (or its organisation), under Settings → Actions → General: keep "Send secrets
      to workflows from fork pull requests" off. Set "Require approval for fork pull request
      workflows" to all outside collaborators, so a person approves before checks run.
-- **Network.** The only host a run reaches is its tool's model API. That is api.anthropic.com,
-  api.openai.com, generativelanguage.googleapis.com, or the other provider's own API; a
-  `*_BASE_URL` in the worker's environment is never followed. GitHub, package registries, and everything else
-  are blocked. To let the agent install dependencies, add your registries to the Docker egress
-  allowlist and OpenShell's policy (`sandbox_policy()` in `coding/sandbox.py`).
+- **Network.** A run reaches its tool's model API (api.anthropic.com, api.openai.com,
+  generativelanguage.googleapis.com, or the other provider's own API; a `*_BASE_URL` in the worker's environment is
+  never followed) and the hosts in its session's network policy, which the project chooses in Settings →
+  Environments & network (`coding/network.py`). GitHub and everything else are blocked. OpenShell gets the hosts in
+  the sandbox's policy (`sandbox_policy()` in `coding/sandbox.py`: TLS relayed as it is, for any program); Docker
+  Cloud in its network policy. Both keep the model key outside the sandbox, so a listed host can't receive it.
 - **OpenCode's own settings are ours.** Its config comes from `OPENCODE_CONFIG_CONTENT` (that
   provider only; `webfetch`, `websearch` and `question` denied). A repo's `opencode.json` never
   loads (`OPENCODE_DISABLE_PROJECT_CONFIG`), and no model list is fetched.
@@ -90,7 +94,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
   `~/.fx/settings.json` each turn (one OpenAI-compatible provider, its key read from the provider's
   variable by name, auto-upgrade off) and drives `fx acp`; the sandbox, not fx, is the boundary, and
   nobody is there to answer fx's permission prompts. fx's web tools reach nothing (the sandbox blocks
-  them). fx (0.0.17) ignores `HTTPS_PROXY`, so behind the egress proxy the driver points it at a forwarder
+  them). fx (0.0.17) ignores `HTTPS_PROXY`, so behind a proxy the driver points it at a forwarder
   on 127.0.0.1:31821 that tunnels each request to the configured provider (and nothing else) through the proxy;
   a refusal ends the turn at once ("The sandbox doesn't allow this model provider"). fx gets the browser as
   Claude Code does: the driver passes `--mcp-config` (Playwright MCP) to every session it starts, resumes or loads
@@ -129,7 +133,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 
 | Setting | Default | What |
 | --- | --- | --- |
-| `DOTRIX_CODING_SANDBOX` | `off` outside Compose; `docker` in Compose | `docker`, `docker-cloud`, `openshell`, or `local` (development only: no isolation; production refuses it) |
+| `DOTRIX_CODING_SANDBOX` | `off` (`docker-cloud` in the Dokploy compose file) | `openshell` (development), `docker-cloud` (staging and production), or `local` (development only: no isolation; production refuses it) |
 | `DOTRIX_DOCKER_CLOUD_ID`, `DOTRIX_DOCKER_CLOUD_PAT` | none | For `docker-cloud`: the Docker ID and a personal access token with Cloud Sandboxes access |
 | `DOTRIX_CODING_IMAGE` | `dotrix-coding:latest` | The image built from this folder |
 | `DOTRIX_CODING_AGENT` | `auto` | `claude-code`, `codex`, `opencode`, or `fx` |
@@ -141,8 +145,8 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 | `DOTRIX_CODING_LEASE_SECONDS` | 120 | A lapsed lease means recovery, found within about this long |
 | `DOTRIX_CODING_WARM_MAX`, `DOTRIX_CODING_IDLE_MINUTES` | 3, 30 | Warm sandboxes kept per workspace, and for how long idle (0: every turn starts fresh and resumes from the saved session) |
 | `DOTRIX_CODING_MAX_RUNS` | 2 | Runs working at once per worker (0: no limit in development; must be positive in staging/production) |
-| `DOTRIX_CODING_MEMORY`, `DOTRIX_CODING_CPUS` | `4g`, 2 | Each Docker sandbox |
-| `DOTRIX_CODING_DOCKER_RUNTIME` | Docker's in development; `runsc` in the deployment example | Deployed Docker coding requires `runsc` (gVisor installed and registered on the Docker host) |
+| `DOTRIX_CODING_CPUS` | 2 | Each Docker Cloud sandbox's size (2 GiB per CPU) |
+| `DOTRIX_CODING_ENVIRONMENT_IMAGES` | `[]` | Operator-approved image digests a project's environment may pick (OpenShell only) |
 | `DOTRIX_CODING_FORK_OWNER` | none | The organisation branches are pushed to as a fork (required in staging and production) |
 
 You also need the GitHub App, with Contents (write) and Pull requests (write). For Juno on Kai's PRs
@@ -179,48 +183,7 @@ It needs `DOTRIX_DOCKER_CLOUD_ID` and `DOTRIX_DOCKER_CLOUD_PAT` (a personal acce
 Sandboxes access); see deploy/README.md. Docker's API is experimental; its reference is at
 https://docs.docker.com/reference/api/sandboxes/latest/.
 
-## Set up Docker (the simplest: once per machine that runs agents)
-
-1. Docker running (Docker Desktop on Windows and macOS).
-2. Build the image: `docker build -t dotrix-coding:latest infra/coding`
-3. Add these to `.env` on the machine that runs agents (the worker, or the API in local mode):
-   ```shell
-   DOTRIX_CODING_SANDBOX=docker
-   DOTRIX_CODING_IMAGE=dotrix-coding:latest
-   ```
-   For OpenCode instead, on any provider's model (the key is that provider's):
-   ```shell
-   DOTRIX_CODING_AGENT=opencode
-   DOTRIX_CODING_OPENCODE_MODEL=anthropic:claude-sonnet-5-5   # or openai:…, google_genai:…
-   ```
-   Sign in and connect your own provider key in Account → Your models before starting a run.
-   Model API keys are not configured in the platform environment.
-
-Each run gets:
-- **A network with no route out** (`docker network create --internal`), and on it the agent's
-  container and an **egress proxy** (`egress-proxy.mjs`, from the same image, also on the default
-  network). The agent's `HTTPS_PROXY` points at it; it tunnels to the tool's model API only
-  (above) and refuses everything else. Under gVisor neither container can reach Docker's own
-  resolver (127.0.0.11) on the internal network. So the agent is given the proxy's address
-  (`--add-host egress:<ip>`), and the proxy looks the model API's host up through
-  `DOTRIX_CODING_EGRESS_DNS` (default `1.1.1.1,8.8.8.8`). The agent starts only once the proxy listens.
-- **The agent's container:** a read-only system, `/tmp` and the repo's volume writable, all
-  capabilities dropped, `no-new-privileges`, the `sandbox` user, `DOTRIX_CODING_MEMORY` and
-  `DOTRIX_CODING_CPUS`, 512 processes, with swap disabled. The egress container is limited to
-  256 MiB without swap, 0.25 CPU and 128 processes. Both use the configured runtime. Before
-  repository files are copied in, the worker inspects each container's actual runtime; a missing,
-  mismatched or uninspectable runtime ends the attempt and cleans up without retrying on plain
-  Docker. The repo is copied in as a tar extracted by the unprivileged user.
-- **Cleanup:** both containers, the volume, and the network are removed when the run (or, for a
-  warm session, the session) ends, however it ends. Each carries the label `dotrix.run=<run id>`
-  (`docker ps -a --filter label=dotrix.run` finds any a crash left behind).
-
-Compared with OpenShell, the model key is in the agent's environment rather than swapped in by
-a proxy, and the proxy allows the model API to any process in the container, not only the
-tool's binary. The key can still only reach the model API. `tests/unit/test_coding_docker.py`
-checks all of this against a real container (it's skipped where the image isn't built).
-
-## Set up OpenShell (once per machine that runs agents)
+## Set up OpenShell (development; once per machine that runs agents)
 
 1. Install OpenShell and start a gateway. See
    [Installation](https://docs.nvidia.com/openshell/latest/about/installation). For local
@@ -263,6 +226,8 @@ it.
 
 ## Status
 
+- **Removed (2026-11-28):** the Docker sandbox (a container and an egress proxy per run on the worker's Docker).
+  The checks below that ran in it are history; they say what each engine did, not where Kai runs now.
 - **Checked:** Claude Code in the Docker sandbox on a real model (a turn, resume across two
   containers, Stop, cumulative cost) and the whole flow to a PR and Juno's review. Codex on
   GPT-5.5 in the Docker sandbox through the egress proxy, issue to PR (2026-10-31). OpenCode was
@@ -292,7 +257,8 @@ it.
   - **fx outside a container** too: against a fake model (resume, Stop) and on Claude Haiku 5.5 (a follow-up,
     the session saved and restored into a fresh home).
   - Not yet: the other providers on paid models, the profiles on a gateway, fx's browser.
-  - Coding runs through Dokploy's Docker proxy (see [deploy/README.md](../../deploy/README.md)).
+  - A turn with project hosts on a real OpenShell gateway: the policy's `tls: skip` endpoints and the `/**`
+    binary rule are from OpenShell's schema reference (v0.1.10), not yet run on a gateway.
 - **Engines raised, 2026-11-13: Claude Code 2.1.323, Codex 0.169.0, OpenCode 2.3.0, Playwright MCP 0.0.85**
   (fx stays 0.0.16, its latest). Each new version ran beside the one it replaces against a scripted model
   API (Anthropic Messages and OpenAI Responses), with Kai's own commands, environment, saved sessions and
@@ -328,6 +294,9 @@ openshell sandbox exec -n check -- git clone --depth 1 https://github.com/octoca
 openshell sandbox exec -n check -- curl -sS https://example.com
 openshell sandbox exec -n check -- touch /etc/x
 openshell sandbox exec -n check -- sh -c 'env | grep -i anthropic'   # a placeholder, not the key
+# With a project host in the policy (sandbox_policy(["pypi.org"])), only that host opens:
+#   openshell sandbox exec -n check -- curl -sSI https://pypi.org/simple/   # allowed
+#   openshell sandbox exec -n check -- curl -sSI https://example.com        # still DENIED
 
 openshell sandbox delete check && openshell provider delete check-claude
 ```
