@@ -28,7 +28,7 @@ export function LimitNotice({
       <Ic n="gauge" s={16} />
       <div style={{ flex: 1 }}>
         <b>Stopped at {provider ? `${provider}'s` : "the model's"} limit.</b> {said ? `${said}.` : "The key reached its rate limit, quota, or credit."}
-        {resetsIn(resetsAt)} Nothing is lost: it continues from where it stopped.
+        {said && /reset/i.test(said) ? "" : resetsIn(resetsAt)} Nothing is lost: it continues from where it stopped.
         <div className="row" style={{ gap: 6, marginTop: 8 }}>
           {whenReset ? (
             <span className="faint" style={{ fontSize: 12.5 }}>

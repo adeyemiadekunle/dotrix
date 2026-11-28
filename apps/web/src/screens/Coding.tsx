@@ -398,32 +398,45 @@ function DemoSession({ id }: { id: string }) {
               <p className="muted">
                 Sample session · <a href="/login">Sign in to work with Kai.</a>
               </p>
-              {session.turns.map((item, index) => (
-                <div key={index}>
-                  <Message m={{ id: `${index}-user`, role: "user", by: session.by, at: item.at, text: item.ask }} projectId={session.project} />
-                  {item.summary && (
-                    <Message
-                      m={{ id: `${index}-agent`, role: "agent", by: "agent:coding-agent", at: item.at, text: item.summary, activity: item.events }}
-                      projectId={session.project}
-                    >
-                      <div className="kt-actions">
-                        <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(item.summary ?? "")} aria-label="Copy Kai's reply" data-tip="Copy">
-                          <Ic n="copy" s={13} />
-                        </ActionButton>
-                        <span className="faint">{ago(item.at)}</span>
-                        {index === session.turns.length - 1 && files.length > 0 && (
-                          <button className="kt-lines" onClick={openChanges} data-tip="Open these changes">
-                            <Ic n="git-compare" s={12} />
-                            {files.length} file{files.length > 1 ? "s" : ""}
-                            <span className="plus">+{totalAdded}</span>
-                            <span className="minus">−{totalRemoved}</span>
-                          </button>
-                        )}
-                      </div>
-                    </Message>
-                  )}
-                </div>
-              ))}
+              {session.turns.map((item, index) => {
+                const isLatest = index === session.turns.length - 1;
+                const isWorking = isLatest && session.status === "running" && !item.summary;
+                return (
+                  <div key={index}>
+                    <Message m={{ id: `${index}-user`, role: "user", by: session.by, at: item.at, text: item.ask }} projectId={session.project} />
+                    {(item.summary || item.events?.length || isWorking) && (
+                      <Message
+                        m={{
+                          id: `${index}-agent`,
+                          role: "agent",
+                          by: "agent:coding-agent",
+                          at: item.at,
+                          text: item.summary ?? "",
+                          activity: item.events,
+                        }}
+                        projectId={session.project}
+                      >
+                        <div className="kt-actions">
+                          {item.summary && (
+                            <ActionButton className="ibtn ibtn-xs" onClick={() => copyText(item.summary ?? "")} aria-label="Copy Kai's reply" data-tip="Copy">
+                              <Ic n="copy" s={13} />
+                            </ActionButton>
+                          )}
+                          {isWorking ? <span className="faint">Working on this turn…</span> : <span className="faint">{ago(item.at)}</span>}
+                          {isLatest && files.length > 0 && (
+                            <button className="kt-lines" onClick={openChanges} data-tip="Open these changes">
+                              <Ic n="git-compare" s={12} />
+                              {files.length} file{files.length > 1 ? "s" : ""}
+                              <span className="plus">+{totalAdded}</span>
+                              <span className="minus">−{totalRemoved}</span>
+                            </button>
+                          )}
+                        </div>
+                      </Message>
+                    )}
+                  </div>
+                );
+              })}
               {session.commits?.map((commit, index) => (
                 <Checkpoint
                   key={commit.sha}

@@ -268,7 +268,7 @@ export function Projects() {
         <div>
           <h1>Projects</h1>
           <p>
-            {projects.filter((p) => p.status !== "complete").length} active · {projects.filter((p) => p.status === "complete").length} completed
+            {base.filter((p) => p.status !== "complete").length} active · {base.filter((p) => p.status === "complete").length} completed
           </p>
         </div>
         <div className="acts">

@@ -993,6 +993,10 @@ kbd,
 }
 .avs .more {
   --c: var(--gray);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: -0.02em;
 }
 .presence {
   position: relative;
@@ -4262,7 +4266,7 @@ table.tbl {
     top: 0;
     bottom: 0;
     width: 280px;
-    z-index: 70;
+    z-index: 77;
     transform: translateX(-100%);
     transition: transform 0.22s var(--ease);
   }
@@ -4279,7 +4283,7 @@ table.tbl {
     position: fixed;
     inset: 0;
     background: var(--overlay);
-    z-index: 69;
+    z-index: 76;
     animation: fade 0.14s both;
   }
   :root {
