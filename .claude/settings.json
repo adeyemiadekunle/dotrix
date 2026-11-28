@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -fsSL -o * https://github.com/ai-openshell/openshell/releases/download/*)",
+      "Bash(tar xzf *)",
+      "Bash(openshell *)",
+      "Bash(*/openshell *)",
+      "Bash(docker build *)",
+      "Bash(docker run *)",
+      "Bash(docker create *)",
+      "Bash(docker cp *)",
+      "Bash(docker rm *)"
+    ]
+  }
+}
