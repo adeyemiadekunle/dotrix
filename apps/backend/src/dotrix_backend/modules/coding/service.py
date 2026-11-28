@@ -35,7 +35,7 @@ from dotrix_backend.modules.projects.deps import ProjectAccess
 from dotrix_backend.modules.projects.models import Project
 from dotrix_backend.modules.projects.repository import ProjectRepository, visible_to
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode, effective, goes_through
-from dotrix_backend.modules.workspaces.models import Membership, WorkspaceKind
+from dotrix_backend.modules.workspaces.models import Membership, Workspace, WorkspaceKind
 from dotrix_backend.modules.workspaces.permissions import (
     Permission,
     can,
@@ -438,6 +438,20 @@ class CodingService:
         run.revert_of = target.id
         return await self._settle(access, run)
 
+    async def _session_network(self, project: Project, session_id: uuid.UUID | None) -> list[str]:
+        """The network policy a turn's session pinned (network.py), cloud or local: what its first pinned turn got.
+        A new session, or one from before sessions pinned theirs, pins its project's choice within the limit now."""
+        from .network import allowed_hosts
+
+        if session_id is not None:
+            pinned = await self.session.scalar(select(CodingRun.network_snapshot).where(
+                CodingRun.session_id == session_id, CodingRun.workspace_id == project.workspace_id,
+                CodingRun.network_snapshot.is_not(None)).order_by(CodingRun.turn).limit(1))
+            if pinned is not None:
+                return list(pinned)
+        await self.session.refresh(project, ["sandbox_network"])
+        return allowed_hosts(await self.session.get(Workspace, project.workspace_id), project)
+
     @staticmethod
     def _session_environment(turns: list[CodingRun]) -> tuple[dict | None, str | None] | None:
         """The first cloud admission owns the environment, independently of PR/branch history.
@@ -613,6 +627,7 @@ class CodingService:
         if carry is not None:  # the session's branch and PR: this turn builds on them
             run.branch, run.pr_number, run.pr_url, run.pr_state = carry.branch, carry.pr_number, carry.pr_url, carry.pr_state
             run.base_branch = carry.base_branch
+        run.network_snapshot = await self._session_network(project, session_id)
         self.session.add(run)
         await self.session.flush()
         AuditLog(self.session).record(

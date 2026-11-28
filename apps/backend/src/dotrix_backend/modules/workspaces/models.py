@@ -52,8 +52,8 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # The highest approval mode its people may work in (approval_modes.py: manual, accept_edits,
     # auto); null: Auto in a personal workspace, Manual in a Team workspace.
     approval_mode_cap: Mapped[str | None] = mapped_column(String(16))
-    # Hosts Kai's sandboxes may reach besides the model API (coding/network.py): {"presets": [...],
-    # "hosts": [...]}; owners and admins set it, each project adds its own.
+    # The network limit (coding/network.py): the most any project's network policy may allow besides the model
+    # API, {"presets": [...], "hosts": [...]}; owners and admins set it. None: no limit.
     sandbox_network: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     # What this workspace may store in uploads, in MB (storage.py); null follows the deployment's
     # `workspace_storage_mb`, 0 is unlimited. Set by the operator in the admin console.

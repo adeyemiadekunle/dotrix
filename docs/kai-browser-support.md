@@ -123,9 +123,16 @@ after installing; a ready distribution is then kept for the runner's lifetime.
 
 ### Network allowlist for commands
 
-Commands in the native sandbox have no network by default. Set
-`DOTRIX_CODING_NETWORK_ALLOW` before starting the runner to let them reach named
-hosts over HTTPS, for example to install packages:
+Commands in the native sandbox (fx and Claude Code) have no network by default.
+A turn gets its coding session's network policy, the hosts the project's owners
+and admins chose in Settings → Environments & network, pinned when the session
+started and kept within the workspace's limit. The same list applies to cloud
+turns, so a session reaches the same hosts in both places.
+
+`DOTRIX_CODING_NETWORK_ALLOW` on the runner's computer can only narrow that list:
+unset keeps it, `none` allows nothing, and a list keeps only the session's
+entries it covers. With a platform that sends no list, the variable alone
+applies, as before:
 
 ```powershell
 $env:DOTRIX_CODING_NETWORK_ALLOW = "registry.npmjs.org, pypi.org, *.pythonhosted.org"

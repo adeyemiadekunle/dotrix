@@ -86,7 +86,7 @@ from .models import (
     PrState,
     waiting_patch,
 )
-from .network import allowed_hosts, network_digest
+from .network import for_run, network_digest
 from .planning import parse_plan, planning_brief, readonly_command
 from .research import RESEARCH_RULE, serve_research
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
@@ -446,8 +446,10 @@ class CodingWorker:
             claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
             profile_digest = sess.profile_digest
             sleeping, slept_at = (dict(sess.sandbox_handle) if sess.sandbox_handle else None), sess.sandbox_slept_at
-            # The hosts its sandbox may reach besides the model API (owners and admins set them).
-            allow = allowed_hosts(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id))
+            # The hosts its sandbox may reach besides the model API: what its session pinned, within the
+            # workspace's limit as it is now (network.py).
+            allow = for_run(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id),
+                            run.network_snapshot)
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
@@ -821,8 +823,9 @@ class CodingWorker:
             return
         if hosts:
             shown = ", ".join(hosts[:8]) + (f" and {len(hosts) - 8} more" if len(hosts) > 8 else "")
-            await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in "
-                                            "Settings → Network")
+            await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in the "
+                                            "project's network policy (Settings → Environments & network); a new "
+                                            "session gets them")
 
     async def _hold_for_acceptance(
         self, run_id: uuid.UUID, diff: bytes, files: list[dict[str, Any]], summary: str | None,

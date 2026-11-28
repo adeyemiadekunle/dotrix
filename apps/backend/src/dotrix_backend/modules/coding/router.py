@@ -50,6 +50,7 @@ from .schemas import (
     RunnerHeartbeat,
     RunnerHeartbeatRead,
     RunnerResult,
+    SandboxNetworkLimitUpdate,
     SandboxNetworkRead,
     SandboxNetworkUpdate,
     SharedCodingOutcomeRead,
@@ -411,7 +412,7 @@ async def report_coding_result(
     await runners.result(member, runner_id, coding_run_id, data)
 
 
-# -- Network: the hosts Kai's sandboxes may reach besides the model API (network.py) --------
+# -- Network policy: the hosts Kai's sandboxes may reach besides the model API (network.py) --
 
 WorkspaceSettingsEditor = Annotated[Membership, Depends(require_permission(Permission.MANAGE_WORKSPACE))]
 ProjectNetworkEditor = Annotated[ProjectAccess, Depends(require_project_permission(Permission.MANAGE_WORKSPACE))]
@@ -421,23 +422,23 @@ ProjectNetworkEditor = Annotated[ProjectAccess, Depends(require_project_permissi
 async def get_workspace_sandbox_network(
     member: Annotated[Membership, Depends(require_permission(Permission.VIEW))], session: SessionDep,
 ) -> SandboxNetworkRead:
-    """The hosts every project's coding sandboxes may reach besides the model API, and the presets to
-    choose from. Anyone in the workspace can read it (a blocked turn says where to ask)."""
+    """The workspace's network limit (the most any project's network policy may allow besides the model API, or
+    none), and the presets to choose from. Anyone in the workspace can read it (a blocked turn says where to ask)."""
     return await SandboxNetwork(session).workspace(member)
 
 
 @workspace_router.put("/network", responses=errors(403, 409, 422))
 async def set_workspace_sandbox_network(
-    data: SandboxNetworkUpdate, member: WorkspaceSettingsEditor, session: SessionDep,
+    data: SandboxNetworkLimitUpdate, member: WorkspaceSettingsEditor, session: SessionDep,
 ) -> SandboxNetworkRead:
-    """Set the hosts every project's coding sandboxes may reach (presets and custom hosts: exact, or
-    *.domain). Each one is somewhere an agent could send data. Owners and admins; audited."""
+    """Set or remove the workspace's network limit: the presets and hosts (exact, *.domain, either with :port) that
+    projects may choose from. Lowering it applies to running sessions' next turns too. Owners and admins; audited."""
     return await SandboxNetwork(session).set_workspace(member, data)
 
 
 @router.get("/network")
 async def get_project_sandbox_network(access: ProjectViewer, session: SessionDep) -> SandboxNetworkRead:
-    """The hosts this project's coding sandboxes may reach on top of the workspace's, and all of them together."""
+    """This project's network policy: the hosts its new coding sessions pin, within the workspace's limit."""
     return await SandboxNetwork(session).project(access.member, access.project)
 
 
@@ -445,8 +446,8 @@ async def get_project_sandbox_network(access: ProjectViewer, session: SessionDep
 async def set_project_sandbox_network(
     data: SandboxNetworkUpdate, access: ProjectNetworkEditor, session: SessionDep,
 ) -> SandboxNetworkRead:
-    """Set the hosts this project's coding sandboxes may also reach, on top of the workspace's. Owners and
-    admins; audited."""
+    """Set this project's network policy (presets and hosts: exact, *.domain, either with :port). 409 when an entry
+    is outside the workspace's limit. New sessions pin it; running sessions keep theirs. Owners and admins; audited."""
     return await SandboxNetwork(session).set_project(access.member, access.project, data)
 
 

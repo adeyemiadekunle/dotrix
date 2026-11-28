@@ -31,7 +31,7 @@ from dotrix_backend.modules.audit.models import AuthorType
 from dotrix_backend.modules.audit.service import AuditLog
 from dotrix_backend.modules.projects.repository import ProjectRepository
 from dotrix_backend.modules.workspaces.approval_modes import ApprovalMode
-from dotrix_backend.modules.workspaces.models import Membership
+from dotrix_backend.modules.workspaces.models import Membership, Workspace
 from dotrix_backend.modules.workspaces.permissions import Permission, can
 from dotrix_backend.modules.workspaces.repository import MembershipRepository
 
@@ -46,6 +46,7 @@ from .models import (
     CodingRunStatus,
     CodingSession,
 )
+from .network import for_run
 from .runner import _session_row, add_events, finish_run, issue_title, ready_for_acceptance
 from .schemas import (
     CodingClaim,
@@ -172,6 +173,7 @@ class LocalRunners:
             title=await issue_title(self.session, run), turn=run.turn, brief=run.brief, tool=run.agent,
             repo_full_name=run.repo_full_name, base_branch=run.base_branch, branch=run.branch, source_sha=run.source_sha,
             managed_worktree=use_worktree,
+            network=for_run(await self.session.get(Workspace, run.workspace_id), project, run.network_snapshot),
         )
         await self.session.commit()
         return CodingClaimed(run=claim)

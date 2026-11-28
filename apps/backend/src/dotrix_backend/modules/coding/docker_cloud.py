@@ -13,7 +13,7 @@ egress proxy of ours is needed. Through the same `SandboxSession` as the other s
   real key into the model API's requests only (`key_injection`). If Docker takes no secret, the key
   goes in each process's environment instead (never the sandbox's settings or argv), and then only
   the model API may be reachable: extra hosts an owner allowed are refused rather than given the key;
-- extra hosts owners and admins allow (Settings → Network) join the model API in the policy;
+- extra hosts owners and admins allow (the network policy, network.py) join the model API in the policy;
 - between turns a session's sandbox sleeps (stopped: files kept, no compute) and wakes for the next
   (`handle`, `sleep`, `wake`, `discard`); the sweep deletes what nothing refers to any more;
 - the sandbox's own timeout stops it if the worker never does (a crash), renewed by each command.
@@ -426,6 +426,8 @@ class DockerCloudSandbox:
             "imageRef": self.image,
             "resources": self.resources,
             "labels": {"dotrix-run": str(run_id)},
+            # Entries in the network policy's format (network.py): a non-default port goes as `host:port`, which
+            # hasn't been checked against Docker's real API (a form it doesn't take allows nothing more).
             "networkPolicies": [{"mode": "denyAll", "allowNetworks": [tool.api_host, *[h for h in allow if h != tool.api_host]]}],
             "startupExecution": {"rawImage": {"start": {"argv": ["sleep", "infinity"]}}},
             "features": features,
@@ -486,7 +488,7 @@ class DockerCloudSandbox:
         if stored is None and [h for h in allow if h != tool.api_host]:
             # Another reachable host would be somewhere the key could be sent: never with the key inside.
             raise SandboxError("The model key couldn't be kept out of the sandbox, so it can't reach the extra "
-                               "hosts allowed in Settings → Network; remove them, or try again")
+                               "hosts in the project's network policy; remove them, or try again")
         secret, placeholder = stored if stored else (None, None)
         try:
             created = await self.api.call("POST", f"{self.api.base}/v1/sandboxes",

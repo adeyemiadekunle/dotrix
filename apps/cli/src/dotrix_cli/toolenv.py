@@ -35,6 +35,8 @@ TOOL_ENV = {
 def tool_environment(tool: str, environ: Mapping[str, str]) -> dict[str, str]:
     """An allowlist, rather than host inheritance or broad credential-name prefixes."""
     allowed = EXECUTION_ENV | TOOL_ENV[tool]
+    if tool == "claude-code":
+        allowed = allowed | {"DOTRIX_CODING_NETWORK_ALLOW"}  # read by its native sandbox's relay, never the tool
     if tool == "fx":
         allowed = allowed | {"DOTRIX_CODING_WEB_TOOLS", "DOTRIX_SEARCH_PROVIDER", "DOTRIX_SEARXNG_URL",
                              "DOTRIX_CODING_NETWORK_ALLOW", "DOTRIX_WSL_DISTRO", "DOTRIX_WSL_FX"}

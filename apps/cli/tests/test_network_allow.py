@@ -142,3 +142,15 @@ async def test_a_host_off_the_list_is_refused_without_connecting(monkeypatch):
 def test_the_sandbox_is_told_about_tunnels_only_with_an_allowlist():
     assert "DOTRIX_NETWORK_TUNNELS" not in fx_native.sandbox_env("/home/p", None)
     assert fx_native.sandbox_env("/home/p", None, True)["DOTRIX_NETWORK_TUNNELS"] == "1"
+
+
+def test_a_turn_gets_its_sessions_list_which_this_computer_may_only_narrow():
+    session = ["pypi.org", "*.example.com", "registry.example.com:8443"]
+    assert [str(r) for r in network_allow.for_turn(session, {})] == session
+    assert network_allow.for_turn(session, {network_allow.ENV: "none"}) == ()
+    narrowed = network_allow.for_turn(session, {network_allow.ENV: "pypi.org api.example.com"})
+    assert [str(r) for r in narrowed] == ["pypi.org"]  # the variable can't add api.example.com
+    assert network_allow.for_turn([], {network_allow.ENV: "pypi.org"}) == ()
+    # A platform that sends no list: the variable alone, as before.
+    assert [str(r) for r in network_allow.for_turn(None, {network_allow.ENV: "pypi.org"})] == ["pypi.org"]
+    assert network_allow.for_turn(None, {}) == ()

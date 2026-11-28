@@ -168,8 +168,8 @@ allowing only the engine's model API host. Instead of `docker exec`:
   requests to the model API only (custom injection with the engine's header; Docker's own
   integration for hosts it serves itself). Without a secret the key goes in each process's
   environment, and then extra allowed hosts are refused;
-- the hosts owners and admins allow (Settings → Network, `coding/network.py`) join the model
-  API in the policy;
+- the hosts in the session's pinned network policy (Settings → Environments & network,
+  `coding/network.py`) join the model API in the policy;
 - between turns the sandbox sleeps (stopped, files kept) and the next turn wakes it; the worker's
   sweep deletes sleepers after 7 days, closed or deleted sessions', and leftovers;
 - the sandbox's own timeout (turn time + idle time + 10 minutes, renewed by each command) stops it

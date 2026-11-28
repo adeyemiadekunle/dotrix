@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- A local fx or Claude Code turn's sandboxed commands now reach the hosts in its coding session's network policy, which the platform sends with the turn. `DOTRIX_CODING_NETWORK_ALLOW` can only narrow that list (`none` allows nothing); with a platform that sends none, it applies alone as before. Claude Code's native sandbox now honours it too.
 - Added a staging Windows build that defaults to the Cloudflare pilot URL.
 
 ### Added

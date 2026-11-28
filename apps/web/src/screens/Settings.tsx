@@ -1775,8 +1775,8 @@ const DEMO_PRESETS: Record<string, { label: string; hosts: string[] }> = {
   go: { label: "Go modules", hosts: ["proxy.golang.org", "sum.golang.org"] },
 };
 
-/** Owners and admins choose the hosts Kai's sandboxes may reach besides the model API: for every project,
- *  and on top of that for one. Each is somewhere an agent could send data, so it stays a short list. */
+/** A project's cloud environment, shown with its network policy (SandboxNetworkSettings): owners and admins
+ *  choose the hosts Kai's sandboxes may reach besides the model API, within the workspace's limit. */
 function CloudEnvironmentSettings({ projectId }: { projectId: string }) {
   const loaded = useApi(() => cloudEnvironment(projectId), [projectId]);
   const [draft, setDraft] = useState<CloudEnvironment | null>(null);
@@ -1884,21 +1884,28 @@ function SandboxNetworkSettings() {
   const loaded = useApi(() => sandboxNetwork(scope || undefined), [scope]);
   const [presets, setPresets] = useState<string[] | null>(null);
   const [hosts, setHosts] = useState<string | null>(null);
+  const [limited, setLimited] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
-  const data = isLive() ? loaded.data : { presets: [], hosts: [], effective: [], available_presets: DEMO_PRESETS };
+  const data = isLive()
+    ? loaded.data
+    : { presets: [], hosts: [], effective: [], limited: false, limit: null, outside_limit: [], available_presets: DEMO_PRESETS };
   if (isLive() && loaded.error) return <div className="alert danger">{loaded.error}</div>;
   if (!data) return <div className="faint">Loading…</div>;
   const available = data.available_presets as Record<string, { label: string; hosts: string[] }>;
+  const workspace = !scope;
+  const isLimited = limited ?? data.limited ?? false;
   const chosen = presets ?? data.presets;
   const typed = hosts ?? data.hosts.join("\n");
-  const changed = presets !== null || hosts !== null;
+  const changed = presets !== null || hosts !== null || limited !== null;
+  const editing = !workspace || isLimited;
+  const reset = () => (setPresets(null), setHosts(null), setLimited(null));
   const pick = (scopeId: string) => {
     setScope(scopeId);
-    setPresets(null);
-    setHosts(null);
+    reset();
   };
   const save = () => {
-    const body = { presets: chosen, hosts: typed.split(/[\s,]+/).filter(Boolean) };
+    const listed = editing ? { presets: chosen, hosts: typed.split(/[\s,]+/).filter(Boolean) } : { presets: [], hosts: [] };
+    const body = workspace ? { limited: isLimited, ...listed } : listed;
     if (!isLive()) {
       toast("Saved");
       return;
@@ -1906,10 +1913,9 @@ function SandboxNetworkSettings() {
     setBusy(true);
     sandboxNetworkSaved(body, scope || undefined)
       .then(() => {
-        setPresets(null);
-        setHosts(null);
+        reset();
         loaded.reload();
-        toast("Network saved");
+        toast(workspace ? "Network limit saved" : "Network policy saved");
       })
       .catch((e: unknown) => toast(`It didn't save: ${errText(e)}`, { kind: "err", ms: 6000 }))
       .finally(() => setBusy(false));
@@ -1919,60 +1925,89 @@ function SandboxNetworkSettings() {
       <div className="alert info" style={{ marginBottom: 16 }}>
         <Ic n="shield-check" s={15} />
         <span>
-          Kai's sandboxes reach only the model API. Each host you allow is somewhere an agent could also send your code, so allow only what turns need, such as
-          a package registry. They apply to Docker Cloud sandboxes, which keep the model key out of the sandbox; other sandboxes refuse a turn while any are
-          allowed.
+          Kai's sandboxes reach only the model API. Each project's network policy adds the hosts its turns need, such as a package registry; each is somewhere
+          an agent could also send your code. A new coding session keeps the policy it started with, in the cloud and on a person's computer. Cloud turns reach
+          these hosts on Docker Cloud sandboxes, which keep the model key out; other cloud sandboxes refuse a turn while any are allowed.
         </span>
       </div>
       <div className="sblock" style={{ marginTop: 0 }}>
-        <SRow t="Applies to" d={scope ? "This project, on top of what every project may reach" : "Every project"}>
+        <SRow t="Applies to" d={workspace ? "The workspace's limit: the most any project may allow" : "This project's network policy and environment"}>
           <SelectField
             style={{ width: "auto", minWidth: 200, maxWidth: "100%" }}
             value={scope}
             onValueChange={pick}
             aria-label="Applies to"
-            options={[{ value: "", label: "Every project" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            options={[{ value: "", label: "Workspace limit" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
           />
         </SRow>
+        {workspace && (
+          <SRow
+            t="Limit what projects may allow"
+            d={
+              isLimited
+                ? "Projects choose only from the hosts below. Lowering it applies to running sessions' next turns."
+                : "Each project chooses its own hosts."
+            }
+          >
+            <Tog on={isLimited} set={(on) => setLimited(on)} label="Limit what projects may allow" />
+          </SRow>
+        )}
       </div>
       {scope && isLive() && <CloudEnvironmentSettings key={scope} projectId={scope} />}
-      <div className="sblock">
-        <h2>Package registries</h2>
-        {Object.entries(available).map(([key, preset]) => (
-          <SRow key={key} t={preset.label} d={<span className="mono">{preset.hosts.join(", ")}</span>}>
-            <Tog on={chosen.includes(key)} set={(on) => setPresets(on ? [...chosen, key] : chosen.filter((k) => k !== key))} label={preset.label} />
-          </SRow>
-        ))}
-      </div>
-      <div className="sblock">
-        <h2>Other hosts</h2>
-        <p className="faint" style={{ marginTop: 0 }}>
-          One per line: an exact name such as <span className="mono">api.example.com</span>, or <span className="mono">*.example.com</span> for that domain's
-          hosts. HTTPS only.
+      {!workspace && <h2 style={{ marginTop: 24 }}>Network policy</h2>}
+      {!workspace && data.limited && (
+        <p className="faint">
+          Within the workspace's limit: <span className="mono">{(data.limit ?? []).join(", ") || "no hosts"}</span>
         </p>
-        <DesignTextarea
-          className="textarea mono"
-          rows={5}
-          value={typed}
-          onChange={(e) => setHosts(e.target.value)}
-          placeholder="api.example.com"
-          aria-label="Other hosts"
-          style={{ maxWidth: 520 }}
-        />
-        <div className="row" style={{ gap: 8, marginTop: 12 }}>
-          <ActionButton className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={save}>
-            Save
-          </ActionButton>
-          {changed && (
-            <ActionButton className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (setPresets(null), setHosts(null))}>
-              Discard
-            </ActionButton>
-          )}
+      )}
+      {!workspace && (data.outside_limit ?? []).length > 0 && (
+        <div className="alert warn" style={{ marginBottom: 12 }}>
+          <span>
+            Outside the workspace's limit, so not reached: <span className="mono">{(data.outside_limit ?? []).join(", ")}</span>
+          </span>
         </div>
+      )}
+      {editing && (
+        <>
+          <div className="sblock">
+            <h2>Package registries</h2>
+            {Object.entries(available).map(([key, preset]) => (
+              <SRow key={key} t={preset.label} d={<span className="mono">{preset.hosts.join(", ")}</span>}>
+                <Tog on={chosen.includes(key)} set={(on) => setPresets(on ? [...chosen, key] : chosen.filter((k) => k !== key))} label={preset.label} />
+              </SRow>
+            ))}
+          </div>
+          <div className="sblock">
+            <h2>Other hosts</h2>
+            <p className="faint" style={{ marginTop: 0 }}>
+              One per line: an exact name such as <span className="mono">api.example.com</span>, <span className="mono">*.example.com</span> for that domain's
+              hosts, or either with a port such as <span className="mono">registry.example.com:8443</span> (443 if none). HTTPS only.
+            </p>
+            <DesignTextarea
+              className="textarea mono"
+              rows={5}
+              value={typed}
+              onChange={(e) => setHosts(e.target.value)}
+              placeholder="api.example.com"
+              aria-label="Other hosts"
+              style={{ maxWidth: 520 }}
+            />
+          </div>
+        </>
+      )}
+      <div className="row" style={{ gap: 8, marginTop: 12 }}>
+        <ActionButton className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={save}>
+          Save
+        </ActionButton>
+        {changed && (
+          <ActionButton className="btn btn-secondary btn-sm" disabled={busy} onClick={reset}>
+            Discard
+          </ActionButton>
+        )}
       </div>
-      {isLive() && (
+      {isLive() && !workspace && (
         <div className="sblock">
-          <h2>{scope ? "This project's sandboxes may reach" : "Every project's sandboxes may reach"}</h2>
+          <h2>New sessions in this project may reach</h2>
           {data.effective.length ? (
             <div className="mono" style={{ fontSize: 12.5, display: "flex", flexDirection: "column", gap: 2 }}>
               {data.effective.map((h) => (

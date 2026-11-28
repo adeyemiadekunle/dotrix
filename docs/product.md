@@ -269,6 +269,12 @@ Two tracks that can run side by side. The beta opens when both are done.
 3. The full journey on fx: Nova → Kai → Juno, with a denied action, a Stop, a worker restart and a pending approval kept across that restart.
 4. Rehearse rollback on the deployed host with the switches and runbook above: route new work back to the earlier defaults and drain or recover active runs on their recorded runtime.
 
+**Network policy for Kai's sandboxes.** One policy, in one format, for the cloud and local runners (Settings → Environments & network).
+
+- [x] One network policy (2026-11-28, synthetic tests only): the workspace's optional limit, each project's choice within it, the choice pinned per coding session for cloud and local turns, and the local runner's `DOTRIX_CODING_NETWORK_ALLOW` able only to narrow it (`dotrix_engine/network_policy.py`, `coding/network.py`, `network_allow.for_turn`).
+- [ ] Registry access on Docker with gVisor, the deployment's sandbox. Today it refuses any turn whose session lists hosts, because the model key is inside the sandbox. Let the egress proxy allow the pinned hosts while keeping the key out, for example by having the proxy add it to model API requests.
+- [ ] Docker Cloud's network policy on a real account: exact hosts, `*.domain`, `host:port` entries and the blocked-host report.
+
 **Production release gates.**
 
 - Every unticked item in [Readiness checks](#readiness-checks): HTTPS and secrets (you), host isolation (gVisor `runsc` on the real host), backups and restores, migrations, email and account recovery, provider and GitHub setup, and failure handling. Run the core loop check on the deployed host with fx as the default.
@@ -319,5 +325,6 @@ Two tracks that can run side by side. The beta opens when both are done.
 - **Accounts and notifications:** Google sign-in (you: the OAuth client), two-factor authentication for people's accounts, and branded email templates. The daily briefing by email, Slack (FR-14), approving from email or Slack, and an optional second approver (FR-36).
 - **Settings still "not available yet":** push notifications, deleting a workspace, changing its address, billing.
 - **CLI:** `dotrix models`, and push from the local mirror (FR-18), with local `.dotrix/` edits going through approval.
+- **Chat research sites (optional):** a per-workspace list of sites Nova's and Kai's web research may or may not read, in the network policy's format, beside it in Settings. It controls what agents read through the platform's fetcher, not where sandboxed commands may send data.
 - **Measurement and observability:** `dotrix eval --live`, tracing agent runs, usage dashboards, and a workspace-wide default model (decision needed).
 - **Later:** workspace knowledge (Space) and a standalone Ideas system; "Propose change" and "Fix now" on results, with a severity rubric; more graph node kinds; updating a repo's `AGENTS.md` / `CLAUDE.md` as a coding session; a design folder and Figma connector; sprints, SSO/SCIM, custom roles, billing, Drive/Notion/Confluence, GitLab, custom workflows, Jira and Linear imports, per-project folder access, invites to people without an account, and teams and enterprise features. Check what exists before building an old roadmap item again.
