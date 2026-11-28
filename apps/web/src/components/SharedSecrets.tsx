@@ -34,7 +34,7 @@ export function SharedSecrets() {
   const save = async () => {
     if (!draft || !ready) return;
     if (!isLive()) {
-      toast("Saved");
+      toast("Workspace secret saved");
       setDraft(null);
       return;
     }
@@ -47,7 +47,7 @@ export function SharedSecrets() {
         value: draft.value ? draft.value : null,
       });
       setItems([...items.filter((s) => s.name !== saved.name), saved].sort((a, b) => a.name.localeCompare(b.name)));
-      toast("Shared secret saved");
+      toast("Workspace secret saved");
       setDraft(null);
     } catch (e) {
       toast(`It didn't save: ${e instanceof Error && e.message ? e.message : "try again"}`, { kind: "err", ms: 7000 });
@@ -58,11 +58,11 @@ export function SharedSecrets() {
 
   const remove = async (item: SharedSecret) => {
     const used = item.projects ? ` ${item.projects} ${item.projects === 1 ? "project uses" : "projects use"} it and will go on without it.` : "";
-    if (!window.confirm(`Delete the shared secret ${item.name}?${used}`)) return;
+    if (!window.confirm(`Delete the workspace secret ${item.name}?${used}`)) return;
     try {
       if (isLive()) await sharedSecretDeleted(item.name);
       setItems(items.filter((s) => s.name !== item.name));
-      toast("Shared secret deleted");
+      toast("Workspace secret deleted");
     } catch (e) {
       toast(`It didn't delete: ${e instanceof Error && e.message ? e.message : "try again"}`, { kind: "err", ms: 7000 });
     }
@@ -71,10 +71,10 @@ export function SharedSecrets() {
   return (
     <div className="sblock">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <h2 style={{ margin: 0 }}>Shared secrets</h2>
+        <h2 style={{ margin: 0 }}>Workspace secrets</h2>
         {!draft && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDraft(NEW)}>
-            Add shared secret
+            Add workspace secret
           </button>
         )}
       </div>
@@ -84,7 +84,7 @@ export function SharedSecrets() {
       </p>
       {error && <div className="alert danger">{error}</div>}
       {items.length > 0 && (
-        <ul className="env-secrets" aria-label="Shared secrets" style={{ maxWidth: 520 }}>
+        <ul className="env-secrets" aria-label="Workspace secrets" style={{ maxWidth: 520 }}>
           {items.map((s) => (
             <li key={s.name}>
               <button
@@ -105,7 +105,7 @@ export function SharedSecrets() {
         </ul>
       )}
       {draft && (
-        <div className="env-shared-form" role="group" aria-label={editing ? "Edit shared secret" : "Add shared secret"}>
+        <div className="env-shared-form" role="group" aria-label={editing ? "Edit workspace secret" : "Add workspace secret"}>
           <label>
             <span>Variable name</span>
             <DesignInput
@@ -125,7 +125,7 @@ export function SharedSecrets() {
             <DesignInput className="mono" value={draft.header} onChange={(e) => setDraft({ ...draft, header: e.target.value })} placeholder="Authorization" />
           </label>
           <label>
-            <span>Before the value</span>
+            <span>Prefix</span>
             <DesignInput className="mono" value={draft.prefix} onChange={(e) => setDraft({ ...draft, prefix: e.target.value })} placeholder="Bearer " />
           </label>
           <label>
@@ -141,7 +141,7 @@ export function SharedSecrets() {
           </label>
           <div className="row" style={{ gap: 8 }}>
             <ActionButton className="btn btn-primary btn-sm" disabled={!ready || busy} onClick={save}>
-              Save shared secret
+              Save workspace secret
             </ActionButton>
             <ActionButton className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setDraft(null)}>
               Cancel

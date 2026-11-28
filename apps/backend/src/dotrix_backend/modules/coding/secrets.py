@@ -171,7 +171,7 @@ class CodingSecretSave(BaseModel):
     @model_validator(mode="after")
     def _shape(self) -> CodingSecretSave:
         if self.shared and any(v is not None for v in (self.host, self.header, self.prefix, self.value)):
-            raise ValueError("A shared secret brings its own host, header and value: leave them out")
+            raise ValueError("A workspace secret brings its own host, header and value: leave them out")
         if not self.shared and self.host is None:
             raise ValueError("A secret needs its host")
         return self
@@ -317,11 +317,11 @@ async def save_secret(
     allow = await _allowed(session, project)
     shared = await _shared_rows(session, project.workspace_id, [name]) if data.shared else {}
     if data.shared and name not in shared:
-        raise Conflict(f"This workspace has no shared secret named {name}")
+        raise Conflict(f"This workspace has no workspace secret named {name}")
     host = shared[name].host if data.shared else data.host
     assert host is not None
     if not _host_allowed(host, allow):
-        raise Conflict(f"{host} isn't in this project's network policy: allow it in Network access first")
+        raise Conflict(f"{host} isn't in this project's network access: allow it there first")
     if name in profile(project.coding_environment).variables:
         raise Conflict(f"{name} is one of the environment's variables; remove it there or choose another name")
     row = await session.scalar(select(CodingSecret).where(
@@ -339,7 +339,7 @@ async def save_secret(
         session.add(row)
     else:
         if not data.shared and row.shared and data.value is None:
-            raise Conflict("Give the secret its value: it was a shared secret's until now")
+            raise Conflict("Give the secret its own value: until now it used a workspace secret")
         row.version += 1
     row.shared, row.phase = data.shared, data.phase
     if data.shared:
@@ -412,7 +412,7 @@ async def save_shared(
         raise Conflict(str(exc)) from exc
     limit = limit_of(await session.get(Workspace, member.workspace_id))
     if limit is not None and not network_policy.within(limit, data.host):
-        raise Conflict(f"{data.host} is outside the workspace's network limit")
+        raise Conflict(f"{data.host} is outside the network access limit for all projects")
     row = await session.scalar(select(CodingSharedSecret).where(
         CodingSharedSecret.workspace_id == member.workspace_id, CodingSharedSecret.name == name).with_for_update())
     now = datetime.now(UTC)
@@ -421,7 +421,7 @@ async def save_shared(
         if data.value is None:
             raise Conflict("A new secret needs its value")
         if len(await _shared_rows(session, member.workspace_id)) >= MAX_SHARED:
-            raise Conflict(f"A workspace has at most {MAX_SHARED} shared secrets")
+            raise Conflict(f"A workspace has at most {MAX_SHARED} workspace secrets")
         row = CodingSharedSecret(workspace_id=member.workspace_id, name=name, version=1, created_at=now)
         session.add(row)
     else:
@@ -512,14 +512,14 @@ async def for_turn(
             continue
         resolved = _resolve(row, shared)
         if resolved is None:
-            skipped.append(f"{name}'s shared secret was deleted from the workspace")
+            skipped.append(f"{name}'s workspace secret was deleted")
             continue
         if (resolved.host != pin.get("host") or resolved.header != pin.get("header")
                 or resolved.prefix != pin.get("prefix")):
             skipped.append(f"{name} now goes to another host or header: start a new session to use it")
             continue
         if not _host_allowed(resolved.host, allow):
-            skipped.append(f"{name}'s host {resolved.host} isn't in the network policy any more")
+            skipped.append(f"{name}'s host {resolved.host} isn't in the network access any more")
             continue
         value = cipher.decrypt(resolved.encrypted) if resolved.encrypted else None
         if value is None:

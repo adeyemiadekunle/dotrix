@@ -77,10 +77,10 @@ Neither sandbox's injection has run on a real gateway or account yet.
 
 Owners and admins can keep a secret once for the workspace
 (`PUT/DELETE /v1/workspaces/{id}/coding/shared-secrets/{NAME}`, Settings →
-Environments & network with Workspace limit selected). Its host must be within
+Environments with "Workspace (all projects)" selected, as "Workspace secrets"). Its host must be within
 the workspace's network limit when there is one. A project uses it only by
 referencing it by name (`PUT .../coding/secrets/{NAME}` with `shared: true`,
-"A workspace shared secret" in the form); the reference stores no host or
+"A workspace secret" in the form); the reference stores no host or
 value, and the shared secret's host must be in the project's network access.
 Turns read the shared secret's current value, so rotating it once reaches
 every project that references it on its sessions' next turns. Deleting it
@@ -90,7 +90,7 @@ are audited as `coding_shared_secret.*`.
 ### Setup-only secrets
 
 A project's own secret or its reference to a shared one can be `phase:
-setup` ("Only for the setup script"). It goes to the sandbox only on a fresh
+setup` ("Setup only"). It goes to the sandbox only on a fresh
 sandbox whose environment has a setup script that runs this turn (never in
 Plan, never to a warm or woken sandbox), and is removed before Kai runs: on
 Docker Cloud the Docker secret is deleted and checked gone and its placeholder

@@ -62,7 +62,7 @@ async def test_secrets_are_write_only_encrypted_audited_and_limited_to_the_netwo
 
     # Its host must be in the project's network policy first.
     refused = await db_client.put(url, json=body, headers=ada.headers)
-    assert refused.status_code == 409 and "network policy" in refused.text
+    assert refused.status_code == 409 and "network access" in refused.text
     await db_client.put(f"{base}/coding/network", json={"presets": ["npm"], "hosts": ["*.example.com"]},
                         headers=ada.headers)
     assert (await db_client.put(url, json=body, headers=cat.headers)).status_code == 403
@@ -269,7 +269,7 @@ async def test_turns_get_a_shared_secrets_current_value_and_setup_only_secrets_a
     assert sorted((s.name, s.value, s.phase) for s in sandbox.secrets[0]) == [
         ("NPM_TOKEN", VALUE, "all"), ("PYPI_TOKEN", "pypi-value", "setup")]
     assert sandbox.log[:3] == ["setup", "drop PYPI_TOKEN", "kai"], sandbox.log
-    assert any(e["text"] == "Removed the setup-only secrets" for e in first["events"])
+    assert any(e["text"] == "Removed the setup only secrets" for e in first["events"])
 
     # Rotated once in the workspace: the session's next turn gets it, in a fresh sandbox.
     await db_client.put(f"{ws}/coding/shared-secrets/NPM_TOKEN", json={"host": "registry.npmjs.org", "value": "new"},

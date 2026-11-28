@@ -11,7 +11,7 @@ network. Entries are separated by commas or spaces:
 - `registry.example.com:8443`: that host on that port
 
 The format is the platform's network policy (dotrix_engine/network_policy.py). A turn gets the list its coding
-session pinned (Settings → Environments & network), which this computer's variable can only narrow (`for_turn`).
+session pinned (Settings → Environments), which this computer's variable can only narrow (`for_turn`).
 The host resolves names; the sandbox has no DNS. Unencrypted HTTP is not tunnelled.
 """
 from __future__ import annotations

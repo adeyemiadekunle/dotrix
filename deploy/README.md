@@ -248,7 +248,7 @@ account stores 50 sandboxes by default, sleeping ones included. A sandbox whose 
 itself after the turn time plus the idle time (and 10 minutes), so it stops billing.
 
 **Network.** Owners and admins set each project's network policy (package registries or other
-hosts) in Settings → Environments & network, optionally within a workspace limit. Those apply only
+hosts) in Settings → Environments, optionally within a workspace limit. Those apply only
 to Docker Cloud sandboxes, because there the key stays out; the other sandbox kinds refuse a turn
 while any are set.
 

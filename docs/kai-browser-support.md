@@ -125,7 +125,7 @@ after installing; a ready distribution is then kept for the runner's lifetime.
 
 Commands in the native sandbox (fx and Claude Code) have no network by default.
 A turn gets its coding session's network policy, the hosts the project's owners
-and admins chose in Settings → Environments & network, pinned when the session
+and admins chose in Settings → Environments, pinned when the session
 started and kept within the workspace's limit. The same list applies to cloud
 turns, so a session reaches the same hosts in both places.
 

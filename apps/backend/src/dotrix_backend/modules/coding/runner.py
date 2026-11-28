@@ -554,7 +554,7 @@ class CodingWorker:
         if turn_secrets.setup_only and not setup_runs:
             turn_secrets = turn_secrets.without_setup()
         if turn_secrets.setup_only and not getattr(self.sandbox, "drops_secrets", False):
-            raise RunFailed("This sandbox can't remove setup-only secrets before Kai runs, so it can't take them")
+            raise RunFailed("This sandbox can't remove setup only secrets before Kai runs, so it can't take them")
         for note in turn_secrets.skipped:
             await self._update(run_id, step=f"Host secret left out: {note}")
         run_sandbox = self.sandbox
@@ -671,8 +671,8 @@ class CodingWorker:
                 try:
                     await box.drop_secrets([secret.name for secret in turn_secrets.setup_only])
                 except SandboxError as exc:
-                    raise RunFailed(f"Setup-only secrets couldn't be removed before Kai runs: {exc}") from exc
-                await self._update(run_id, step="Removed the setup-only secrets")
+                    raise RunFailed(f"Setup only secrets couldn't be removed before Kai runs: {exc}") from exc
+                await self._update(run_id, step="Removed the setup only secrets")
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
             if restored_patch:
                 applied = await box.exec(["git", "apply", "--index", "--binary", "--whitespace=nowarn", "-"],
@@ -856,8 +856,8 @@ class CodingWorker:
         if hosts:
             shown = ", ".join(hosts[:8]) + (f" and {len(hosts) - 8} more" if len(hosts) > 8 else "")
             await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in the "
-                                            "project's network policy (Settings → Environments & network); a new "
-                                            "session gets them")
+                                            "project's network access (Settings → Environments); a new session "
+                                            "gets them")
 
     async def _hold_for_acceptance(
         self, run_id: uuid.UUID, diff: bytes, files: list[dict[str, Any]], summary: str | None,

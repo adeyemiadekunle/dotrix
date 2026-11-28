@@ -127,7 +127,7 @@ export function EditEnvironment({
       network: { presets, hosts: typedHosts },
     };
     if (!isLive()) {
-      toast("Saved");
+      toast("Environment saved");
       onClose();
       return;
     }
@@ -147,7 +147,7 @@ export function EditEnvironment({
   const saveSecret = async () => {
     const name = secret.name.trim();
     if (!isLive()) {
-      toast("Saved");
+      toast("Secret saved");
       setView("main");
       return;
     }
@@ -231,18 +231,18 @@ export function EditEnvironment({
                     value={secret.shared ? "shared" : "own"}
                     onValueChange={(value) => setSecret({ ...secret, shared: value === "shared", name: editing ? secret.name : "" })}
                     options={[
-                      { value: "own", label: "This project's own" },
-                      ...(shared.length || secret.shared ? [{ value: "shared", label: "A workspace shared secret" }] : []),
+                      { value: "own", label: "Its own value" },
+                      ...(shared.length || secret.shared ? [{ value: "shared", label: "A workspace secret" }] : []),
                     ]}
                   />
                 </EnvField>
                 {secret.shared ? (
                   <EnvField
-                    label="Shared secret"
+                    label="Workspace secret"
                     help="Its host, header and value come from the workspace, and a new value there reaches this project's next turns. Its host must be in this project's network access."
                   >
                     <SelectField
-                      aria-label="Shared secret"
+                      aria-label="Workspace secret"
                       value={secret.name}
                       disabled={editing}
                       onValueChange={(value) => setSecret({ ...secret, name: value })}
@@ -284,7 +284,7 @@ export function EditEnvironment({
                         placeholder="Authorization"
                       />
                     </EnvField>
-                    <EnvField label="Before the value" id="secret-prefix" help="Such as “Bearer ” (with its space), or nothing.">
+                    <EnvField label="Prefix" id="secret-prefix" help="Text before the value, such as “Bearer ” (with its space), or nothing.">
                       <DesignInput
                         id="secret-prefix"
                         className="mono"
@@ -312,9 +312,9 @@ export function EditEnvironment({
                 <label className="env-check">
                   <input type="checkbox" checked={secret.setupOnly} onChange={(e) => setSecret({ ...secret, setupOnly: e.target.checked })} />
                   <span>
-                    Only for the setup script
+                    Setup only
                     <span className="faint" style={{ display: "block", fontSize: 12 }}>
-                      Removed before Kai runs, and Kai's brief doesn't name it. Needs a setup script.
+                      Given only to the setup script and removed before Kai runs; Kai's brief doesn't name it. Needs a setup script.
                     </span>
                   </span>
                 </label>
@@ -470,8 +470,8 @@ export function EditEnvironment({
                           >
                             <span className="mono">{s.name}</span>
                             <span className="faint">
-                              {s.missing ? "Shared secret deleted from the workspace" : s.host}
-                              {s.shared && !s.missing && " · shared"}
+                              {s.missing ? "Workspace secret deleted" : s.host}
+                              {s.shared && !s.missing && " · workspace"}
                               {s.phase === "setup" && " · setup only"}
                               {!s.missing && !s.allowed && " · not in network access, so not sent"}
                             </span>
@@ -491,7 +491,7 @@ export function EditEnvironment({
                 {more && (
                   <>
                     <EnvField
-                      label="Verification command"
+                      label="Verification script"
                       id="env-verify"
                       help="Must pass before changes can be accepted. Runs with the repository read-only; write test artifacts to $TMPDIR."
                     >
@@ -505,7 +505,7 @@ export function EditEnvironment({
                         placeholder="npm test"
                       />
                     </EnvField>
-                    <EnvField label="Coding image" help="Custom images must be approved by the server operator and pinned by digest. Docker only.">
+                    <EnvField label="Coding image" help="Custom images must be approved by the server operator and pinned by digest. OpenShell only for now.">
                       <SelectField
                         title={form.image ?? "Platform coding image"}
                         aria-label="Coding image"

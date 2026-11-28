@@ -1,6 +1,6 @@
 """The network policy: which hosts Kai's sandboxes may reach besides the model API.
 
-One format and one validator for the platform (Settings → Environments & network, `coding/network.py`) and for the
+One format and one validator for the platform (Settings → Environments, `coding/network.py`) and for the
 local runner (`dotrix_cli/network_allow.py`), so a list means the same thing in the cloud and on a person's computer.
 
 An entry is one of:

@@ -66,7 +66,7 @@ Tested so far only against a fake of its API (`tests/unit/test_docker_cloud.py`)
 - [ ] **Sleep and wake.** The sandbox sleeps between turns and wakes for the next with its files. It is deleted after `DOTRIX_CODING_SLEEP_DAYS`, beyond `DOTRIX_CODING_SLEEP_MAX` per workspace, and at once by "Delete sandbox". The 10-minute sweep removes stopped sandboxes and secrets nothing references.
 - [ ] **Cloud checkout recovery.** A Build turn whose sandbox is lost mid-turn restores its last checkpoint in a fresh sandbox, then is verified and published as usual.
 - [ ] **Host secrets.** A project secret for a host other than the model API, as a custom secret with injection, reaches that host with the real value in its header. `echo $NAME` inside the sandbox shows only the placeholder. Repeat with a `host:port` entry.
-- [ ] **Shared secrets.** A project referencing a workspace's shared secret gets it. Rotating the shared value reaches that project's next turn.
+- [ ] **Workspace secrets.** A project referencing a workspace secret gets it. Rotating its value reaches that project's next turn.
 - [ ] **Setup-only secrets.** The setup script can use one. After `drop_secrets` deletes it, a request from Kai's commands to that host no longer carries the value. Check whether injection stops as soon as the secret is deleted.
 - [ ] **Waking with a deleted secret.** A sandbox whose stored secrets include a deleted (setup-only) one still wakes for the next turn.
 - [ ] **Custom images.** An operator-approved image pinned by digest is used for the session and kept by its follow-ups.
