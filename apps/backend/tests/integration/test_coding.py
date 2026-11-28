@@ -1916,7 +1916,8 @@ else:
         # This legacy fixture has neither the supported runtime nor a matching
         # API-key profile. Hosts with namespaces reach profile validation first.
         assert any(reason in ready["error"] for reason in (
-            "requires Linux Bubblewrap", "Could not start isolated", "Couldn't prepare the local model profile"))
+            "requires OS sandbox isolation", "requires Linux Bubblewrap", "Could not start isolated",
+            "Couldn't prepare the local model profile"))
         assert (home / ".fx/settings.json").read_text() == original
 
 

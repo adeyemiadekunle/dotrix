@@ -86,7 +86,8 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, WorkspaceScopedMixin, Base):
     specialist_model: Mapped[str | None] = mapped_column(String(100))
     # Opt-in host routing: protect architecture/review and project-changing work.
     automatic_model_routing: Mapped[bool] = mapped_column(default=False, server_default="false")
-    # Hosts this project's coding sandboxes may also reach, on top of the workspace's (coding/network.py).
+    # This project's network policy (coding/network.py): the hosts its new coding sessions pin, within the
+    # workspace's limit.
     sandbox_network: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     coding_environment: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     # Bumped on every .dotrix/ change; lets the CLI mirror pull only what changed.

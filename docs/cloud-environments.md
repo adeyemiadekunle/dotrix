@@ -23,13 +23,23 @@ prevents publication. Activity shows phase status, without raw script output.
 Environment versions participate in sandbox reuse. Parallel coding currently
 refuses enabled profiles rather than bypassing setup or verification.
 
-Profiles use the existing network policy. On Docker, the operator can approve
+Profiles sit beside the project's network policy (`coding/network.py`, one format
+with the local runner in `dotrix_engine/network_policy.py`). The workspace may set
+a limit, the most any project may allow; the project chooses its hosts within it;
+and a coding session pins that choice when its first turn is admitted, for every
+follow-up, cloud or local, while the limit as it is now still applies to each
+turn. On Docker, the operator can approve
 additional images by registry digest. The worker resolves the selected image to
 an immutable local content ID, records that ID on the run, and uses it for both
 agent and egress containers. Retries and follow-ups retain that ID. A platform
 default specified by a mutable tag is resolved at first execution, not at approval.
 No fallback image is substituted when that content ID is unavailable. Removing
 an image from the operator list blocks new admission and execution of queued runs.
+
+Environment variables (non-secret `KEY=value` pairs, edited in `.env` format) are
+set for the setup script, Kai's commands and verification. They are shown in the
+brief, so names that look like secrets are refused, as are names the sandbox or
+the coding tools use. The same form saves the project's network policy.
 
 This slice does not implement arbitrary unreviewed images, multiple selectable
 profiles, secret injection or dependency-only network phases. Do not put secrets

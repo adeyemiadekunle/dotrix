@@ -73,6 +73,7 @@ from dotrix_engine.skills import DEFINITION_OF_DONE, review_skills
 
 from . import guard
 from .brief import split_contract, with_task
+from .environments import with_variables
 from .inputs import accepts_steering, steer_states, take_steers
 from .models import (
     CODING_AGENT_NAME,
@@ -86,7 +87,7 @@ from .models import (
     PrState,
     waiting_patch,
 )
-from .network import allowed_hosts, network_digest
+from .network import for_run, network_digest
 from .planning import parse_plan, planning_brief, readonly_command
 from .research import RESEARCH_RULE, serve_research
 from .sandbox import CodingSandbox, SandboxError, SandboxSession
@@ -446,8 +447,10 @@ class CodingWorker:
             claude_session, transcript_key, cost_before = sess.claude_session, sess.transcript_key, sess.cost_reported
             profile_digest = sess.profile_digest
             sleeping, slept_at = (dict(sess.sandbox_handle) if sess.sandbox_handle else None), sess.sandbox_slept_at
-            # The hosts its sandbox may reach besides the model API (owners and admins set them).
-            allow = allowed_hosts(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id))
+            # The hosts its sandbox may reach besides the model API: what its session pinned, within the
+            # workspace's limit as it is now (network.py).
+            allow = for_run(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id),
+                            run.network_snapshot)
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
@@ -821,8 +824,9 @@ class CodingWorker:
             return
         if hosts:
             shown = ", ".join(hosts[:8]) + (f" and {len(hosts) - 8} more" if len(hosts) > 8 else "")
-            await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in "
-                                            "Settings → Network")
+            await self._update(run_id, step=f"The sandbox blocked {shown}. Owners and admins can allow hosts in the "
+                                            "project's network policy (Settings → Environments & network); a new "
+                                            "session gets them")
 
     async def _hold_for_acceptance(
         self, run_id: uuid.UUID, diff: bytes, files: list[dict[str, Any]], summary: str | None,
@@ -978,7 +982,7 @@ class CodingWorker:
 
         watcher = asyncio.create_task(watch())
         try:
-            command = ["sh", "-eu", "-c", script]
+            command = with_variables(["sh", "-eu", "-c", script], environment)
             if phase == "verify_script":
                 command = readonly_command(command)
             result = await box.exec(command, timeout=configured.timeout_seconds, cancel=cancel)
@@ -1007,6 +1011,8 @@ class CodingWorker:
             if skill_run is None or not self._holds(skill_run) or skill_run.status is not CodingRunStatus.RUNNING:
                 raise _ReconciliationRequired()
             skill_snapshot = skill_run.skill_snapshot or {}
+            # The session's environment: its variables are set for the tool and every command it runs.
+            environment = dict(skill_run.environment_snapshot) if skill_run.environment_snapshot else None
             tool_capabilities = describe(skill_run, self.settings)
             # A person can steer this turn while it works (fx, in the cloud; not a parallel build's task).
             steering = getattr(tool, "steers", False) and task_key is None and accepts_steering(skill_run)
@@ -1120,6 +1126,7 @@ class CodingWorker:
                 browser_argv = tool.command(model, browser=browser, browser_engine=self.settings.coding_browser_engine, research=research)
                 research_job = asyncio.create_task(serve_research(box, research[0], self.settings, cancel))
             command = readonly_command(tool.command(model, browser=False) + plan_extra) if plan_mode else browser_argv + extra
+            command = with_variables(command, environment)
             result = await box.exec(
                 command,
                 stdin=(brief + (BROWSER_RULE if browser else "") + (RESEARCH_RULE if research else "")).encode(), on_line=on_line,

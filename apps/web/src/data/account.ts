@@ -406,9 +406,10 @@ export async function repoConnected(pid: string, r: Schemas["RepoOption"] | null
   );
 }
 
-/* ---------- Network: the hosts Kai's sandboxes may reach besides the model API ---------- */
+/* ---------- Network policy: the hosts Kai's sandboxes may reach besides the model API ---------- */
+// One policy: the workspace's optional limit, and each project's choice within it (new sessions pin it).
 export type SandboxNetwork = Schemas["SandboxNetworkRead"];
-type NetworkBody = Schemas["SandboxNetworkUpdate"];
+type NetworkBody = Schemas["SandboxNetworkUpdate"] & { limited?: boolean };
 
 export async function sandboxNetwork(projectId?: string): Promise<SandboxNetwork> {
   if (!projectId) return unwrap(api.GET("/v1/workspaces/{workspace_id}/coding/network", wsPath()));
@@ -420,11 +421,11 @@ export async function sandboxNetwork(projectId?: string): Promise<SandboxNetwork
 }
 
 export async function sandboxNetworkSaved(body: NetworkBody, projectId?: string): Promise<SandboxNetwork> {
-  if (!projectId) return unwrap(api.PUT("/v1/workspaces/{workspace_id}/coding/network", { ...wsPath(), body }));
+  if (!projectId) return unwrap(api.PUT("/v1/workspaces/{workspace_id}/coding/network", { ...wsPath(), body: { ...body, limited: body.limited ?? false } }));
   return unwrap(
     api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/network", {
       params: { path: { workspace_id: live.ws!.id, project_id: projectId } },
-      body,
+      body: { presets: body.presets, hosts: body.hosts },
     }),
   );
 }
@@ -437,7 +438,7 @@ export async function cloudEnvironment(projectId: string): Promise<CloudEnvironm
     }),
   );
 }
-export async function cloudEnvironmentSaved(projectId: string, body: Schemas["EnvironmentUpdate"]): Promise<CloudEnvironment> {
+export async function cloudEnvironmentSaved(projectId: string, body: Schemas["EnvironmentSave"]): Promise<CloudEnvironment> {
   return unwrap(
     api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/environment", {
       params: { path: { workspace_id: live.ws!.id, project_id: projectId } },

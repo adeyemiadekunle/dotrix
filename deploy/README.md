@@ -249,9 +249,10 @@ minutes, and also deletes stopped dotrix sandboxes and secrets nothing refers to
 account stores 50 sandboxes by default, sleeping ones included. A sandbox whose worker crashed stops
 itself after the turn time plus the idle time (and 10 minutes), so it stops billing.
 
-**Network.** Owners and admins can let sandboxes reach package registries or other hosts in
-Settings → Network. Those apply only to Docker Cloud sandboxes, because there the key stays
-out; the other sandbox kinds refuse a turn while any are set.
+**Network.** Owners and admins set each project's network policy (package registries or other
+hosts) in Settings → Environments & network, optionally within a workspace limit. Those apply only
+to Docker Cloud sandboxes, because there the key stays out; the other sandbox kinds refuse a turn
+while any are set.
 
 Not yet checked against a real account (the client is tested against a fake of the documented API,
 `tests/unit/test_docker_cloud.py`): whether Docker pulls a private image without extra setup, and how

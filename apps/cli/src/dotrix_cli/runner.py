@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 from dotrix_engine.coding_helpers import AT_ONCE as HELPERS_AT_ONCE
 from dotrix_engine.coding_helpers import claude_agents, helper_share, opencode_agents, workers
 
+from . import network_allow
 from .platform import PlatformError
 from .toolenv import EXECUTION_ENV, tool_environment
 
@@ -1240,15 +1241,25 @@ class LocalRunner:
                 environment["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"  # in place of --safe-mode (Tool.named)
             if turn.browser is not None and tool.name == "codex":
                 environment[BROWSER_TOKEN_ENV] = turn.browser[1]
+            if tool.name in ("claude-code", "fx"):
+                # The hosts the native sandbox's commands may reach: the session's pinned network policy, which this
+                # computer's own DOTRIX_CODING_NETWORK_ALLOW may only narrow (network_allow.for_turn).
+                try:
+                    hosts = [str(rule) for rule in network_allow.for_turn(run["network"] if "network" in run else None)]
+                except ValueError as exc:
+                    await report("failed", base_sha=base_sha, error=str(exc))
+                    return
+                environment[network_allow.ENV] = " ".join(hosts) or network_allow.NONE
+                reach = f"; commands may reach {', '.join(hosts)}" if hosts else ""
             if tool.name == "codex":
                 pending.append({"kind": "step", "text": "Commands stay in a local workspace sandbox with network access disabled"})
             elif tool.name == "claude-code":
                 from .claude_local import configured as native_claude_available
 
-                pending.append({"kind": "step", "text": "Commands stay in a local workspace sandbox with network access disabled"
+                pending.append({"kind": "step", "text": ("Commands stay in a local workspace sandbox with network access disabled" + reach)
                                 if native_claude_available() else "Local file edits only; command isolation is unavailable"})
             elif tool.name == "fx":
-                pending.append({"kind": "step", "text": "Local worktree sandbox: shell commands and file edits; direct networking is disabled"})
+                pending.append({"kind": "step", "text": "Local worktree sandbox: shell commands and file edits; direct networking is disabled" + reach})
             if turn.browser is not None:
                 pending.append({"kind": "step", "text": "With the Browser pane: it may open this computer's pages there"})
         out = Outcome(root=tree, helper_events=run.get("helper_events") is True)

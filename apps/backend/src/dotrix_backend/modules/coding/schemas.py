@@ -353,6 +353,9 @@ class CodingClaim(BaseModel):
     base_branch: str
     source_sha: str | None = Field(default=None, description="Admitted starting commit for a standalone turn")
     managed_worktree: bool = Field(default=False, description="Reuse the worktree assigned to this session and runner")
+    network: list[str] = Field(default_factory=list, description=(
+        "Hosts the turn's sandboxed commands may reach (the session's pinned network policy, within the workspace's "
+        "limit now). The runner's own DOTRIX_CODING_NETWORK_ALLOW may only narrow it"))
     helper_events: bool = Field(default=True, description=(
         "The platform takes `background-<state>` events for Kai's helpers (an older one doesn't say so, and a runner "
         "then reports them as steps)"))
@@ -443,19 +446,31 @@ class CodingFile(BaseModel):
 
 
 class SandboxNetworkUpdate(BaseModel):
-    """The hosts Kai's sandboxes may reach besides the model API, here (workspace or project)."""
+    """A project's network policy: the hosts its coding sessions may reach besides the model API, within the
+    workspace's limit. A new session pins it; follow-ups keep what their session pinned."""
 
     presets: list[str] = Field(default_factory=list, max_length=20,
                                description="Named presets (package registries), e.g. npm, pypi")
-    hosts: list[str] = Field(default_factory=list, max_length=50,
-                             description="Exact host names, or *.domain for one domain's hosts")
+    hosts: list[str] = Field(default_factory=list, max_length=50, description=(
+        "Exact host names, *.domain for one domain's hosts, either with :port (443 if none)"))
+
+
+class SandboxNetworkLimitUpdate(SandboxNetworkUpdate):
+    """The workspace's limit: the most any project's network policy may allow."""
+
+    limited: bool = Field(default=False, description=(
+        "Whether projects are limited to these presets and hosts. False: no limit (send no presets or hosts)"))
 
 
 class SandboxNetworkRead(BaseModel):
-    presets: list[str] = Field(description="The presets chosen here")
-    hosts: list[str] = Field(description="The custom hosts chosen here")
-    effective: list[str] = Field(
-        description="Everything a sandbox here may reach besides the model API (a project: the workspace's too)")
+    presets: list[str] = Field(description="The presets chosen here (a workspace: its limit's)")
+    hosts: list[str] = Field(description="The hosts chosen here (a workspace: its limit's)")
+    effective: list[str] = Field(description=(
+        "A project: what its new sessions get, within the workspace's limit. A workspace: its limit's hosts"))
+    limited: bool = Field(default=False, description="Whether the workspace limits what projects may allow")
+    limit: list[str] | None = Field(default=None, description="The workspace's limit, expanded; None: no limit")
+    outside_limit: list[str] = Field(default_factory=list, description=(
+        "A project's chosen hosts that the workspace's limit leaves out (they aren't reached)"))
     available_presets: dict[str, dict[str, Any]] = Field(description="Each preset's name and its hosts")
 
 

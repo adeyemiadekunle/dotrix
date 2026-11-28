@@ -143,6 +143,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # Fixed when asked for, so the approver sees exactly what will be sent.
     environment_image_id: Mapped[str | None] = mapped_column(String(80))
     environment_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # The network policy its session pinned when the session's first turn was admitted (coding/network.py): the
+    # hosts besides the model API, kept by every follow-up. None: a run from before sessions pinned one.
+    network_snapshot: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True))
     brief: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)  # what the person asking added
 

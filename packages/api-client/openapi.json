@@ -24111,7 +24111,7 @@
           "coding"
         ],
         "summary": "Get Project Sandbox Network",
-        "description": "The hosts this project's coding sandboxes may reach on top of the workspace's, and all of them together.",
+        "description": "This project's network policy: the hosts its new coding sessions pin, within the workspace's limit.",
         "operationId": "get_project_sandbox_network",
         "security": [
           {
@@ -24188,7 +24188,7 @@
           "coding"
         ],
         "summary": "Set Project Sandbox Network",
-        "description": "Set the hosts this project's coding sandboxes may also reach, on top of the workspace's. Owners and\nadmins; audited.",
+        "description": "Set this project's network policy (presets and hosts: exact, *.domain, either with :port). 409 when an entry\nis outside the workspace's limit. New sessions pin it; running sessions keep theirs. Owners and admins; audited.",
         "operationId": "set_project_sandbox_network",
         "security": [
           {
@@ -24466,7 +24466,7 @@
           "coding"
         ],
         "summary": "Set Cloud Environment",
-        "description": "Save an administrator's cloud environment profile using its current revision.\nStale revisions or unapproved images return 409. New cloud sessions pin the saved profile;\nexisting sessions retain their admitted snapshot. This action never starts coding or runs scripts.",
+        "description": "Save an administrator's cloud environment (name, image, scripts, variables) using its current revision, and,\nwhen `network` is given, the project's network policy with it, in one transaction. Stale revisions, unapproved\nimages and hosts outside the workspace's limit return 409; refused variable names 422. New cloud sessions pin the\nsaved environment; existing sessions keep theirs. This action never starts coding or runs scripts.",
         "operationId": "set_cloud_environment",
         "security": [
           {
@@ -24500,7 +24500,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EnvironmentUpdate"
+                "$ref": "#/components/schemas/EnvironmentSave"
               }
             }
           }
@@ -25223,7 +25223,7 @@
           "coding"
         ],
         "summary": "Get Workspace Sandbox Network",
-        "description": "The hosts every project's coding sandboxes may reach besides the model API, and the presets to\nchoose from. Anyone in the workspace can read it (a blocked turn says where to ask).",
+        "description": "The workspace's network limit (the most any project's network policy may allow besides the model API, or\nnone), and the presets to choose from. Anyone in the workspace can read it (a blocked turn says where to ask).",
         "operationId": "get_workspace_sandbox_network",
         "security": [
           {
@@ -25290,7 +25290,7 @@
           "coding"
         ],
         "summary": "Set Workspace Sandbox Network",
-        "description": "Set the hosts every project's coding sandboxes may reach (presets and custom hosts: exact, or\n*.domain). Each one is somewhere an agent could send data. Owners and admins; audited.",
+        "description": "Set or remove the workspace's network limit: the presets and hosts (exact, *.domain, either with :port) that\nprojects may choose from. Lowering it applies to running sessions' next turns too. Owners and admins; audited.",
         "operationId": "set_workspace_sandbox_network",
         "security": [
           {
@@ -25314,7 +25314,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SandboxNetworkUpdate"
+                "$ref": "#/components/schemas/SandboxNetworkLimitUpdate"
               }
             }
           }
@@ -30698,6 +30698,14 @@
             "description": "Reuse the worktree assigned to this session and runner",
             "default": false
           },
+          "network": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Network",
+            "description": "Hosts the turn's sandboxed commands may reach (the session's pinned network policy, within the workspace's limit now). The runner's own DOTRIX_CODING_NETWORK_ALLOW may only narrow it"
+          },
           "helper_events": {
             "type": "boolean",
             "title": "Helper Events",
@@ -33447,6 +33455,14 @@
             "title": "Timeout Seconds",
             "default": 300
           },
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Variables",
+            "description": "Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused"
+          },
           "image_policy": {
             "type": "string",
             "enum": [
@@ -33471,7 +33487,7 @@
         ],
         "title": "EnvironmentRead"
       },
-      "EnvironmentUpdate": {
+      "EnvironmentSave": {
         "properties": {
           "revision": {
             "type": "integer",
@@ -33520,6 +33536,25 @@
             "minimum": 10.0,
             "title": "Timeout Seconds",
             "default": 300
+          },
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Variables",
+            "description": "Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxNetworkUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project's network policy, saved with the environment; None leaves it as it is"
           }
         },
         "additionalProperties": false,
@@ -33527,7 +33562,8 @@
         "required": [
           "revision"
         ],
-        "title": "EnvironmentUpdate"
+        "title": "EnvironmentSave",
+        "description": "The environment and, when given, the project's network policy, saved together from one form."
       },
       "EpicProgress": {
         "properties": {
@@ -40389,6 +40425,37 @@
         "title": "RunnerSteerReport",
         "description": "What the local driver said about a person's message to the working turn."
       },
+      "SandboxNetworkLimitUpdate": {
+        "properties": {
+          "presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Presets",
+            "description": "Named presets (package registries), e.g. npm, pypi"
+          },
+          "hosts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Hosts",
+            "description": "Exact host names, *.domain for one domain's hosts, either with :port (443 if none)"
+          },
+          "limited": {
+            "type": "boolean",
+            "title": "Limited",
+            "description": "Whether projects are limited to these presets and hosts. False: no limit (send no presets or hosts)",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "SandboxNetworkLimitUpdate",
+        "description": "The workspace's limit: the most any project's network policy may allow."
+      },
       "SandboxNetworkRead": {
         "properties": {
           "presets": {
@@ -40397,7 +40464,7 @@
             },
             "type": "array",
             "title": "Presets",
-            "description": "The presets chosen here"
+            "description": "The presets chosen here (a workspace: its limit's)"
           },
           "hosts": {
             "items": {
@@ -40405,7 +40472,7 @@
             },
             "type": "array",
             "title": "Hosts",
-            "description": "The custom hosts chosen here"
+            "description": "The hosts chosen here (a workspace: its limit's)"
           },
           "effective": {
             "items": {
@@ -40413,7 +40480,36 @@
             },
             "type": "array",
             "title": "Effective",
-            "description": "Everything a sandbox here may reach besides the model API (a project: the workspace's too)"
+            "description": "A project: what its new sessions get, within the workspace's limit. A workspace: its limit's hosts"
+          },
+          "limited": {
+            "type": "boolean",
+            "title": "Limited",
+            "description": "Whether the workspace limits what projects may allow",
+            "default": false
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit",
+            "description": "The workspace's limit, expanded; None: no limit"
+          },
+          "outside_limit": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Outside Limit",
+            "description": "A project's chosen hosts that the workspace's limit leaves out (they aren't reached)"
           },
           "available_presets": {
             "additionalProperties": {
@@ -40452,12 +40548,12 @@
             "type": "array",
             "maxItems": 50,
             "title": "Hosts",
-            "description": "Exact host names, or *.domain for one domain's hosts"
+            "description": "Exact host names, *.domain for one domain's hosts, either with :port (443 if none)"
           }
         },
         "type": "object",
         "title": "SandboxNetworkUpdate",
-        "description": "The hosts Kai's sandboxes may reach besides the model API, here (workspace or project)."
+        "description": "A project's network policy: the hosts its coding sessions may reach besides the model API, within the\nworkspace's limit. A new session pins it; follow-ups keep what their session pinned."
       },
       "Scope": {
         "type": "string",

@@ -1,6 +1,6 @@
 """Which hosts a native sandbox's commands may reach, through the host's relay.
 
-A native turn's sandbox has no network of its own. When `DOTRIX_CODING_NETWORK_ALLOW` names hosts, the sandbox's
+A native turn's sandbox has no network of its own. When its list names hosts, the sandbox's
 bridge accepts HTTPS proxy tunnels (`CONNECT host:port`) and the host's `Relay` opens each one only to a host on the
 list, only on the port the entry names (443 by default), and only to a public address. A listed name that resolves to
 a loopback, private or link-local address is refused, so the list can't reach services on this computer or its
@@ -10,6 +10,8 @@ network. Entries are separated by commas or spaces:
 - `*.example.com`: hosts under it, not `example.com` itself
 - `registry.example.com:8443`: that host on that port
 
+The format is the platform's network policy (dotrix_engine/network_policy.py). A turn gets the list its coding
+session pinned (Settings → Environments & network), which this computer's variable can only narrow (`for_turn`).
 The host resolves names; the sandbox has no DNS. Unencrypted HTTP is not tunnelled.
 """
 from __future__ import annotations
@@ -17,62 +19,48 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import os
-import re
 import socket
-from dataclasses import dataclass
+
+from dotrix_engine import network_policy
+from dotrix_engine.network_policy import Entry as Rule  # the one format, shared with the platform
 
 ENV = 'DOTRIX_CODING_NETWORK_ALLOW'
-_LABEL = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
-
-
-@dataclass(frozen=True)
-class Rule:
-    host: str
-    port: int
-    subdomains: bool = False
-
-    def permits(self, host: str, port: int) -> bool:
-        if port != self.port:
-            return False
-        if self.subdomains:
-            return host.endswith('.' + self.host)
-        return host == self.host
-
-
-def _valid_host(host: str) -> bool:
-    """A DNS name. An address isn't one: the list names hosts, and the host resolves them."""
-    try:
-        ipaddress.ip_address(host)
-        return False
-    except ValueError:
-        pass
-    return 0 < len(host) <= 253 and all(_LABEL.fullmatch(label) for label in host.split('.'))
+NONE = 'none'  # this computer allows its sandbox no hosts, whatever a session's project allows
 
 
 def parse(value: str | None) -> tuple[Rule, ...]:
     """The rules in `value`. An entry that isn't a host name (with an optional port) is an error, so a typo is
     reported rather than silently allowing nothing."""
-    rules = []
-    for entry in re.split(r'[\s,]+', (value or '').strip().lower()):
-        if not entry:
-            continue
-        host, _, port_text = entry.partition(':')
-        subdomains = host.startswith('*.')
-        host = host[2:] if subdomains else host
-        port = int(port_text) if port_text.isdigit() else (443 if not port_text else -1)
-        if not _valid_host(host) or not 1 <= port <= 65535 or '.' not in host:
-            raise ValueError(f'{ENV}: {entry!r} is not a host name such as example.com, *.example.com or example.com:8443')
-        rules.append(Rule(host, port, subdomains))
-    return tuple(rules)
+    try:
+        return tuple(network_policy.parse_text(value))
+    except network_policy.InvalidEntry as exc:
+        raise ValueError(f'{ENV}: {exc}') from exc
 
 
 def from_environment(environ: dict[str, str] | None = None) -> tuple[Rule, ...]:
-    return parse((environ if environ is not None else os.environ).get(ENV))
+    value = (environ if environ is not None else os.environ).get(ENV)
+    return () if (value or '').strip().lower() == NONE else parse(value)
+
+
+def for_turn(session: list[str] | None, environ: dict[str, str] | None = None) -> tuple[Rule, ...]:
+    """What a turn's sandbox may reach. `session` is the list the platform pinned on the turn's coding session (its
+    project's network policy within the workspace's limit), or None from a platform that doesn't send one. This
+    computer's `DOTRIX_CODING_NETWORK_ALLOW` can only narrow a session's list: unset keeps it, `none` allows nothing,
+    and a list keeps only the session's entries that it covers. Without a session list, the variable alone applies."""
+    environ = environ if environ is not None else os.environ
+    local = environ.get(ENV)
+    if session is None:
+        return from_environment(environ)
+    pinned = [str(rule) for rule in parse(' '.join(session))]
+    if local is None or not local.strip():
+        return parse(' '.join(pinned))
+    if local.strip().lower() == NONE:
+        return ()
+    return parse(' '.join(network_policy.narrow(pinned, [str(rule) for rule in parse(local)])))
 
 
 def permits(rules: tuple[Rule, ...], host: str, port: int) -> bool:
-    host = host.lower().rstrip('.')
-    return _valid_host(host) and any(rule.permits(host, port) for rule in rules)
+    return network_policy.permits(rules, host, port)
 
 
 def split_target(target: str) -> tuple[str, int]:

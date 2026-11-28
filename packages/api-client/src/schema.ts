@@ -4879,13 +4879,13 @@ export interface paths {
         };
         /**
          * Get Project Sandbox Network
-         * @description The hosts this project's coding sandboxes may reach on top of the workspace's, and all of them together.
+         * @description This project's network policy: the hosts its new coding sessions pin, within the workspace's limit.
          */
         get: operations["get_project_sandbox_network"];
         /**
          * Set Project Sandbox Network
-         * @description Set the hosts this project's coding sandboxes may also reach, on top of the workspace's. Owners and
-         *     admins; audited.
+         * @description Set this project's network policy (presets and hosts: exact, *.domain, either with :port). 409 when an entry
+         *     is outside the workspace's limit. New sessions pin it; running sessions keep theirs. Owners and admins; audited.
          */
         put: operations["set_project_sandbox_network"];
         post?: never;
@@ -4930,9 +4930,10 @@ export interface paths {
         get: operations["get_cloud_environment"];
         /**
          * Set Cloud Environment
-         * @description Save an administrator's cloud environment profile using its current revision.
-         *     Stale revisions or unapproved images return 409. New cloud sessions pin the saved profile;
-         *     existing sessions retain their admitted snapshot. This action never starts coding or runs scripts.
+         * @description Save an administrator's cloud environment (name, image, scripts, variables) using its current revision, and,
+         *     when `network` is given, the project's network policy with it, in one transaction. Stale revisions, unapproved
+         *     images and hosts outside the workspace's limit return 409; refused variable names 422. New cloud sessions pin the
+         *     saved environment; existing sessions keep theirs. This action never starts coding or runs scripts.
          */
         put: operations["set_cloud_environment"];
         post?: never;
@@ -5082,14 +5083,14 @@ export interface paths {
         };
         /**
          * Get Workspace Sandbox Network
-         * @description The hosts every project's coding sandboxes may reach besides the model API, and the presets to
-         *     choose from. Anyone in the workspace can read it (a blocked turn says where to ask).
+         * @description The workspace's network limit (the most any project's network policy may allow besides the model API, or
+         *     none), and the presets to choose from. Anyone in the workspace can read it (a blocked turn says where to ask).
          */
         get: operations["get_workspace_sandbox_network"];
         /**
          * Set Workspace Sandbox Network
-         * @description Set the hosts every project's coding sandboxes may reach (presets and custom hosts: exact, or
-         *     *.domain). Each one is somewhere an agent could send data. Owners and admins; audited.
+         * @description Set or remove the workspace's network limit: the presets and hosts (exact, *.domain, either with :port) that
+         *     projects may choose from. Lowering it applies to running sessions' next turns too. Owners and admins; audited.
          */
         put: operations["set_workspace_sandbox_network"];
         post?: never;
@@ -7113,6 +7114,11 @@ export interface components {
              */
             managed_worktree: boolean;
             /**
+             * Network
+             * @description Hosts the turn's sandboxed commands may reach (the session's pinned network policy, within the workspace's limit now). The runner's own DOTRIX_CODING_NETWORK_ALLOW may only narrow it
+             */
+            network?: string[];
+            /**
              * Helper Events
              * @description The platform takes `background-<state>` events for Kai's helpers (an older one doesn't say so, and a runner then reports them as steps)
              * @default true
@@ -8331,6 +8337,13 @@ export interface components {
              */
             timeout_seconds: number;
             /**
+             * Variables
+             * @description Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused
+             */
+            variables?: {
+                [key: string]: string;
+            };
+            /**
              * Image Policy
              * @default platform
              * @enum {string}
@@ -8339,8 +8352,11 @@ export interface components {
             /** Available Images */
             available_images?: string[];
         };
-        /** EnvironmentUpdate */
-        EnvironmentUpdate: {
+        /**
+         * EnvironmentSave
+         * @description The environment and, when given, the project's network policy, saved together from one form.
+         */
+        EnvironmentSave: {
             /** Revision */
             revision: number;
             /**
@@ -8370,6 +8386,15 @@ export interface components {
              * @default 300
              */
             timeout_seconds: number;
+            /**
+             * Variables
+             * @description Non-secret variables for the setup script, Kai's commands and verification on cloud turns. Visible to Kai and in the brief; names the sandbox or tools use, and names that look like secrets, are refused
+             */
+            variables?: {
+                [key: string]: string;
+            };
+            /** @description The project's network policy, saved with the environment; None leaves it as it is */
+            network?: components["schemas"]["SandboxNetworkUpdate"] | null;
         };
         /** EpicProgress */
         EpicProgress: {
@@ -11232,23 +11257,61 @@ export interface components {
             /** Message */
             message?: string | null;
         };
+        /**
+         * SandboxNetworkLimitUpdate
+         * @description The workspace's limit: the most any project's network policy may allow.
+         */
+        SandboxNetworkLimitUpdate: {
+            /**
+             * Presets
+             * @description Named presets (package registries), e.g. npm, pypi
+             */
+            presets?: string[];
+            /**
+             * Hosts
+             * @description Exact host names, *.domain for one domain's hosts, either with :port (443 if none)
+             */
+            hosts?: string[];
+            /**
+             * Limited
+             * @description Whether projects are limited to these presets and hosts. False: no limit (send no presets or hosts)
+             * @default false
+             */
+            limited: boolean;
+        };
         /** SandboxNetworkRead */
         SandboxNetworkRead: {
             /**
              * Presets
-             * @description The presets chosen here
+             * @description The presets chosen here (a workspace: its limit's)
              */
             presets: string[];
             /**
              * Hosts
-             * @description The custom hosts chosen here
+             * @description The hosts chosen here (a workspace: its limit's)
              */
             hosts: string[];
             /**
              * Effective
-             * @description Everything a sandbox here may reach besides the model API (a project: the workspace's too)
+             * @description A project: what its new sessions get, within the workspace's limit. A workspace: its limit's hosts
              */
             effective: string[];
+            /**
+             * Limited
+             * @description Whether the workspace limits what projects may allow
+             * @default false
+             */
+            limited: boolean;
+            /**
+             * Limit
+             * @description The workspace's limit, expanded; None: no limit
+             */
+            limit?: string[] | null;
+            /**
+             * Outside Limit
+             * @description A project's chosen hosts that the workspace's limit leaves out (they aren't reached)
+             */
+            outside_limit?: string[];
             /**
              * Available Presets
              * @description Each preset's name and its hosts
@@ -11261,7 +11324,8 @@ export interface components {
         };
         /**
          * SandboxNetworkUpdate
-         * @description The hosts Kai's sandboxes may reach besides the model API, here (workspace or project).
+         * @description A project's network policy: the hosts its coding sessions may reach besides the model API, within the
+         *     workspace's limit. A new session pins it; follow-ups keep what their session pinned.
          */
         SandboxNetworkUpdate: {
             /**
@@ -11271,7 +11335,7 @@ export interface components {
             presets?: string[];
             /**
              * Hosts
-             * @description Exact host names, or *.domain for one domain's hosts
+             * @description Exact host names, *.domain for one domain's hosts, either with :port (443 if none)
              */
             hosts?: string[];
         };
@@ -28062,7 +28126,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EnvironmentUpdate"];
+                "application/json": components["schemas"]["EnvironmentSave"];
             };
         };
         responses: {
@@ -28598,7 +28662,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SandboxNetworkUpdate"];
+                "application/json": components["schemas"]["SandboxNetworkLimitUpdate"];
             };
         };
         responses: {

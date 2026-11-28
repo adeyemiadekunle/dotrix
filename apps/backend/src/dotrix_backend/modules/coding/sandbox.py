@@ -18,7 +18,7 @@
 
 None ever receives a GitHub token: the worker clones and pushes outside the sandbox.
 
-Extra hosts owners and admins allow (Settings → Network, network.py) reach only Docker Cloud
+Extra hosts owners and admins allow (the network policy, network.py) reach only Docker Cloud
 sandboxes, which keep the key out of the sandbox; the others refuse a turn rather than open a way
 for the key to leave.
 """
@@ -92,7 +92,7 @@ class CodingSandbox(Protocol):
     ) -> SandboxSession:
         """A sandbox holding a copy of `source` (a folder named `repo`), where commands run in the
         repo, and `tool` can reach its model with `model_key`, and the `allow` hosts (owners' and admins'
-        Settings → Network; exact, or `*.domain`) besides."""
+        the network policy; exact, `*.domain`, either with :port) besides."""
         ...
 
 
@@ -399,7 +399,7 @@ class OpenShellSandbox:
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
     ) -> SandboxSession:
         if allow:  # its policy reaches the model provider only; not the hosts owners allow
-            raise SandboxError("OpenShell sandboxes don't take the extra hosts in Settings → Network: "
+            raise SandboxError("OpenShell sandboxes don't take the hosts in the project's network policy: "
                                "those need Docker Cloud sandboxes; or remove the hosts.")
         # OpenShell names are at most 19 characters; a UUIDv7's last 16 hex digits are its random part.
         name = provider = f"pm-{run_id.hex[-16:]}"
@@ -434,9 +434,9 @@ def egress_allow(tool: CodingTool) -> str:
     return f"{tool.api_host}:443"
 
 
-EXTRA_HOSTS_REFUSED = ("The key is inside this sandbox, so it can't reach the extra hosts in Settings → "
-                       "Network (the agent could send the key there). Those need Docker Cloud sandboxes, which "
-                       "keep the key out; or remove the hosts.")
+EXTRA_HOSTS_REFUSED = ("The key is inside this sandbox, so it can't reach the hosts in the project's network "
+                       "policy (the agent could send the key there). Those need Docker Cloud sandboxes, which "
+                       "keep the key out; or remove the hosts and start a new session.")
 
 
 def _tar_of(source: Path) -> bytes:

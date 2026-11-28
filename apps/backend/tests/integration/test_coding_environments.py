@@ -231,3 +231,64 @@ async def test_a_later_resolution_survives_local_intermediate_turns(db_client, c
     assert final.status_code == 201, final.text
     stored = await db_session.get(CodingRun, final.json()["id"])
     assert stored.environment_snapshot == original and stored.environment_image_id == identity
+
+
+async def test_variables_are_checked_pinned_and_set_for_setup_kai_and_verification(
+    db_client, coding, claude, github, db_session,  # noqa: F811
+):
+    from dotrix_backend.modules.coding.models import CodingRun
+
+    ada, _, ws, project, _, sandbox = coding
+    sandbox.kind = "docker"  # Scripted transport only; this does not claim real container isolation.
+    base = f"{ws}/projects/{project['id']}"
+    for bad in ({"PATH": "/tmp"}, {"GIT_DIR": "x"}, {"NPM_TOKEN": "x"}, {"STRIPE_KEY": "x"}, {"1BAD": "x"},
+                {"LOG_LEVEL": "a\nb"}):
+        refused = await configure(db_client, base, ada.headers, variables=bad)
+        assert refused.status_code == 422, (bad, refused.text)
+    saved = await configure(db_client, base, ada.headers, variables={"REFUND_LIMIT": "7", "AUTHOR_NAME": "Ada"},
+                            setup_script='test "$REFUND_LIMIT" = 7',
+                            verify_script='test "$REFUND_LIMIT" = 7 && test "$AUTHOR_NAME" = Ada')
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["variables"] == {"REFUND_LIMIT": "7", "AUTHOR_NAME": "Ada"}
+    claude.edits = {"src/payments.py": "def refund(amount):\n    return amount\n"}
+    run = await ask(db_client, base, ada.headers)
+    assert "REFUND_LIMIT=7" in run["brief"]  # the approver sees them
+    # Pinned: a later edit is for new sessions.
+    assert (await configure(db_client, base, ada.headers, revision=1, variables={"REFUND_LIMIT": "9"})).status_code == 200
+    result = await execute(db_client, base, ada.headers, run)
+    assert result["status"] == "changes_ready", result.get("error")
+    steps = [e["text"] for e in result["events"]]
+    assert "Environment setup passed" in steps and "Environment verification passed" in steps
+    assert claude.argv[0] == "env" and set(claude.argv[1:3]) == {"REFUND_LIMIT=7", "AUTHOR_NAME=Ada"}  # Kai's commands too
+    stored = await db_session.get(CodingRun, run["id"])
+    assert stored.environment_snapshot["variables"] == {"REFUND_LIMIT": "7", "AUTHOR_NAME": "Ada"}
+
+
+async def test_the_environment_form_saves_the_network_policy_with_it(db_client, coding, db_session):  # noqa: F811
+    from sqlalchemy import select
+
+    from dotrix_backend.modules.audit.models import AuditEvent
+
+    ada, cat, ws, project, _, _ = coding
+    base = f"{ws}/projects/{project['id']}"
+    network = {"presets": ["npm"], "hosts": ["api.example.com"]}
+    assert (await configure(db_client, base, cat.headers, network=network)).status_code == 403
+    saved = await configure(db_client, base, ada.headers, network=network, variables={"NODE_ENV": "test"})
+    assert saved.status_code == 200, saved.text
+    assert "network" not in saved.json()
+    policy = (await db_client.get(base + "/coding/network", headers=ada.headers)).json()
+    assert policy["effective"] == ["registry.npmjs.org", "registry.yarnpkg.com", "api.example.com"]
+    # Outside the workspace's limit: neither the environment nor the network changes.
+    await db_client.put(f"{ws}/coding/network", json={"limited": True, "presets": ["npm"]}, headers=ada.headers)
+    refused = await configure(db_client, base, ada.headers, revision=1, network={"hosts": ["evil.example.org"]},
+                              variables={"NODE_ENV": "production"})
+    assert refused.status_code == 409 and "evil.example.org" in refused.text
+    environment = (await db_client.get(base + "/coding/environment", headers=ada.headers)).json()
+    assert environment["revision"] == 1 and environment["variables"] == {"NODE_ENV": "test"}
+    # Leaving `network` out keeps it.
+    assert (await configure(db_client, base, ada.headers, revision=1, name="Node")).status_code == 200
+    assert (await db_client.get(base + "/coding/network", headers=ada.headers)).json()["presets"] == ["npm"]
+    actions = [e.action for e in await db_session.scalars(select(AuditEvent).where(
+        AuditEvent.action.in_(["coding_environment.updated", "sandbox_network.updated"])).order_by(AuditEvent.created_at))]
+    assert actions == ["sandbox_network.updated", "coding_environment.updated", "sandbox_network.updated",
+                       "coding_environment.updated"]

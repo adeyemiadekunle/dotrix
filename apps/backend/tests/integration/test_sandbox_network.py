@@ -11,6 +11,9 @@ from apps.backend.tests.integration.test_coding import (  # noqa: F401  (fixture
     ScriptedClaude,
     TranscriptSandbox,
     _approve,
+    _local_runner,
+    _tool,
+    checkout,
     claude,
     coding,
     origin,
@@ -61,43 +64,57 @@ class SleepingSandbox(TranscriptSandbox):
         return 0
 
 
-async def test_owners_and_admins_choose_the_hosts_sandboxes_may_reach(
+async def test_owners_and_admins_set_a_network_policy_per_project_within_the_workspace_limit(
     db_client: AsyncClient, coding, db_session,  # noqa: F811
 ) -> None:
     ada, cat, ws, kun, mob, _ = coding
     workspace_url, project_url = f"{ws}/coding/network", f"{ws}/projects/{kun['id']}/coding/network"
     empty = (await db_client.get(workspace_url, headers=cat.headers)).json()  # anyone may read it
-    assert empty["effective"] == [] and "npm" in empty["available_presets"]
+    assert empty["effective"] == [] and empty["limited"] is False and empty["limit"] is None
+    assert "npm" in empty["available_presets"]
 
     # A member can't change it, even one allowed to instruct Kai; owners and admins can.
-    assert (await db_client.put(workspace_url, json={"hosts": ["evil.example.com"]}, headers=cat.headers)).status_code == 403
+    assert (await db_client.put(workspace_url, json={"limited": True, "hosts": ["evil.example.com"]},
+                                headers=cat.headers)).status_code == 403
     assert (await db_client.put(project_url, json={"hosts": ["evil.example.com"]}, headers=cat.headers)).status_code == 403
-    for bad in ("https://registry.npmjs.org", "10.0.0.1", "registry.npmjs.org:443", "*.com", "no_dots"):
-        refused = await db_client.put(workspace_url, json={"hosts": [bad]}, headers=ada.headers)
+    for bad in ("https://registry.npmjs.org", "10.0.0.1", "*.com", "no_dots", "example.com:0", "example.com/path"):
+        refused = await db_client.put(project_url, json={"hosts": [bad]}, headers=ada.headers)
         assert refused.status_code == 409, (bad, refused.text)
-    assert (await db_client.put(workspace_url, json={"presets": ["nope"]}, headers=ada.headers)).status_code == 409
+    assert (await db_client.put(project_url, json={"presets": ["nope"]}, headers=ada.headers)).status_code == 409
+    # Listing hosts at the workspace means a limit: they must say so.
+    assert (await db_client.put(workspace_url, json={"hosts": ["api.example.com"]}, headers=ada.headers)).status_code == 409
 
-    saved = await db_client.put(workspace_url, json={"presets": ["npm"], "hosts": [" API.Example.com. ", "api.example.com"]},
-                                headers=ada.headers)
+    # No limit: each project chooses freely, in the one format (443 is the default port).
+    saved = await db_client.put(project_url, json={"presets": ["npm"], "hosts": [
+        " API.Example.com. ", "api.example.com:443", "*.staging.example.com", "registry.example.com:8443"]}, headers=ada.headers)
     assert saved.status_code == 200, saved.text
-    assert saved.json()["hosts"] == ["api.example.com"]
-    assert saved.json()["effective"] == ["registry.npmjs.org", "registry.yarnpkg.com", "api.example.com"]
-    project = (await db_client.put(project_url, json={"hosts": ["*.staging.example.com", "api.example.com"]},
-                                   headers=ada.headers)).json()
-    assert project["hosts"] == ["*.staging.example.com", "api.example.com"]
-    assert project["effective"] == ["registry.npmjs.org", "registry.yarnpkg.com", "api.example.com",
-                                    "*.staging.example.com"]  # the workspace's, then the project's
+    assert saved.json()["hosts"] == ["api.example.com", "*.staging.example.com", "registry.example.com:8443"]
+    assert saved.json()["effective"] == ["registry.npmjs.org", "registry.yarnpkg.com", "api.example.com",
+                                         "*.staging.example.com", "registry.example.com:8443"]
     other = (await db_client.get(f"{ws}/projects/{mob['id']}/coding/network", headers=ada.headers)).json()
-    assert other["effective"] == ["registry.npmjs.org", "registry.yarnpkg.com", "api.example.com"]
+    assert other["effective"] == []  # a project's choice is its own
+
+    # A limit: projects may only choose what it covers; what's already chosen beyond it isn't reached.
+    limited = await db_client.put(workspace_url, json={"limited": True, "presets": ["npm"], "hosts": ["*.example.com"]},
+                                  headers=ada.headers)
+    assert limited.status_code == 200, limited.text
+    assert limited.json()["limited"]
+    assert limited.json()["limit"] == ["registry.npmjs.org", "registry.yarnpkg.com", "*.example.com"]
+    project = (await db_client.get(project_url, headers=ada.headers)).json()
+    assert project["limited"] and project["outside_limit"] == ["registry.example.com:8443"]
+    assert project["effective"] == ["registry.npmjs.org", "registry.yarnpkg.com", "api.example.com", "*.staging.example.com"]
+    outside = await db_client.put(project_url, json={"presets": ["pypi"]}, headers=ada.headers)
+    assert outside.status_code == 409 and "pypi.org" in outside.text
+    assert (await db_client.put(project_url, json={"hosts": ["ci.example.com"]}, headers=ada.headers)).status_code == 200
 
     audited = list(await db_session.scalars(select(AuditEvent).where(AuditEvent.action == "sandbox_network.updated")
                                             .order_by(AuditEvent.created_at)))
-    assert [e.details["scope"] for e in audited] == ["workspace", "project"]
-    assert audited[0].details["added"] == ["registry.npmjs.org", "registry.yarnpkg.com", "api.example.com"]
+    assert [e.details["scope"] for e in audited] == ["project", "workspace", "project"]
+    assert audited[1].details["limited"] is True and audited[1].details["added"][-1] == "*.example.com"
     assert str(audited[0].actor_user_id) == ada.id
 
-    cleared = (await db_client.put(workspace_url, json={}, headers=ada.headers)).json()
-    assert cleared["effective"] == [] and cleared["presets"] == []
+    cleared = (await db_client.put(workspace_url, json={"limited": False}, headers=ada.headers)).json()
+    assert cleared["limited"] is False and cleared["effective"] == [] and cleared["presets"] == []
 
 
 async def test_a_session_sleeps_between_turns_and_wakes_for_the_next(
@@ -116,10 +133,12 @@ async def test_a_session_sleeps_between_turns_and_wakes_for_the_next(
     task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
     agent_script.say("Fine.", "Fine again.", "And again.", "Once more.")
 
+    await db_client.put(f"{base}/coding/network", json={"presets": ["pypi", "npm"]}, headers=ada.headers)
     claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
     first = await _approve(db_client, base, (await db_client.post(
         f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json(), ada.headers)
-    assert first["status"] == "pr_opened" and sandbox.opened == 1 and sandbox.allowed == [[]]
+    pypi, npm = ["pypi.org", "files.pythonhosted.org"], ["registry.npmjs.org", "registry.yarnpkg.com"]
+    assert first["status"] == "pr_opened" and sandbox.opened == 1 and sandbox.allowed == [npm + pypi]
     session_id = uuid.UUID(first["session_id"])
     row = await db_session.scalar(select(CodingSession).where(CodingSession.id == session_id)
                                   .execution_options(populate_existing=True))
@@ -135,13 +154,15 @@ async def test_a_session_sleeps_between_turns_and_wakes_for_the_next(
     assert any("woken from the last turn" in e["text"] for e in second["events"]), [e["text"] for e in second["events"]]
     assert claude.found_transcript[1] == "turn 1\n"
 
-    # An owner allows a host: the sleeping sandbox (opened without it) isn't reused; a new one gets it.
-    await db_client.put(f"{ws}/coding/network", json={"presets": ["pypi"]}, headers=ada.headers)
+    # The session pinned its project's policy: a change to the project is for new sessions. A lower workspace
+    # limit applies at once: the sleeping sandbox, opened with more, isn't reused; a new one gets what's left.
+    await db_client.put(f"{base}/coding/network", json={"presets": ["go"]}, headers=ada.headers)
+    await db_client.put(f"{ws}/coding/network", json={"limited": True, "presets": ["pypi", "go"]}, headers=ada.headers)
     claude.edits = {"src/refunds.py": "def refund(amount):\n    assert amount > 0, 'positive'\n    return amount\n"}
     third = await _approve(db_client, base, (await db_client.post(
         turns, json={"message": "Say why"}, headers=ada.headers)).json(), ada.headers)
     assert third["status"] == "pr_opened" and sandbox.opened == 2 and len(sandbox.discarded) == 1
-    assert sandbox.allowed[-1] == ["pypi.org", "files.pythonhosted.org"]
+    assert sandbox.allowed[-1] == pypi  # the pinned npm and PyPI, within the limit now; not the project's new Go
 
     # It's asleep again; the session list says so. Someone else can't delete it; whoever started it can.
     [listed] = (await db_client.get(f"{ws}/coding/sessions", headers=ada.headers)).json()
@@ -209,3 +230,24 @@ async def test_closing_a_session_or_deleting_its_warm_sandbox_lets_it_go(
     assert len(sandbox.asleep) == 1
     assert (await db_client.post(f"{base}/coding/sessions/{session_id}/close", headers=ada.headers)).status_code == 204
     assert len(sandbox.discarded) == 1 and not sandbox.asleep
+
+
+async def test_a_local_turn_gets_its_sessions_pinned_policy_within_the_limit(
+    db_client: AsyncClient, coding, checkout: Path, tmp_path: Path,  # noqa: F811
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    base = f"{ws}/projects/{kun['id']}"
+    await db_client.put(f"{base}/coding/network", json={"presets": ["pypi"], "hosts": ["registry.example.com:8443"]},
+                        headers=ada.headers)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Local"}, headers=ada.headers)).json()
+    runner = _local_runner(db_client, coding, checkout, tmp_path, _tool({"src/a.txt": "a\n"}))
+    registered = await runner.register()
+    run = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={"location": "local"},
+                                headers=ada.headers)).json()
+    # Pinned when the turn is asked for: a later change to the project is for new sessions.
+    await db_client.put(f"{base}/coding/network", json={"presets": ["go"]}, headers=ada.headers)
+    await db_client.put(f"{ws}/coding/network", json={"limited": True, "presets": ["pypi", "go"]}, headers=ada.headers)
+    await db_client.post(f"{base}/coding/runs/{run['id']}/decision", json={"decision": "approve"}, headers=ada.headers)
+    claimed = (await db_client.post(f"{ws}/coding/runners/{registered['id']}/claim", headers=ada.headers)).json()
+    # The limit as it is now still applies: the session's 8443 host is left out.
+    assert claimed["run"]["network"] == ["pypi.org", "files.pythonhosted.org"], claimed

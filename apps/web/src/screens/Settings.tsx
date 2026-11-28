@@ -74,8 +74,6 @@ import {
   tokenRevoked,
   tokens,
   cloudEnvironment,
-  cloudEnvironmentSaved,
-  type CloudEnvironment,
   sandboxNetwork,
   sandboxNetworkSaved,
   unlinkGitHub,
@@ -89,6 +87,7 @@ import { automationAdded, automationRemoved, automationToggled, isLive, live, re
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
 import { useAgents, useAudit, useAutomations, useMembers, useProjects } from "../data/lists";
 import { SHORTCUTS } from "../overlays/Modals";
+import { EditEnvironment, networkSummary } from "../components/EditEnvironment";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
 import { PermsTable } from "./Members";
@@ -1775,212 +1774,147 @@ const DEMO_PRESETS: Record<string, { label: string; hosts: string[] }> = {
   go: { label: "Go modules", hosts: ["proxy.golang.org", "sum.golang.org"] },
 };
 
-/** Owners and admins choose the hosts Kai's sandboxes may reach besides the model API: for every project,
- *  and on top of that for one. Each is somewhere an agent could send data, so it stays a short list. */
-function CloudEnvironmentSettings({ projectId }: { projectId: string }) {
-  const loaded = useApi(() => cloudEnvironment(projectId), [projectId]);
-  const [draft, setDraft] = useState<CloudEnvironment | null>(null);
-  const [busy, setBusy] = useState(false);
-  const data = draft ?? loaded.data;
-  if (loaded.error) return <div className="alert danger">{loaded.error}</div>;
-  if (!data) return <div className="faint">Loading cloud environment…</div>;
-  const change = (patch: Partial<CloudEnvironment>) => setDraft({ ...data, ...patch });
-  const save = async () => {
-    setBusy(true);
-    try {
-      await cloudEnvironmentSaved(projectId, {
-        revision: data.revision,
-        enabled: data.enabled,
-        name: data.name,
-        image: data.image,
-        setup_script: data.setup_script,
-        verify_script: data.verify_script,
-        timeout_seconds: data.timeout_seconds,
-      });
-      setDraft(null);
-      loaded.reload();
-      toast("Cloud environment saved");
-    } catch (error) {
-      toast(errText(error), { kind: "err", ms: 6000 });
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="sblock">
-      <h2>Cloud environment</h2>
-      <p className="faint">
-        Use an operator-approved coding image and the network policy below. Saving does not run scripts. New cloud sessions pin this revision before approval;
-        local sessions keep their own setup. Keep secrets out of these fields. Environment secrets are not supported here yet.
-      </p>
-      <SRow t="Use this environment" d={`Revision ${data.revision}`}>
-        <Tog on={data.enabled} set={(enabled) => change({ enabled })} label="Use cloud environment" />
-      </SRow>
-      <SRow t="Name">
-        <DesignInput value={data.name} maxLength={100} onChange={(e) => change({ name: e.target.value })} aria-label="Environment name" />
-      </SRow>
-      <SRow t="Coding image" d="Custom images must be approved by the server operator and pinned by digest. They run on Docker only.">
-        <SelectField
-          style={{ width: 240, maxWidth: "100%" }}
-          title={data.image ?? "Platform coding image"}
-          aria-label="Environment coding image"
-          value={data.image ?? ""}
-          onValueChange={(value) => change({ image: value || null })}
-          options={[
-            { value: "", label: "Platform coding image" },
-            ...(data.image && !(data.available_images ?? []).includes(data.image) ? [{ value: data.image, label: `No longer approved: ${data.image}` }] : []),
-            ...(data.available_images ?? []).map((image) => ({ value: image, label: image })),
-          ]}
-        />
-      </SRow>
-      <div style={{ marginTop: 16 }}>
-        <label htmlFor={`environment-setup-${projectId}`}>Setup script</label>
-        <p className="faint">Runs in a fresh sandbox before Kai. Use frozen dependency installs; repository file changes are refused.</p>
-        <DesignTextarea
-          id={`environment-setup-${projectId}`}
-          style={{ width: "100%" }}
-          className="textarea mono"
-          rows={6}
-          value={data.setup_script}
-          onChange={(e) => change({ setup_script: e.target.value })}
-          maxLength={16000}
-          aria-label="Environment setup script"
-        />
-      </div>
-      <div style={{ marginTop: 16 }}>
-        <label htmlFor={`environment-verify-${projectId}`}>Verification command</label>
-        <p className="faint">Must pass before changes can be accepted. Runs with the repository read-only; write test artifacts to $TMPDIR.</p>
-        <DesignTextarea
-          id={`environment-verify-${projectId}`}
-          style={{ width: "100%" }}
-          className="textarea mono"
-          rows={4}
-          value={data.verify_script}
-          onChange={(e) => change({ verify_script: e.target.value })}
-          maxLength={16000}
-          aria-label="Environment verification command"
-        />
-      </div>
-      <SRow t="Time limit per script" d="10–900 seconds">
-        <DesignInput
-          type="number"
-          min={10}
-          max={900}
-          value={data.timeout_seconds}
-          onChange={(e) => change({ timeout_seconds: Number(e.target.value) })}
-          aria-label="Environment script time limit"
-        />
-      </SRow>
-      <ActionButton className="btn btn-primary btn-sm" disabled={!draft || busy} onClick={save}>
-        Save environment
-      </ActionButton>
-    </div>
-  );
-}
-
 function SandboxNetworkSettings() {
   const { items: projects } = useProjects();
   const [scope, setScope] = useState("");
   const loaded = useApi(() => sandboxNetwork(scope || undefined), [scope]);
+  const environment = useApi(() => (scope ? cloudEnvironment(scope) : Promise.resolve(null)), [scope]);
+  const [editing, setEditing] = useState(false);
   const [presets, setPresets] = useState<string[] | null>(null);
   const [hosts, setHosts] = useState<string | null>(null);
+  const [limited, setLimited] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
-  const data = isLive() ? loaded.data : { presets: [], hosts: [], effective: [], available_presets: DEMO_PRESETS };
+  const data = isLive()
+    ? loaded.data
+    : { presets: [], hosts: [], effective: [], limited: false, limit: null, outside_limit: [], available_presets: DEMO_PRESETS };
   if (isLive() && loaded.error) return <div className="alert danger">{loaded.error}</div>;
   if (!data) return <div className="faint">Loading…</div>;
   const available = data.available_presets as Record<string, { label: string; hosts: string[] }>;
+  const workspace = !scope;
+  const isLimited = limited ?? data.limited ?? false;
   const chosen = presets ?? data.presets;
   const typed = hosts ?? data.hosts.join("\n");
-  const changed = presets !== null || hosts !== null;
+  const changed = presets !== null || hosts !== null || limited !== null;
+  const reset = () => (setPresets(null), setHosts(null), setLimited(null));
   const pick = (scopeId: string) => {
     setScope(scopeId);
-    setPresets(null);
-    setHosts(null);
+    setEditing(false);
+    reset();
   };
-  const save = () => {
-    const body = { presets: chosen, hosts: typed.split(/[\s,]+/).filter(Boolean) };
+  const saveLimit = () => {
+    const body = isLimited ? { limited: true, presets: chosen, hosts: typed.split(/[\s,]+/).filter(Boolean) } : { limited: false, presets: [], hosts: [] };
     if (!isLive()) {
       toast("Saved");
       return;
     }
     setBusy(true);
-    sandboxNetworkSaved(body, scope || undefined)
+    sandboxNetworkSaved(body)
       .then(() => {
-        setPresets(null);
-        setHosts(null);
+        reset();
         loaded.reload();
-        toast("Network saved");
+        toast("Network limit saved");
       })
       .catch((e: unknown) => toast(`It didn't save: ${errText(e)}`, { kind: "err", ms: 6000 }))
       .finally(() => setBusy(false));
   };
+  const env = environment.data;
+  const variableCount = Object.keys(env?.variables ?? {}).length;
+  const setupLines = (env?.setup_script ?? "").split("\n").filter((l) => l.trim() && !l.startsWith("#!")).length;
   return (
     <>
       <div className="alert info" style={{ marginBottom: 16 }}>
         <Ic n="shield-check" s={15} />
         <span>
-          Kai's sandboxes reach only the model API. Each host you allow is somewhere an agent could also send your code, so allow only what turns need, such as
-          a package registry. They apply to Docker Cloud sandboxes, which keep the model key out of the sandbox; other sandboxes refuse a turn while any are
-          allowed.
+          Each project has an environment: its network access, setup script and environment variables. Kai's sandboxes reach only the model API and the hosts a
+          project allows; each is somewhere an agent could also send your code. A new coding session keeps the version it started with.
         </span>
       </div>
       <div className="sblock" style={{ marginTop: 0 }}>
-        <SRow t="Applies to" d={scope ? "This project, on top of what every project may reach" : "Every project"}>
+        <SRow t="Applies to" d={workspace ? "The workspace's limit: the most any project may allow" : "This project's environment"}>
           <SelectField
             style={{ width: "auto", minWidth: 200, maxWidth: "100%" }}
             value={scope}
             onValueChange={pick}
             aria-label="Applies to"
-            options={[{ value: "", label: "Every project" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            options={[{ value: "", label: "Workspace limit" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
           />
         </SRow>
       </div>
-      {scope && isLive() && <CloudEnvironmentSettings key={scope} projectId={scope} />}
-      <div className="sblock">
-        <h2>Package registries</h2>
-        {Object.entries(available).map(([key, preset]) => (
-          <SRow key={key} t={preset.label} d={<span className="mono">{preset.hosts.join(", ")}</span>}>
-            <Tog on={chosen.includes(key)} set={(on) => setPresets(on ? [...chosen, key] : chosen.filter((k) => k !== key))} label={preset.label} />
-          </SRow>
-        ))}
-      </div>
-      <div className="sblock">
-        <h2>Other hosts</h2>
-        <p className="faint" style={{ marginTop: 0 }}>
-          One per line: an exact name such as <span className="mono">api.example.com</span>, or <span className="mono">*.example.com</span> for that domain's
-          hosts. HTTPS only.
-        </p>
-        <DesignTextarea
-          className="textarea mono"
-          rows={5}
-          value={typed}
-          onChange={(e) => setHosts(e.target.value)}
-          placeholder="api.example.com"
-          aria-label="Other hosts"
-          style={{ maxWidth: 520 }}
-        />
-        <div className="row" style={{ gap: 8, marginTop: 12 }}>
-          <ActionButton className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={save}>
-            Save
-          </ActionButton>
-          {changed && (
-            <ActionButton className="btn btn-secondary btn-sm" disabled={busy} onClick={() => (setPresets(null), setHosts(null))}>
-              Discard
-            </ActionButton>
+      {workspace ? (
+        <>
+          <div className="sblock" style={{ marginTop: 0 }}>
+            <SRow
+              t="Limit what projects may allow"
+              d={
+                isLimited
+                  ? "Projects choose only from the hosts below. Lowering it applies to running sessions' next turns."
+                  : "Each project chooses its own hosts."
+              }
+            >
+              <Tog on={isLimited} set={(on) => setLimited(on)} label="Limit what projects may allow" />
+            </SRow>
+          </div>
+          {isLimited && (
+            <>
+              <div className="sblock">
+                <h2>Package registries</h2>
+                {Object.entries(available).map(([key, preset]) => (
+                  <SRow key={key} t={preset.label} d={<span className="mono">{preset.hosts.join(", ")}</span>}>
+                    <Tog on={chosen.includes(key)} set={(on) => setPresets(on ? [...chosen, key] : chosen.filter((k) => k !== key))} label={preset.label} />
+                  </SRow>
+                ))}
+              </div>
+              <div className="sblock">
+                <h2>Other hosts</h2>
+                <p className="faint" style={{ marginTop: 0 }}>
+                  One per line: an exact name such as <span className="mono">api.example.com</span>, <span className="mono">*.example.com</span> for that
+                  domain's hosts, or either with a port such as <span className="mono">registry.example.com:8443</span> (443 if none). HTTPS only.
+                </p>
+                <DesignTextarea
+                  className="textarea mono"
+                  rows={5}
+                  value={typed}
+                  onChange={(e) => setHosts(e.target.value)}
+                  placeholder="*.example.com"
+                  aria-label="Other hosts"
+                  style={{ maxWidth: 520 }}
+                />
+              </div>
+            </>
           )}
-        </div>
-      </div>
-      {isLive() && (
+          <div className="row" style={{ gap: 8, marginTop: 12 }}>
+            <ActionButton className="btn btn-primary btn-sm" disabled={!changed || busy} onClick={saveLimit}>
+              Save
+            </ActionButton>
+            {changed && (
+              <ActionButton className="btn btn-secondary btn-sm" disabled={busy} onClick={reset}>
+                Discard
+              </ActionButton>
+            )}
+          </div>
+        </>
+      ) : (
         <div className="sblock">
-          <h2>{scope ? "This project's sandboxes may reach" : "Every project's sandboxes may reach"}</h2>
-          {data.effective.length ? (
-            <div className="mono" style={{ fontSize: 12.5, display: "flex", flexDirection: "column", gap: 2 }}>
-              {data.effective.map((h) => (
-                <span key={h}>{h}</span>
-              ))}
+          <h2>Environment</h2>
+          {isLive() && environment.error && <div className="alert danger">{environment.error}</div>}
+          <SRow t="Name" d={env?.name ?? "Project environment"} />
+          <SRow t="Network access" d={networkSummary(data.presets, data.hosts, available)} />
+          <SRow t="Setup script" d={setupLines ? `${setupLines} ${setupLines === 1 ? "line" : "lines"}` : "None"} />
+          <SRow t="Environment variables" d={variableCount ? `${variableCount} set` : "None"} />
+          {(data.outside_limit ?? []).length > 0 && (
+            <div className="alert warn" style={{ margin: "8px 0" }}>
+              <span>
+                Outside the workspace's limit, so not reached: <span className="mono">{(data.outside_limit ?? []).join(", ")}</span>
+              </span>
             </div>
-          ) : (
-            <p className="faint">Only the model API.</p>
+          )}
+          <div className="row" style={{ gap: 8, marginTop: 12 }}>
+            <ActionButton className="btn btn-primary btn-sm" onClick={() => setEditing(true)} disabled={isLive() && !environment.data}>
+              Edit environment
+            </ActionButton>
+          </div>
+          {editing && (
+            <EditEnvironment projectId={scope} network={data} onClose={() => setEditing(false)} onSaved={() => (loaded.reload(), environment.reload())} />
           )}
         </div>
       )}
