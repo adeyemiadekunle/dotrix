@@ -11,16 +11,18 @@ import {
   codingSecretDeleted,
   codingSecrets,
   codingSecretSaved,
+  sharedSecrets,
   type CloudEnvironment,
   type CodingSecret,
+  type SharedSecret,
   type SandboxNetwork,
 } from "../data/account";
 import { isLive } from "../data/live";
 import { toast } from "../ui/toast";
 
 type Preset = { label: string; hosts: string[] };
-type SecretDraft = { name: string; host: string; header: string; prefix: string; value: string };
-const NEW_SECRET: SecretDraft = { name: "", host: "", header: "Authorization", prefix: "Bearer ", value: "" };
+type SecretDraft = { name: string; host: string; header: string; prefix: string; value: string; shared: boolean; setupOnly: boolean };
+const NEW_SECRET: SecretDraft = { name: "", host: "", header: "Authorization", prefix: "Bearer ", value: "", shared: false, setupOnly: false };
 
 /** What a project's network policy lets its sessions reach besides the model API, in a few words. */
 export function networkSummary(presets: string[], hosts: string[], available: Record<string, Preset>): string {
@@ -65,6 +67,7 @@ export function EditEnvironment({
   const [view, setView] = useState<"main" | "network" | "secret">("main");
   const [secrets, setSecrets] = useState<CodingSecret[]>([]);
   const [secret, setSecret] = useState<SecretDraft>(NEW_SECRET);
+  const [shared, setShared] = useState<SharedSecret[]>([]);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
@@ -86,6 +89,9 @@ export function EditEnvironment({
     codingSecrets(projectId)
       .then((list) => on && setSecrets(list))
       .catch((e: unknown) => on && setLoadError(e instanceof Error && e.message ? e.message : "It didn't load"));
+    sharedSecrets()
+      .then((list) => on && setShared(list))
+      .catch(() => on && setShared([])); // only for picking one; the project's own secrets work without them
     return () => {
       on = false;
     };
@@ -147,12 +153,21 @@ export function EditEnvironment({
     }
     setBusy(true);
     try {
-      const saved = await codingSecretSaved(projectId, name, {
-        host: secret.host.trim(),
-        header: secret.header.trim() || "Authorization",
-        prefix: secret.prefix,
-        value: secret.value ? secret.value : null,
-      });
+      const phase = secret.setupOnly ? "setup" : "all";
+      const saved = await codingSecretSaved(
+        projectId,
+        name,
+        secret.shared
+          ? { shared: true, phase }
+          : {
+              shared: false,
+              phase,
+              host: secret.host.trim(),
+              header: secret.header.trim() || "Authorization",
+              prefix: secret.prefix,
+              value: secret.value ? secret.value : null,
+            },
+      );
       setSecrets([...secrets.filter((s) => s.name !== saved.name), saved].sort((a, b) => a.name.localeCompare(b.name)));
       toast("Secret saved");
       setView("main");
@@ -172,8 +187,12 @@ export function EditEnvironment({
       toast(`It didn't delete: ${e instanceof Error && e.message ? e.message : "try again"}`, { kind: "err", ms: 7000 });
     }
   };
-  const editing = secrets.some((s) => s.name === secret.name);
-  const secretReady = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(secret.name.trim()) && secret.host.trim() !== "" && (editing || secret.value !== "");
+  const current = secrets.find((s) => s.name === secret.name);
+  const editing = Boolean(current);
+  const validName = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(secret.name.trim());
+  // Turning a reference into the project's own secret needs a value, as a new one does.
+  const needsValue = !editing || Boolean(current?.shared);
+  const secretReady = validName && (secret.shared || (secret.host.trim() !== "" && (!needsValue || secret.value !== "")));
 
   const close = () => (view === "main" ? onClose() : setView("main"));
   const title = view === "network" ? "Network access" : view === "secret" ? (editing ? "Edit secret" : "Add secret") : "Edit environment";
@@ -206,57 +225,99 @@ export function EditEnvironment({
                   The sandbox never holds the value: Kai's commands see a placeholder in the variable, and the sandbox's proxy puts the real value into the
                   header on requests to this host only. The host must be in the saved network access.
                 </p>
-                <EnvField label="Variable name" id="secret-name" help="What Kai's commands read, such as NPM_TOKEN.">
-                  <DesignInput
-                    id="secret-name"
-                    className="mono"
-                    value={secret.name}
-                    disabled={editing}
-                    onChange={(e) => setSecret({ ...secret, name: e.target.value.toUpperCase() })}
-                    placeholder="NPM_TOKEN"
+                <EnvField label="Source">
+                  <SelectField
+                    aria-label="Source"
+                    value={secret.shared ? "shared" : "own"}
+                    onValueChange={(value) => setSecret({ ...secret, shared: value === "shared", name: editing ? secret.name : "" })}
+                    options={[
+                      { value: "own", label: "This project's own" },
+                      ...(shared.length || secret.shared ? [{ value: "shared", label: "A workspace shared secret" }] : []),
+                    ]}
                   />
                 </EnvField>
-                <EnvField label="Host" id="secret-host" help="One host, such as registry.npmjs.org or registry.example.com:8443.">
-                  <DesignInput
-                    id="secret-host"
-                    className="mono"
-                    value={secret.host}
-                    onChange={(e) => setSecret({ ...secret, host: e.target.value })}
-                    placeholder="registry.npmjs.org"
-                  />
-                </EnvField>
-                <EnvField label="Header" id="secret-header">
-                  <DesignInput
-                    id="secret-header"
-                    className="mono"
-                    value={secret.header}
-                    onChange={(e) => setSecret({ ...secret, header: e.target.value })}
-                    placeholder="Authorization"
-                  />
-                </EnvField>
-                <EnvField label="Before the value" id="secret-prefix" help="Such as “Bearer ” (with its space), or nothing.">
-                  <DesignInput
-                    id="secret-prefix"
-                    className="mono"
-                    value={secret.prefix}
-                    onChange={(e) => setSecret({ ...secret, prefix: e.target.value })}
-                    placeholder="Bearer "
-                  />
-                </EnvField>
-                <EnvField
-                  label="Value"
-                  id="secret-value"
-                  help={editing ? "Leave it empty to keep the saved value. Values are never shown again." : "Values are never shown again."}
-                >
-                  <DesignInput
-                    id="secret-value"
-                    type="password"
-                    autoComplete="off"
-                    className="mono"
-                    value={secret.value}
-                    onChange={(e) => setSecret({ ...secret, value: e.target.value })}
-                  />
-                </EnvField>
+                {secret.shared ? (
+                  <EnvField
+                    label="Shared secret"
+                    help="Its host, header and value come from the workspace, and a new value there reaches this project's next turns. Its host must be in this project's network access."
+                  >
+                    <SelectField
+                      aria-label="Shared secret"
+                      value={secret.name}
+                      disabled={editing}
+                      onValueChange={(value) => setSecret({ ...secret, name: value })}
+                      options={[
+                        ...(secret.name && !shared.some((x) => x.name === secret.name) ? [{ value: secret.name, label: `${secret.name} (missing)` }] : []),
+                        ...shared.map((x) => ({ value: x.name, label: `${x.name} · ${x.host}` })),
+                      ]}
+                    />
+                  </EnvField>
+                ) : (
+                  <EnvField label="Variable name" id="secret-name" help="What Kai's commands read, such as NPM_TOKEN.">
+                    <DesignInput
+                      id="secret-name"
+                      className="mono"
+                      value={secret.name}
+                      disabled={editing}
+                      onChange={(e) => setSecret({ ...secret, name: e.target.value.toUpperCase() })}
+                      placeholder="NPM_TOKEN"
+                    />
+                  </EnvField>
+                )}
+                {!secret.shared && (
+                  <>
+                    <EnvField label="Host" id="secret-host" help="One host, such as registry.npmjs.org or registry.example.com:8443.">
+                      <DesignInput
+                        id="secret-host"
+                        className="mono"
+                        value={secret.host}
+                        onChange={(e) => setSecret({ ...secret, host: e.target.value })}
+                        placeholder="registry.npmjs.org"
+                      />
+                    </EnvField>
+                    <EnvField label="Header" id="secret-header">
+                      <DesignInput
+                        id="secret-header"
+                        className="mono"
+                        value={secret.header}
+                        onChange={(e) => setSecret({ ...secret, header: e.target.value })}
+                        placeholder="Authorization"
+                      />
+                    </EnvField>
+                    <EnvField label="Before the value" id="secret-prefix" help="Such as “Bearer ” (with its space), or nothing.">
+                      <DesignInput
+                        id="secret-prefix"
+                        className="mono"
+                        value={secret.prefix}
+                        onChange={(e) => setSecret({ ...secret, prefix: e.target.value })}
+                        placeholder="Bearer "
+                      />
+                    </EnvField>
+                    <EnvField
+                      label="Value"
+                      id="secret-value"
+                      help={editing ? "Leave it empty to keep the saved value. Values are never shown again." : "Values are never shown again."}
+                    >
+                      <DesignInput
+                        id="secret-value"
+                        type="password"
+                        autoComplete="off"
+                        className="mono"
+                        value={secret.value}
+                        onChange={(e) => setSecret({ ...secret, value: e.target.value })}
+                      />
+                    </EnvField>
+                  </>
+                )}
+                <label className="env-check">
+                  <input type="checkbox" checked={secret.setupOnly} onChange={(e) => setSecret({ ...secret, setupOnly: e.target.checked })} />
+                  <span>
+                    Only for the setup script
+                    <span className="faint" style={{ display: "block", fontSize: 12 }}>
+                      Removed before Kai runs, and Kai's brief doesn't name it. Needs a setup script.
+                    </span>
+                  </span>
+                </label>
               </>
             ) : view === "network" ? (
               <>
@@ -395,14 +456,24 @@ export function EditEnvironment({
                             type="button"
                             className="env-secret"
                             onClick={() => {
-                              setSecret({ name: s.name, host: s.host, header: s.header, prefix: s.prefix, value: "" });
+                              setSecret({
+                                name: s.name,
+                                host: s.shared ? "" : (s.host ?? ""),
+                                header: s.shared ? "Authorization" : (s.header ?? "Authorization"),
+                                prefix: s.shared ? "Bearer " : (s.prefix ?? ""),
+                                value: "",
+                                shared: Boolean(s.shared),
+                                setupOnly: s.phase === "setup",
+                              });
                               setView("secret");
                             }}
                           >
                             <span className="mono">{s.name}</span>
                             <span className="faint">
-                              {s.host}
-                              {!s.allowed && " · not in network access, so not sent"}
+                              {s.missing ? "Shared secret deleted from the workspace" : s.host}
+                              {s.shared && !s.missing && " · shared"}
+                              {s.phase === "setup" && " · setup only"}
+                              {!s.missing && !s.allowed && " · not in network access, so not sent"}
                             </span>
                           </button>
                           <button type="button" className="ibtn" aria-label={`Delete ${s.name}`} onClick={() => removeSecret(s.name)}>

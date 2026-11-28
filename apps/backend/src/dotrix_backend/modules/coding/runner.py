@@ -546,6 +546,15 @@ class CodingWorker:
                             "this server's local sandbox can't")
         if turn_secrets.secrets and not plan_mode and execution_plan and self.settings.coding_parallel:
             raise RunFailed("Host secrets are not yet supported for parallel coding")
+        # Setup-only secrets go to the setup script of a fresh sandbox and are removed before Kai runs: without a
+        # setup script that runs this turn (Plan, none configured), nothing gets them.
+        from .environments import profile as environment_profile
+
+        setup_runs = bool(environment and not plan_mode and environment_profile(environment).setup_script.strip())
+        if turn_secrets.setup_only and not setup_runs:
+            turn_secrets = turn_secrets.without_setup()
+        if turn_secrets.setup_only and not getattr(self.sandbox, "drops_secrets", False):
+            raise RunFailed("This sandbox can't remove setup-only secrets before Kai runs, so it can't take them")
         for note in turn_secrets.skipped:
             await self._update(run_id, step=f"Host secret left out: {note}")
         run_sandbox = self.sandbox
@@ -657,6 +666,13 @@ class CodingWorker:
                 if (clean.code != 0 or clean.stdout.strip() or after_setup.code != 0
                         or before_setup.stdout.strip() != after_setup.stdout.strip()):
                     raise RunFailed("Environment setup changed repository files; use a frozen dependency install and keep generated files ignored")
+            if not warm and turn_secrets.setup_only:
+                # Gone before Kai runs: if they can't be removed, the turn stops here.
+                try:
+                    await box.drop_secrets([secret.name for secret in turn_secrets.setup_only])
+                except SandboxError as exc:
+                    raise RunFailed(f"Setup-only secrets couldn't be removed before Kai runs: {exc}") from exc
+                await self._update(run_id, step="Removed the setup-only secrets")
             baseline = (await box.exec(["git", "rev-parse", "HEAD"], timeout=60)).stdout.strip()
             if restored_patch:
                 applied = await box.exec(["git", "apply", "--index", "--binary", "--whitespace=nowarn", "-"],

@@ -458,3 +458,40 @@ async def test_host_secrets_need_docker_secret_injection(fake: FakeDockerCloud, 
         await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY, secrets=[
             HostSecret("NPM_TOKEN", "registry.npmjs.org", 443, "Authorization", "Bearer ", "v", 1)])
     assert fake.created == [] and fake.secrets == {}
+
+
+async def test_a_setup_only_secret_is_deleted_and_its_placeholder_gone_before_kai(
+    fake: FakeDockerCloud, repo: Path,
+) -> None:
+    from dotrix_backend.modules.coding.secrets import HostSecret
+
+    sandbox = _sandbox(fake)
+    setup = HostSecret("PYPI_TOKEN", "pypi.org", 443, "Authorization", "Bearer ", "pypi-value", 1, "setup")
+    kept = HostSecret("NPM_TOKEN", "registry.npmjs.org", 443, "Authorization", "Bearer ", "npm-value", 1)
+    session = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY, allow=["pypi.org", "registry.npmjs.org"],
+                                 secrets=[setup, kept])
+    await session.exec(["true"], timeout=60)
+    assert "PYPI_TOKEN" in fake.procs[-1].env
+    await session.drop_secrets(["PYPI_TOKEN"])
+    assert fake.secrets_deleted == ["sec-2"] and "sec-3" in fake.secrets
+    await session.exec(["true"], timeout=60)
+    assert "PYPI_TOKEN" not in fake.procs[-1].env and "NPM_TOKEN" in fake.procs[-1].env
+    assert sandbox.handle(session)["host_secrets"] == ["secrets/sec-3"]
+
+
+async def test_a_setup_only_secret_that_wont_delete_raises(fake: FakeDockerCloud, repo: Path) -> None:
+    from dotrix_backend.modules.coding.secrets import HostSecret
+
+    sandbox = _sandbox(fake)
+    setup = HostSecret("PYPI_TOKEN", "pypi.org", 443, "Authorization", "Bearer ", "v", 1, "setup")
+    session = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY, allow=["pypi.org"], secrets=[setup])
+    real = fake.handle
+
+    def stubborn(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE" and "/v1/secrets/" in str(request.url):
+            return httpx.Response(204)  # says yes, keeps it
+        return real(request)
+
+    session.api = DockerCloudSandbox(_settings(), transport=httpx.MockTransport(stubborn)).api
+    with pytest.raises(SandboxError, match="couldn't be deleted"):
+        await session.drop_secrets(["PYPI_TOKEN"])

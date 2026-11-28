@@ -56,7 +56,18 @@ from .schemas import (
     SharedCodingOutcomeRead,
     StandaloneCodingCreate,
 )
-from .secrets import CodingSecretRead, CodingSecretSave, delete_secret, list_secrets, save_secret
+from .secrets import (
+    CodingSecretRead,
+    CodingSecretSave,
+    SharedSecretRead,
+    SharedSecretSave,
+    delete_secret,
+    delete_shared,
+    list_secrets,
+    list_shared,
+    save_secret,
+    save_shared,
+)
 from .service import CodingService
 from .stream import follow_session
 
@@ -437,6 +448,31 @@ async def set_workspace_sandbox_network(
     return await SandboxNetwork(session).set_workspace(member, data)
 
 
+@workspace_router.get("/shared-secrets")
+async def list_shared_coding_secrets(member: WorkspaceSettingsEditor, session: SessionDep) -> list[SharedSecretRead]:
+    """The workspace's shared host secrets (names, hosts, headers and how many projects reference each; never
+    values). A project uses one only by referencing it by name. Owners and admins."""
+    return await list_shared(session, member)
+
+
+@workspace_router.put("/shared-secrets/{name}", responses=errors(403, 409, 422, 503))
+async def set_shared_coding_secret(
+    name: str, data: SharedSecretSave, member: WorkspaceSettingsEditor, session: SessionDep, request: Request,
+) -> SharedSecretRead:
+    """Add or change a shared host secret. Its host must be within the workspace's network limit when there is one
+    (409); a new one needs a value. Projects that reference it get a new value on their sessions' next turns.
+    Stored encrypted, never returned; audited without the value. Owners and admins."""
+    return await save_shared(session, request.app.state.secrets, member, name, data)
+
+
+@workspace_router.delete("/shared-secrets/{name}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 404))
+async def delete_shared_coding_secret(name: str, member: WorkspaceSettingsEditor, session: SessionDep) -> Response:
+    """Delete a shared host secret. Projects' references to it stay, listed as missing, and their turns go on without
+    it. Owners and admins; audited."""
+    await delete_shared(session, member, name)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/network")
 async def get_project_sandbox_network(access: ProjectViewer, session: SessionDep) -> SandboxNetworkRead:
     """This project's network policy: the hosts its new coding sessions pin, within the workspace's limit."""
@@ -523,9 +559,11 @@ async def list_coding_secrets(access: ProjectNetworkEditor, session: SessionDep)
 async def set_coding_secret(
     name: str, data: CodingSecretSave, access: ProjectNetworkEditor, session: SessionDep, request: Request,
 ) -> CodingSecretRead:
-    """Add or change a host secret named after the environment variable Kai's commands read its placeholder from.
-    Its host must be in the project's network policy (409 otherwise); a new one needs a value, and leaving `value`
-    out keeps the stored one. Stored encrypted (503 when the server has no encryption key), never returned; audited
+    """Add or change a host secret named after the environment variable Kai's commands read its placeholder from:
+    the project's own (host, header, prefix, value), or `shared`, a reference to the workspace's shared secret of the
+    same name. `phase: setup` gives it to the setup script only, removed before Kai runs. Its host must be in the
+    project's network policy (409 otherwise); a new one of its own needs a value, and leaving `value` out keeps the
+    stored one. Stored encrypted (503 when the server has no encryption key), never returned; audited
     without the value. New sessions pin it; running sessions get a changed value on their next turn."""
     return await save_secret(session, request.app.state.secrets, access.member, access.project, name, data)
 

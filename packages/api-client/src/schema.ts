@@ -4973,9 +4973,11 @@ export interface paths {
         get?: never;
         /**
          * Set Coding Secret
-         * @description Add or change a host secret named after the environment variable Kai's commands read its placeholder from.
-         *     Its host must be in the project's network policy (409 otherwise); a new one needs a value, and leaving `value`
-         *     out keeps the stored one. Stored encrypted (503 when the server has no encryption key), never returned; audited
+         * @description Add or change a host secret named after the environment variable Kai's commands read its placeholder from:
+         *     the project's own (host, header, prefix, value), or `shared`, a reference to the workspace's shared secret of the
+         *     same name. `phase: setup` gives it to the setup script only, removed before Kai runs. Its host must be in the
+         *     project's network policy (409 otherwise); a new one of its own needs a value, and leaving `value` out keeps the
+         *     stored one. Stored encrypted (503 when the server has no encryption key), never returned; audited
          *     without the value. New sessions pin it; running sessions get a changed value on their next turn.
          */
         put: operations["set_coding_secret"];
@@ -5142,6 +5144,54 @@ export interface paths {
         put: operations["set_workspace_sandbox_network"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/shared-secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Shared Coding Secrets
+         * @description The workspace's shared host secrets (names, hosts, headers and how many projects reference each; never
+         *     values). A project uses one only by referencing it by name. Owners and admins.
+         */
+        get: operations["list_shared_coding_secrets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/coding/shared-secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Shared Coding Secret
+         * @description Add or change a shared host secret. Its host must be within the workspace's network limit when there is one
+         *     (409); a new one needs a value. Projects that reference it get a new value on their sessions' next turns.
+         *     Stored encrypted, never returned; audited without the value. Owners and admins.
+         */
+        put: operations["set_shared_coding_secret"];
+        post?: never;
+        /**
+         * Delete Shared Coding Secret
+         * @description Delete a shared host secret. Projects' references to it stay, listed as missing, and their turns go on without
+         *     it. Owners and admins; audited.
+         */
+        delete: operations["delete_shared_coding_secret"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7775,17 +7825,29 @@ export interface components {
         };
         /**
          * CodingSecretRead
-         * @description A host secret without its value.
+         * @description A project's secret without its value. For a reference to a shared secret, the shared secret's host and header;
+         *     `missing` when the workspace no longer has it.
          */
         CodingSecretRead: {
             /** Name */
             name: string;
+            /**
+             * Shared
+             * @default false
+             */
+            shared: boolean;
+            /**
+             * Phase
+             * @default all
+             * @enum {string}
+             */
+            phase: "all" | "setup";
             /** Host */
-            host: string;
+            host: string | null;
             /** Header */
-            header: string;
+            header: string | null;
             /** Prefix */
-            prefix: string;
+            prefix: string | null;
             /** Version */
             version: number;
             /**
@@ -7794,6 +7856,12 @@ export interface components {
              */
             allowed: boolean;
             /**
+             * Missing
+             * @description A reference to a shared secret the workspace no longer has
+             * @default false
+             */
+            missing: boolean;
+            /**
              * Updated At
              * Format: date-time
              */
@@ -7801,28 +7869,43 @@ export interface components {
             /** Updated By Id */
             updated_by_id: string | null;
         };
-        /** CodingSecretSave */
+        /**
+         * CodingSecretSave
+         * @description A project's secret: its own (host, header, prefix, value), or `shared`, a reference by name to the workspace's
+         *     shared secret of the same name, which brings its own host, header and value.
+         */
         CodingSecretSave: {
+            /**
+             * Shared
+             * @description Reference the workspace's shared secret of this name instead of keeping a value here; host, header, prefix and value are then left out
+             * @default false
+             */
+            shared: boolean;
+            /**
+             * Phase
+             * @description `all`: the setup script and Kai's commands. `setup`: the setup script only; removed before Kai runs
+             * @default all
+             * @enum {string}
+             */
+            phase: "all" | "setup";
             /**
              * Host
              * @description The one host (`api.example.com` or `host:port`) the value is sent to; it must be in the project's network policy
              */
-            host: string;
+            host?: string | null;
             /**
              * Header
-             * @description The request header the value goes in
-             * @default Authorization
+             * @description The request header the value goes in (Authorization)
              */
-            header: string;
+            header?: string | null;
             /**
              * Prefix
-             * @description What comes before the value in the header (`Bearer `, `Token `, or nothing)
-             * @default Bearer
+             * @description What comes before the value in the header (`Bearer `)
              */
-            prefix: string;
+            prefix?: string | null;
             /**
              * Value
-             * @description The secret. Required for a new secret; leave it out to keep the stored one while changing the rest. Never returned
+             * @description The secret. Required for a new secret of the project's own; leave it out to keep the stored one. Never returned
              */
             value?: string | null;
         };
@@ -11545,6 +11628,62 @@ export interface components {
              * @description Only present for the coding session's owner
              */
             session_id: string | null;
+        };
+        /**
+         * SharedSecretRead
+         * @description A workspace's shared secret without its value.
+         */
+        SharedSecretRead: {
+            /** Name */
+            name: string;
+            /** Host */
+            host: string;
+            /** Header */
+            header: string;
+            /** Prefix */
+            prefix: string;
+            /** Version */
+            version: number;
+            /**
+             * Projects
+             * @description How many of the workspace's projects reference it
+             */
+            projects: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By Id */
+            updated_by_id: string | null;
+        };
+        /**
+         * SharedSecretSave
+         * @description A workspace's shared secret: the same fields as a project's own.
+         */
+        SharedSecretSave: {
+            /**
+             * Host
+             * @description The one host (`api.example.com` or `host:port`) the value is sent to; within the workspace's network limit when it has one
+             */
+            host: string;
+            /**
+             * Header
+             * @description The request header the value goes in
+             * @default Authorization
+             */
+            header: string;
+            /**
+             * Prefix
+             * @description What comes before the value in the header
+             * @default Bearer
+             */
+            prefix: string;
+            /**
+             * Value
+             * @description The secret. Required for a new secret; leave it out to keep the stored one. Never returned
+             */
+            value?: string | null;
         };
         /** SignInMethods */
         SignInMethods: {
@@ -29002,6 +29141,193 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_shared_coding_secrets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedSecretRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_shared_coding_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedSecretSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedSecretRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_shared_coding_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

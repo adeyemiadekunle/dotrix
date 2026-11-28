@@ -196,6 +196,7 @@ class DockerCloudSession:
     placeholder: str | None = None  # what the tool holds instead of the key, when it's a secret
     host_secrets: list[str] = field(default_factory=list)  # the host secrets' Docker names
     host_env: dict[str, str] = field(default_factory=dict)  # their placeholders, by variable (also in `env`)
+    host_names: dict[str, str] = field(default_factory=dict)  # variable -> its Docker secret's name
     _credential: _Credential | None = None
     _closed: bool = False
     _uploads: int = 0
@@ -345,6 +346,17 @@ class DockerCloudSession:
                 counts[host] = counts.get(host, 0) + int(entry.get("count") or 1)
         return sorted(counts, key=lambda h: -counts[h])
 
+    async def drop_secrets(self, names: list[str]) -> None:
+        """Remove host secrets (setup-only ones, before Kai runs): each Docker secret deleted and checked gone, and its
+        placeholder out of later commands' environment. Raises SandboxError when one can't be removed."""
+        for name in names:
+            stored = self.host_names.pop(name, None)
+            if stored is not None:
+                await delete_secret(self.api, stored, strict=True)
+                self.host_secrets = [s for s in self.host_secrets if s != stored]
+            self.host_env.pop(name, None)
+            self.env.pop(name, None)
+
     async def close(self) -> None:
         if self._closed:
             return
@@ -375,13 +387,19 @@ async def delete_sandbox(api: DockerCloudApi, sandbox_id: str) -> None:
         logger.warning("docker cloud sandbox %s: couldn't delete it: %s", sandbox_id, exc)
 
 
-async def delete_secret(api: DockerCloudApi, secret: str) -> None:
+async def delete_secret(api: DockerCloudApi, secret: str, *, strict: bool = False) -> None:
+    """Delete a stored secret. Not `strict`: a failure is logged (the sweep deletes it). `strict`: a failure, or the
+    secret still there afterwards, raises SandboxError."""
     url = f"{api.base}/v1/secrets/{secret.rsplit('/', 1)[-1]}"
     try:
         etag = await _etag(api, url)
         if etag is not None:
             await api.call("DELETE", url, ok=(200, 202, 204, 404), headers={"If-Match": etag})
-    except SandboxError as exc:  # the sweep deletes it
+        if strict and await _etag(api, url) is not None:
+            raise SandboxError("the secret is still stored")
+    except SandboxError as exc:
+        if strict:
+            raise SandboxError(f"A host secret couldn't be deleted from Docker: {exc}") from exc
         logger.warning("docker cloud secret %s: couldn't delete it: %s", secret, exc)
 
 
@@ -409,6 +427,7 @@ PLACEHOLDER = "sk-dotrix-placeholder"  # what the tool holds when Docker's own i
 
 class DockerCloudSandbox:
     kind = "docker-cloud"
+    drops_secrets = True  # setup-only host secrets can be removed before Kai runs (DockerCloudSession.drop_secrets)
     sleeps = True  # a session's sandbox can sleep between turns (stopped, files kept) and wake for the next
 
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> None:
@@ -513,10 +532,12 @@ class DockerCloudSandbox:
         secret, placeholder = stored if stored else (None, None)
         host_secrets: list[str] = []
         host_env: dict[str, str] = {}
+        host_names: dict[str, str] = {}
         try:
             for item in secrets:
                 name, held = await self._host_secret(run_id, item)
                 host_secrets.append(name)
+                host_names[item.name] = name
                 if held:
                     host_env[item.name] = held
             created = await self.api.call("POST", f"{self.api.base}/v1/sandboxes",
@@ -531,7 +552,7 @@ class DockerCloudSandbox:
         session = DockerCloudSession(self.api, _id(sandbox), endpoint="",
                                      env={**self._env(tool, placeholder or model_key), **host_env},
                                      ttl=self.ttl, secret=secret, placeholder=placeholder, host_secrets=host_secrets,
-                                     host_env=host_env)
+                                     host_env=host_env, host_names=host_names)
         try:
             await self._connect(session, sandbox)
             await session.upload("/tmp/dotrix-repo.tar", await asyncio.to_thread(_tar_of, source))

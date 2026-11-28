@@ -87,6 +87,7 @@ import { automationAdded, automationRemoved, automationToggled, isLive, live, re
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
 import { useAgents, useAudit, useAutomations, useMembers, useProjects } from "../data/lists";
 import { SHORTCUTS } from "../overlays/Modals";
+import { SharedSecrets } from "../components/SharedSecrets";
 import { EditEnvironment, networkSummary } from "../components/EditEnvironment";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -1892,6 +1893,7 @@ function SandboxNetworkSettings() {
               </ActionButton>
             )}
           </div>
+          <SharedSecrets />
         </>
       ) : (
         <div className="sblock">

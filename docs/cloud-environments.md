@@ -73,9 +73,35 @@ deleted, or whose host the turn's network policy no longer allows, is left out
 and the turn says why. A sandbox opened with other secret versions isn't reused.
 Neither sandbox's injection has run on a real gateway or account yet.
 
+### Shared secrets
+
+Owners and admins can keep a secret once for the workspace
+(`PUT/DELETE /v1/workspaces/{id}/coding/shared-secrets/{NAME}`, Settings →
+Environments & network with Workspace limit selected). Its host must be within
+the workspace's network limit when there is one. A project uses it only by
+referencing it by name (`PUT .../coding/secrets/{NAME}` with `shared: true`,
+"A workspace shared secret" in the form); the reference stores no host or
+value, and the shared secret's host must be in the project's network access.
+Turns read the shared secret's current value, so rotating it once reaches
+every project that references it on its sessions' next turns. Deleting it
+leaves the references, listed as missing, and turns go on without it. Changes
+are audited as `coding_shared_secret.*`.
+
+### Setup-only secrets
+
+A project's own secret or its reference to a shared one can be `phase:
+setup` ("Only for the setup script"). It goes to the sandbox only on a fresh
+sandbox whose environment has a setup script that runs this turn (never in
+Plan, never to a warm or woken sandbox), and is removed before Kai runs: on
+Docker Cloud the Docker secret is deleted and checked gone and its placeholder
+leaves later commands' environment; on OpenShell its provider is detached
+(`openshell sandbox provider detach`) and deleted with its profile. A failed
+removal stops the turn before Kai starts. Kai's brief never names a setup-only
+secret. On OpenShell its host, which only its provider supplied, is unreachable
+after setup.
+
 This slice does not implement arbitrary unreviewed images, multiple selectable
-profiles, setup-only or workspace-shared secrets, or dependency-only network
-phases. Do not put secrets in scripts or variables: scripts are shared project configuration and appear in private run
+profiles, or dependency-only network phases. Do not put secrets in scripts or variables: scripts are shared project configuration and appear in private run
 briefs. The broader contract below remains the implementation plan for those
 remaining capabilities. These tests use disposable repositories and scripted
 engine/container transports, not proof of deployed sandbox behavior.

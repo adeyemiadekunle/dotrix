@@ -362,6 +362,23 @@ class OpenShellSession:
         self.sandbox, self.name, self.provider, self.scratch = sandbox, name, provider, scratch
         self.secret_providers: list[str] = []  # one per host secret, each from a profile of its own
         self.profiles: list[str] = []
+        self.provider_of: dict[str, str] = {}  # a host secret's variable -> its provider
+
+    async def drop_secrets(self, names: list[str]) -> None:
+        """Remove host secrets (setup-only ones, before Kai runs): each provider detached from the sandbox, then
+        deleted with its profile. Raises SandboxError when one can't be detached."""
+        for name in names:
+            provider = self.provider_of.pop(name, None)
+            if provider is None:
+                continue
+            await self.sandbox.cli("sandbox", "provider", "detach", self.name, provider)
+            for args in (["provider", "delete", provider], ["provider", "profile", "delete", provider]):
+                try:
+                    await self.sandbox.cli(*args)
+                except SandboxError as exc:
+                    logger.warning("openshell %s %s: %s", args[0], args[1], exc)
+            self.secret_providers = [p for p in self.secret_providers if p != provider]
+            self.profiles = [p for p in self.profiles if p != provider]
 
     async def exec(
         self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
@@ -397,6 +414,7 @@ class OpenShellSession:
 
 class OpenShellSandbox:
     kind = "openshell"
+    drops_secrets = True  # setup-only host secrets can be detached before Kai runs (OpenShellSession.drop_secrets)
 
     def __init__(self, settings: Settings) -> None:
         self.bin = settings.openshell_bin
@@ -464,6 +482,7 @@ class OpenShellSandbox:
         await self.cli("provider", "create", "--name", name, "--type", name, "--credential", secret.name,
                        env=self.cli_env(**{secret.name: secret.value}))
         session.secret_providers.append(name)
+        session.provider_of[secret.name] = name
         return name
 
 

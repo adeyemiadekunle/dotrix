@@ -469,3 +469,25 @@ export async function codingSecretDeleted(projectId: string, name: string): Prom
     }),
   );
 }
+
+/* ---------- Shared secrets: kept once for the workspace, used by projects that reference them by name ---------- */
+export type SharedSecret = Schemas["SharedSecretRead"];
+
+export async function sharedSecrets(): Promise<SharedSecret[]> {
+  return unwrap(api.GET("/v1/workspaces/{workspace_id}/coding/shared-secrets", wsPath()));
+}
+export async function sharedSecretSaved(name: string, body: Schemas["SharedSecretSave"]): Promise<SharedSecret> {
+  return unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/coding/shared-secrets/{name}", {
+      params: { path: { workspace_id: live.ws!.id, name } },
+      body,
+    }),
+  );
+}
+export async function sharedSecretDeleted(name: string): Promise<void> {
+  await unwrap(
+    api.DELETE("/v1/workspaces/{workspace_id}/coding/shared-secrets/{name}", {
+      params: { path: { workspace_id: live.ws!.id, name } },
+    }),
+  );
+}

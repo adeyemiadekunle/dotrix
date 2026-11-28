@@ -23,15 +23,33 @@ VALUE = "npm_REAL-secret-value-1234"
 
 
 class SecretSandbox(SleepingSandbox):
-    """Records the secrets each sandbox was opened with, as Docker Cloud and OpenShell would take them."""
+    """Records the secrets each sandbox was opened with, as Docker Cloud and OpenShell would take them, and what ran
+    and was removed in what order."""
+
+    drops_secrets = True
 
     def __init__(self, agent) -> None:
         super().__init__(agent)
         self.secrets: list[list] = []
+        self.log: list[str] = []
 
     async def open(self, run_id, source, tool, model_key, *, allow=(), secrets=()):
         self.secrets.append(list(secrets))
-        return await super().open(run_id, source, tool, model_key, allow=allow)
+        box = await super().open(run_id, source, tool, model_key, allow=allow)
+        log, inner = self.log, box.exec
+
+        async def exec(argv, **kwargs):
+            if "-eu" in argv:
+                log.append("setup" if "setup-marker" in argv[-1] else "verify")
+            elif argv and argv[0] not in ("git", "sh", "tar", "rm", "mkdir", "cat", "test"):
+                log.append("kai")
+            return await inner(argv, **kwargs)
+
+        async def drop_secrets(names):
+            log.append("drop " + ",".join(names))
+
+        box.exec, box.drop_secrets = exec, drop_secrets
+        return box
 
 
 async def test_secrets_are_write_only_encrypted_audited_and_limited_to_the_network_policy(
@@ -134,8 +152,8 @@ async def test_a_session_pins_its_secrets_and_each_turn_sends_their_values_as_th
         "NPM_TOKEN", "registry.npmjs.org", 443, "Authorization", "Bearer ", VALUE)
     assert VALUE not in repr(secret)
     stored = await db_session.get(CodingRun, first["id"])
-    assert stored.secret_snapshot == [{"name": "NPM_TOKEN", "host": "registry.npmjs.org", "header": "Authorization",
-                                       "prefix": "Bearer "}]
+    assert stored.secret_snapshot == [{"name": "NPM_TOKEN", "shared": False, "phase": "all",
+                                       "host": "registry.npmjs.org", "header": "Authorization", "prefix": "Bearer "}]
 
     # A rotated value reaches the session's next turn, in a new sandbox (the asleep one had the old version);
     # a secret added since is for new sessions.
@@ -178,3 +196,134 @@ async def test_the_local_sandbox_refuses_a_turn_with_secrets(
     done = await _approve(db_client, base, (await db_client.post(
         f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json(), ada.headers)
     assert done["status"] == "failed" and "keeps them out" in (done["error"] or ""), done
+
+
+async def test_a_shared_secret_is_kept_once_and_used_by_the_projects_that_reference_it(
+    db_client: AsyncClient, coding, db_session,  # noqa: F811
+) -> None:
+    ada, cat, ws, kun, mob, _ = coding
+    shared_url = f"{ws}/coding/shared-secrets/NPM_TOKEN"
+    body = {"host": "registry.npmjs.org", "value": VALUE}
+    assert (await db_client.put(shared_url, json=body, headers=cat.headers)).status_code == 403
+    assert (await db_client.get(f"{ws}/coding/shared-secrets", headers=cat.headers)).status_code == 403
+    # Within the workspace's limit when it has one.
+    await db_client.put(f"{ws}/coding/network", json={"limited": True, "presets": ["pypi"]}, headers=ada.headers)
+    assert (await db_client.put(shared_url, json=body, headers=ada.headers)).status_code == 409
+    await db_client.put(f"{ws}/coding/network", json={"limited": False}, headers=ada.headers)
+    saved = (await db_client.put(shared_url, json=body, headers=ada.headers)).json()
+    assert saved["projects"] == 0 and saved["host"] == "registry.npmjs.org" and "value" not in saved
+
+    # A project uses it only by referencing it, with its host in the project's own network policy.
+    base = f"{ws}/projects/{kun['id']}"
+    ref = f"{base}/coding/secrets/NPM_TOKEN"
+    assert (await db_client.put(ref, json={"shared": True}, headers=ada.headers)).status_code == 409
+    await db_client.put(f"{base}/coding/network", json={"presets": ["npm"]}, headers=ada.headers)
+    assert (await db_client.put(ref, json={"shared": True, "host": "registry.npmjs.org"},
+                                headers=ada.headers)).status_code == 422  # a reference brings its own host
+    assert (await db_client.put(f"{base}/coding/secrets/OTHER_TOKEN", json={"shared": True},
+                                headers=ada.headers)).status_code == 409  # no shared secret of that name
+    referenced = (await db_client.put(ref, json={"shared": True}, headers=ada.headers)).json()
+    assert referenced["shared"] and referenced["host"] == "registry.npmjs.org" and referenced["allowed"]
+    assert (await db_client.get(f"{ws}/projects/{mob['id']}/coding/secrets", headers=ada.headers)).json() == []
+    [listed] = (await db_client.get(f"{ws}/coding/shared-secrets", headers=ada.headers)).json()
+    assert listed["projects"] == 1
+    row = await db_session.scalar(select(CodingSecret).where(CodingSecret.name == "NPM_TOKEN"))
+    assert row.encrypted is None and row.host is None  # the value stays with the workspace's secret
+
+    # Deleted from the workspace: the reference stays, listed as missing.
+    assert (await db_client.delete(shared_url, headers=ada.headers)).status_code == 204
+    [missing] = (await db_client.get(f"{base}/coding/secrets", headers=ada.headers)).json()
+    assert missing["missing"] and not missing["allowed"] and missing["host"] is None
+    audited = [a.action for a in await db_session.scalars(select(AuditEvent).where(
+        AuditEvent.action.like("coding_shared_secret.%")).order_by(AuditEvent.created_at))]
+    assert audited == ["coding_shared_secret.created", "coding_shared_secret.deleted"]
+
+
+async def test_turns_get_a_shared_secrets_current_value_and_setup_only_secrets_are_gone_before_kai(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, db_session, storage,  # noqa: F811
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    sandbox = SecretSandbox(claude)
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage, secrets=app.state.secrets,
+                                 pool=WarmPool(3600, 0))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
+    claude.found_transcript, claude.argvs = [], []
+    base = f"{ws}/projects/{kun['id']}"
+    agent_script.say("Fine.", "Fine again.")
+    await db_client.put(f"{base}/coding/environment", headers=ada.headers, json={
+        "revision": 0, "enabled": True, "setup_script": "echo setup-marker", "network": {"presets": ["npm", "pypi"]}})
+    await db_client.put(f"{ws}/coding/shared-secrets/NPM_TOKEN", json={"host": "registry.npmjs.org", "value": VALUE},
+                        headers=ada.headers)
+    await db_client.put(f"{base}/coding/secrets/NPM_TOKEN", json={"shared": True}, headers=ada.headers)
+    await db_client.put(f"{base}/coding/secrets/PYPI_TOKEN", json={"host": "pypi.org", "value": "pypi-value",
+                                                                  "phase": "setup"}, headers=ada.headers)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    asked = (await db_client.post(f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json()
+    assert "NPM_TOKEN" in asked["brief"] and "PYPI_TOKEN" not in asked["brief"]  # Kai never has a setup-only one
+    first = await _approve(db_client, base, asked, ada.headers)
+    assert first["status"] == "pr_opened", first
+    assert sorted((s.name, s.value, s.phase) for s in sandbox.secrets[0]) == [
+        ("NPM_TOKEN", VALUE, "all"), ("PYPI_TOKEN", "pypi-value", "setup")]
+    assert sandbox.log[:3] == ["setup", "drop PYPI_TOKEN", "kai"], sandbox.log
+    assert any(e["text"] == "Removed the setup-only secrets" for e in first["events"])
+
+    # Rotated once in the workspace: the session's next turn gets it, in a fresh sandbox.
+    await db_client.put(f"{ws}/coding/shared-secrets/NPM_TOKEN", json={"host": "registry.npmjs.org", "value": "new"},
+                        headers=ada.headers)
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    assert amount > 0\n    return amount\n"}
+    second = await _approve(db_client, base, (await db_client.post(
+        f"{base}/coding/sessions/{first['session_id']}/turns", json={"message": "Only positive"},
+        headers=ada.headers)).json(), ada.headers)
+    assert second["status"] == "pr_opened", second
+    assert sandbox.opened == 2
+    assert dict((s.name, s.value) for s in sandbox.secrets[-1]) == {"NPM_TOKEN": "new", "PYPI_TOKEN": "pypi-value"}
+
+
+async def test_a_setup_only_secret_without_a_setup_script_goes_nowhere_and_a_failed_removal_stops_the_turn(
+    db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude, agent_script, storage,  # noqa: F811
+) -> None:
+    ada, _, ws, kun, _, _ = coding
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    jobs = app.state.jobs
+    sandbox = SecretSandbox(claude)
+    worker = dataclasses.replace(jobs.ctx.coding, sandbox=sandbox, storage=storage, secrets=app.state.secrets,
+                                 pool=WarmPool(3600, 0))
+    jobs.ctx = dataclasses.replace(jobs.ctx, coding=worker)
+    claude.found_transcript, claude.argvs = [], []
+    base = f"{ws}/projects/{kun['id']}"
+    agent_script.say("Fine.")
+    await db_client.put(f"{base}/coding/network", json={"presets": ["pypi"]}, headers=ada.headers)
+    await db_client.put(f"{base}/coding/secrets/PYPI_TOKEN", json={"host": "pypi.org", "value": "v", "phase": "setup"},
+                        headers=ada.headers)
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Refunds"}, headers=ada.headers)).json()
+    claude.edits = {"src/refunds.py": "def refund(amount):\n    return amount\n"}
+    done = await _approve(db_client, base, (await db_client.post(
+        f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json(), ada.headers)
+    assert done["status"] == "pr_opened" and sandbox.secrets == [[]], done  # no setup script: nobody gets it
+
+    # With a setup script, a removal that fails stops the turn before Kai runs.
+    await db_client.put(f"{base}/coding/environment", headers=ada.headers,
+                        json={"revision": 0, "enabled": True, "setup_script": "echo setup-marker"})
+    original = sandbox.open
+
+    async def failing_open(*args, **kwargs):
+        box = await original(*args, **kwargs)
+
+        async def refuse(names):
+            from dotrix_backend.modules.coding.sandbox import SandboxError
+
+            raise SandboxError("the gateway said no")
+
+        box.drop_secrets = refuse
+        return box
+
+    sandbox.open = failing_open
+    task = (await db_client.post(f"{base}/issues", json={"type": "task", "title": "Again"}, headers=ada.headers)).json()
+    failed = await _approve(db_client, base, (await db_client.post(
+        f"{base}/coding/issues/{task['key']}/runs", json={}, headers=ada.headers)).json(), ada.headers)
+    assert failed["status"] == "failed" and "couldn't be removed" in (failed["error"] or ""), failed
+    assert "kai" not in sandbox.log[sandbox.log.index("setup"):], sandbox.log

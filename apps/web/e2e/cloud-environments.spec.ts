@@ -81,6 +81,30 @@ test("project environments persist without running scripts and stay separate", a
   const saved = await (await page.request.get(`/v1/workspaces/${workspace.id}/projects/${projects[0].id}/coding/environment`)).json();
   expect(saved.enabled).toBe(true);
   expect(saved.variables).toEqual({ LOG_LEVEL: "debug" });
+  // A shared secret kept once for the workspace, then referenced by a project, for its setup script only.
+  await pickSelect(page, scope, "Workspace limit");
+  await page.getByRole("button", { name: "Add shared secret", exact: true }).click();
+  const sharedForm = page.getByRole("group", { name: "Add shared secret" });
+  await sharedForm.getByLabel("Variable name", { exact: true }).fill("pypi_token");
+  await sharedForm.getByLabel("Host", { exact: true }).fill("pypi.org");
+  await sharedForm.getByLabel("Value", { exact: true }).fill("e2e-shared-value");
+  await sharedForm.getByRole("button", { name: "Save shared secret", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Shared secret saved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Shared secrets" })).toContainText("PYPI_TOKEN");
+
+  await pickSelect(page, scope, projects[0].name);
+  await page.getByRole("button", { name: "Edit environment", exact: true }).click();
+  await sheet.getByRole("button", { name: "Add secret", exact: true }).click();
+  await pickSelect(page, adding.getByLabel("Source", { exact: true }), "A workspace shared secret");
+  await pickSelect(page, adding.getByLabel("Shared secret", { exact: true }), "PYPI_TOKEN · pypi.org");
+  await adding.getByLabel("Only for the setup script").check();
+  await adding.getByRole("button", { name: "Save secret", exact: true }).click();
+  await expect(sheet.getByRole("list", { name: "Secrets" })).toContainText("setup only");
+  const referenced = await (await page.request.get(`/v1/workspaces/${workspace.id}/projects/${projects[0].id}/coding/secrets`)).json();
+  expect(referenced.find((s: { name: string }) => s.name === "PYPI_TOKEN")).toMatchObject({ shared: true, phase: "setup", host: "pypi.org" });
+  expect(JSON.stringify(referenced)).not.toContain("e2e-shared-value");
+  await sheet.getByRole("button", { name: "Close", exact: true }).click();
+
   // Saving runs nothing.
   const runs = await page.request.get(`/v1/workspaces/${workspace.id}/projects/${projects[0].id}/coding/runs`);
   expect(runs.ok()).toBeTruthy();

@@ -5925,6 +5925,19 @@ textarea.onb2-input {
   cursor: pointer;
   overflow-wrap: anywhere;
 }
+.env-shared-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 520px;
+  margin-top: 12px;
+}
+.env-shared-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
 .env-secret:hover {
   background: var(--surface-2);
 }

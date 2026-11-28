@@ -314,18 +314,42 @@ class CodingSecret(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     """A project's host secret (secrets.py): a credential for one host in the project's network policy, kept out of
     the sandbox. The sandbox's command sees a placeholder in the environment variable `name`; the sandbox's proxy
     (Docker Cloud's or OpenShell's) writes the real value into `header` on requests to `host`, after `prefix`.
-    Write-only: the value is stored encrypted and never returned."""
+    Write-only: the value is stored encrypted and never returned.
+
+    A `shared` row is a reference to the workspace's shared secret of the same name (CodingSharedSecret): its host,
+    header, prefix and value are that secret's, read when a turn runs; its own columns stay empty. `phase` says who
+    gets it: `all` (the setup script and Kai's commands) or `setup` (the setup script only, removed before Kai runs)."""
 
     __tablename__ = "coding_secrets"
     __table_args__ = (UniqueConstraint("project_id", "name"),)
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(64))  # the environment variable that holds the placeholder
-    host: Mapped[str] = mapped_column(String(260))  # one network policy entry: `host` or `host:port`, no wildcard
-    header: Mapped[str] = mapped_column(String(64), default="Authorization")
-    prefix: Mapped[str] = mapped_column(String(32), default="Bearer ")  # what comes before the value in the header
-    encrypted: Mapped[str] = mapped_column(Text)  # Fernet token (core/crypto.py); never returned
+    shared: Mapped[bool] = mapped_column(Boolean, default=False)  # a reference to the workspace's secret `name`
+    phase: Mapped[str] = mapped_column(String(16), default="all")  # "all" or "setup"
+    host: Mapped[str | None] = mapped_column(String(260))  # one network policy entry: `host` or `host:port`
+    header: Mapped[str | None] = mapped_column(String(64))
+    prefix: Mapped[str | None] = mapped_column(String(32))  # what comes before the value in the header
+    encrypted: Mapped[str | None] = mapped_column(Text)  # Fernet token (core/crypto.py); never returned
     version: Mapped[int] = mapped_column(Integer, default=1)  # raised on every change, so sandboxes aren't reused
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CodingSharedSecret(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A workspace's shared host secret (secrets.py): kept once by owners and admins, used by a project only when the
+    project references it by name (a `shared` CodingSecret). Write-only, like a project's."""
+
+    __tablename__ = "coding_shared_secrets"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+
+    name: Mapped[str] = mapped_column(String(64))
+    host: Mapped[str] = mapped_column(String(260))
+    header: Mapped[str] = mapped_column(String(64), default="Authorization")
+    prefix: Mapped[str] = mapped_column(String(32), default="Bearer ")
+    encrypted: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, default=1)
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

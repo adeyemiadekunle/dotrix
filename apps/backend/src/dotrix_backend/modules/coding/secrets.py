@@ -11,6 +11,13 @@ the sandbox's proxy puts the real value into that header on requests to that hos
   key is; the host then goes through OpenShell's inspecting proxy instead of the policy's relayed endpoints.
 - The local sandbox and people's own computers never get them (a local turn has no proxy to keep them out).
 
+A workspace's owners and admins can keep a secret once as a shared secret (`coding_shared_secrets`); a project uses it
+only by referencing it by name (a `shared` project secret), and then gets its host, header and current value when a
+turn runs, so rotating it once reaches every project that references it. A project's own secret and its reference
+to a shared one can each be setup-only (`phase: setup`): the sandbox's proxy has it only while the environment's setup
+script runs, and it's removed (the Docker secret deleted, the OpenShell provider detached) before Kai starts; a turn
+whose removal fails stops there.
+
 Values are write-only: stored encrypted (`core/crypto.Secrets`), never returned, logged or put in a brief, and every
 change is audited by name and host, never value. A coding session pins its project's secrets (names, hosts, headers;
 `coding_runs.secret_snapshot`) with its first turn, as it pins its network policy; each turn reads the values as they
@@ -23,9 +30,9 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,14 +46,17 @@ from dotrix_engine import network_policy
 from dotrix_engine.network_policy import InvalidEntry
 
 from .environments import _NAME, RESERVED, RESERVED_PREFIXES
-from .models import CodingSecret
+from .models import CodingSecret, CodingSharedSecret
 
 MAX_SECRETS = 20
+MAX_SHARED = 50
 MAX_VALUE = 8192
 _HEADER = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
 # Headers a proxy must not be asked to write: they'd change where or how the request goes.
 _FORBIDDEN_HEADERS = frozenset({"host", "content-length", "transfer-encoding", "connection", "upgrade", "te", "trailer",
                                 "proxy-authorization", "proxy-connection", "keep-alive", "cookie", "set-cookie"})
+DEFAULT_HEADER, DEFAULT_PREFIX = "Authorization", "Bearer "
+Phase = Literal["all", "setup"]
 
 
 def check_name(name: str) -> None:
@@ -69,16 +79,36 @@ def check_host(raw: str) -> str:
     return str(entry)
 
 
-class CodingSecretSave(BaseModel):
+def _check_header(value: str) -> str:
+    if not _HEADER.fullmatch(value) or value.lower() in _FORBIDDEN_HEADERS:
+        raise ValueError(f"{value!r} can't carry a secret; use Authorization or the header the service documents")
+    return value
+
+
+def _check_prefix(value: str) -> str:
+    if len(value) > 32 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("The prefix must be printable text such as `Bearer `, at most 32 characters")
+    return value
+
+
+def _check_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not value or len(value) > MAX_VALUE or any(c in value for c in "\x00\r\n"):
+        raise ValueError(f"The value must be one line of 1 to {MAX_VALUE} characters")
+    return value
+
+
+class SharedSecretSave(BaseModel):
+    """A workspace's shared secret: the same fields as a project's own."""
+
     model_config = ConfigDict(extra="forbid")
-    host: str = Field(description="The one host (`api.example.com` or `host:port`) the value is sent to; it must be "
-                                  "in the project's network policy")
-    header: str = Field(default="Authorization", description="The request header the value goes in")
-    prefix: str = Field(default="Bearer ", max_length=32, description=(
-        "What comes before the value in the header (`Bearer `, `Token `, or nothing)"))
+    host: str = Field(description="The one host (`api.example.com` or `host:port`) the value is sent to; within the "
+                                  "workspace's network limit when it has one")
+    header: str = Field(default=DEFAULT_HEADER, description="The request header the value goes in")
+    prefix: str = Field(default=DEFAULT_PREFIX, description="What comes before the value in the header")
     value: str | None = Field(default=None, description=(
-        "The secret. Required for a new secret; leave it out to keep the stored one while changing the rest. Never "
-        "returned"))
+        "The secret. Required for a new secret; leave it out to keep the stored one. Never returned"))
 
     @field_validator("host")
     @classmethod
@@ -88,37 +118,92 @@ class CodingSecretSave(BaseModel):
     @field_validator("header")
     @classmethod
     def _header(cls, value: str) -> str:
-        if not _HEADER.fullmatch(value) or value.lower() in _FORBIDDEN_HEADERS:
-            raise ValueError(f"{value!r} can't carry a secret; use Authorization or the header the service documents")
-        return value
+        return _check_header(value)
 
     @field_validator("prefix")
     @classmethod
     def _prefix(cls, value: str) -> str:
-        if any(ord(c) < 32 or ord(c) == 127 for c in value):
-            raise ValueError("The prefix must be printable text such as `Bearer `")
-        return value
+        return _check_prefix(value)
 
     @field_validator("value")
     @classmethod
     def _value(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not value or len(value) > MAX_VALUE or any(c in value for c in "\x00\r\n"):
-            raise ValueError(f"The value must be one line of 1 to {MAX_VALUE} characters")
-        return value
+        return _check_value(value)
+
+
+class CodingSecretSave(BaseModel):
+    """A project's secret: its own (host, header, prefix, value), or `shared`, a reference by name to the workspace's
+    shared secret of the same name, which brings its own host, header and value."""
+
+    model_config = ConfigDict(extra="forbid")
+    shared: bool = Field(default=False, description="Reference the workspace's shared secret of this name instead of "
+                                                    "keeping a value here; host, header, prefix and value are then left out")
+    phase: Phase = Field(default="all", description=(
+        "`all`: the setup script and Kai's commands. `setup`: the setup script only; removed before Kai runs"))
+    host: str | None = Field(default=None, description="The one host (`api.example.com` or `host:port`) the value is "
+                                                       "sent to; it must be in the project's network policy")
+    header: str | None = Field(default=None, description="The request header the value goes in (Authorization)")
+    prefix: str | None = Field(default=None, description="What comes before the value in the header (`Bearer `)")
+    value: str | None = Field(default=None, description=(
+        "The secret. Required for a new secret of the project's own; leave it out to keep the stored one. Never "
+        "returned"))
+
+    @field_validator("host")
+    @classmethod
+    def _host(cls, value: str | None) -> str | None:
+        return None if value is None else check_host(value)
+
+    @field_validator("header")
+    @classmethod
+    def _header(cls, value: str | None) -> str | None:
+        return None if value is None else _check_header(value)
+
+    @field_validator("prefix")
+    @classmethod
+    def _prefix(cls, value: str | None) -> str | None:
+        return None if value is None else _check_prefix(value)
+
+    @field_validator("value")
+    @classmethod
+    def _value(cls, value: str | None) -> str | None:
+        return _check_value(value)
+
+    @model_validator(mode="after")
+    def _shape(self) -> CodingSecretSave:
+        if self.shared and any(v is not None for v in (self.host, self.header, self.prefix, self.value)):
+            raise ValueError("A shared secret brings its own host, header and value: leave them out")
+        if not self.shared and self.host is None:
+            raise ValueError("A secret needs its host")
+        return self
 
 
 class CodingSecretRead(BaseModel):
-    """A host secret without its value."""
+    """A project's secret without its value. For a reference to a shared secret, the shared secret's host and header;
+    `missing` when the workspace no longer has it."""
+
+    name: str
+    shared: bool = False
+    phase: Phase = "all"
+    host: str | None
+    header: str | None
+    prefix: str | None
+    version: int
+    allowed: bool = Field(description="Whether the project's network policy allows its host now; a secret whose "
+                                      "host isn't allowed isn't sent")
+    missing: bool = Field(default=False, description="A reference to a shared secret the workspace no longer has")
+    updated_at: datetime
+    updated_by_id: uuid.UUID | None
+
+
+class SharedSecretRead(BaseModel):
+    """A workspace's shared secret without its value."""
 
     name: str
     host: str
     header: str
     prefix: str
     version: int
-    allowed: bool = Field(description="Whether the project's network policy allows its host now; a secret whose "
-                                      "host isn't allowed isn't sent")
+    projects: int = Field(description="How many of the workspace's projects reference it")
     updated_at: datetime
     updated_by_id: uuid.UUID | None
 
@@ -134,10 +219,11 @@ class HostSecret:
     header: str
     prefix: str
     value: str
-    version: int
+    version: int | str
+    phase: str = "all"
 
     def __repr__(self) -> str:  # never the value
-        return f"HostSecret({self.name}, {self.host}:{self.port})"
+        return f"HostSecret({self.name}, {self.host}:{self.port}, {self.phase})"
 
     @property
     def entry(self) -> str:
@@ -149,11 +235,37 @@ class HostSecret:
         return f"openshell:resolve:env:{self.name}"
 
 
-def _read(row: CodingSecret, allow: list[str]) -> CodingSecretRead:
-    entry = network_policy.parse_entry(row.host)
+@dataclass(frozen=True)
+class _Resolved:
+    host: str
+    header: str
+    prefix: str
+    encrypted: str
+    version: int | str
+
+
+def _resolve(row: CodingSecret, shared: dict[str, CodingSharedSecret]) -> _Resolved | None:
+    """A project secret's host, header, prefix, value and version: its own, or its shared secret's (None if gone)."""
+    if not row.shared:
+        return _Resolved(row.host or "", row.header or DEFAULT_HEADER, row.prefix if row.prefix is not None else
+                         DEFAULT_PREFIX, row.encrypted or "", row.version)
+    found = shared.get(row.name)
+    if found is None:
+        return None
+    return _Resolved(found.host, found.header, found.prefix, found.encrypted, f"{row.version}.{found.version}")
+
+
+def _host_allowed(host: str, allow: list[str]) -> bool:
+    entry = network_policy.parse_entry(host)
+    return network_policy.permits(network_policy.parse(allow, limit=None), entry.host, entry.port)
+
+
+def _read(row: CodingSecret, resolved: _Resolved | None, allow: list[str]) -> CodingSecretRead:
     return CodingSecretRead(
-        name=row.name, host=row.host, header=row.header, prefix=row.prefix, version=row.version,
-        allowed=network_policy.permits(network_policy.parse(allow, limit=None), entry.host, entry.port),
+        name=row.name, shared=row.shared, phase=row.phase,  # type: ignore[arg-type]
+        host=resolved.host if resolved else None, header=resolved.header if resolved else None,
+        prefix=resolved.prefix if resolved else None, version=row.version,
+        allowed=resolved is not None and _host_allowed(resolved.host, allow), missing=resolved is None,
         updated_at=row.updated_at, updated_by_id=row.updated_by_id)
 
 
@@ -161,6 +273,14 @@ async def _rows(session: AsyncSession, project: Project) -> list[CodingSecret]:
     return list((await session.scalars(select(CodingSecret).where(
         CodingSecret.workspace_id == project.workspace_id, CodingSecret.project_id == project.id,
     ).order_by(CodingSecret.name))).all())
+
+
+async def _shared_rows(session: AsyncSession, workspace_id: uuid.UUID, names: list[str] | None = None,
+                       ) -> dict[str, CodingSharedSecret]:
+    query = select(CodingSharedSecret).where(CodingSharedSecret.workspace_id == workspace_id)
+    if names is not None:
+        query = query.where(CodingSharedSecret.name.in_(names))
+    return {row.name: row for row in (await session.scalars(query)).all()}
 
 
 async def secret_names(session: AsyncSession, project: Project) -> set[str]:
@@ -177,14 +297,17 @@ async def _allowed(session: AsyncSession, project: Project) -> list[str]:
 
 async def list_secrets(session: AsyncSession, project: Project) -> list[CodingSecretRead]:
     allow = await _allowed(session, project)
-    return [_read(row, allow) for row in await _rows(session, project)]
+    rows = await _rows(session, project)
+    shared = await _shared_rows(session, project.workspace_id, [r.name for r in rows if r.shared])
+    return [_read(row, _resolve(row, shared), allow) for row in rows]
 
 
 async def save_secret(
     session: AsyncSession, cipher: Secrets, member: Membership, project: Project, name: str, data: CodingSecretSave,
 ) -> CodingSecretRead:
-    """Add or change a host secret. 409 when its host isn't in the project's network policy, its name is one of the
-    environment's variables, or the project has its maximum; a new secret needs a value."""
+    """Add or change a project's secret, its own or a reference to a shared one. 409 when its host isn't in the
+    project's network policy, the workspace has no shared secret of that name, its name is one of the environment's
+    variables, or the project has its maximum; a new secret of its own needs a value."""
     from .environments import profile
 
     try:
@@ -192,9 +315,13 @@ async def save_secret(
     except ValueError as exc:
         raise Conflict(str(exc)) from exc
     allow = await _allowed(session, project)
-    entry = network_policy.parse_entry(data.host)
-    if not network_policy.permits(network_policy.parse(allow, limit=None), entry.host, entry.port):
-        raise Conflict(f"{data.host} isn't in this project's network policy: allow it in Network access first")
+    shared = await _shared_rows(session, project.workspace_id, [name]) if data.shared else {}
+    if data.shared and name not in shared:
+        raise Conflict(f"This workspace has no shared secret named {name}")
+    host = shared[name].host if data.shared else data.host
+    assert host is not None
+    if not _host_allowed(host, allow):
+        raise Conflict(f"{host} isn't in this project's network policy: allow it in Network access first")
     if name in profile(project.coding_environment).variables:
         raise Conflict(f"{name} is one of the environment's variables; remove it there or choose another name")
     row = await session.scalar(select(CodingSecret).where(
@@ -203,28 +330,36 @@ async def save_secret(
     now = datetime.now(UTC)
     created = row is None
     if row is None:
-        if data.value is None:
+        if not data.shared and data.value is None:
             raise Conflict("A new secret needs its value")
         if len(await secret_names(session, project)) >= MAX_SECRETS:
             raise Conflict(f"A project has at most {MAX_SECRETS} secrets")
         row = CodingSecret(workspace_id=project.workspace_id, project_id=project.id, name=name, version=1,
-                           created_at=now, encrypted="")
+                           created_at=now)
         session.add(row)
     else:
+        if not data.shared and row.shared and data.value is None:
+            raise Conflict("Give the secret its value: it was a shared secret's until now")
         row.version += 1
-    row.host, row.header, row.prefix = data.host, data.header, data.prefix
-    if data.value is not None:
-        row.encrypted = cipher.encrypt(data.value)
+    row.shared, row.phase = data.shared, data.phase
+    if data.shared:
+        row.host = row.header = row.prefix = row.encrypted = None
+    else:
+        row.host = data.host
+        row.header = data.header or DEFAULT_HEADER
+        row.prefix = data.prefix if data.prefix is not None else DEFAULT_PREFIX
+        if data.value is not None:
+            row.encrypted = cipher.encrypt(data.value)
     row.updated_by_id, row.updated_at = member.user_id, now
     await session.flush()
     AuditLog(session).record(
         workspace_id=project.workspace_id, project_id=project.id,
         action="coding_secret.created" if created else "coding_secret.updated", target=name,
         actor_type=AuthorType.USER, actor_user_id=member.user_id,
-        details={"name": name, "host": row.host, "header": row.header, "version": row.version,
+        details={"name": name, "host": host, "shared": row.shared, "phase": row.phase, "version": row.version,
                  "value_changed": data.value is not None})
     await session.commit()
-    return _read(row, allow)
+    return _read(row, _resolve(row, shared), allow)
 
 
 async def delete_secret(session: AsyncSession, member: Membership, project: Project, name: str) -> None:
@@ -236,6 +371,84 @@ async def delete_secret(session: AsyncSession, member: Membership, project: Proj
     await session.delete(row)
     AuditLog(session).record(
         workspace_id=project.workspace_id, project_id=project.id, action="coding_secret.deleted", target=name,
+        actor_type=AuthorType.USER, actor_user_id=member.user_id,
+        details={"name": name, "host": row.host, "shared": row.shared})
+    await session.commit()
+
+
+# -- the workspace's shared secrets ------------------------------------------------------------------------------
+
+
+async def _references(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for name in (await session.scalars(select(CodingSecret.name).where(
+            CodingSecret.workspace_id == workspace_id, CodingSecret.shared.is_(True)))).all():
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def _shared_read(row: CodingSharedSecret, projects: int) -> SharedSecretRead:
+    return SharedSecretRead(name=row.name, host=row.host, header=row.header, prefix=row.prefix, version=row.version,
+                            projects=projects, updated_at=row.updated_at, updated_by_id=row.updated_by_id)
+
+
+async def list_shared(session: AsyncSession, member: Membership) -> list[SharedSecretRead]:
+    references = await _references(session, member.workspace_id)
+    rows = sorted((await _shared_rows(session, member.workspace_id)).values(), key=lambda r: r.name)
+    return [_shared_read(row, references.get(row.name, 0)) for row in rows]
+
+
+async def save_shared(
+    session: AsyncSession, cipher: Secrets, member: Membership, name: str, data: SharedSecretSave,
+) -> SharedSecretRead:
+    """Add or change a workspace's shared secret. 409 when its host is outside the workspace's network limit or a new
+    one has no value. Projects that reference it get the change on their sessions' next turns (a moved host or header
+    is left out of sessions that pinned the old one)."""
+    from .network import limit_of
+
+    try:
+        check_name(name)
+    except ValueError as exc:
+        raise Conflict(str(exc)) from exc
+    limit = limit_of(await session.get(Workspace, member.workspace_id))
+    if limit is not None and not network_policy.within(limit, data.host):
+        raise Conflict(f"{data.host} is outside the workspace's network limit")
+    row = await session.scalar(select(CodingSharedSecret).where(
+        CodingSharedSecret.workspace_id == member.workspace_id, CodingSharedSecret.name == name).with_for_update())
+    now = datetime.now(UTC)
+    created = row is None
+    if row is None:
+        if data.value is None:
+            raise Conflict("A new secret needs its value")
+        if len(await _shared_rows(session, member.workspace_id)) >= MAX_SHARED:
+            raise Conflict(f"A workspace has at most {MAX_SHARED} shared secrets")
+        row = CodingSharedSecret(workspace_id=member.workspace_id, name=name, version=1, created_at=now)
+        session.add(row)
+    else:
+        row.version += 1
+    row.host, row.header, row.prefix = data.host, data.header, data.prefix
+    if data.value is not None:
+        row.encrypted = cipher.encrypt(data.value)
+    row.updated_by_id, row.updated_at = member.user_id, now
+    await session.flush()
+    AuditLog(session).record(
+        workspace_id=member.workspace_id, action="coding_shared_secret.created" if created
+        else "coding_shared_secret.updated", target=name, actor_type=AuthorType.USER, actor_user_id=member.user_id,
+        details={"name": name, "host": row.host, "header": row.header, "version": row.version,
+                 "value_changed": data.value is not None})
+    await session.commit()
+    return _shared_read(row, (await _references(session, member.workspace_id)).get(name, 0))
+
+
+async def delete_shared(session: AsyncSession, member: Membership, name: str) -> None:
+    """Delete a shared secret. Projects' references stay (listed as missing) and their turns go on without it."""
+    row = await session.scalar(select(CodingSharedSecret).where(
+        CodingSharedSecret.workspace_id == member.workspace_id, CodingSharedSecret.name == name))
+    if row is None:
+        raise NotFound("No such secret")
+    await session.delete(row)
+    AuditLog(session).record(
+        workspace_id=member.workspace_id, action="coding_shared_secret.deleted", target=name,
         actor_type=AuthorType.USER, actor_user_id=member.user_id, details={"name": name, "host": row.host})
     await session.commit()
 
@@ -243,13 +456,18 @@ async def delete_secret(session: AsyncSession, member: Membership, project: Proj
 # -- pinned per session, loaded per turn -------------------------------------------------------------------------
 
 
-def _pin(row: CodingSecret) -> dict[str, Any]:
-    return {"name": row.name, "host": row.host, "header": row.header, "prefix": row.prefix}
-
-
 async def project_snapshot(session: AsyncSession, project: Project) -> list[dict[str, Any]]:
-    """What a new coding session pins: each secret's name, host, header and prefix, never its value."""
-    return [_pin(row) for row in await _rows(session, project)]
+    """What a new coding session pins: each secret's name, whether it's shared, its phase, and its host, header and
+    prefix as they resolve now; never a value. A reference to a missing shared secret isn't pinned."""
+    rows = await _rows(session, project)
+    shared = await _shared_rows(session, project.workspace_id, [r.name for r in rows if r.shared])
+    pins = []
+    for row in rows:
+        resolved = _resolve(row, shared)
+        if resolved is not None:
+            pins.append({"name": row.name, "shared": row.shared, "phase": row.phase, "host": resolved.host,
+                         "header": resolved.header, "prefix": resolved.prefix})
+    return pins
 
 
 @dataclass
@@ -258,46 +476,65 @@ class TurnSecrets:
     skipped: list[str]  # why each pinned secret that isn't sent was left out, for the turn's steps
 
     @property
+    def kai(self) -> list[HostSecret]:
+        return [s for s in self.secrets if s.phase != "setup"]
+
+    @property
+    def setup_only(self) -> list[HostSecret]:
+        return [s for s in self.secrets if s.phase == "setup"]
+
+    @property
     def digest(self) -> str:
-        """What a warm or sleeping sandbox is matched on: names, hosts and versions (a changed value is a new
+        """What a warm or sleeping sandbox is matched on: names, hosts, phases and versions (a changed value is a new
         version), never values."""
-        return "\n".join(sorted(f"{s.name}={s.entry}:{s.header}:{s.version}" for s in self.secrets))
+        return "\n".join(sorted(f"{s.name}={s.entry}:{s.header}:{s.phase}:{s.version}" for s in self.secrets))
+
+    def without_setup(self) -> TurnSecrets:
+        return TurnSecrets(self.kai, self.skipped)
 
 
 async def for_turn(
     session: AsyncSession, cipher: Secrets, project: Project, pinned: list[dict[str, Any]] | None, allow: list[str],
 ) -> TurnSecrets:
-    """The session's pinned secrets whose host is unchanged and allowed by the turn's network policy (`allow`), with
-    their values as stored now."""
+    """The session's pinned secrets whose host and header are unchanged and allowed by the turn's network policy
+    (`allow`), with their values as stored now (a shared one's from the workspace)."""
     if not pinned:
         return TurnSecrets([], [])
     rows = {row.name: row for row in await _rows(session, project)}
-    entries = network_policy.parse(allow, limit=None)
+    shared = await _shared_rows(session, project.workspace_id, [r.name for r in rows.values() if r.shared])
     secrets: list[HostSecret] = []
     skipped: list[str] = []
     for pin in pinned:
         name = str(pin.get("name") or "")
         row = rows.get(name)
-        if row is None:
-            skipped.append(f"{name} was deleted")
+        if row is None or bool(row.shared) != bool(pin.get("shared", False)):
+            skipped.append(f"{name} was deleted or replaced: start a new session to use it")
             continue
-        if row.host != pin.get("host") or row.header != pin.get("header") or row.prefix != pin.get("prefix"):
+        resolved = _resolve(row, shared)
+        if resolved is None:
+            skipped.append(f"{name}'s shared secret was deleted from the workspace")
+            continue
+        if (resolved.host != pin.get("host") or resolved.header != pin.get("header")
+                or resolved.prefix != pin.get("prefix")):
             skipped.append(f"{name} now goes to another host or header: start a new session to use it")
             continue
-        entry = network_policy.parse_entry(row.host)
-        if not network_policy.permits(entries, entry.host, entry.port):
-            skipped.append(f"{name}'s host {row.host} isn't in the network policy any more")
+        if not _host_allowed(resolved.host, allow):
+            skipped.append(f"{name}'s host {resolved.host} isn't in the network policy any more")
             continue
-        value = cipher.decrypt(row.encrypted)
+        value = cipher.decrypt(resolved.encrypted) if resolved.encrypted else None
         if value is None:
             skipped.append(f"{name} can't be read with this server's encryption key: save it again")
             continue
-        secrets.append(HostSecret(name, entry.host, entry.port, row.header, row.prefix, value, row.version))
+        entry = network_policy.parse_entry(resolved.host)
+        secrets.append(HostSecret(name, entry.host, entry.port, resolved.header, resolved.prefix, value,
+                                  resolved.version, str(pin.get("phase") or "all")))
     return TurnSecrets(secrets, skipped)
 
 
 def brief_note(pinned: list[dict[str, Any]] | None) -> str:
-    """For Kai's brief on a cloud turn: which variables hold placeholders and how to send them. No values."""
+    """For Kai's brief on a cloud turn: which variables hold placeholders and how to send them. No values, and no
+    setup-only secrets (Kai never has them)."""
+    pinned = [p for p in pinned or [] if p.get("phase", "all") != "setup"]
     if not pinned:
         return ""
     lines = [f"- `{p['name']}` for {p['host']}: send it as `{p['header']}: {p['prefix']}${p['name']}`" for p in pinned]

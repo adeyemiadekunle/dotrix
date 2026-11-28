@@ -297,6 +297,36 @@ async def test_openshell_attaches_a_provider_per_secret_and_removes_them(tmp_pat
     assert ["provider", "delete", provider] in calls and ["provider", "profile", "delete", provider] in calls
 
 
+async def test_openshell_detaches_a_setup_only_secret(tmp_path, monkeypatch) -> None:
+    import uuid
+
+    from dotrix_backend.core.settings import Settings
+    from dotrix_backend.modules.coding.sandbox import OpenShellSandbox
+    from dotrix_backend.modules.coding.secrets import HostSecret
+    from dotrix_backend.modules.coding.tools import ClaudeCode
+
+    calls = []
+
+    async def cli(self, *args, env=None):
+        calls.append(list(args))
+        return ""
+
+    monkeypatch.setattr(OpenShellSandbox, "cli", cli)
+    (tmp_path / "a.txt").write_text("x")
+    sandbox = OpenShellSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
+                                        jwt_secret="test-only-secret-long-enough-for-settings"))
+    run_id = uuid.uuid4()
+    session = await sandbox.open(run_id, tmp_path, ClaudeCode(), "sk-test", allow=["pypi.org"], secrets=[
+        HostSecret("PYPI_TOKEN", "pypi.org", 443, "Authorization", "Bearer ", "v", 1, "setup")])
+    provider = f"ps-{run_id.hex[-13:]}-1"
+    await session.drop_secrets(["PYPI_TOKEN"])
+    assert ["sandbox", "provider", "detach", session.name, provider] in calls
+    assert session.secret_providers == [] and session.profiles == []
+    calls.clear()
+    await session.close()  # what was already removed isn't removed again
+    assert ["provider", "delete", provider] not in calls
+
+
 async def test_a_process_is_streamed_and_killed_on_cancel_or_timeout() -> None:
     lines: list[str] = []
 
