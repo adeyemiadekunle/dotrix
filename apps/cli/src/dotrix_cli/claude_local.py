@@ -32,11 +32,16 @@ def configured() -> bool:
 def command(browser: bool = False) -> list[str]:
     # The namespace is the boundary. The temporary home has no saved grants,
     # providers, executable helpers, hooks, plugins, skills or MCP configuration.
+    # Its subagents (`Agent`: Kai's workers, and its own general-purpose one) run in the same process and namespace,
+    # each within `--tools` (checked on Claude Code 2.1.323).
+    from dotrix_engine.coding_helpers import claude_agents, workers
+
     argv = ["-p", "--output-format", "stream-json", "--verbose", "--setting-sources", "",
-            "--strict-mcp-config", "--disable-slash-commands", "--tools", "Read,Edit,Write,Glob,Grep,Bash",
-            "--allowedTools", "Read,Edit,Write,Glob,Grep,Bash" + (",mcp__browser" if browser else ""),
+            "--strict-mcp-config", "--disable-slash-commands", "--tools", "Read,Edit,Write,Glob,Grep,Bash,Agent",
+            "--allowedTools", "Read,Edit,Write,Glob,Grep,Bash,Agent" + (",mcp__browser" if browser else ""),
+            "--agents", claude_agents(workers()),
             "--permission-mode", "acceptEdits", "--settings", json.dumps({"disableAllHooks": True,
-                "permissions": {"deny": ["WebFetch", "WebSearch", "Agent", "Task", "Skill"]},
+                "permissions": {"deny": ["WebFetch", "WebSearch", "Skill"]},
                 "sandbox": {"enabled": False}})]
     if browser:
         argv += ["--mcp-config", json.dumps({"mcpServers": {"browser": {

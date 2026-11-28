@@ -7113,6 +7113,12 @@ export interface components {
              */
             managed_worktree: boolean;
             /**
+             * Helper Events
+             * @description The platform takes `background-<state>` events for Kai's helpers (an older one doesn't say so, and a runner then reports them as steps)
+             * @default true
+             */
+            helper_events: boolean;
+            /**
              * Branch
              * @description The session's branch to build on (a follow-up), else the base branch
              */
@@ -11120,7 +11126,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "step" | "text" | "tool" | "output" | "output-error" | "error";
+            kind: "step" | "text" | "tool" | "output" | "output-error" | "error" | "background-running" | "background-done" | "background-failed" | "background-stopped" | "background-ended";
             /** Text */
             text: string;
             /** Ref */

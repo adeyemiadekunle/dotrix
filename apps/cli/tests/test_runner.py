@@ -89,13 +89,17 @@ def test_opencode_events_and_errors() -> None:
 def test_claude_code_edits_files_and_runs_no_commands() -> None:
     """Nothing isolates a local turn, so the tool only reads, searches and edits files in its worktree:
     no Bash (acceptEdits alone would still auto-approve rm, mv and cp), and none of the repository's own
-    hooks, permission rules, MCP servers, CLAUDE.md or skills."""
+    hooks, permission rules, MCP servers, CLAUDE.md, skills or agents. Its subagents are held to the same file tools
+    (`--tools` caps them, checked on Claude Code 2.1.323): Kai's workers that read, and its general-purpose one."""
     claude = Tool.named("claude-code").argv
     assert claude[-2:] == ["--permission-mode", "acceptEdits"] and "--allowedTools" not in claude
     tools = claude[claude.index("--tools") + 1].split(",")
-    assert sorted(tools) == ["Edit", "Glob", "Grep", "Read", "Write"]
+    assert sorted(tools) == ["Agent", "Edit", "Glob", "Grep", "Read", "Write"]
     assert claude[claude.index("--setting-sources") + 1] == "user"
-    assert "--strict-mcp-config" in claude and "--mcp-config" not in claude and "--safe-mode" in claude
+    assert "--strict-mcp-config" in claude and "--mcp-config" not in claude and "--disable-slash-commands" in claude
+    assert "--safe-mode" not in claude  # it would leave out Kai's workers (`--agents`) too
+    workers = json.loads(claude[claude.index("--agents") + 1])
+    assert set(workers) == {"explorer", "reviewer"} and all(set(w["tools"]) <= set(tools) for w in workers.values())
     assert Tool.named("opencode").argv[:2] == ["opencode", "run"]
 
 
@@ -119,7 +123,7 @@ def test_claude_code_with_the_desktop_apps_browser_gets_only_its_tools(tmp_path:
         assert config.stat().st_mode & 0o077 == 0  # the token is this person's only
 
     claude = Tool.named("claude-code", browser=config).argv
-    assert sorted(claude[claude.index("--tools") + 1].split(",")) == ["Edit", "Glob", "Grep", "Read", "Write"]
+    assert sorted(claude[claude.index("--tools") + 1].split(",")) == ["Agent", "Edit", "Glob", "Grep", "Read", "Write"]
     assert claude[claude.index("--mcp-config") + 1] == str(config) and "secret" not in " ".join(claude)
     assert claude[claude.index("--allowedTools") + 1] == "mcp__browser"
     assert "--strict-mcp-config" in claude and claude[claude.index("--setting-sources") + 1] == "user"
@@ -150,9 +154,19 @@ def test_opencode_on_a_turn_nothing_isolates_runs_no_commands() -> None:
     env = opencode_settings({"OPENCODE_CONFIG_CONTENT": mine})
     assert env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1" and env["OPENCODE_DISABLE_AUTOUPDATE"] == "1"
     config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
-    denied = ("bash", "webfetch", "websearch", "question", "subagent", "task", "skill")
+    denied = ("bash", "webfetch", "websearch", "question", "skill")
     assert all(config["permission"][tool] == "deny" for tool in denied) and config["permission"]["edit"] == "allow"
     assert all(config["agent"]["build"]["permission"][tool] == "deny" for tool in denied)
+    # Subagents: only Kai's workers that read (checked on 2.3.0: `general` is refused, `explorer` gets read, glob and
+    # grep), under both of its names for them.
+    helpers = {"*": "deny", "explorer": "allow", "reviewer": "allow"}
+    for rules in (config["permission"], config["agent"]["build"]["permission"]):
+        assert rules["subagent"] == rules["task"] == helpers
+    assert set(config["agents"]) == {"explorer", "reviewer"}
+    explorer = config["agents"]["explorer"]["permissions"]
+    assert explorer[0] == {"action": "*", "resource": "*", "effect": "deny"}
+    assert [r["action"] for r in explorer if r["effect"] == "allow"] == ["read", "glob", "grep"]
+    assert {"bash", "webfetch", "subagent", "skill"} <= {r["action"] for r in explorer if r["effect"] == "deny"}
     assert config["agent"]["build"]["model"] == "nvidia/y" and config["model"] == "nvidia/x"  # the person's own kept
     assert "browser" not in config["mcp"] and config["mcp"]["mine"]["url"] == "https://example.test/mcp"
 
@@ -1084,3 +1098,121 @@ async def test_a_sessions_next_turn_waits_for_its_last_to_end_and_clean_up(tmp_p
     assert [body["outcome"] for body in results.values()] == ["no_changes", "no_changes"], results
     assert not any("overlap-True" in path.name for path in log.iterdir())
     assert runner._by_session == {}
+
+
+def test_kai_s_helpers_show_in_a_local_turn_as_steps() -> None:
+    """Claude Code's and Codex's subagents, as they printed them against a scripted model (Claude Code 2.1.323, Codex
+    0.169.0): when one starts and ends is a step (any platform takes it); what one does is named for it, and its
+    words are its report's, not Kai's. Every model call counts, the helper's too."""
+    from dotrix_cli.runner import Outcome, parse_line
+
+    out = Outcome()
+    for event in [
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"id": "msg_1", "content": [
+            {"type": "tool_use", "id": "toolu_1", "name": "Agent",
+             "input": {"subagent_type": "explorer", "description": "find the answer", "prompt": "What is it?"}}],
+            "usage": {"input_tokens": 10, "output_tokens": 1}}},
+        {"type": "system", "subtype": "task_started", "task_id": "ae4ac377", "task_type": "local_agent",
+         "subagent_type": "explorer", "description": "find the answer"},
+        {"type": "assistant", "parent_tool_use_id": "toolu_1", "message": {"id": "msg_2", "content": [
+            {"type": "tool_use", "id": "toolu_2", "name": "Grep", "input": {"pattern": "answer"}},
+            {"type": "text", "text": "HELPER-REPORT: 42"}], "usage": {"input_tokens": 10, "output_tokens": 1}}},
+        {"type": "system", "subtype": "task_notification", "task_id": "ae4ac377", "status": "completed"},
+        {"type": "result", "subtype": "success", "result": "Async agent launched", "total_cost_usd": 0.1,
+         "usage": {"input_tokens": 10, "output_tokens": 1}},
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"id": "msg_3", "content": [
+            {"type": "text", "text": "It is 42."}], "usage": {"input_tokens": 10, "output_tokens": 1}}},
+        {"type": "result", "subtype": "success", "result": "It is 42.", "total_cost_usd": 0.2,
+         "usage": {"input_tokens": 10, "output_tokens": 1}},
+        {"type": "item.completed", "item": {"id": "item_1", "type": "collab_tool_call", "tool": "spawn_agent",
+         "receiver_thread_ids": ["thread-1"], "prompt": "Run the tests", "agents_states": {"thread-1": {"status": "pending_init"}}}},
+        {"type": "item.completed", "item": {"id": "item_2", "type": "collab_tool_call", "tool": "wait",
+         "receiver_thread_ids": ["thread-1"], "agents_states": {"thread-1": {"status": "errored", "message": "boom"}}}},
+        {"type": "item.completed", "item": {"id": "item_3", "type": "collab_tool_call", "tool": "close_agent",
+         "receiver_thread_ids": ["thread-1"], "agents_states": {"thread-1": {"status": "shutdown"}}}},
+    ]:
+        parse_line(json.dumps(event), out)
+    assert [(e["kind"], e["text"]) for e in out.events] == [
+        ("tool", "Asked explorer to find the answer"),
+        ("step", "Started a helper: explorer: find the answer"),
+        ("tool", "Searched for answer (explorer)"),
+        ("step", "A helper finished: explorer: find the answer"),
+        ("text", "It is 42."),
+        ("tool", "Asked a helper to Run the tests"),
+        ("step", "Started a helper: Run the tests"),
+        ("step", "A helper failed: Run the tests"),  # closing it after isn't news
+    ]
+    assert out.summary == "It is 42." and out.usage == {"input_tokens": 30, "output_tokens": 3, "cost_usd": 0.2}
+
+
+def test_codex_on_this_computer_keeps_its_helpers_capped_in_its_sandbox() -> None:
+    argv = Tool.named("codex", native=True).argv
+    assert "features.multi_agent=false" not in argv and "features.multi_agent_v2=false" in argv
+    assert "agents.max_threads=3" in argv and "agents.max_depth=1" in argv
+    # Its share of the runner's helpers, beside other turns: the driver passes it on.
+    assert "agents.max_threads=1" in Tool.named("codex", native=True, helpers=1).argv
+    driver = Tool.named("codex", helpers=2).argv
+    assert driver[driver.index("--helpers") + 1] == "2"
+    assert argv[argv.index("--sandbox") + 1] == "workspace-write"  # which every helper inherits
+
+
+def test_kai_s_helpers_are_listed_as_background_tasks_when_the_platform_takes_them() -> None:
+    """A platform that says `helper_events` in its claim lists a local turn's helpers as a cloud turn's: Codes shows
+    each with the turn's background tasks. OpenCode's own events never say a helper ended (it waits for them before
+    it exits), so one still open when the tool exits ended with the turn."""
+    from dotrix_cli.runner import Outcome, helpers_left, parse_line
+
+    out = Outcome(helper_events=True)
+    for event in [
+        {"type": "system", "subtype": "task_started", "task_id": "ae4ac377", "task_type": "local_agent",
+         "subagent_type": "explorer", "description": "find the answer"},
+        {"type": "system", "subtype": "task_notification", "task_id": "ae4ac377", "status": "completed"},
+        {"type": "tool_use", "part": {"tool": "subagent", "state": {"status": "completed",
+         "input": {"agent": "reviewer", "description": "review the change"},
+         "metadata": {"metadata": {"sessionID": "ses_child", "status": "running"}}}}},
+    ]:
+        parse_line(json.dumps(event), out)
+    helpers_left(out)
+    helpers_left(out)  # once only
+    assert [(e["kind"], e["text"], e.get("ref")) for e in out.events] == [
+        ("background-running", "explorer: find the answer", "worker:ae4ac377"),
+        ("background-done", "explorer: find the answer", "worker:ae4ac377"),
+        ("tool", "Asked reviewer to review the change", None),
+        ("background-running", "reviewer: review the change", "worker:ses_child"),
+        ("background-ended", "reviewer: review the change", "worker:ses_child"),
+    ]
+    # An older platform takes none of those kinds: the same helper is a step there.
+    older = Outcome()
+    parse_line(json.dumps({"type": "system", "subtype": "task_started", "task_id": "t", "task_type": "local_agent",
+                           "subagent_type": "explorer", "description": "x"}), older)
+    helpers_left(older)
+    assert [e["kind"] for e in older.events] == ["step", "step"]
+
+
+def test_a_runner_codes_as_many_turns_at_once_as_this_computer_s_memory_holds() -> None:
+    """One turn per 4 GB, rounded (a "16 GB" machine reports a little less), from 1 to 4; 3 when it can't tell."""
+    from dotrix_cli.runner import GIB, default_parallel
+
+    assert [default_parallel(int(g * GIB)) for g in (2, 3.7, 7.8, 11.8, 15.8, 64)] == [1, 1, 2, 3, 4, 4]
+    assert default_parallel(0) == 3
+
+
+async def test_turns_side_by_side_share_the_runner_s_helpers(tmp_path, monkeypatch) -> None:
+    """Every helper's model calls go on the same key: a turn gets what's left of six once one is kept for each turn
+    that may still start beside it, three at most, one at least, and gives its share back when it ends."""
+    seen: list[int] = []
+    release = asyncio.Event()
+    runner = LocalRunner(api=None, repo=tmp_path, workspace_id="w", project_id="p", parallel=4)  # type: ignore[arg-type]
+
+    async def work(run, turn=None):
+        seen.append(turn.helpers)
+        await release.wait()
+
+    monkeypatch.setattr(runner, "work", work)
+    turns = [asyncio.create_task(runner.code({"run_id": str(i)})) for i in range(4)]
+    while len(seen) < 4:
+        await asyncio.sleep(0)
+    assert seen == [3, 1, 1, 1] and runner._helpers_taken == 6
+    release.set()
+    await asyncio.gather(*turns)
+    assert runner._helpers_taken == runner._helper_turns == 0

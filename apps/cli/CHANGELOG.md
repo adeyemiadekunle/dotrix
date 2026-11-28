@@ -6,6 +6,8 @@
 
 ### Added
 
+- `dotrix runner` codes one turn per 4 GB of this computer's memory at once by default, 1 to 4 (`--parallel` still sets it), and its turns share six helpers between them.
+- Local turns can start Kai's helpers (subagents), held to the turn's own limits: Claude Code's `--agents` and general-purpose subagent within `--tools`, Codex's helpers capped at the turn's share of the runner's six in its workspace sandbox, and on OpenCode only Kai's workers that read. Codes lists each with the turn's background tasks, as a cloud turn's, when the platform's claim says `helper_events` (an older platform gets steps); one OpenCode never says ended ends with the turn. A file-only Claude Code turn drops `--safe-mode` (it would drop Kai's workers) for `--disable-slash-commands` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS`. Local fx turns don't have helpers yet.
 - Managed local fx coding sessions now persist `.fx` session state beside their managed worktree, resume the conversation across follow-up turns (`--resume`), and verify `profile_digest` before starting the isolated runtime (`fx_local.py`, `runner.py`).
 
 ## [0.4.0] - 2026-11-21

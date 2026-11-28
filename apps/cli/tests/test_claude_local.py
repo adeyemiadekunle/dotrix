@@ -22,7 +22,10 @@ def test_native_claude_uses_the_namespace_launcher_and_no_saved_policies(monkeyp
     assert "--dangerously-skip-permissions" not in argv and "--strict-mcp-config" in argv
     policy = json.loads(argv[argv.index("--settings") + 1])
     assert policy["disableAllHooks"]
-    assert policy["permissions"]["deny"] == ["WebFetch", "WebSearch", "Agent", "Task", "Skill"]
+    assert policy["permissions"]["deny"] == ["WebFetch", "WebSearch", "Skill"]
+    # Its subagents run in the same namespace: Kai's workers, the one that runs commands too.
+    assert "Agent" in argv[argv.index("--tools") + 1].split(",")
+    assert set(json.loads(argv[argv.index("--agents") + 1])) == {"explorer", "tester", "reviewer"}
     assert "127.0.0.1:31820/browser" in argv[argv.index("--mcp-config") + 1]
     monkeypatch.delenv("ANTHROPIC_API_KEY")
     assert "Bash" not in Tool.named("claude-code").argv[Tool.named("claude-code").argv.index("--tools") + 1]

@@ -100,6 +100,15 @@ class ScriptedOpenCode(ScriptedClaude):
         return json.dumps({"cost": 0.2, "turn": steps}) + "\n"
 
 
+def _claude(argv: list[str]) -> list[str] | None:
+    """Claude Code's own arguments in a command, after the settings `env` puts before it (tools.CLAUDE_ENV)."""
+    if argv[:1] == ["claude"]:
+        return argv
+    if argv[:1] == ["env"] and "claude" in argv:
+        return argv[argv.index("claude"):]
+    return None
+
+
 class ScriptedSession(LocalSession):
     def __init__(self, root: Path, env: dict[str, str], agent: ScriptedClaude) -> None:
         super().__init__(root, env)
@@ -113,7 +122,7 @@ class ScriptedSession(LocalSession):
             argv = argv[6:]  # MCP startup wrapper has a separate real-engine regression test
         if isinstance(self.agent, ScriptedOpenCode) and argv[:2] == ["sh", "-c"] and "node -e" in argv[2]:
             return ExecResult(code=0, stdout=self.agent.totals(), stderr="")  # its totals after the turn
-        if argv[0] != "claude" and not (argv[0] == "env" and "opencode" in argv) and not (
+        if _claude(argv) is None and not (argv[0] == "env" and "opencode" in argv) and not (
             argv[0] == "node" and argv[1].endswith("fx-acp.mjs")
         ):
             return await super().exec(argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
@@ -315,7 +324,8 @@ async def test_an_approved_run_opens_a_pr_on_a_new_branch(
     assert github.reviews and github.reviews[0]["event"] == "COMMENT"
     assert set(claude.env) == {"PATH", "HOME", "LANG", "ANTHROPIC_API_KEY"}
     assert claude.env["ANTHROPIC_API_KEY"] == "test-anthropic-personal-key-" + str(ada.id)
-    assert claude.argv[:3] == ["claude", "-p", "--bare"] and "--dangerously-skip-permissions" not in claude.argv
+    assert _claude(claude.argv)[:4] == ["claude", "-p", "--setting-sources", ""]
+    assert "--dangerously-skip-permissions" not in claude.argv and "--bare" not in claude.argv
 
     # The human assignee keeps the issue, with the PR linked for review.
     issue = (await db_client.get(f"{base}/issues/{story['key']}", headers=ada.headers)).json()
@@ -473,7 +483,7 @@ async def test_a_running_agent_is_stopped_and_nothing_is_pushed(
         return pressed.is_set()
 
     async def slow_exec(self, argv, *, stdin=None, on_line=None, timeout, cancel=None):
-        if argv[0] != "claude":
+        if _claude(argv) is None:
             return await LocalSession.exec(self, argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
         pressed.set()
         assert cancel is not None
@@ -765,7 +775,7 @@ class TranscriptSession(ScriptedSession):
     notes whether one was already there when a turn started (a warm sandbox, or one restored)."""
 
     async def exec(self, argv, *, stdin=None, on_line=None, timeout, cancel=None) -> ExecResult:
-        if argv[0] == "claude":
+        if _claude(argv) is not None:
             transcript = Path(self.env["HOME"]) / ".claude" / "projects" / "-repo" / "conversation.jsonl"
             self.agent.found_transcript.append(transcript.read_text() if transcript.exists() else None)
             transcript.parent.mkdir(parents=True, exist_ok=True)

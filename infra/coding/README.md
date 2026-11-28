@@ -321,7 +321,7 @@ openshell sandbox upload check /tmp/repo /sandbox --no-git-ignore
 
 # It can edit and reach its model:
 echo "Add a docstring to a.py" | openshell sandbox exec -n check --workdir /sandbox/repo --no-tty -- \
-  claude -p --bare --output-format stream-json --verbose --permission-mode dontAsk --allowedTools Read,Edit,Bash
+  claude -p --setting-sources "" --output-format stream-json --verbose --permission-mode dontAsk --allowedTools Read,Edit,Bash
 openshell sandbox exec -n check --workdir /sandbox/repo -- git diff
 # And nothing more. Each of these must fail, and show as DENIED in `openshell logs check --since 5m`:
 openshell sandbox exec -n check -- git clone --depth 1 https://github.com/octocat/Hello-World.git /tmp/hw

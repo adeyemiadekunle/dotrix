@@ -32,6 +32,9 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from dotrix_engine.coding_helpers import AT_ONCE as HELPERS_AT_ONCE
+from dotrix_engine.coding_helpers import claude_agents, helper_share, opencode_agents, workers
+
 from .platform import PlatformError
 from .toolenv import EXECUTION_ENV, tool_environment
 
@@ -53,7 +56,8 @@ BROWSER_TOKEN_ENV = "DOTRIX_BROWSER_MCP_TOKEN"
 BROWSER_SERVER = "browser"  # its tools are mcp__browser__browser_navigate, … (OpenCode: tools.browser[…] in `execute`)
 # What OpenCode may not do on a turn nothing isolates (checked on OpenCode 2.3.0): run commands (`bash` is its
 # shell tool), reach the network (`webfetch` also covers `fetch` inside its `execute` Code Mode), ask, search the
-# web, start a sub-agent (which would run under another agent's permissions), or load skills.
+# web, start a sub-agent other than Kai's workers that read (any other runs under its own permissions, not these;
+# `opencode_settings` allows those by name, `subagent` and `task` both), or load skills.
 OPENCODE_LOCAL_DENIED = ("bash", "webfetch", "websearch", "question", "subagent", "task", "skill")
 OPENCODE_AGENT = "build"  # pinned: a person's own config could make another agent the default
 def with_note(brief: str, note: str) -> str:
@@ -114,7 +118,10 @@ class Tool:
 
     @classmethod
     def named(cls, name: str, *, isolated: bool = False, browser: Path | None = None, profile: Path | None = None,
-              native: bool = False, disabled_mcp: tuple[str, ...] = (), model: str | None = None) -> Tool:
+              native: bool = False, disabled_mcp: tuple[str, ...] = (), model: str | None = None,
+              helpers: int = HELPERS_AT_ONCE) -> Tool:
+        """`helpers`: how many subagents may work at once, where the tool can be held to it (Codex; Kai's rules say it
+        for the rest): this turn's share of the runner's (`coding_helpers.helper_share`)."""
         if name == "claude-code":
             from .claude_local import command as claude_command
             from .claude_local import configured as native_claude_available
@@ -133,20 +140,20 @@ class Tool:
             own_config_only = ["--setting-sources", "user", "--strict-mcp-config"]
             if isolated:  # In its own microVM the sandbox is the boundary: it may run commands there.
                 return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", *own_config_only,
-                                  "--dangerously-skip-permissions"])
-            if browser is not None:
-                # With the desktop app's Browser pane: the file tools and that one server's tools, nothing else.
-                # `--safe-mode` would switch the server off, so the repository's skills and commands are left out
-                # by `--disable-slash-commands` and its CLAUDE.md by CLAUDE_CODE_DISABLE_CLAUDE_MDS (`work` sets it);
-                # its settings, hooks and `.mcp.json` already are (`own_config_only`).
-                return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", *own_config_only,
-                                  "--disable-slash-commands", "--tools", LOCAL_FILE_TOOLS, "--mcp-config", str(browser),
-                                  "--allowedTools", f"mcp__{BROWSER_SERVER}", "--permission-mode", "acceptEdits"])
-            # Not isolated, so it may only edit files: no commands on this machine. Only the file tools
-            # are offered (`--tools`; acceptEdits alone still auto-approves rm, mv and cp in the worktree),
-            # and `--safe-mode` also leaves out the repository's CLAUDE.md, skills, agents and commands.
-            return cls(name, ["claude", "-p", "--output-format", "stream-json", "--verbose", *own_config_only,
-                              "--safe-mode", "--tools", LOCAL_FILE_TOOLS, "--permission-mode", "acceptEdits"])
+                                  "--dangerously-skip-permissions", "--agents", claude_agents(workers())])
+            # Not isolated, so it may only edit files: no commands on this machine. Only the file tools and its
+            # subagents (`Agent`: Kai's workers that read, and its own general-purpose one) are offered (`--tools`,
+            # which caps each subagent too; acceptEdits alone still auto-approves rm, mv and cp in the worktree).
+            # Not `--safe-mode`: it would leave out Kai's workers and the Browser pane's server. The repository's
+            # skills, commands and agents are left out by `--disable-slash-commands` and `own_config_only`, its
+            # CLAUDE.md by CLAUDE_CODE_DISABLE_CLAUDE_MDS (`work` sets it), its settings, hooks and `.mcp.json` by
+            # `own_config_only` (checked on Claude Code 2.1.323 against a scripted model).
+            argv = ["claude", "-p", "--output-format", "stream-json", "--verbose", *own_config_only,
+                    "--disable-slash-commands", "--tools", f"{LOCAL_FILE_TOOLS},Agent",
+                    "--agents", claude_agents(workers(commands=False)), "--permission-mode", "acceptEdits"]
+            if browser is not None:  # With the desktop app's Browser pane: that one server's tools as well.
+                argv += ["--mcp-config", str(browser), "--allowedTools", f"mcp__{BROWSER_SERVER}"]
+            return cls(name, argv)
         if name == "opencode":
             if isolated:
                 return cls(name, ["opencode", "run", "--format", "json"])
@@ -158,7 +165,8 @@ class Tool:
             if not isolated and not native:
                 driver = ([sys.executable, "_local-codex"] if getattr(sys, "frozen", False)
                           else [sys.executable, "-m", "dotrix_cli.codex_local"])
-                return cls(name, [*driver, *(["--browser-config", str(browser)] if browser is not None else [])])
+                return cls(name, [*driver, *(["--browser-config", str(browser)] if browser is not None else []),
+                                  "--helpers", str(helpers)])
             # Commands keep Codex's native OS sandbox outside sbx. Never inherit a wider
             # writable-root/network policy, project instructions, hooks, plugins or MCP servers.
             argv = ["codex", "--ask-for-approval", "never", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
@@ -168,8 +176,11 @@ class Tool:
                 "skills.include_instructions": "false",
                 "sandbox_workspace_write": "{ writable_roots = [], network_access = false, exclude_slash_tmp = true, exclude_tmpdir_env_var = true }",
                 "shell_environment_policy": ('{ inherit = "all", include_only = ' + json.dumps(sorted(EXECUTION_ENV)) + ', set = {} }'),
-                **{f"features.{key}": "false" for key in ("hooks", "plugins", "apps", "multi_agent", "multi_agent_v2",
+                # Its subagents (`multi_agent`) stay on: each inherits this sandbox and approval policy, which an agent
+                # role can't change (Codex 0.169.0), and they're capped (`codex_settings`).
+                **{f"features.{key}": "false" for key in ("hooks", "plugins", "apps", "multi_agent_v2",
                                                            "browser_use", "computer_use", "shell_snapshot")},
+                "agents.max_threads": str(helpers), "agents.max_depth": "1",
             }
             servers = [f"{json.dumps(name)} = {{ enabled = false }}" for name in disabled_mcp]
             if browser is not None and not isolated:
@@ -265,21 +276,29 @@ def write_browser_config(url: str, token: str) -> Path:
 
 
 def opencode_settings(environ: Mapping[str, str], pane: tuple[str, str] | None = None) -> dict[str, str]:
-    """OpenCode's environment on a turn nothing isolates: the repository's opencode.json ignored, its shell, network,
-    sub-agents and skills denied (on the pinned agent too: a person's own per-agent rule would otherwise win), and
-    the desktop app's Browser pane when it has one. A person's own OPENCODE_CONFIG_CONTENT is kept underneath."""
+    """OpenCode's environment on a turn nothing isolates: the repository's opencode.json ignored, its shell, network
+    and skills denied (on the pinned agent too: a person's own per-agent rule would otherwise win), sub-agents only
+    Kai's workers that read, and the desktop app's Browser pane when it has one. A person's own
+    OPENCODE_CONFIG_CONTENT is kept underneath."""
     try:
         config = json.loads(environ.get("OPENCODE_CONFIG_CONTENT") or "{}")
     except ValueError:
         config = {}
     if not isinstance(config, dict):
         config = {}
-    denied = {tool: "deny" for tool in OPENCODE_LOCAL_DENIED}
+    # Kai may start its workers that only read, and no other subagent (OpenCode's own `general` and `explore`, or a
+    # person's, run under their own permissions, not these): each worker may use only its own file tools, with
+    # everything this turn denies denied to it too (checked on OpenCode 2.3.0).
+    chosen = workers(commands=False)
+    helpers = {"*": "deny", **{w["name"]: "allow" for w in chosen}}
+    denied = {tool: "deny" for tool in OPENCODE_LOCAL_DENIED} | {"subagent": helpers, "task": helpers}
     config["permission"] = {**(config.get("permission") if isinstance(config.get("permission"), dict) else {}), **denied}
     agents = config.get("agent") if isinstance(config.get("agent"), dict) else {}
     agent = agents.get(OPENCODE_AGENT) if isinstance(agents.get(OPENCODE_AGENT), dict) else {}
     agent_rules = agent.get("permission") if isinstance(agent.get("permission"), dict) else {}
     config["agent"] = {**agents, OPENCODE_AGENT: {**agent, "permission": {**agent_rules, **denied}}}
+    theirs = config.get("agents") if isinstance(config.get("agents"), dict) else {}
+    config["agents"] = {**theirs, **opencode_agents(chosen, OPENCODE_LOCAL_DENIED)}
     config["autoupdate"] = False
     if pane is not None:
         url, token = pane
@@ -290,6 +309,41 @@ def opencode_settings(environ: Mapping[str, str], pane: tuple[str, str] | None =
         "OPENCODE_DISABLE_PROJECT_CONFIG": "1",  # the repository's opencode.json is data, not configuration
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
     }
+
+
+GIB = 1024 ** 3
+TURN_MEMORY = 4 * GIB  # what one turn takes at most: its engine, the app it starts for the Browser pane, its tests
+MOST_TURNS = 4  # past this a person's model key, not the computer, is what runs out (the provider's rate limits)
+UNKNOWN_MEMORY_TURNS = 3
+
+
+def total_memory() -> int | None:
+    """This computer's memory in bytes, or None when it can't say."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):  # MEMORYSTATUSEX
+                _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
+                            *((name, ctypes.c_ulonglong) for name in ("total", "available", "page_total", "page_available",
+                                                                       "virtual_total", "virtual_available", "extended"))]
+
+            status = Status()
+            status.length = ctypes.sizeof(Status)
+            return int(status.total) if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) else None
+        return int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def default_parallel(memory: int | None = None) -> int:
+    """How many turns a runner codes at once unless told (`dotrix runner --parallel`): one per `TURN_MEMORY` of this
+    computer's memory, rounded (a "16 GB" machine reports a little less), from 1 to `MOST_TURNS` (8 GB: 2, 12 GB: 3,
+    16 GB or more: 4)."""
+    memory = total_memory() if memory is None else memory
+    if not memory:
+        return UNKNOWN_MEMORY_TURNS
+    return max(1, min(MOST_TURNS, round(memory / TURN_MEMORY)))
 
 
 def found_tools() -> list[str]:
@@ -320,9 +374,39 @@ class Outcome:
     # as the driver reported it (id, state, message), for the next heartbeat.
     steering_open: bool = False
     steering: list[dict[str, Any]] = field(default_factory=list)
+    # The helpers (subagents) this turn started, by the engine's id for each, and those said to have ended.
+    helpers: dict[str, str] = field(default_factory=dict)
+    helpers_ended: set[str] = field(default_factory=set)
+    # The platform lists helpers with the turn's background tasks (its claim says `helper_events`): an older one
+    # takes only steps, so they're reported as steps there.
+    helper_events: bool = False
+    # Claude Code: each model call's tokens, its subagents' included (a result counts only its own part of the turn).
+    calls: dict[str, tuple[int, int]] = field(default_factory=dict)
+    helper_calls: dict[str, str] = field(default_factory=dict)  # Claude Code: each Agent call's subagent
 
 
 MAX_STEP = 160
+# How a helper ended, as each engine says it, in the words a local turn's steps use.
+HELPER_ENDS = {"completed": "finished", "failed": "failed", "errored": "failed", "error": "failed",
+               "killed": "was stopped", "stopped": "was stopped", "interrupted": "was stopped", "shutdown": "was stopped"}
+HELPER_STATES = {"finished": "done", "failed": "failed", "was stopped": "stopped"}  # as Codes lists them
+
+
+def _helper_started(out: Outcome, key: str, label: str) -> None:
+    key = key[:80]
+    if key and key not in out.helpers:
+        out.helpers[key] = _clip(label, 200)
+        out.events.append({"kind": "background-running", "text": out.helpers[key], "ref": f"worker:{key}"[:64]}
+                          if out.helper_events else {"kind": "step", "text": f"Started a helper: {out.helpers[key]}"})
+
+
+def _helper_ended(out: Outcome, key: str, status: str) -> None:
+    key = key[:80]
+    ended = HELPER_ENDS.get(status)
+    if key in out.helpers and key not in out.helpers_ended and ended:
+        out.helpers_ended.add(key)
+        out.events.append({"kind": f"background-{HELPER_STATES[ended]}", "text": out.helpers[key], "ref": f"worker:{key}"[:64]}
+                          if out.helper_events else {"kind": "step", "text": f"A helper {ended}: {out.helpers[key]}"})
 MAX_OUTPUT = 8_000  # of a command's output: its start and, mostly, its end (where errors are)
 
 
@@ -393,8 +477,9 @@ def describe(tool: str, args: dict[str, Any], root: Path | None = None) -> str |
             if f"tools.{BROWSER_SERVER}" in code:
                 return "Started the app on this computer" if "app_start" in code else "Used the browser"
             return "Ran a script"
-        case "subagent":
-            return f"Asked a subagent to {_clip(str(args.get('description', '')), 120)}"
+        case "subagent" | "Agent" | "Task":  # OpenCode's subagent, or Claude Code's
+            who = args.get("agent") or args.get("subagent_type") or "a helper"
+            return f"Asked {_clip(str(who), 40)} to {_clip(str(args.get('description') or args.get('prompt') or 'help'), 120)}"
         case "TodoWrite" | "skill":
             return None
         case _:
@@ -415,6 +500,16 @@ def drop_steer(inbox: Path, key: str, text: str) -> bool:
         return True
     except (OSError, ValueError):
         return False
+
+
+def helpers_left(out: Outcome) -> None:
+    """Once the tool has exited: each helper it never said ended, as ended with the turn (OpenCode's on this computer,
+    whose report comes back unseen by its events; it waits for its helpers before it exits)."""
+    for key, label in out.helpers.items():
+        if key not in out.helpers_ended:
+            out.helpers_ended.add(key)
+            out.events.append({"kind": "background-ended", "text": label, "ref": f"worker:{key}"[:64]}
+                              if out.helper_events else {"kind": "step", "text": f"A helper ended with the turn: {label}"})
 
 
 def parse_line(line: str, out: Outcome) -> None:
@@ -445,6 +540,14 @@ def parse_line(line: str, out: Outcome) -> None:
             if kind == "item.completed":
                 out.events.append(output_event(str(item.get("aggregated_output") or ""), identity,
                                                failed=item.get("exit_code") not in (None, 0) or item.get("status") == "failed"))
+        elif item_kind == "collab_tool_call" and kind == "item.completed":  # its subagents (Codex 0.169.0)
+            if item.get("tool") == "spawn_agent":
+                task = _clip(str(item.get("prompt") or "help"), 120)
+                out.events.append({"kind": "tool", "text": f"Asked a helper to {task}"})
+                for thread in item.get("receiver_thread_ids") or []:
+                    _helper_started(out, str(thread), task)
+            for thread, state in (item.get("agents_states") or {}).items():
+                _helper_ended(out, str(thread), str((state or {}).get("status") or ""))
         elif item_kind == "file_change" and kind == "item.completed":
             for change in item.get("changes") or []:
                 if said := describe("edit", {"path": change.get("path", "")}, out.root):
@@ -486,25 +589,44 @@ def parse_line(line: str, out: Outcome) -> None:
         out.usage = {"input_tokens": usage.get("inputTokens"), "output_tokens": usage.get("outputTokens")}
         if event.get("stopReason") not in (None, "end_turn", "cancelled"):
             out.events.append({"kind": "error", "text": f"The local turn stopped: {event['stopReason']}"})
+    elif kind == "system" and event.get("subtype") == "task_started" and event.get("task_type") == "local_agent":
+        # Claude Code's subagent (2.1.323): one of Kai's workers, or its own general-purpose one.
+        label = f"{event.get('subagent_type') or 'a helper'}: {event.get('description') or ''}".rstrip(": ")
+        _helper_started(out, str(event.get("task_id") or ""), label)
+    elif kind == "system" and event.get("subtype") == "task_notification":
+        _helper_ended(out, str(event.get("task_id") or ""), str(event.get("status") or ""))
     elif kind == "assistant":  # Claude Code
-        for item in (event.get("message") or {}).get("content") or []:
-            if item.get("type") == "text" and item.get("text"):
+        message = event.get("message") or {}
+        # A subagent's own messages carry the Agent call that started it: its words are its report's, not Kai's.
+        parent = str(event.get("parent_tool_use_id") or "")
+        helper = out.helper_calls.get(parent, "a helper") if parent else None
+        for item in message.get("content") or []:
+            if item.get("type") == "text" and item.get("text") and helper is None:
                 out.events.append({"kind": "text", "text": item["text"][:4000]})
             elif item.get("type") == "tool_use":
                 ref = str(item.get("id") or "") if item.get("name") == "Bash" else ""
                 if ref:
                     out.commands.add(ref)
+                if item.get("name") in ("Agent", "Task") and item.get("id"):
+                    out.helper_calls[str(item["id"])] = str((item.get("input") or {}).get("subagent_type") or "a helper")
                 if said := describe(str(item.get("name")), item.get("input") or {}, out.root):
+                    said = f"{said} ({_clip(helper, 40)})" if helper else said
                     out.events.append({"kind": "tool", "text": said, **({"ref": ref} if ref else {})})
+        calls = message.get("usage") or {}
+        if message.get("id") and calls:
+            out.calls[str(message["id"])] = (
+                int(calls.get("input_tokens") or 0) + int(calls.get("cache_creation_input_tokens") or 0)
+                + int(calls.get("cache_read_input_tokens") or 0), int(calls.get("output_tokens") or 0))
     elif kind == "user":  # Claude Code's tool results: a command's output is kept
         for item in (event.get("message") or {}).get("content") or []:
             if isinstance(item, dict) and item.get("type") == "tool_result" and item.get("tool_use_id") in out.commands:
                 out.events.append(output_event(_result_text(item.get("content")), item["tool_use_id"],
                                                failed=bool(item.get("is_error"))))
-    elif kind == "result":  # Claude Code's last event
+    elif kind == "result":  # Claude Code's last event (again after a subagent's report comes back: the latest wins)
         out.summary = event.get("result") or out.summary
         usage = event.get("usage") or {}
-        out.usage = {"input_tokens": usage.get("input_tokens"), "output_tokens": usage.get("output_tokens"),
+        out.usage = {"input_tokens": max(int(usage.get("input_tokens") or 0), sum(i for i, _ in out.calls.values())),
+                     "output_tokens": max(int(usage.get("output_tokens") or 0), sum(o for _, o in out.calls.values())),
                      "cost_usd": event.get("total_cost_usd")}
         if event.get("is_error") or event.get("subtype", "success") != "success":
             out.events.append({"kind": "error", "text": str(event.get("result") or event.get("subtype"))[:4000]})
@@ -520,6 +642,10 @@ def parse_line(line: str, out: Outcome) -> None:
         ref = str(part.get("callID") or part.get("id") or "") if command else ""
         if said := describe(str(part.get("tool")), state.get("input") or {}, out.root):
             out.events.append({"kind": "tool", "text": said, **({"ref": ref} if ref else {})})
+        child = ((state.get("metadata") or {}).get("metadata") or {}).get("sessionID")
+        if part.get("tool") == "subagent" and child:  # its subagent, working in a child session of its own
+            args = state.get("input") or {}
+            _helper_started(out, str(child), f"{args.get('agent') or 'a helper'}: {args.get('description') or ''}".rstrip(": "))
         if command and state.get("status") in ("completed", "error") and (state.get("output") or state.get("error")):
             failed = state.get("status") == "error" or (state.get("metadata") or {}).get("exit") not in (0, None)
             out.events.append(output_event(str(state.get("output") or state.get("error")), ref or None, failed=failed))
@@ -599,6 +725,7 @@ class _Turn:
     browser: tuple[str, str] | None = None  # it has the Browser pane (its server's address and token)
     fx_profile: Path | None = None
     fx_state_dir: Path | None = None
+    helpers: int = HELPERS_AT_ONCE  # its share of the runner's helpers (`coding_helpers.helper_share`)
 
 
 @dataclass
@@ -634,6 +761,10 @@ class LocalRunner:
     _coding_in: set[Path] = field(default_factory=set, init=False, repr=False)  # the turns' worktrees, never cleaned
     # The checkout's own git work (fetching, adding and removing worktrees) is one at a time: they share its refs.
     _repo_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    # Helpers the turns in progress may have working at once, together (`coding_helpers.RUNNER_AT_ONCE`): every
+    # helper's model calls go on the same key.
+    _helpers_taken: int = field(default=0, init=False, repr=False)
+    _helper_turns: int = field(default=0, init=False, repr=False)  # the turns in progress holding a share
 
     def tools(self) -> list[str]:
         if self.tool:
@@ -708,10 +839,15 @@ class LocalRunner:
 
     async def code(self, run: dict[str, Any]) -> None:
         """Code a claimed turn with state of its own, and clean that up when it ends."""
-        turn = _Turn()
+        # One helper is kept for each turn that may still start beside this one (`parallel` at once).
+        turn = _Turn(helpers=helper_share(self._helpers_taken, max(0, self.parallel - self._helper_turns - 1)))
+        self._helpers_taken += turn.helpers
+        self._helper_turns += 1
         try:
             await self.work(run, turn)
         finally:
+            self._helpers_taken -= turn.helpers
+            self._helper_turns -= 1
             if turn.coding_in is not None:
                 self._coding_in.discard(turn.coding_in)
                 try:
@@ -1064,7 +1200,8 @@ class LocalRunner:
                         except (OSError, ValueError) as exc:
                             await report("failed", base_sha=base_sha, error=f"Couldn't restore the local coding session: {exc}")
                             return
-            tool = Tool.named(name, isolated=isolated, browser=turn.browser_config, profile=turn.fx_profile, model=run.get("model"))
+            tool = Tool.named(name, isolated=isolated, browser=turn.browser_config, profile=turn.fx_profile, model=run.get("model"),
+                              helpers=turn.helpers)
             if name == "fx":
                 # The turn's inbox for a person's messages while it works (the driver opens it, the heartbeat fills it).
                 steer_root = Path(tempfile.gettempdir()) / f"dotrix-steer-{os.getuid() if hasattr(os, 'getuid') else 'user'}"
@@ -1099,7 +1236,7 @@ class LocalRunner:
                                     if key.upper() in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}})
             if tool.name == "opencode":
                 environment.update(opencode_settings(environment, turn.browser))
-            if turn.browser_config is not None and tool.name == "claude-code":
+            if tool.name == "claude-code":
                 environment["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"  # in place of --safe-mode (Tool.named)
             if turn.browser is not None and tool.name == "codex":
                 environment[BROWSER_TOKEN_ENV] = turn.browser[1]
@@ -1114,7 +1251,7 @@ class LocalRunner:
                 pending.append({"kind": "step", "text": "Local worktree sandbox: shell commands and file edits; direct networking is disabled"})
             if turn.browser is not None:
                 pending.append({"kind": "step", "text": "With the Browser pane: it may open this computer's pages there"})
-        out = Outcome(root=tree)
+        out = Outcome(root=tree, helper_events=run.get("helper_events") is True)
         if "--steer-dir" in tool.argv:
             steering.update(out=out, inbox=Path(tool.argv[tool.argv.index("--steer-dir") + 1]))
         try:
@@ -1169,6 +1306,9 @@ class LocalRunner:
             await report("failed", base_sha=base_sha, error=f"Couldn't read {tool.name}'s output: {failed}")
             return
         code = await process.wait()
+        before = len(out.events)
+        helpers_left(out)  # a helper its engine never said ended (OpenCode's, here) ended with the turn
+        pending.extend(out.events[before:])
         stderr = (await errors).decode(errors="replace").strip()
         if stopped:
             await report("stopped", base_sha=base_sha, summary=out.summary)

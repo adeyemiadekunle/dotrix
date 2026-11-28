@@ -1,9 +1,10 @@
 """The coding tools we wrap, run headless: the command line, and their JSON events read into
 what the run page shows (steps) and what the run used (tokens).
 
-- Claude Code: `claude -p --bare --output-format stream-json --verbose`, the brief on stdin.
+- Claude Code: `claude -p --setting-sources "" --output-format stream-json --verbose`, the brief on stdin.
   Headless has no prompts, so the tools it may use are pre-allowed (`--permission-mode dontAsk`
-  refuses the rest); the sandbox's policy is the boundary for what Bash can reach.
+  refuses the rest); the sandbox's policy is the boundary for what Bash can reach. No settings file,
+  CLAUDE.md, skill, command, agent or MCP server of the repository's (or of its home folder's) loads.
 - Codex: `codex exec --json … -`, the brief on stdin, with Codex's own sandbox off
   (`danger-full-access`) because the run is already in one, and the repo's AGENTS.md not read
   (`project_doc_max_bytes=0`).
@@ -29,7 +30,13 @@ from dotrix_backend.modules.agents.llm import PROVIDERS, available_models
 from .models import CODING_AGENT_NAME, CodingAgent
 
 MAX_STEP = 300  # characters of one step shown on the run page
-CLAUDE_TOOLS = "Read,Edit,Write,MultiEdit,Glob,Grep,Bash,TodoWrite"
+# Claude Code's built-in tools on a cloud turn (`--tools`; MCP servers' are added to `--allowedTools`). `Agent` starts
+# its subagents: Kai's workers (`--agents`) and its own general-purpose one, each within these tools.
+CLAUDE_TOOLS = "Read,Edit,Write,Glob,Grep,Bash,TodoWrite,Agent"
+# Before `claude` (`env …`), since the sandbox is given nothing but the key: no memory of its own carried between
+# turns, no CLAUDE.md, and none of its own side calls to the model (summaries and the like) on the person's key.
+CLAUDE_ENV = ("CLAUDE_CODE_DISABLE_AUTO_MEMORY=1", "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1",
+              "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1")
 
 # The agent's browser: Playwright MCP in the sandbox (infra/coding/Dockerfile), headless Chromium with
 # its profile in memory. It opens what the agent serves on localhost; the sandbox's network rules apply
@@ -141,6 +148,12 @@ class Usage:
     # and each call's input, which its refusal event leaves out.
     _denied: set[str] = field(default_factory=set)
     _inputs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The helpers (subagents) this turn started, by the engine's id for each: what Codes lists them as.
+    _helpers: dict[str, str] = field(default_factory=dict)
+    _helpers_ended: set[str] = field(default_factory=set)
+    # Steps only `read_usage` learns, after the turn (OpenCode: how its subagents ended): the runner adds them.
+    late: list[Step] = field(default_factory=list)
+    _started: bool = False  # Claude Code: its start was said
 
     @property
     def total(self) -> int:
@@ -256,8 +269,38 @@ def _describe_claude_tool(name: str, args: dict[str, Any]) -> str | None:
             return f"Searched for {_clip(str(args.get('pattern', '')), 80)}"
         case "TodoWrite" | "TaskCreate" | "TaskUpdate" | "TaskGet" | "TaskList":  # its own checklist
             return None
+        case "Agent" | "Task":  # a subagent: one of Kai's workers, or its own general-purpose one
+            return _asked(args.get("subagent_type"), args.get("description") or args.get("prompt"))
         case _:
             return f"Used {name}"
+
+
+def _asked(who: Any, task: Any) -> str:
+    return f"Asked {_clip(str(who or 'a helper'), 40)} to {_clip(str(task or 'help'), 120)}"
+
+
+# A helper's states as Codes lists them (`background-<state>`, as fx's driver reports its workers).
+_HELPER_ENDS = {"completed": "done", "failed": "failed", "errored": "failed", "error": "failed",
+                "killed": "stopped", "stopped": "stopped", "interrupted": "stopped", "shutdown": "stopped"}
+
+
+def _claude_helper(event: dict[str, Any], usage: Usage) -> Step | None:
+    """A subagent starting (`task_started`, `local_agent`) or ending (`task_notification`), as Claude Code 2.1.323
+    reports them: Codes lists it with Kai's background tasks, by its task id. Its other tasks aren't helpers."""
+    task = _clip(str(event.get("task_id") or ""), 80)
+    if not task:
+        return None
+    if event.get("subtype") == "task_started":
+        if event.get("task_type") != "local_agent":
+            return None
+        label = f"{event.get('subagent_type') or 'a helper'}: {event.get('description') or ''}".rstrip(": ")
+        usage._helpers[task] = _clip(label, 300)
+        return Step("background-running", usage._helpers[task], f"worker:{task}")
+    if task not in usage._helpers or task in usage._helpers_ended:
+        return None
+    usage._helpers_ended.add(task)
+    state = _HELPER_ENDS.get(str(event.get("status") or ""), "ended")
+    return Step(f"background-{state}", usage._helpers[task], f"worker:{task}")
 
 
 def _denied_step(denial: dict[str, Any], usage: Usage) -> Step | None:
@@ -309,14 +352,23 @@ class ClaudeCode(_NoUsageCommand):
         return settings.coding_claude_model
 
     def command(self, model: str | None, browser: bool = False, browser_engine: str = "playwright", *, research: tuple[str, bool] | None = None) -> list[str]:
-        """`browser`: give it the browser (a sandbox with the coding image; not the local one)."""
+        """`browser`: give it the browser (a sandbox with the coding image; not the local one).
+
+        Not `--bare`: it offers only Bash, Edit and Read, whatever `--tools` says, so no subagents. What `--bare`
+        kept out stays out another way (checked on 2.1.323 against a scripted model, with the repository's and the
+        home folder's settings hooks, agents, skills, CLAUDE.md and AGENTS.md planted): `--setting-sources ""` loads
+        no settings file, `--disable-slash-commands` no skill or command, `--strict-mcp-config` no MCP server, and
+        `CLAUDE_ENV` the rest. A subagent gets only tools inside `--tools`, under the same `dontAsk` rules."""
+        from dotrix_engine.coding_helpers import claude_agents, workers
+
         allowed = CLAUDE_TOOLS + (f",mcp__{BROWSER_SERVER}" if browser else "")
         if research is not None:
             allowed += ",mcp__research"
         argv = [
-            "claude", "-p", "--bare", "--output-format", "stream-json", "--verbose",
-            "--permission-mode", "dontAsk", "--allowedTools", allowed,
-            "--disallowedTools", "WebFetch,WebSearch", "--strict-mcp-config",
+            "env", *CLAUDE_ENV,
+            "claude", "-p", "--setting-sources", "", "--disable-slash-commands", "--output-format", "stream-json",
+            "--verbose", "--permission-mode", "dontAsk", "--tools", CLAUDE_TOOLS, "--allowedTools", allowed,
+            "--disallowedTools", "WebFetch,WebSearch", "--strict-mcp-config", "--agents", claude_agents(workers()),
         ]
         if browser or research is not None:
             argv += ["--mcp-config", json.dumps(coding_mcp(browser, browser_engine, research))]
@@ -329,6 +381,9 @@ class ClaudeCode(_NoUsageCommand):
             return out
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
+            if usage._started:  # again, when a subagent's report comes back: the same turn going on
+                return out
+            usage._started = True
             out.steps.append(Step("step", f"Started ({event.get('model') or 'default model'})"))
             for server in event.get("mcp_servers") or []:  # a server that didn't start is said, not skipped
                 if server.get("name") == BROWSER_SERVER and server.get("status") != "connected":
@@ -342,10 +397,17 @@ class ClaudeCode(_NoUsageCommand):
         elif kind == "system" and event.get("subtype") == "permission_denied":
             if step := _denied_step(event, usage):
                 out.steps.append(step)
+        elif kind == "system" and event.get("subtype") in ("task_started", "task_notification"):
+            if step := _claude_helper(event, usage):
+                out.steps.append(step)
         elif kind == "assistant":
             message = event.get("message") or {}
+            # A subagent's own messages carry the Agent call that started it: its words are its report's, not Kai's,
+            # and what it does is named for it.
+            parent = str(event.get("parent_tool_use_id") or "")
+            helper = str((usage._inputs.get(parent) or {}).get("subagent_type") or "a helper") if parent else None
             for block in message.get("content") or []:
-                if block.get("type") == "text" and block.get("text", "").strip():
+                if block.get("type") == "text" and block.get("text", "").strip() and helper is None:
                     out.steps.append(Step("text", _clip(block["text"])))
                 elif block.get("type") == "tool_use":
                     said = _describe_claude_tool(str(block.get("name")), block.get("input") or {})
@@ -354,6 +416,8 @@ class ClaudeCode(_NoUsageCommand):
                         usage._inputs[ref] = block["input"]
                     if block.get("name") == "Bash" and ref:
                         usage._commands.add(ref)
+                    if said and helper:
+                        said = f"{said} ({_clip(helper, 40)})"
                     if said:
                         out.steps.append(Step("tool", said, ref if block.get("name") == "Bash" else None))
             calls = message.get("usage") or {}
@@ -419,8 +483,12 @@ class Codex(_NoUsageCommand):
     def command(self, model: str | None, browser: bool = False, browser_engine: str = "playwright", *, research: tuple[str, bool] | None = None) -> list[str]:
         # `project_doc_max_bytes=0`: the repository's AGENTS.md is data, never Codex's instructions (it would
         # otherwise reach the model as `<INSTRUCTIONS>`; checked on 0.166.0 and 0.169.0 against a scripted model).
+        # Its subagents (`multi_agent`, on by default) inherit this sandbox and are capped (`codex_settings`); checked
+        # on 0.169.0 against a scripted model: `spawn_agent` and `wait` come as `collab_tool_call` items.
+        from dotrix_engine.coding_helpers import codex_settings
+
         argv = ["codex", "exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--ephemeral",
-                "-c", "project_doc_max_bytes=0"]
+                "-c", "project_doc_max_bytes=0", *codex_settings()]
         argv += ["-c", f'model="{_bare(model)}"'] if model else []
         mcp = coding_mcp(browser, browser_engine, research)
         if not mcp["mcpServers"]:
@@ -456,6 +524,8 @@ class Codex(_NoUsageCommand):
             out.steps.append(Step("error", _clip(f"The browser: {detail or 'failed'}" if item.get("server") == BROWSER_SERVER else str(detail or "A tool failed"))))
         elif kind == "item.started" and item.get("type") == "command_execution":
             out.steps.append(Step("tool", f"Ran {_clip(str(item.get('command', '')), 160)}", item.get("id")))
+        elif kind == "item.completed" and item.get("type") == "collab_tool_call":
+            out.steps += codex_helpers(item, usage)
         elif kind == "item.completed":
             match item.get("type"):
                 case "command_execution":
@@ -476,6 +546,28 @@ class Codex(_NoUsageCommand):
             message = (event.get("error") or {}).get("message") if kind == "turn.failed" else event.get("message")
             out.failed = _clip(str(message or f"{CODING_AGENT_NAME} stopped"), 500)
         return out
+
+
+def codex_helpers(item: dict[str, Any], usage: Usage) -> list[Step]:
+    """A Codex `collab_tool_call` (0.169.0) as steps: `spawn_agent` starts helpers (`receiver_thread_ids`, listed with
+    Kai's background tasks by thread id), and any call's `agents_states` says how each is doing. Shared with the
+    local runner, whose turns print the same events."""
+    steps: list[Step] = []
+    if item.get("tool") == "spawn_agent":
+        task = _clip(str(item.get("prompt") or "help"), 200)
+        steps.append(Step("tool", _asked("a helper", task)))
+        for thread in item.get("receiver_thread_ids") or []:
+            key = _clip(str(thread), 80)
+            if key and key not in usage._helpers:
+                usage._helpers[key] = _clip(f"a helper: {task}", 300)
+                steps.append(Step("background-running", usage._helpers[key], f"worker:{key}"))
+    for thread, state in (item.get("agents_states") or {}).items():
+        key = _clip(str(thread), 80)
+        ended = _HELPER_ENDS.get(str((state or {}).get("status") or ""))
+        if key in usage._helpers and ended and key not in usage._helpers_ended:  # closing a finished one isn't news
+            usage._helpers_ended.add(key)
+            steps.append(Step(f"background-{ended}", usage._helpers[key], f"worker:{key}"))
+    return steps
 
 
 @dataclass(frozen=True)
@@ -535,11 +627,21 @@ def _describe_opencode_tool(name: str, args: dict[str, Any]) -> str | None:
         case "execute":
             return "Used the browser" if f"tools.{BROWSER_SERVER}" in str(args.get("code", "")) else "Ran a script"
         case "subagent":
-            return f"Asked a subagent to {_clip(str(args.get('description', '')), 120)}"
+            return _asked(args.get("agent"), args.get("description") or args.get("prompt"))
         case "skill":
             return None
         case _:
             return f"Used {name}"
+
+
+def _opencode_helper(state: dict[str, Any], said: str | None, usage: Usage) -> list[Step]:
+    steps = [Step("tool", said)] if said else []
+    child = _clip(str(((state.get("metadata") or {}).get("metadata") or {}).get("sessionID") or ""), 80)
+    if child and child not in usage._helpers:
+        args = state.get("input") or {}
+        usage._helpers[child] = _clip(f"{args.get('agent') or 'a helper'}: {args.get('description') or ''}".rstrip(": "), 300)
+        steps.append(Step("background-running", usage._helpers[child], f"worker:{child}"))
+    return steps
 
 
 def _tokens(part: dict[str, Any]) -> tuple[int, int]:
@@ -549,14 +651,17 @@ def _tokens(part: dict[str, Any]) -> tuple[int, int]:
             int(tokens.get("output") or 0) + int(tokens.get("reasoning") or 0))
 
 
-# After a turn: the session's running cost and this turn's steps (each step is an assistant message;
-# the last one never reaches the event stream), read in the sandbox so a long session's export never
-# has to come back whole.
+# After a turn: the session's running cost, this turn's steps (each step is an assistant message;
+# the last one never reaches the event stream) and how its subagents ended (each one's report comes back
+# as a `synthetic` message, `<subagent sessionID="…" state="…">`, which the stream doesn't show either; checked
+# on 2.3.0), read in the sandbox so a long session's export never has to come back whole.
 _OPENCODE_TOTALS = (
-    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s);let turn=[];"
-    "for(const m of d.messages||[]){if(m.type==='user')turn=[];"
-    "else if(m.type==='assistant')turn.push({id:m.id,tokens:m.tokens})}"
-    "console.log(JSON.stringify({cost:(d.info||{}).cost,turn}))})"
+    "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s);let turn=[],helpers=[];"
+    "for(const m of d.messages||[]){if(m.type==='user'){turn=[];helpers=[]}"
+    "else if(m.type==='assistant')turn.push({id:m.id,tokens:m.tokens});"
+    "else if(m.type==='synthetic'){const f=/^<subagent sessionID=\"([^\"]+)\" state=\"([^\"]+)\"/.exec(m.text||'');"
+    "if(f)helpers.push([f[1],f[2]])}}"
+    "console.log(JSON.stringify({cost:(d.info||{}).cost,turn,helpers}))})"
 )
 
 
@@ -578,10 +683,14 @@ class OpenCode:
     def _env(self, model: str | None = None, *, browser: bool = False, browser_engine: str = "playwright", research: tuple[str, bool] | None = None) -> list[str]:
         """Its settings, before every command (`env …`): the same in each sandbox, OpenShell's too,
         which passes the sandbox nothing but the key. None of them is a secret."""
+        from dotrix_engine.coding_helpers import opencode_agents, workers
+
         config: dict[str, Any] = {
             "enabled_providers": [self.opencode_provider.opencode],  # not every provider it finds credentials for
             "permission": {tool: "deny" for tool in OPENCODE_DENIED},
             "autoupdate": False,
+            # Kai's workers beside OpenCode's own `general` and `explore`, which its `subagent` tool starts (2.3.0).
+            "agents": opencode_agents(workers(), OPENCODE_DENIED),
         }
         # Always the provider's own API: nothing in the worker's environment redirects the key.
         if endpoint := PROVIDERS[self.provider].base_url:
@@ -640,6 +749,12 @@ class OpenCode:
         usage.output_tokens = sum(o for _, o in usage._calls.values())
         if totals.get("cost") is not None:
             usage.cost_usd = float(totals["cost"])  # the session's running total, like Claude Code's
+        for helper, state in totals.get("helpers") or []:
+            key = _clip(str(helper), 80)
+            if key in usage._helpers and key not in usage._helpers_ended:
+                usage._helpers_ended.add(key)
+                ended = _HELPER_ENDS.get(str(state), "ended")
+                usage.late.append(Step(f"background-{ended}", usage._helpers[key], f"worker:{key}"))
 
     def sandbox_env(self, model_key: str) -> dict[str, str]:
         return {self.key_env: model_key}
@@ -680,6 +795,11 @@ class OpenCode:
                         out.steps.append(Step("error", _clip(f"The browser script: {detail}")))
                     return out
                 said = _describe_opencode_tool(str(part.get("tool")), state.get("input") or {})
+                if part.get("tool") == "subagent" and state.get("status") == "completed":
+                    # It works in the background, in a child session (its id in the call's metadata): listed with
+                    # Kai's background tasks; how it ended comes from the session's export after the turn.
+                    out.steps += _opencode_helper(state, said, usage)
+                    return out
                 command = part.get("tool") in ("shell", "bash")
                 ref = str(part.get("callID") or part.get("id") or "") or None if command else None
                 script_error = part.get("tool") == "execute" and nested.get("error")

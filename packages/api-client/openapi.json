@@ -30698,6 +30698,12 @@
             "description": "Reuse the worktree assigned to this session and runner",
             "default": false
           },
+          "helper_events": {
+            "type": "boolean",
+            "title": "Helper Events",
+            "description": "The platform takes `background-<state>` events for Kai's helpers (an older one doesn't say so, and a runner then reports them as steps)",
+            "default": true
+          },
           "branch": {
             "anyOf": [
               {
@@ -40069,7 +40075,12 @@
               "tool",
               "output",
               "output-error",
-              "error"
+              "error",
+              "background-running",
+              "background-done",
+              "background-failed",
+              "background-stopped",
+              "background-ended"
             ],
             "title": "Kind"
           },

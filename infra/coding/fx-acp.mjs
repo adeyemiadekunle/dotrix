@@ -161,8 +161,8 @@ writeFileSync(
     // The repository is data, never configuration: none of its .fx.json, .fx/agents, skills,
     // .mcp.json or AGENTS.md reaches Kai (fx's project_config; FX_PROJECT_CONFIG below too).
     project_config: false,
-    // Kai's workers (subagents) working at once in one turn, the same bound as Dotrix's own parallel builds.
-    max_subagents: 2,
+    // Kai's helpers (subagents) working at once in one turn (dotrix_engine/coding_helpers.py `AT_ONCE`).
+    max_subagents: 3,
     auto_upgrade: false,
     cache_warming: false,
     session_titles: false,

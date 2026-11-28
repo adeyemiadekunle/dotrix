@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 
 
-def run(browser: Path | None = None) -> int:
+def run(browser: Path | None = None, helpers: int | None = None) -> int:
     from .runner import Tool
 
     binary = shutil.which("codex")
@@ -34,7 +34,8 @@ def run(browser: Path | None = None) -> int:
         names = tuple(server["name"] for server in servers)
         if not all(isinstance(name, str) for name in names):
             raise ValueError("Invalid server configuration")
-        argv = Tool.named("codex", browser=browser, native=True, disabled_mcp=names).argv
+        argv = Tool.named("codex", browser=browser, native=True, disabled_mcp=names,
+                          **({"helpers": helpers} if helpers else {})).argv
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         print(json.dumps({"type": "error", "message": "Could not load the local coding configuration; update the tool and try again"}), flush=True)
         return 1
@@ -50,8 +51,9 @@ def run(browser: Path | None = None) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--browser-config", type=Path)
+    parser.add_argument("--helpers", type=int, help="Its subagents at once (the turn's share of the runner's)")
     args = parser.parse_args()
-    raise SystemExit(run(args.browser_config))
+    raise SystemExit(run(args.browser_config, args.helpers))
 
 
 if __name__ == "__main__":
