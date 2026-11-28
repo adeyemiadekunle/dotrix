@@ -804,6 +804,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/observe/processes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Observe Processes
+         * @description What each backend process costs to run: every API replica and worker reporting through Redis (or, without
+         *     Redis, the API process that answered), with memory, CPU, threads, uptime, how long it took to start, and the
+         *     last hour of memory and CPU samples. Any admin.
+         */
+        get: operations["observe_processes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/observe/alerts": {
         parameters: {
             query?: never;
@@ -10420,6 +10442,119 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
         };
+        /** ProcessPoint */
+        ProcessPoint: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Rss Mb */
+            rss_mb: number;
+            /** Cpu Percent */
+            cpu_percent: number;
+        };
+        /** ProcessRead */
+        ProcessRead: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "api" | "worker";
+            /**
+             * Host
+             * @description The machine or container the process runs on
+             */
+            host: string;
+            /** Pid */
+            pid: number;
+            /**
+             * Instance
+             * @description A random id per process start: two containers can share a host name and PID 1
+             * @default
+             */
+            instance: string;
+            /**
+             * Revision
+             * @description The deployed commit, when set (DOTRIX_DEPLOYMENT_REVISION)
+             */
+            revision?: string | null;
+            /** Python */
+            python: string;
+            /**
+             * Started At
+             * Format: date-time
+             * @description When the process started
+             */
+            started_at: string;
+            /**
+             * Ready Seconds
+             * @description From the process starting to ready to serve
+             */
+            ready_seconds?: number | null;
+            /** Uptime Seconds */
+            uptime_seconds: number;
+            /**
+             * Rss Mb
+             * @description Resident memory now, with child processes (Linux)
+             */
+            rss_mb: number;
+            /**
+             * Peak Rss Mb
+             * @description The most resident memory seen since the process started
+             */
+            peak_rss_mb: number;
+            /**
+             * Cpu Percent
+             * @description CPU since the last sample; 100 is one core busy
+             */
+            cpu_percent: number;
+            /**
+             * Cpu Seconds
+             * @description CPU time used since the process started, with child processes
+             */
+            cpu_seconds: number;
+            /** Threads */
+            threads: number;
+            /**
+             * Children
+             * @description Child processes (the fx chat host, git)
+             */
+            children: number;
+            /** Open Files */
+            open_files?: number | null;
+            /**
+             * At
+             * Format: date-time
+             * @description When this sample was taken
+             */
+            at: string;
+            /**
+             * History
+             * @description The last hour's samples, oldest first
+             */
+            history?: components["schemas"]["ProcessPoint"][];
+        };
+        /** ProcessesRead */
+        ProcessesRead: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Shared
+             * @description Whether processes report through Redis (every replica and worker), or only the API process that answered is shown
+             */
+            shared: boolean;
+            /**
+             * Sample Seconds
+             * @default 30
+             */
+            sample_seconds: number;
+            /** Processes */
+            processes: components["schemas"]["ProcessRead"][];
+        };
         /**
          * ProfileUpdate
          * @description Change your name or what you do; leave a field out to keep it. An empty title clears it.
@@ -14708,6 +14843,46 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    observe_processes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dtx_admin_access?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcessesRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

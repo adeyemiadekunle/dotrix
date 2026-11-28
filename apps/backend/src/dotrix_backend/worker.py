@@ -112,10 +112,19 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
     # A coding run asked for from a conversation that starts at once: dispatched like any other.
     ctx["runner"].jobs = QueuedJobs(redis, session_factory=sessionmaker)
+    # What this process costs to run, for the admin console's Resources page (core/process_stats.py).
+    from .core.process_stats import ProcessStats
+
+    stats = ctx["process_stats"] = ProcessStats("worker", settings.deployment_revision)
+    stats.ready()
+    ctx["process_stats_task"] = asyncio.create_task(stats.run(redis))
     logger.info("worker ready (queue %s)", QUEUE_NAME)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
+    if task := ctx.get("process_stats_task"):
+        task.cancel()
+        await ctx["process_stats"].withdraw(ctx["redis"])
     await ctx["stack"].aclose()
     await ctx["engine"].dispose()
 

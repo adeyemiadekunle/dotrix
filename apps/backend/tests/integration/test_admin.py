@@ -370,3 +370,20 @@ async def test_a_specialists_tokens_count_under_the_model_it_ran_on(
     expected = cost_of(specialist, input_tokens=2000, output_tokens=400, cached_input_tokens=0)
     assert expected is not None
     assert by[specialist]["cost_usd"] == pytest.approx(expected, abs=1e-4)
+
+
+async def test_processes_show_what_the_backend_costs_to_run(db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from dotrix_backend.core.process_stats import ProcessStats
+
+    assert (await db_client.get("/v1/admin/observe/processes")).status_code == 401
+    await _admin(db_client)
+    app = db_client._transport.app  # type: ignore[attr-defined]
+    stats = ProcessStats("api", "abc1234")
+    stats.ready()
+    monkeypatch.setattr(app.state, "process_stats", stats)
+    monkeypatch.setattr(app.state, "redis", None)
+    body = (await db_client.get("/v1/admin/observe/processes")).json()
+    assert body["shared"] is False and body["sample_seconds"] == 30
+    [process] = body["processes"]
+    assert process["role"] == "api" and process["revision"] == "abc1234" and process["rss_mb"] > 0
+    assert process["ready_seconds"] is not None and process["history"] == []

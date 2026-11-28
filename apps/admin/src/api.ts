@@ -282,3 +282,27 @@ export type ModelRow = {
   cost_usd: number | null;
   cost_is_estimate: boolean;
 };
+
+// What each backend process costs to run (GET /admin/observe/processes; core/process_stats.py).
+type ProcessPoint = { at: string; rss_mb: number; cpu_percent: number };
+export type ProcessRow = {
+  role: "api" | "worker";
+  host: string;
+  pid: number;
+  instance: string;
+  revision: string | null;
+  python: string;
+  started_at: string;
+  ready_seconds: number | null;
+  uptime_seconds: number;
+  rss_mb: number;
+  peak_rss_mb: number;
+  cpu_percent: number;
+  cpu_seconds: number;
+  threads: number;
+  children: number;
+  open_files: number | null;
+  at: string;
+  history: ProcessPoint[];
+};
+export type Processes = { generated_at: string; shared: boolean; sample_seconds: number; processes: ProcessRow[] };

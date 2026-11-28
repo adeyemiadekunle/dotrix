@@ -12,6 +12,7 @@ from fastapi import APIRouter, Cookie, Depends, Query, Request, Response, status
 from dotrix_backend.api.deps import EmailDep, SessionDep, SettingsDep
 from dotrix_backend.core.errors import Forbidden, Unauthorized
 from dotrix_backend.core.openapi import errors
+from dotrix_backend.core.process_stats import ProcessesRead, read_processes
 from dotrix_backend.core.ratelimit import client_ip
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.admin.platform import AdminRunService, PlatformObserve
@@ -343,6 +344,14 @@ async def observe_health(admin: AdminDep, request: Request, platform: Platform) 
     took from it, running and stuck runs, runs waiting to be recovered, sandboxes, and runners, plus Redis, workers,
     file storage, email and the GitHub App, waiting emails and automation events, and coding capacity."""
     return await platform.health(request.app.version, request.app.state)
+
+
+@router.get("/observe/processes")
+async def observe_processes(admin: AdminDep, request: Request) -> ProcessesRead:
+    """What each backend process costs to run: every API replica and worker reporting through Redis (or, without
+    Redis, the API process that answered), with memory, CPU, threads, uptime, how long it took to start, and the
+    last hour of memory and CPU samples. Any admin."""
+    return await read_processes(request.app.state.redis, request.app.state.process_stats)
 
 
 @router.get("/observe/alerts", responses=errors(422))

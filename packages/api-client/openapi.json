@@ -2414,6 +2414,66 @@
         }
       }
     },
+    "/v1/admin/observe/processes": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Observe Processes",
+        "description": "What each backend process costs to run: every API replica and worker reporting through Redis (or, without\nRedis, the API process that answered), with memory, CPU, threads, uptime, how long it took to start, and the\nlast hour of memory and CPU samples. Any admin.",
+        "operationId": "observe_processes",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/observe/alerts": {
       "get": {
         "tags": [
@@ -38722,6 +38782,199 @@
         ],
         "title": "ProblemDetail",
         "description": "RFC 9457 problem details. Every error response has this shape."
+      },
+      "ProcessPoint": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "rss_mb": {
+            "type": "number",
+            "title": "Rss Mb"
+          },
+          "cpu_percent": {
+            "type": "number",
+            "title": "Cpu Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "rss_mb",
+          "cpu_percent"
+        ],
+        "title": "ProcessPoint"
+      },
+      "ProcessRead": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "api",
+              "worker"
+            ],
+            "title": "Role"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "description": "The machine or container the process runs on"
+          },
+          "pid": {
+            "type": "integer",
+            "title": "Pid"
+          },
+          "instance": {
+            "type": "string",
+            "title": "Instance",
+            "description": "A random id per process start: two containers can share a host name and PID 1",
+            "default": ""
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision",
+            "description": "The deployed commit, when set (DOTRIX_DEPLOYMENT_REVISION)"
+          },
+          "python": {
+            "type": "string",
+            "title": "Python"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At",
+            "description": "When the process started"
+          },
+          "ready_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ready Seconds",
+            "description": "From the process starting to ready to serve"
+          },
+          "uptime_seconds": {
+            "type": "number",
+            "title": "Uptime Seconds"
+          },
+          "rss_mb": {
+            "type": "number",
+            "title": "Rss Mb",
+            "description": "Resident memory now, with child processes (Linux)"
+          },
+          "peak_rss_mb": {
+            "type": "number",
+            "title": "Peak Rss Mb",
+            "description": "The most resident memory seen since the process started"
+          },
+          "cpu_percent": {
+            "type": "number",
+            "title": "Cpu Percent",
+            "description": "CPU since the last sample; 100 is one core busy"
+          },
+          "cpu_seconds": {
+            "type": "number",
+            "title": "Cpu Seconds",
+            "description": "CPU time used since the process started, with child processes"
+          },
+          "threads": {
+            "type": "integer",
+            "title": "Threads"
+          },
+          "children": {
+            "type": "integer",
+            "title": "Children",
+            "description": "Child processes (the fx chat host, git)"
+          },
+          "open_files": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Files"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At",
+            "description": "When this sample was taken"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessPoint"
+            },
+            "type": "array",
+            "title": "History",
+            "description": "The last hour's samples, oldest first"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "host",
+          "pid",
+          "python",
+          "started_at",
+          "uptime_seconds",
+          "rss_mb",
+          "peak_rss_mb",
+          "cpu_percent",
+          "cpu_seconds",
+          "threads",
+          "children",
+          "at"
+        ],
+        "title": "ProcessRead"
+      },
+      "ProcessesRead": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "description": "Whether processes report through Redis (every replica and worker), or only the API process that answered is shown"
+          },
+          "sample_seconds": {
+            "type": "integer",
+            "title": "Sample Seconds",
+            "default": 30
+          },
+          "processes": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRead"
+            },
+            "type": "array",
+            "title": "Processes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "shared",
+          "processes"
+        ],
+        "title": "ProcessesRead"
       },
       "ProfileUpdate": {
         "properties": {

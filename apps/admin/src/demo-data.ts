@@ -213,6 +213,52 @@ function paginate<T>(rows: T[], params: URLSearchParams): Page<T> {
   return { items: rows.slice(offset, offset + limit), total: rows.length };
 }
 
+// Two API replicas and one worker, sampled every 30 s for the last hour, at the sizes measured on 2026-11-28.
+function processes() {
+  const now = Date.now();
+  const make = (role: "api" | "worker", host: string, pid: number, base: number, busy: number, ready: number, phase: number) => {
+    const history = Array.from({ length: 120 }, (_, i) => {
+      const wave = Math.sin((i + phase) / 9);
+      return {
+        at: new Date(now - (119 - i) * 30_000).toISOString(),
+        rss_mb: Math.round((base + 14 * (i / 119) + 6 * wave) * 10) / 10,
+        cpu_percent: Math.round(Math.max(0.2, busy * (0.5 + 0.5 * wave)) * 10) / 10,
+      };
+    });
+    const last = history[history.length - 1]!;
+    return {
+      role,
+      host,
+      pid,
+      instance: host.slice(-8),
+      revision: "d8985e1",
+      python: "3.13.18",
+      started_at: new Date(now - 26 * 3600_000).toISOString(),
+      ready_seconds: ready,
+      uptime_seconds: 26 * 3600,
+      rss_mb: last.rss_mb,
+      peak_rss_mb: Math.max(...history.map((h) => h.rss_mb)) + 4,
+      cpu_percent: last.cpu_percent,
+      cpu_seconds: 412.6,
+      threads: role === "api" ? 7 : 9,
+      children: role === "worker" ? 1 : 0,
+      open_files: role === "api" ? 31 : 24,
+      at: last.at,
+      history,
+    };
+  };
+  return {
+    generated_at: new Date(now).toISOString(),
+    shared: true,
+    sample_seconds: 30,
+    processes: [
+      make("api", "a1f3c9e2b7d4", 1, 356, 8, 6.8, 0),
+      make("api", "c7e2a90d41f8", 1, 361, 5, 6.7, 30),
+      make("worker", "e5b81c2f9a63", 1, 324, 3, 9.4, 60),
+    ],
+  };
+}
+
 export function readDemo(path: string) {
   const { pathname, searchParams } = new URL(path, "http://localhost");
   const days = Math.min(90, Math.max(1, Number(searchParams.get("days")) || 7));
@@ -229,6 +275,8 @@ export function readDemo(path: string) {
       return growth;
     case "/admin/observe/failures":
       return failures(days);
+    case "/admin/observe/processes":
+      return processes();
     case "/admin/observe/coding":
       return coding(days);
     case "/admin/observe/models":

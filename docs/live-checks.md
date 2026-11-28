@@ -151,6 +151,7 @@ on a disposable repository.
 - [ ] Storage: the usage query in `deploy/README.md` run before the first deploy with the limit; no workspace over it.
 - [ ] Admin console: the first owner created, two-factor set up, `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` removed; a second admin invited by email and signed in; the Overview shows every dependency OK.
 - [ ] Alerts: stopping the worker sends one alert email to `DOTRIX_ALERT_EMAILS` on the second check, and one "cleared" email after it's back.
+- [ ] Resources: the admin console's Resources page lists every API replica and worker of the deployment with memory, CPU and start time, and a stopped worker drops off within 90 seconds. Compare its figures with the [measured footprint](../deploy/README.md#measured-footprint-2026-11-28) to size the host.
 
 ### Sandbox isolation (production)
 

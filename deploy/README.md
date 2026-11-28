@@ -80,6 +80,27 @@ an expired sandbox starts fresh and restores its saved transcript.
 Every person brings their own model key. Platform token-budget settings and coding token-cap
 enforcement are removed; a person can still choose a limit for their project or agent.
 
+### Measured footprint (2026-11-28)
+
+Measured on a 4-vCPU development VM with Postgres and Redis on the same machine, so treat these as
+proportions rather than production numbers. The admin console's **Resources** page shows each deployed
+API replica's and worker's own figures live: memory, CPU, threads, start time and the last hour.
+
+| What | Measured |
+| --- | --- |
+| Backend image (`deploy/backend.Dockerfile`) | 1.58 GB. It was 2.37 GB with uv's download cache (533 MB) baked into a layer and the unused Docker CLI (40 MB); both are gone. |
+| Of which | Python packages 715 MB (530 MB of packages, the rest bytecode compiled at build time), Node for the fx chat host 125 MB, Debian and Python 137 MB, git and its libraries 92 MB, the `uv` binary 64 MB, the fx host's packages 20 MB |
+| Heaviest dependency | Document conversion (markitdown's PDF, Word, PowerPoint and Excel extras: pandas, onnxruntime through magika, sympy, numpy, pillow, lxml): about 250 MB of the 530 MB |
+| API start to ready | 6.8 s (median of five, `python -m dotrix_backend.serve` to `/health/ready`); 8.3 to 10.3 s for `docker run` of the image. Most of it is importing: `create_app()` alone takes about 8 s |
+| API memory | 355 MB resident at ready, 370 MB after the load below (300 MiB as Docker counts it) |
+| Worker memory | 325 MB resident (272 MiB as Docker counts it) |
+| Idle CPU | API 0.2 %, worker 0.7 % of one core (its sweeps run every 15 seconds) |
+| One API process under load | 20 concurrent clients for 20 s each: `/health` 648 requests/s (p95 95 ms); `/health/ready`, one database query, 308/s; `GET /v1/workspaces` signed in, 241/s (p50 79 ms, p95 115 ms) at 95 % of one core |
+
+One API process is one uvicorn process on one core: it was CPU-bound at about 240 signed-in
+requests a second here. Add API replicas before adding cores to one. Memory, not CPU, sets how many
+fit: about 0.4 GB each for the API and the worker before any run.
+
 ## Set up
 
 1. **Dokploy:** create a project, then a **Docker Compose** service from this repository, with the
