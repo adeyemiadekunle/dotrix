@@ -147,6 +147,9 @@ class CodingRun(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # The network policy its session pinned when the session's first turn was admitted (coding/network.py): the
     # hosts besides the model API, kept by every follow-up. None: a run from before sessions pinned one.
     network_snapshot: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True))
+    # The host secrets its session pinned with its first turn (secrets.py): names, hosts and headers, never values,
+    # which are read when the turn runs. None: a run from before sessions pinned them (none).
+    secret_snapshot: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB(none_as_null=True))
     brief: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)  # what the person asking added
 
@@ -303,6 +306,27 @@ class CodingInput(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
     # A queued message's turn: its work mode and approval mode as the person chose them (else the last turn's).
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     note: Mapped[str | None] = mapped_column(String(200))  # why it was queued instead, cancelled or refused
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CodingSecret(UUIDPrimaryKeyMixin, WorkspaceScopedMixin, Base):
+    """A project's host secret (secrets.py): a credential for one host in the project's network policy, kept out of
+    the sandbox. The sandbox's command sees a placeholder in the environment variable `name`; the sandbox's proxy
+    (Docker Cloud's or OpenShell's) writes the real value into `header` on requests to `host`, after `prefix`.
+    Write-only: the value is stored encrypted and never returned."""
+
+    __tablename__ = "coding_secrets"
+    __table_args__ = (UniqueConstraint("project_id", "name"),)
+
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))  # the environment variable that holds the placeholder
+    host: Mapped[str] = mapped_column(String(260))  # one network policy entry: `host` or `host:port`, no wildcard
+    header: Mapped[str] = mapped_column(String(64), default="Authorization")
+    prefix: Mapped[str] = mapped_column(String(32), default="Bearer ")  # what comes before the value in the header
+    encrypted: Mapped[str] = mapped_column(Text)  # Fernet token (core/crypto.py); never returned
+    version: Mapped[int] = mapped_column(Integer, default=1)  # raised on every change, so sandboxes aren't reused
+    updated_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

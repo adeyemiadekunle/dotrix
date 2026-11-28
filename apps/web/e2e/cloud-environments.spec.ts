@@ -56,6 +56,20 @@ test("project environments persist without running scripts and stay separate", a
   await expect(sheet.getByLabel("Name", { exact: true })).toHaveValue("Python environment");
   await expect(sheet.getByLabel("Environment variables", { exact: true })).toHaveValue("LOG_LEVEL=debug");
   await expect(sheet.getByLabel("Coding image", { exact: true })).toContainText(chosenImageLabel);
+
+  // A secret for a host in the saved network access: write-only, listed by name and host.
+  await sheet.getByRole("button", { name: "Add secret", exact: true }).click();
+  const adding = page.getByRole("dialog", { name: "Add secret" });
+  await adding.getByLabel("Variable name", { exact: true }).fill("api_token");
+  await adding.getByLabel("Host", { exact: true }).fill("api.example.com");
+  await adding.getByLabel("Value", { exact: true }).fill("e2e-secret-value");
+  await adding.getByRole("button", { name: "Save secret", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Notifications" }).getByText("Secret saved", { exact: true })).toBeVisible();
+  await expect(sheet.getByRole("list", { name: "Secrets" })).toContainText("API_TOKEN");
+  await expect(sheet.getByRole("list", { name: "Secrets" })).toContainText("api.example.com");
+  const secrets = await (await page.request.get(`/v1/workspaces/${workspace.id}/projects/${projects[0].id}/coding/secrets`)).json();
+  expect(secrets.map((s: { name: string }) => s.name)).toEqual(["API_TOKEN"]);
+  expect(JSON.stringify(secrets)).not.toContain("e2e-secret-value");
   await sheet.getByRole("button", { name: "Close", exact: true }).click();
 
   // The other project's environment is its own.

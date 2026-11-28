@@ -329,7 +329,7 @@ async def test_a_sandbox_sleeps_between_turns_and_wakes_with_its_files(fake: Fak
     session = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
     handle = sandbox.handle(session)
     assert handle == {"kind": "docker-cloud", "sandbox": "sbx-1", "secret": "secrets/sec-1",
-                      "placeholder": "sk-ant-api03-PLACEHOLDER"}
+                      "placeholder": "sk-ant-api03-PLACEHOLDER", "host_secrets": [], "host_env": {}}
     assert KEY not in json.dumps(handle)  # stored on the session: never the key
     await sandbox.sleep(session)
     assert fake.sandboxes["sbx-1"]["status"] == "stopped" and fake.stops == 1 and not fake.deleted
@@ -420,3 +420,41 @@ async def test_a_sandbox_that_fails_to_start_is_deleted_and_says_why(fake: FakeD
     with pytest.raises(SandboxError, match="image not found"):
         await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY)
     assert fake.deleted == [("e-sbx-1", "true")] and fake.secrets_deleted == ["sec-1"]  # nothing left behind
+
+
+async def test_host_secrets_are_docker_secrets_injected_into_their_hosts_requests_only(
+    fake: FakeDockerCloud, repo: Path,
+) -> None:
+    from dotrix_backend.modules.coding.secrets import HostSecret
+
+    sandbox = _sandbox(fake)
+    npm = HostSecret("NPM_TOKEN", "registry.npmjs.org", 443, "Authorization", "Bearer ", "npm-real-value", 1)
+    api = HostSecret("TEST_API", "api.example.com", 8443, "X-Api-Key", "", "api-real-value", 3)
+    session = await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY,
+                                 allow=["registry.npmjs.org", "api.example.com:8443"], secrets=[npm, api])
+    [body] = fake.created
+    assert body["features"]["storedSecrets"] == {"secrets": ["secrets/sec-1", "secrets/sec-2", "secrets/sec-3"]}
+    first, second = fake.secrets["sec-2"]["custom"], fake.secrets["sec-3"]["custom"]
+    assert first["value"] == "npm-real-value" and first["injection"] == {
+        "hosts": ["registry.npmjs.org"], "header": "Authorization", "format": "Bearer %s", "envVar": "NPM_TOKEN",
+        "placeholderTemplate": "dotrix-secret-{rand}"}
+    assert second["injection"]["hosts"] == ["api.example.com:8443"] and second["injection"]["format"] == "%s"
+    assert "real-value" not in json.dumps(body)
+    await session.exec(["true"], timeout=60)
+    env = fake.procs[-1].env
+    assert env["NPM_TOKEN"] == env["TEST_API"] == "sk-ant-api03-PLACEHOLDER"  # the fake's placeholder
+    assert "real-value" not in json.dumps(env)
+    handle = sandbox.handle(session)
+    assert handle["host_secrets"] == ["secrets/sec-2", "secrets/sec-3"] and "real-value" not in json.dumps(handle)
+    await sandbox.discard(handle)
+    assert sorted(fake.secrets_deleted) == ["sec-1", "sec-2", "sec-3"]
+
+
+async def test_host_secrets_need_docker_secret_injection(fake: FakeDockerCloud, repo: Path) -> None:
+    from dotrix_backend.modules.coding.secrets import HostSecret
+
+    sandbox = _sandbox(fake, docker_cloud_key_injection=False)
+    with pytest.raises(SandboxError, match="secret injection"):
+        await sandbox.open(uuid.uuid4(), repo, ClaudeCode(), KEY, secrets=[
+            HostSecret("NPM_TOKEN", "registry.npmjs.org", 443, "Authorization", "Bearer ", "v", 1)])
+    assert fake.created == [] and fake.secrets == {}

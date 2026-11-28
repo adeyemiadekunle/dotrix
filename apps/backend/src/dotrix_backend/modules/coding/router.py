@@ -56,6 +56,7 @@ from .schemas import (
     SharedCodingOutcomeRead,
     StandaloneCodingCreate,
 )
+from .secrets import CodingSecretRead, CodingSecretSave, delete_secret, list_secrets, save_secret
 from .service import CodingService
 from .stream import follow_session
 
@@ -489,6 +490,11 @@ async def set_cloud_environment(data: EnvironmentSave, access: ProjectNetworkEdi
     before = profile(project.coding_environment)
     if before.revision != data.revision:
         raise Conflict("The environment changed; reload it before saving")
+    from .secrets import secret_names
+
+    clash = sorted(set(data.variables) & await secret_names(session, project))
+    if clash:
+        raise Conflict(f"{', '.join(clash)} is a host secret's name; a variable can't share it")
     if data.network is not None:  # first: a refusal (outside the workspace's limit) changes nothing
         from dotrix_backend.modules.workspaces.models import Workspace
 
@@ -502,3 +508,30 @@ async def set_cloud_environment(data: EnvironmentSave, access: ProjectNetworkEdi
                                                        "variables": sorted(updated.variables)})
     await session.commit()
     return updated.model_copy(update={"available_images": settings.coding_environment_images})
+
+
+# Host secrets (secrets.py): write-only values for hosts in the project's network policy, kept out of the sandbox.
+
+
+@router.get("/secrets")
+async def list_coding_secrets(access: ProjectNetworkEditor, session: SessionDep) -> list[CodingSecretRead]:
+    """The project's host secrets: names, hosts and headers, never values. Owners and admins."""
+    return await list_secrets(session, access.project)
+
+
+@router.put("/secrets/{name}", responses=errors(403, 409, 422, 503))
+async def set_coding_secret(
+    name: str, data: CodingSecretSave, access: ProjectNetworkEditor, session: SessionDep, request: Request,
+) -> CodingSecretRead:
+    """Add or change a host secret named after the environment variable Kai's commands read its placeholder from.
+    Its host must be in the project's network policy (409 otherwise); a new one needs a value, and leaving `value`
+    out keeps the stored one. Stored encrypted (503 when the server has no encryption key), never returned; audited
+    without the value. New sessions pin it; running sessions get a changed value on their next turn."""
+    return await save_secret(session, request.app.state.secrets, access.member, access.project, name, data)
+
+
+@router.delete("/secrets/{name}", status_code=status.HTTP_204_NO_CONTENT, responses=errors(403, 404))
+async def delete_coding_secret(name: str, access: ProjectNetworkEditor, session: SessionDep) -> Response:
+    """Delete a host secret. Sessions that pinned it go on without it. Owners and admins; audited."""
+    await delete_secret(session, access.member, access.project, name)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

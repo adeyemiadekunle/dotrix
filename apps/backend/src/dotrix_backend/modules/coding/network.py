@@ -12,7 +12,7 @@ One policy in three layers, in one format (`dotrix_engine/network_policy.py`, sh
   sessions. The limit as it is now still applies to every turn (`for_run`), so lowering it takes effect at once.
 
 Every change is audited. A turn's sandbox gets its list with the model API (the Docker Cloud sandbox's network policy;
-the Docker and OpenShell sandboxes refuse a turn with any, sandbox.py); a local runner gets it in its claim and may
+OpenShell's sandbox policy, sandbox.py); a local runner gets it in its claim and may
 only narrow it (dotrix_cli/network_allow.py). A sandbox opened with another list isn't reused (`network_digest` is part
 of what warm and sleeping sandboxes are matched on).
 

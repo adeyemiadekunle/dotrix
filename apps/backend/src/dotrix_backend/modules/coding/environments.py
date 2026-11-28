@@ -5,8 +5,8 @@ A project's environment: its name, image, setup and verification scripts and var
 
 Variables are plain, non-secret configuration (`NODE_ENV`, a test service's address): they're shown in the brief and
 set for the setup script, Kai's commands and verification (`with_variables`). Names that would change how the sandbox,
-the coding tool or the network work are refused, and so are names that look like secrets, which have to wait for
-secrets that the sandbox never holds (docs/product.md, Roadmap).
+the coding tool or the network work are refused, and so are names that look like secrets, which belong in host
+secrets (secrets.py), whose values the sandbox never holds.
 """
 import re
 from typing import Annotated, Literal
@@ -41,8 +41,8 @@ def check_variable(name: str, value: str) -> None:
     if upper in RESERVED or upper.startswith(RESERVED_PREFIXES):
         raise ValueError(f"{name} is set by the sandbox or the coding tool; choose another name")
     if SECRET_PARTS & set(upper.split("_")):
-        raise ValueError(f"{name} looks like a secret. Variables are visible to Kai and in the brief, so secrets can't "
-                         "go here yet")
+        raise ValueError(f"{name} looks like a secret. Variables are visible to Kai and in the brief: add it under "
+                         "Secrets instead")
     if len(value) > MAX_VALUE or "\x00" in value or "\n" in value or "\r" in value:
         raise ValueError(f"{name}'s value must be one line of at most {MAX_VALUE} characters")
 

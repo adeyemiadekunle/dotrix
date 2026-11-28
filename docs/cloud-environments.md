@@ -41,9 +41,41 @@ set for the setup script, Kai's commands and verification. They are shown in the
 brief, so names that look like secrets are refused, as are names the sandbox or
 the coding tools use. The same form saves the project's network policy.
 
+## Host secrets
+
+A host secret (`coding/secrets.py`, Secrets in the same form, `PUT/DELETE
+.../coding/secrets/{NAME}`, owners and admins) is a value for one exact host in
+the project's network policy: a private registry's token, a test API's key. The
+sandbox never holds it. Kai's commands see a placeholder in the variable `NAME`
+and send it as the host expects (`Authorization: Bearer $NPM_TOKEN`); the
+sandbox's proxy puts the real value into that header on requests to that host
+only:
+
+- Docker Cloud stores it as a custom secret injected into its host's requests
+  (`hosts`, `header`, `format` = prefix + value, `envVar`), as it stores the
+  model key, and deletes it with the sandbox.
+- OpenShell imports a provider profile made for the turn (the host inspected
+  with `protocol: rest`, `auth_style: bearer` or `header`), creates a provider
+  from it with the value passed by environment, attaches it beside the model
+  key's provider, and deletes both afterwards. The host is then left out of the
+  policy's relayed (`tls: skip`) endpoints.
+- The local sandbox refuses a turn with secrets; people's computers never get
+  them; parallel builds refuse them for now.
+
+Values are encrypted with `DOTRIX_ENCRYPTION_KEY`, never returned, logged or put
+in a brief, and changes are audited (`coding_secret.created`, `.updated`,
+`.deleted`) by name and host only. A secret's name can't be one of the
+environment's variables, nor a name the sandbox or tools use. A coding session
+pins its project's secrets (names, hosts, headers; `coding_runs.secret_snapshot`)
+with its first turn; each turn reads the current values, so a rotated value
+reaches running sessions, while a secret whose host or header changed, that was
+deleted, or whose host the turn's network policy no longer allows, is left out
+and the turn says why. A sandbox opened with other secret versions isn't reused.
+Neither sandbox's injection has run on a real gateway or account yet.
+
 This slice does not implement arbitrary unreviewed images, multiple selectable
-profiles, secret injection or dependency-only network phases. Do not put secrets
-in scripts: scripts are shared project configuration and appear in private run
+profiles, setup-only or workspace-shared secrets, or dependency-only network
+phases. Do not put secrets in scripts or variables: scripts are shared project configuration and appear in private run
 briefs. The broader contract below remains the implementation plan for those
 remaining capabilities. These tests use disposable repositories and scripted
 engine/container transports, not proof of deployed sandbox behavior.

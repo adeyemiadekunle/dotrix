@@ -446,3 +446,26 @@ export async function cloudEnvironmentSaved(projectId: string, body: Schemas["En
     }),
   );
 }
+
+/* ---------- Host secrets: write-only values the sandbox's proxy adds to one host's requests ---------- */
+export type CodingSecret = Schemas["CodingSecretRead"];
+const secretPath = (projectId: string) => ({ workspace_id: live.ws!.id, project_id: projectId });
+
+export async function codingSecrets(projectId: string): Promise<CodingSecret[]> {
+  return unwrap(api.GET("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/secrets", { params: { path: secretPath(projectId) } }));
+}
+export async function codingSecretSaved(projectId: string, name: string, body: Schemas["CodingSecretSave"]): Promise<CodingSecret> {
+  return unwrap(
+    api.PUT("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/secrets/{name}", {
+      params: { path: { ...secretPath(projectId), name } },
+      body,
+    }),
+  );
+}
+export async function codingSecretDeleted(projectId: string, name: string): Promise<void> {
+  await unwrap(
+    api.DELETE("/v1/workspaces/{workspace_id}/projects/{project_id}/coding/secrets/{name}", {
+      params: { path: { ...secretPath(projectId), name } },
+    }),
+  );
+}

@@ -451,6 +451,11 @@ class CodingWorker:
             # workspace's limit as it is now (network.py).
             allow = for_run(await session.get(Workspace, run.workspace_id), await session.get(Project, run.project_id),
                             run.network_snapshot)
+            # The session's host secrets this turn may send (secrets.py): their values as they are now.
+            from .secrets import for_turn as secrets_for_turn
+
+            turn_secrets = await secrets_for_turn(session, self.secrets, await session.get(Project, run.project_id),
+                                                  run.secret_snapshot, allow)
             sess.last_active_at = datetime.now(UTC)
             await session.commit()
             # A follow-up builds on its session's branch and PR (carried over when it was asked for).
@@ -536,6 +541,13 @@ class CodingWorker:
             raise RunFailed("Cloud environment scripts require a supported isolated sandbox")
         if environment and not plan_mode and execution_plan and self.settings.coding_parallel:
             raise RunFailed("Cloud environment profiles are not yet supported for parallel coding")
+        if turn_secrets.secrets and self.sandbox.kind == "local":
+            raise RunFailed("Host secrets need a sandbox that keeps them out (OpenShell or Docker Cloud); "
+                            "this server's local sandbox can't")
+        if turn_secrets.secrets and not plan_mode and execution_plan and self.settings.coding_parallel:
+            raise RunFailed("Host secrets are not yet supported for parallel coding")
+        for note in turn_secrets.skipped:
+            await self._update(run_id, step=f"Host secret left out: {note}")
         run_sandbox = self.sandbox
         if environment:
             from dotrix_backend.core.errors import Conflict
@@ -582,6 +594,8 @@ class CodingWorker:
         resumable = tool.resumes
         # Which key and network the sandbox has: a warm or sleeping one opened with others isn't reused.
         credential = hashlib.sha256(f"{key}\n{network_digest(allow)}".encode()).hexdigest()
+        if turn_secrets.secrets:
+            credential = hashlib.sha256(f"{credential}\n{turn_secrets.digest}".encode()).hexdigest()
         if environment:
             credential = hashlib.sha256((credential + json.dumps(environment, sort_keys=True) + (environment_image_id or "")).encode()).hexdigest()
         restored_patch = self._checkpoint_patch(checkpoint, run_id, github_repo_id, base_sha, key) if checkpoint else None
@@ -622,7 +636,8 @@ class CodingWorker:
             copy = work / "upload" / "repo"
             await _export(host, copy)
             await _baseline(copy)
-            box = await run_sandbox.open(run_id, copy, tool, key, **({"allow": allow} if allow else {}))
+            box = await run_sandbox.open(run_id, copy, tool, key, **({"allow": allow} if allow else {}),
+                                         **({"secrets": turn_secrets.secrets} if turn_secrets.secrets else {}))
             if resumable and transcript_key:
                 try:
                     resumed = await self._restore_transcript(box, tool, claude_session, transcript_key)

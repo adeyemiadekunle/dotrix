@@ -5,11 +5,22 @@ import { SelectField } from "@dotrix/ui/components/select";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Ic } from "../core/icons";
 import { formatDotenv, parseDotenv } from "../core/dotenv";
-import { cloudEnvironment, cloudEnvironmentSaved, type CloudEnvironment, type SandboxNetwork } from "../data/account";
+import {
+  cloudEnvironment,
+  cloudEnvironmentSaved,
+  codingSecretDeleted,
+  codingSecrets,
+  codingSecretSaved,
+  type CloudEnvironment,
+  type CodingSecret,
+  type SandboxNetwork,
+} from "../data/account";
 import { isLive } from "../data/live";
 import { toast } from "../ui/toast";
 
 type Preset = { label: string; hosts: string[] };
+type SecretDraft = { name: string; host: string; header: string; prefix: string; value: string };
+const NEW_SECRET: SecretDraft = { name: "", host: "", header: "Authorization", prefix: "Bearer ", value: "" };
 
 /** What a project's network policy lets its sessions reach besides the model API, in a few words. */
 export function networkSummary(presets: string[], hosts: string[], available: Record<string, Preset>): string {
@@ -51,7 +62,9 @@ export function EditEnvironment({
   const [variables, setVariables] = useState(isLive() ? "" : formatDotenv(SAMPLE.variables ?? {}));
   const [presets, setPresets] = useState<string[]>(network.presets);
   const [hosts, setHosts] = useState(network.hosts.join("\n"));
-  const [view, setView] = useState<"main" | "network">("main");
+  const [view, setView] = useState<"main" | "network" | "secret">("main");
+  const [secrets, setSecrets] = useState<CodingSecret[]>([]);
+  const [secret, setSecret] = useState<SecretDraft>(NEW_SECRET);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
@@ -69,6 +82,9 @@ export function EditEnvironment({
         setVariables(formatDotenv(env.variables ?? {}));
         setMore(Boolean(env.verify_script || env.image));
       })
+      .catch((e: unknown) => on && setLoadError(e instanceof Error && e.message ? e.message : "It didn't load"));
+    codingSecrets(projectId)
+      .then((list) => on && setSecrets(list))
       .catch((e: unknown) => on && setLoadError(e instanceof Error && e.message ? e.message : "It didn't load"));
     return () => {
       on = false;
@@ -122,8 +138,45 @@ export function EditEnvironment({
     }
   };
 
-  const close = () => (view === "network" ? setView("main") : onClose());
-  const title = view === "network" ? "Network access" : "Edit environment";
+  const saveSecret = async () => {
+    const name = secret.name.trim();
+    if (!isLive()) {
+      toast("Saved");
+      setView("main");
+      return;
+    }
+    setBusy(true);
+    try {
+      const saved = await codingSecretSaved(projectId, name, {
+        host: secret.host.trim(),
+        header: secret.header.trim() || "Authorization",
+        prefix: secret.prefix,
+        value: secret.value ? secret.value : null,
+      });
+      setSecrets([...secrets.filter((s) => s.name !== saved.name), saved].sort((a, b) => a.name.localeCompare(b.name)));
+      toast("Secret saved");
+      setView("main");
+    } catch (e) {
+      toast(`It didn't save: ${e instanceof Error && e.message ? e.message : "try again"}`, { kind: "err", ms: 7000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeSecret = async (name: string) => {
+    if (!window.confirm(`Delete the secret ${name}? Sessions that use it go on without it.`)) return;
+    try {
+      if (isLive()) await codingSecretDeleted(projectId, name);
+      setSecrets(secrets.filter((s) => s.name !== name));
+      toast("Secret deleted");
+    } catch (e) {
+      toast(`It didn't delete: ${e instanceof Error && e.message ? e.message : "try again"}`, { kind: "err", ms: 7000 });
+    }
+  };
+  const editing = secrets.some((s) => s.name === secret.name);
+  const secretReady = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(secret.name.trim()) && secret.host.trim() !== "" && (editing || secret.value !== "");
+
+  const close = () => (view === "main" ? onClose() : setView("main"));
+  const title = view === "network" ? "Network access" : view === "secret" ? (editing ? "Edit secret" : "Add secret") : "Edit environment";
   return (
     <div>
       {/* Above the agents launcher (73), below popovers (80) and toasts (100). */}
@@ -136,8 +189,8 @@ export function EditEnvironment({
       >
         <div ref={dialog} className="modal enter env-sheet" role="dialog" aria-modal="true" aria-labelledby="env-sheet-title">
           <div className="env-sheet-h">
-            <button className="ibtn" onClick={close} aria-label={view === "network" ? "Back" : "Close"}>
-              <Ic n={view === "network" ? "chevron-left" : "x"} s={18} />
+            <button className="ibtn" onClick={close} aria-label={view === "main" ? "Close" : "Back"}>
+              <Ic n={view === "main" ? "x" : "chevron-left"} s={18} />
             </button>
             <h2 id="env-sheet-title">{title}</h2>
             <span aria-hidden style={{ width: 32 }} />
@@ -147,6 +200,64 @@ export function EditEnvironment({
               <div className="alert danger">{loadError}</div>
             ) : !form || !loaded ? (
               <div className="faint">Loading…</div>
+            ) : view === "secret" ? (
+              <>
+                <p className="faint" style={{ margin: 0 }}>
+                  The sandbox never holds the value: Kai's commands see a placeholder in the variable, and the sandbox's proxy puts the real value into the
+                  header on requests to this host only. The host must be in the saved network access.
+                </p>
+                <EnvField label="Variable name" id="secret-name" help="What Kai's commands read, such as NPM_TOKEN.">
+                  <DesignInput
+                    id="secret-name"
+                    className="mono"
+                    value={secret.name}
+                    disabled={editing}
+                    onChange={(e) => setSecret({ ...secret, name: e.target.value.toUpperCase() })}
+                    placeholder="NPM_TOKEN"
+                  />
+                </EnvField>
+                <EnvField label="Host" id="secret-host" help="One host, such as registry.npmjs.org or registry.example.com:8443.">
+                  <DesignInput
+                    id="secret-host"
+                    className="mono"
+                    value={secret.host}
+                    onChange={(e) => setSecret({ ...secret, host: e.target.value })}
+                    placeholder="registry.npmjs.org"
+                  />
+                </EnvField>
+                <EnvField label="Header" id="secret-header">
+                  <DesignInput
+                    id="secret-header"
+                    className="mono"
+                    value={secret.header}
+                    onChange={(e) => setSecret({ ...secret, header: e.target.value })}
+                    placeholder="Authorization"
+                  />
+                </EnvField>
+                <EnvField label="Before the value" id="secret-prefix" help="Such as “Bearer ” (with its space), or nothing.">
+                  <DesignInput
+                    id="secret-prefix"
+                    className="mono"
+                    value={secret.prefix}
+                    onChange={(e) => setSecret({ ...secret, prefix: e.target.value })}
+                    placeholder="Bearer "
+                  />
+                </EnvField>
+                <EnvField
+                  label="Value"
+                  id="secret-value"
+                  help={editing ? "Leave it empty to keep the saved value. Values are never shown again." : "Values are never shown again."}
+                >
+                  <DesignInput
+                    id="secret-value"
+                    type="password"
+                    autoComplete="off"
+                    className="mono"
+                    value={secret.value}
+                    onChange={(e) => setSecret({ ...secret, value: e.target.value })}
+                  />
+                </EnvField>
+              </>
             ) : view === "network" ? (
               <>
                 <p className="faint" style={{ margin: 0 }}>
@@ -242,7 +353,7 @@ export function EditEnvironment({
                     parsed.error ? (
                       <span className="env-err">{parsed.error}</span>
                     ) : (
-                      "One KEY=value per line, in .env format. Anyone who uses this environment can see these values, and so can Kai, so don't put secrets here."
+                      "One KEY=value per line, in .env format. Anyone who uses this environment can see these values, and so can Kai: put tokens under Secrets."
                     )
                   }
                 >
@@ -255,6 +366,52 @@ export function EditEnvironment({
                     placeholder="LOG_LEVEL=debug"
                     aria-invalid={Boolean(parsed.error)}
                   />
+                </EnvField>
+                <EnvField
+                  label="Secrets"
+                  action={
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setSecret(NEW_SECRET);
+                        setView("secret");
+                      }}
+                    >
+                      Add secret
+                    </button>
+                  }
+                  help="Tokens for one host each, such as a private registry's. Kai only ever sees a placeholder. Cloud sessions only."
+                >
+                  {secrets.length === 0 ? (
+                    <div className="faint" style={{ fontSize: 13 }}>
+                      None
+                    </div>
+                  ) : (
+                    <ul className="env-secrets" aria-label="Secrets">
+                      {secrets.map((s) => (
+                        <li key={s.name}>
+                          <button
+                            type="button"
+                            className="env-secret"
+                            onClick={() => {
+                              setSecret({ name: s.name, host: s.host, header: s.header, prefix: s.prefix, value: "" });
+                              setView("secret");
+                            }}
+                          >
+                            <span className="mono">{s.name}</span>
+                            <span className="faint">
+                              {s.host}
+                              {!s.allowed && " · not in network access, so not sent"}
+                            </span>
+                          </button>
+                          <button type="button" className="ibtn" aria-label={`Delete ${s.name}`} onClick={() => removeSecret(s.name)}>
+                            <Ic n="trash-2" s={15} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </EnvField>
                 <button type="button" className="env-more" onClick={() => setMore(!more)} aria-expanded={more}>
                   <Ic n={more ? "chevron-down" : "chevron-right"} s={14} />
@@ -315,6 +472,10 @@ export function EditEnvironment({
             {view === "network" ? (
               <ActionButton className="btn btn-primary env-save" onClick={() => setView("main")}>
                 Done
+              </ActionButton>
+            ) : view === "secret" ? (
+              <ActionButton className="btn btn-primary env-save" disabled={busy || !secretReady} onClick={saveSecret}>
+                Save secret
               </ActionButton>
             ) : (
               <ActionButton className="btn btn-primary env-save" disabled={!form || busy || Boolean(parsed.error)} onClick={save}>

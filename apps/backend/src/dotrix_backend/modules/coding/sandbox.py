@@ -33,12 +33,15 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from dotrix_backend.core.settings import Settings
 from dotrix_backend.modules.code.checkouts import remove_tree
 
 from .tools import CodingTool
+
+if TYPE_CHECKING:
+    from .secrets import HostSecret
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +83,12 @@ class CodingSandbox(Protocol):
 
     async def open(
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+        secrets: list[HostSecret] | tuple = (),
     ) -> SandboxSession:
         """A sandbox holding a copy of `source` (a folder named `repo`), where commands run in the
         repo, and `tool` can reach its model with `model_key`, and the `allow` hosts (owners' and admins'
-        the network policy; exact, `*.domain`, either with :port) besides."""
+        the network policy; exact, `*.domain`, either with :port) besides. Each of `secrets` (secrets.py) is added
+        outside the sandbox to its host's requests; commands see a placeholder in its variable."""
         ...
 
 
@@ -97,16 +102,19 @@ def openshell_endpoint(entry: str) -> dict:
     return {"host": f"**.{parsed.host}" if parsed.subdomains else parsed.host, "port": parsed.port, "tls": "skip"}
 
 
-def sandbox_policy(allow: list[str] | tuple = ()) -> dict:
+def sandbox_policy(allow: list[str] | tuple = (), secret_hosts: list[str] | tuple = ()) -> dict:
     """The run's OpenShell policy: the workdir (with the repo) writable, the system read-only, /tmp for scratch, and
     a network closed but for the hosts in the session's network policy (`allow`), for any program in the sandbox.
     The model provider attached to the sandbox adds its endpoints (api.anthropic.com for Claude Code, api.openai.com
     for Codex), for the tool's binaries only; the sandbox holds only a placeholder for the key, so no listed host can
     receive it. Nothing reaches GitHub: the worker pushes."""
     network: dict = {}
-    if allow:
+    # A host with a secret (`secret_hosts`) isn't relayed: its provider adds it with OpenShell's inspecting proxy,
+    # which puts the secret in its requests (an endpoint can't be both).
+    relayed = [entry for entry in allow if entry not in set(secret_hosts)]
+    if relayed:
         network["project_hosts"] = {
-            "endpoints": [openshell_endpoint(entry) for entry in allow],
+            "endpoints": [openshell_endpoint(entry) for entry in relayed],
             "binaries": [{"path": "/**"}],
         }
     return {
@@ -352,6 +360,8 @@ async def interruptible(
 class OpenShellSession:
     def __init__(self, sandbox: OpenShellSandbox, name: str, provider: str, scratch: Path) -> None:
         self.sandbox, self.name, self.provider, self.scratch = sandbox, name, provider, scratch
+        self.secret_providers: list[str] = []  # one per host secret, each from a profile of its own
+        self.profiles: list[str] = []
 
     async def exec(
         self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
@@ -374,7 +384,10 @@ class OpenShellSession:
         return result
 
     async def close(self) -> None:
-        for args in (["sandbox", "delete", self.name], ["provider", "delete", self.provider]):
+        steps = [["sandbox", "delete", self.name], ["provider", "delete", self.provider],
+                 *[["provider", "delete", p] for p in self.secret_providers],
+                 *[["provider", "profile", "delete", p] for p in self.profiles]]
+        for args in steps:
             try:
                 await self.sandbox.cli(*args)
             except SandboxError as exc:
@@ -414,6 +427,7 @@ class OpenShellSandbox:
 
     async def open(
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+        secrets: list[HostSecret] | tuple = (),
     ) -> SandboxSession:
         # OpenShell names are at most 19 characters; a UUIDv7's last 16 hex digits are its random part.
         name = provider = f"pm-{run_id.hex[-16:]}"
@@ -423,16 +437,53 @@ class OpenShellSandbox:
             # The key goes to the CLI by environment (`--credential NAME` reads it), never argv.
             await self.cli("provider", "create", "--name", provider, "--type", tool.provider_type,
                            "--credential", tool.key_env, env=self.cli_env(**{tool.key_env: model_key}))
+            attach = ["--provider", provider]
+            for index, secret in enumerate(secrets, 1):
+                attach += ["--provider", await self._secret_provider(session, run_id, index, secret)]
             policy = scratch / "policy.yaml"
-            policy.write_text(json.dumps(sandbox_policy(allow), indent=2))  # JSON is YAML
+            policy.write_text(json.dumps(sandbox_policy(allow, [s.entry for s in secrets]), indent=2))  # JSON is YAML
             await self.cli("sandbox", "create", "--name", name, "--from", self.image, "--policy", str(policy),
-                           "--provider", provider, "--label", f"dotrix-run={run_id}", "--detach",
+                           *attach, "--label", f"dotrix-run={run_id}", "--detach",
                            "--", "sleep", "infinity")
             await self.cli("sandbox", "upload", name, str(source), str(Path(REPO_DIR).parent), "--no-git-ignore")
         except BaseException:
             await session.close()
             raise
         return session
+
+
+    async def _secret_provider(self, session: OpenShellSession, run_id: uuid.UUID, index: int,
+                               secret: HostSecret) -> str:
+        """A provider holding one host secret, from a profile made for this turn (`secret_profile`); both are deleted
+        with the sandbox. The value goes to the CLI by environment, never argv or a file."""
+        name = f"ps-{run_id.hex[-13:]}-{index}"  # at most 19 characters, as OpenShell needs
+        path = session.scratch / f"{name}.yaml"
+        path.write_text(json.dumps(secret_profile(name, secret), indent=2))
+        await self.cli("provider", "profile", "import", "-f", str(path))
+        session.profiles.append(name)
+        await self.cli("provider", "create", "--name", name, "--type", name, "--credential", secret.name,
+                       env=self.cli_env(**{secret.name: secret.value}))
+        session.secret_providers.append(name)
+        return name
+
+
+def secret_profile(profile_id: str, secret: HostSecret) -> dict:
+    """An OpenShell provider profile for one host secret: its variable, the header OpenShell's proxy writes it into,
+    and its one host, inspected (`protocol: rest`) so the proxy can put it there, for any program in the sandbox.
+    The program sends the placeholder with the prefix itself (`Authorization: Bearer $NPM_TOKEN`)."""
+    bearer = secret.header.lower() == "authorization" and secret.prefix == "Bearer "
+    credential: dict = {"name": "value", "description": f"Host secret {secret.name}", "env_vars": [secret.name],
+                        "required": True, "auth_style": "bearer" if bearer else "header"}
+    if not bearer:
+        credential["header_name"] = secret.header
+    return {
+        "id": profile_id, "display_name": f"dotrix secret {secret.name}", "description": "A dotrix host secret",
+        "category": "agent", "inference_capable": False, "credentials": [credential],
+        "discovery": {"credentials": ["value"]},
+        "endpoints": [{"host": secret.host, "port": secret.port, "protocol": "rest", "access": "read-write",
+                       "enforcement": "enforce"}],
+        "binaries": ["/**"],
+    }
 
 
 # -- Docker Cloud's upload -------------------------------------------------------------
@@ -472,7 +523,10 @@ class LocalSandbox:
 
     async def open(
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+        secrets: list[HostSecret] | tuple = (),
     ) -> SandboxSession:
+        if secrets:
+            raise SandboxError("The local sandbox can't keep host secrets out of the agent's reach")
         root = Path(tempfile.mkdtemp(prefix=f"dotrix-coding-{run_id.hex[:8]}-"))
         await asyncio.to_thread(shutil.copytree, source, root / "repo", symlinks=True)
         (root / "home").mkdir()

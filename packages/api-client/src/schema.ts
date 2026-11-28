@@ -4943,6 +4943,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Coding Secrets
+         * @description The project's host secrets: names, hosts and headers, never values. Owners and admins.
+         */
+        get: operations["list_coding_secrets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Coding Secret
+         * @description Add or change a host secret named after the environment variable Kai's commands read its placeholder from.
+         *     Its host must be in the project's network policy (409 otherwise); a new one needs a value, and leaving `value`
+         *     out keeps the stored one. Stored encrypted (503 when the server has no encryption key), never returned; audited
+         *     without the value. New sessions pin it; running sessions get a changed value on their next turn.
+         */
+        put: operations["set_coding_secret"];
+        post?: never;
+        /**
+         * Delete Coding Secret
+         * @description Delete a host secret. Sessions that pinned it go on without it. Owners and admins; audited.
+         */
+        delete: operations["delete_coding_secret"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces/{workspace_id}/coding/sessions": {
         parameters: {
             query?: never;
@@ -7725,6 +7772,59 @@ export interface components {
             size: number;
             /** Content Type */
             content_type: string;
+        };
+        /**
+         * CodingSecretRead
+         * @description A host secret without its value.
+         */
+        CodingSecretRead: {
+            /** Name */
+            name: string;
+            /** Host */
+            host: string;
+            /** Header */
+            header: string;
+            /** Prefix */
+            prefix: string;
+            /** Version */
+            version: number;
+            /**
+             * Allowed
+             * @description Whether the project's network policy allows its host now; a secret whose host isn't allowed isn't sent
+             */
+            allowed: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By Id */
+            updated_by_id: string | null;
+        };
+        /** CodingSecretSave */
+        CodingSecretSave: {
+            /**
+             * Host
+             * @description The one host (`api.example.com` or `host:port`) the value is sent to; it must be in the project's network policy
+             */
+            host: string;
+            /**
+             * Header
+             * @description The request header the value goes in
+             * @default Authorization
+             */
+            header: string;
+            /**
+             * Prefix
+             * @description What comes before the value in the header (`Bearer `, `Token `, or nothing)
+             * @default Bearer
+             */
+            prefix: string;
+            /**
+             * Value
+             * @description The secret. Required for a new secret; leave it out to keep the stored one while changing the rest. Never returned
+             */
+            value?: string | null;
         };
         /**
          * CodingSessionRead
@@ -28176,6 +28276,196 @@ export interface operations {
                 };
             };
             /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_coding_secrets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingSecretRead"][];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_coding_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodingSecretSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodingSecretRead"];
+                };
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Conflicts with the current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Request body or parameters failed validation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description A dependency (such as file storage) is unavailable or not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    delete_coding_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                project_id: string;
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, or expired credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Signed in, but your role or token scope doesn't allow this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Not found, or not visible to you */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;

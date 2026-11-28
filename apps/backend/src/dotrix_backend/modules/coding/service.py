@@ -452,6 +452,19 @@ class CodingService:
         await self.session.refresh(project, ["sandbox_network"])
         return allowed_hosts(await self.session.get(Workspace, project.workspace_id), project)
 
+    async def _session_secrets(self, project: Project, session_id: uuid.UUID | None) -> list[dict]:
+        """The host secrets a turn's session pinned (secrets.py; names, hosts, headers, no values): its first pinned
+        turn's. A new session, or one from before sessions pinned them, pins its project's secrets now."""
+        from .secrets import project_snapshot
+
+        if session_id is not None:
+            pinned = await self.session.scalar(select(CodingRun.secret_snapshot).where(
+                CodingRun.session_id == session_id, CodingRun.workspace_id == project.workspace_id,
+                CodingRun.secret_snapshot.is_not(None)).order_by(CodingRun.turn).limit(1))
+            if pinned is not None:
+                return list(pinned)
+        return await project_snapshot(self.session, project)
+
     @staticmethod
     def _session_environment(turns: list[CodingRun]) -> tuple[dict | None, str | None] | None:
         """The first cloud admission owns the environment, independently of PR/branch history.
@@ -631,6 +644,11 @@ class CodingService:
             run.branch, run.pr_number, run.pr_url, run.pr_state = carry.branch, carry.pr_number, carry.pr_url, carry.pr_state
             run.base_branch = carry.base_branch
         run.network_snapshot = await self._session_network(project, session_id)
+        run.secret_snapshot = await self._session_secrets(project, session_id)
+        if location is CodingLocation.CLOUD and run.secret_snapshot:
+            from .secrets import brief_note
+
+            run.brief = with_task(run.brief, brief_note(run.secret_snapshot))
         self.session.add(run)
         await self.session.flush()
         AuditLog(self.session).record(
