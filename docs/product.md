@@ -208,14 +208,14 @@ evidence lives when a check passes.
 
 ## Known limitations
 
-What a beta participant should be told, with where each is tracked (CLAUDE.md's remaining work).
+What a beta participant should be told. Each is tracked in the [Roadmap](#roadmap).
 
 - **Team workspaces** are off: no invites, members, roles or shared workspaces.
 - **One person per key.** No retry on a provider's 429 beyond stopping the run with Continue; no per-workspace queue of runs.
-- **Codes** shows recorded background task states, checks and command output. Token-by-token replies, aggregate session usage and fully nested runtime-native subagent events remain incomplete.
-- **Local coding** runs commands only with `sbx` installed (checked against a fake `sbx`, not a real one); a folder without a remote gets a branch and diff, no PR.
+- **Codes** shows Kai's reply text as it streams (up to 4,000 characters on fx turns), background tasks and helpers, checks and command output. Aggregate session usage and fully nested runtime-native subagent events remain incomplete.
+- **Local coding** runs commands in a native sandbox for fx and Claude Code (Linux Bubblewrap, tested; macOS Seatbelt, Windows AppContainer and WSL 2, implemented but not yet checked on real machines), in Codex's own workspace sandbox, or in `sbx` (checked against a fake `sbx` only). OpenCode edits files only, without `sbx`. A folder without a remote gets a branch and diff, no PR.
 - **Desktop app:** Windows only, unsigned; not yet run on a real Windows machine end to end.
-- **fx chat** has run live on Anthropic only; Google is not supported on fx; OpenCode and fx on providers other than Anthropic and OpenAI have been checked against fake APIs, not paid models.
+- **fx chat** has run live on Anthropic and NVIDIA; Google is not supported on fx; OpenCode and fx on providers other than Anthropic and OpenAI have been checked against fake APIs, not paid models.
 - **Chat across projects** has no steering, queued follow-ups, work modes or Continue after a model limit.
 - **Search** indexes with the instructing person's key only where it has one; otherwise keyword search.
 - **Repository knowledge** reads package.json, pyproject/requirements, Cargo and go.mod manifests; Gemfile, composer, Gradle and Maven are not read.
@@ -223,22 +223,40 @@ What a beta participant should be told, with where each is tracked (CLAUDE.md's 
 - **Storage:** 1 GB of uploads per workspace unless the operator raises it; two uploads at the same moment can pass the check together and go over by one file.
 - **Not verified in production:** the Docker Cloud sandbox and the gVisor host, Juno's review posting against a real PR from the deployed host, the first fx turn through the platform's own sandbox, the admin console's two-factor sign-in and alert emails, `deploy/migrate.sh` on the real server, and every row above still unticked.
 
-## Roadmap: the solo beta on the Kai runtime
+## Roadmap
 
-One ordered list for the solo beta and the move to the Kai runtime (`adeyemiadekunle/kai-runtime`, the private fork of fx). Decided 2026-11-21: **the beta launches with Kai's runtime as the default engine for new Chat and Code sessions.** The runtime's own phases and evidence live in its [migration plan](https://github.com/adeyemiadekunle/kai-runtime/blob/main/docs/DOTRIX_KAI_MIGRATION_PLAN.md); this section sets the order. Record each item against a date, commit, environment and evidence link; leave unverified items open.
+This is the only list of open work. It merges the solo-beta roadmap, the move to the Kai runtime (`adeyemiadekunle/kai-runtime`, the private fork of fx), CLAUDE.md's coding-agent plan and remaining work by priority, the platform-support work in CLAUDE.md, and the open phase of [plan 046](../plans/046-coding-workspaces.md). Other files point here rather than keeping their own list. The runtime's own phases and evidence live in its [migration plan](https://github.com/adeyemiadekunle/kai-runtime/blob/main/docs/DOTRIX_KAI_MIGRATION_PLAN.md). The [audit plans](../plans/README.md) are done and kept as historical records.
 
-### Where the migration stands
+Decided 2026-11-21: **the beta launches with Kai's runtime as the default engine for new Chat and Code sessions.** Tick an item only with a date, commit, environment and evidence link. Implemented but unverified work stays open. "(you)" marks work that needs the owner rather than code.
+
+### Where the Kai runtime migration stands (reviewed against CHANGELOG, 2026-11-28)
 
 | Runtime phase | State |
 | --- | --- |
 | 0. Released fx 0.0.17 baseline | Done |
-| 1. Shared execution contract and saved-state compatibility | Done. Sessions saved by libfx 0.0.16 and earlier fork builds still read. |
+| 1. Shared execution contract and saved-state compatibility | Done. Sessions saved by libfx 0.0.16 and every earlier fork build still read. |
 | 2. Provider capabilities and separate Chat and Code policies | Built. Live checks: NVIDIA only. Anthropic, OpenAI and Google on paid models are open. |
-| 3. Chat on the fork's libfx | Done: `@kunemi-group/kai@0.0.18-kai.2` (default for compatible providers). |
-| 4. Cloud and local coding on the fork's fx | Done: `0.0.18-kai.2` pinned in the coding image (default for compatible models). A paid turn inside the gVisor sandbox is open. |
-| 5. Workers, skills, browser and background tasks | Done for the beta: worker profiles and limits, pinned skills, the Browser pane, background tasks. |
-| 6. Kai by default; legacy engines retired | Before the beta (below) |
+| 3. Chat on the fork's libfx | Done: `@kunemi-group/kai@0.0.18-kai.2`, the default for compatible providers. |
+| 4. Cloud and local coding on the fork's fx | Done: `0.0.18-kai.2` is pinned in the coding image and is the default for compatible models. The sandbox tests pass under gVisor with a dummy key. A paid turn inside the gVisor sandbox is open. |
+| 5. Workers, skills, browser and background tasks | Done: worker profiles and limits, pinned skills, the Browser pane, background tasks, and helpers on every engine. |
+| 6. Kai by default; legacy engines retired | First half mostly done: fx is the default and the rollback switches exist. Paid checks, the comparison, the full journey and a live rollback rehearsal are open. The second half comes after the beta. |
 | 7. Kai branding and final names | After the beta |
+
+### Closed in this review
+
+These open items are done according to `CHANGELOG.md` (Unreleased and 0.4.0). Real-machine or paid-model checks that are still missing are listed further down.
+
+- [x] **fx as the default** for new Chat conversations and for Code sessions on every model fx can run. Existing conversations and sessions keep their recorded runtime (`engine_for`, `choose_agent`). This was step 4 of Kai by default.
+- [x] **Rollback tooling:** `DOTRIX_CHAT_DEFAULT_RUNTIME=deepagents`, `DOTRIX_CODING_AGENT=legacy`, the [rollback runbook](runbooks/kai-runtime-rollback.md), and D7 cross-version recovery tests. This was step 5, apart from the live rehearsal.
+- [x] **Code streams Kai's reply text while a turn runs** (up to 4,000 characters on fx turns), replaced by the final summary at the end.
+- [x] **Helpers (subagents) on every coding engine.** They are listed with Kai's background tasks while they work. Kai's commands also keep running between turns on fx.
+- [x] **Local fx sessions resume.** `.fx` state is kept beside the managed worktree and `profile_digest` is checked. A follow-up keeps its bridge port, so it no longer starts a new conversation.
+- [x] **Native local isolation on macOS and Windows is implemented.** macOS uses Seatbelt and Windows uses AppContainer with a Job Object for fx and Claude Code. Windows fx runs in WSL 2 Bubblewrap. Standalone CLI builds for Linux x64/arm64 and macOS arm64 bundle fx and, on Linux, Bubblewrap. Real-machine checks are open, see below.
+- [x] **Several local turns at once** per runner (`--parallel`), and a network allowlist for commands in the native sandbox (`DOTRIX_CODING_NETWORK_ALLOW`).
+- [x] **Plan 046 phase 4:** cloud Build turns checkpoint and restore unpublished edits after sandbox loss. Checking it on a real provider is open.
+- [x] **The Live models workflow** (`.github/workflows/live.yml`) runs Nova and Kai on a chosen provider with keys from the `live-models` environment.
+- [x] **Codex on a real model** (GPT-5.5, 2026-10-31). This closes "Verify first" in the old coding plan.
+- [x] **GitHub Issues import** (J06) and **board check evidence** (J05). These close those parts of the old P1 and P3 lists.
 
 ### 1. Before the beta
 
@@ -246,25 +264,60 @@ Two tracks that can run side by side. The beta opens when both are done.
 
 **Kai by default (runtime phase 6, first half).**
 
-1. Paid-model checks on fx for Chat and Code: Anthropic and OpenAI through the Live models workflow (keys in the `live-models` environment), and a paid turn inside the gVisor sandbox. Check Google on fx chat again, or keep it listed as unsupported.
-2. Set acceptance thresholds before comparing: run fixed tasks on fx and on today's defaults (DeepAgents; Claude Code, Codex, OpenCode) for task success, latency, cost, recovery and human intervention.
-3. The full journey on fx: Nova → Kai → Juno, with a denied action, Stop, a worker restart and a pending approval kept across it.
-4. Make fx the default for new Chat conversations and for every Code session whose model it can run. Existing conversations and sessions keep the runtime they recorded. Local turns keep the other engines where fx can't run commands (no Mac or Windows sandbox yet).
-5. Rehearse rollback: route new work back to the earlier defaults and drain or recover active runs on their recorded runtime.
+1. Paid-model checks on fx for Chat and Code: Anthropic and OpenAI through the Live models workflow, and a paid turn inside the gVisor sandbox. This is also the first fx turn through the platform's own sandbox on the production host. Either check Google on fx chat again (kai.2 parses Gemini's tool-call stream, but Dotrix doesn't offer Google for fx yet) or keep it listed as unsupported.
+2. Set acceptance thresholds, then compare. Run fixed tasks on fx and on the earlier defaults (DeepAgents; Claude Code, Codex, OpenCode) and measure task success, latency, cost, recovery and human intervention.
+3. The full journey on fx: Nova → Kai → Juno, with a denied action, a Stop, a worker restart and a pending approval kept across that restart.
+4. Rehearse rollback on the deployed host with the switches and runbook above: route new work back to the earlier defaults and drain or recover active runs on their recorded runtime.
 
-**Production release gates.** Every unticked item in [Readiness checks](#readiness-checks): host isolation, HTTPS and secrets, backups and restores, migrations, email and account recovery, provider and GitHub setup, failure handling. Run the core loop check on the deployed host with fx as the default, so it proves the engine the beta ships with.
+**Production release gates.**
+
+- Every unticked item in [Readiness checks](#readiness-checks): HTTPS and secrets (you), host isolation (gVisor `runsc` on the real host), backups and restores, migrations, email and account recovery, provider and GitHub setup, and failure handling. Run the core loop check on the deployed host with fx as the default.
+- Turn the CHANGELOG's Unreleased section into a version and check What's new in an installed desktop app (Support paths).
 
 ### 2. During the beta
 
-- Measure task completion, abandonment, recovery, cost and return use before widening scope or claiming savings.
-- Finish coding text streaming and session usage, deeper background event nesting, specialist memory export and retention, cross-project conversation controls, distributed limits and failure testing.
-- [Plan 046](../plans/046-coding-workspaces.md): continuing a session in the cloud or locally, cloud checkpoint recovery on a real provider, and packaged desktop checks.
-- Keep `DOTRIX_CODING_PARALLEL` off until the deployment validation in [Planning and parallel execution](architecture.md#planning-and-parallel-execution) passes.
+**Measure.** Task completion, abandonment, recovery, cost and return use, before widening scope or claiming savings. Measure quality and cost on real conversations before choosing model tiers.
+
+**Code**
+- Usage per session.
+- Runtime-native subagent events nested inside the turn's steps. Today helpers are listed with background tasks.
+- Helpers for local fx turns. They're off today because a helper's tool calls never reach the runner's approval check.
+- [Plan 046](../plans/046-coding-workspaces.md) phase 5: continue a session in the cloud or locally from its published branch. Phase 4 also needs a check on a real provider, environment verification and dependency caching.
+- Keep `DOTRIX_CODING_PARALLEL` off until the deployment validation in [Planning and parallel execution](architecture.md#planning-and-parallel-execution) passes: the paid engines under the read-only Plan wrapper, crash, recovery and cancellation under load, and gVisor/OpenShell compatibility.
+- PRs: a PR check that rejects `.dotrix/` in PRs from elsewhere, and the Reviewer's findings kept in `reviews/` (FR-22).
+
+**Chat**
+- fx chat changes and approvals on real models, and distributed failure testing.
+- Specialist memory: forget/export and retention controls, and native long-lived fx specialist sessions.
+- Conversations across projects: steering, queued follow-ups, work modes, and Continue after a model limit.
+- Work modes: hidden specialists' activity as a compact timeline, a Review that shows diffs and checks inline, and Undo for chat changes that went through.
+
+**Limits and keys**
+- Several people on one key (proposed): retry on a provider's 429 with backoff, a per-workspace limit on runs at once with the rest queued, and usage per person in Settings → Models.
+- Distributed per-workspace limits. Today the active-turn semaphore and the warm cache are per worker process.
+- Search: pass the instructing person's key to embedding jobs.
+
+**Verify what's implemented (keep cloud and local evidence separate)**
+- Local: the macOS Seatbelt, Windows AppContainer and WSL 2 paths, Codex, the installed CLI, and the desktop Browser controls and Stop on real macOS and Windows machines. The Claude Code and fx namespace paths in the actual Electron app on Linux. Safe OAuth/subscription credential relaying for Claude Code and fx.
+- OpenCode's local shell: add an enforced native boundary, or validate the `sbx` path on each host it supports. Never lift the `bash` denial without a replacement boundary.
+- Cloud: live NVIDIA OpenCode and fx coding and browser tests, paid turns on the engines' other providers, and the OpenShell profiles on a real gateway.
+- The delivered J01–J08 journeys in the target environment, with live GitHub and model evidence recorded separately from synthetic tests.
+
+**Web**
+- One data path: move the sample workspace's own data and Settings' saves (`data/account.ts`) to Query mutations.
+- Rewrite the parked browser tests (admin, research, pipelines, the signed-out redirect, document upload).
 
 ### 3. After the beta
 
-- **Retire legacy engines (runtime phase 6, second half).** Remove DeepAgents, Claude Code, Codex and OpenCode as fallbacks once parity and rollback hold, every active session and saved journal is accounted for, and local coding has a sandbox on each supported OS.
-- **Kai branding (runtime phase 7).** Rename `fx`, `libfx`, `FX_*`, `.fx` and saved runtime identifiers with tested aliases and imports. Until then they keep their names.
-- Later: real `sbx` and Windows verification, desktop signing and macOS, code graphs and blast radius, app previews and MCP expansion, more dependency manifests, workspace knowledge, account two-factor authentication, notifications and connectors, organisations and enterprise features. Check what exists before building an old roadmap item again: GitHub Issues imports, board check evidence and background task rendering already exist.
-
-The detailed engineering queue and historical evidence remain in [CLAUDE.md](../CLAUDE.md#remaining-work-by-priority-2026-10-30) and [audit plans](../plans/README.md). Completed audit plans are historical records, not a second roadmap.
+- **Retire legacy engines (runtime phase 6, second half).** Remove DeepAgents, Claude Code, Codex and OpenCode as fallbacks once parity and rollback hold, every active session and saved journal is accounted for, and local coding has a verified sandbox on each supported OS.
+- **Kai branding (runtime phase 7).** Rename `fx`, `libfx`, `FX_*`, `.fx` and saved runtime identifiers, with aliases and imports that are tested. Until then they keep their names.
+- **Local sandboxes and packaging:** real `sbx` templates, sign-ins, cancellation and browser reachability, plus an fx template if that route is needed. Windows signing and real-machine release checks. macOS and Linux desktop packaging, updates and notarization.
+- **Running apps and MCP (old phase D):** the dotrix MCP server (board, documents, graph) over HTTP outside the sandbox, with a per-turn credential the sandbox never holds. Dev servers and preview through the platform, a live cloud browser view in Code, `sbx` turns reaching the desktop's Browser server, and a real model through `app_start`.
+- **Local-file projects (old phase E):** a bare repo per project at setup, so a folder without a remote gets a PR path.
+- **Code graph:** Tree-sitter files, symbols, imports, calls and tests, `code.blast_radius`, background commit and CI review, blast radius and tests to run in coding briefs, and automations on PR and CI events.
+- **Repository knowledge:** more manifests (Gemfile, composer, Gradle, Maven), freshness of the context packet's pages in chat answers, and evaluating the discovery run on a real model.
+- **Accounts and notifications:** Google sign-in (you: the OAuth client), two-factor authentication for people's accounts, and branded email templates. The daily briefing by email, Slack (FR-14), approving from email or Slack, and an optional second approver (FR-36).
+- **Settings still "not available yet":** push notifications, deleting a workspace, changing its address, billing.
+- **CLI:** `dotrix models`, and push from the local mirror (FR-18), with local `.dotrix/` edits going through approval.
+- **Measurement and observability:** `dotrix eval --live`, tracing agent runs, usage dashboards, and a workspace-wide default model (decision needed).
+- **Later:** workspace knowledge (Space) and a standalone Ideas system; "Propose change" and "Fix now" on results, with a severity rubric; more graph node kinds; updating a repo's `AGENTS.md` / `CLAUDE.md` as a coding session; a design folder and Figma connector; sprints, SSO/SCIM, custom roles, billing, Drive/Notion/Confluence, GitLab, custom workflows, Jira and Linear imports, per-project folder access, invites to people without an account, and teams and enterprise features. Check what exists before building an old roadmap item again.
