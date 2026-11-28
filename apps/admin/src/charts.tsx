@@ -1,9 +1,9 @@
 // The Overview's charts: shadcn/ui charts (https://ui.shadcn.com/charts) on Recharts. Series colours
 // are checked for colour-blind separation and contrast in both themes (--chart-ok, --chart-bad).
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@dotrix/ui/components/chart";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
-import type { Day } from "./api";
+import type { Day, ProcessRow } from "./api";
 import { compact } from "./ui";
 
 const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
@@ -88,6 +88,58 @@ export function SignupsChart({ days }: { days: Day[] }) {
         <ChartTooltip cursor={false} content={<ChartTooltipContent hideIndicator labelFormatter={(_, p) => day(p?.[0]?.payload?.day ?? "")} />} />
         <Bar dataKey="signups" fill="var(--color-signups)" radius={[4, 4, 0, 0]} maxBarSize={24} />
       </BarChart>
+    </ChartContainer>
+  );
+}
+
+const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+const PROCESS_COLOURS = ["var(--chart-p1)", "var(--chart-p2)", "var(--chart-p3)", "var(--chart-p4)"];
+const ROLE_LABEL: Record<string, string> = { api: "API", worker: "Worker" };
+
+/** One line per process over the last hour: its memory (MB) or its CPU (% of one core). */
+export function ProcessChart({ processes, metric }: { processes: ProcessRow[]; metric: "rss_mb" | "cpu_percent" }) {
+  const series = processes.map((p, i) => ({ key: `p${i}`, label: `${ROLE_LABEL[p.role] ?? p.role} ${p.host.slice(0, 8)}`, history: p.history }));
+  const config = Object.fromEntries(
+    series.map((s, i) => [s.key, { label: s.label, color: PROCESS_COLOURS[i % PROCESS_COLOURS.length] }]),
+  ) satisfies ChartConfig;
+  // Samples are every 30 s per process, not aligned: one row per minute, each process's latest in it.
+  const rows = new Map<string, Record<string, number | string>>();
+  for (const s of series) {
+    for (const point of s.history) {
+      const minute = point.at.slice(0, 16);
+      const row = rows.get(minute) ?? { minute: `${minute}:00Z` };
+      row[s.key] = point[metric];
+      rows.set(minute, row);
+    }
+  }
+  const data = [...rows.values()].sort((a, b) => String(a.minute).localeCompare(String(b.minute)));
+  const unit = metric === "rss_mb" ? " MB" : "%";
+  return (
+    <ChartContainer config={config} className="aspect-auto h-[220px] w-full">
+      <LineChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="minute" tickLine={false} axisLine={false} tickMargin={8} minTickGap={32} tickFormatter={time} />
+        <YAxis tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => `${compact(v)}${unit === "%" ? "%" : ""}`} />
+        <ChartTooltip
+          cursor={false}
+          content={
+            <ChartTooltipContent indicator="line" labelFormatter={(_, p) => time(String(p?.[0]?.payload?.minute ?? ""))} formatter={(v) => `${v}${unit}`} />
+          }
+        />
+        {series.map((s) => (
+          <Line
+            key={s.key}
+            isAnimationActive={false}
+            dataKey={s.key}
+            type="monotone"
+            stroke={`var(--color-${s.key})`}
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+          />
+        ))}
+        <ChartLegend content={<ChartLegendContent />} />
+      </LineChart>
     </ChartContainer>
   );
 }

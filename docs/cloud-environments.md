@@ -41,9 +41,67 @@ set for the setup script, Kai's commands and verification. They are shown in the
 brief, so names that look like secrets are refused, as are names the sandbox or
 the coding tools use. The same form saves the project's network policy.
 
+## Host secrets
+
+A host secret (`coding/secrets.py`, Secrets in the same form, `PUT/DELETE
+.../coding/secrets/{NAME}`, owners and admins) is a value for one exact host in
+the project's network policy: a private registry's token, a test API's key. The
+sandbox never holds it. Kai's commands see a placeholder in the variable `NAME`
+and send it as the host expects (`Authorization: Bearer $NPM_TOKEN`); the
+sandbox's proxy puts the real value into that header on requests to that host
+only:
+
+- Docker Cloud stores it as a custom secret injected into its host's requests
+  (`hosts`, `header`, `format` = prefix + value, `envVar`), as it stores the
+  model key, and deletes it with the sandbox.
+- OpenShell imports a provider profile made for the turn (the host inspected
+  with `protocol: rest`, `auth_style: bearer` or `header`), creates a provider
+  from it with the value passed by environment, attaches it beside the model
+  key's provider, and deletes both afterwards. The host is then left out of the
+  policy's relayed (`tls: skip`) endpoints.
+- The local sandbox refuses a turn with secrets; people's computers never get
+  them; parallel builds refuse them for now.
+
+Values are encrypted with `DOTRIX_ENCRYPTION_KEY`, never returned, logged or put
+in a brief, and changes are audited (`coding_secret.created`, `.updated`,
+`.deleted`) by name and host only. A secret's name can't be one of the
+environment's variables, nor a name the sandbox or tools use. A coding session
+pins its project's secrets (names, hosts, headers; `coding_runs.secret_snapshot`)
+with its first turn; each turn reads the current values, so a rotated value
+reaches running sessions, while a secret whose host or header changed, that was
+deleted, or whose host the turn's network policy no longer allows, is left out
+and the turn says why. A sandbox opened with other secret versions isn't reused.
+Neither sandbox's injection has run on a real gateway or account yet.
+
+### Shared secrets
+
+Owners and admins can keep a secret once for the workspace
+(`PUT/DELETE /v1/workspaces/{id}/coding/shared-secrets/{NAME}`, Settings →
+Environments with "Workspace (all projects)" selected, as "Workspace secrets"). Its host must be within
+the workspace's network limit when there is one. A project uses it only by
+referencing it by name (`PUT .../coding/secrets/{NAME}` with `shared: true`,
+"A workspace secret" in the form); the reference stores no host or
+value, and the shared secret's host must be in the project's network access.
+Turns read the shared secret's current value, so rotating it once reaches
+every project that references it on its sessions' next turns. Deleting it
+leaves the references, listed as missing, and turns go on without it. Changes
+are audited as `coding_shared_secret.*`.
+
+### Setup-only secrets
+
+A project's own secret or its reference to a shared one can be `phase:
+setup` ("Setup only"). It goes to the sandbox only on a fresh
+sandbox whose environment has a setup script that runs this turn (never in
+Plan, never to a warm or woken sandbox), and is removed before Kai runs: on
+Docker Cloud the Docker secret is deleted and checked gone and its placeholder
+leaves later commands' environment; on OpenShell its provider is detached
+(`openshell sandbox provider detach`) and deleted with its profile. A failed
+removal stops the turn before Kai starts. Kai's brief never names a setup-only
+secret. On OpenShell its host, which only its provider supplied, is unreachable
+after setup.
+
 This slice does not implement arbitrary unreviewed images, multiple selectable
-profiles, secret injection or dependency-only network phases. Do not put secrets
-in scripts: scripts are shared project configuration and appear in private run
+profiles, or dependency-only network phases. Do not put secrets in scripts or variables: scripts are shared project configuration and appear in private run
 briefs. The broader contract below remains the implementation plan for those
 remaining capabilities. These tests use disposable repositories and scripted
 engine/container transports, not proof of deployed sandbox behavior.

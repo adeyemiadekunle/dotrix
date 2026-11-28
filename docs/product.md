@@ -142,68 +142,11 @@ Demo and live share Shell, session/message rows, coding panels and Settings pres
 
 ## Readiness checks
 
-Each check names the environment it must run in. **Local** means a developer machine or CI
-(synthetic GitHub and models); **production** means the deployed host with the real GitHub App
-and a real model key, on a disposable repository. Record the date, the commit and where the
-evidence lives when a check passes.
-
-### Deployment (production)
-
-- [ ] A domain with HTTPS for the web app, `DOTRIX_APP_URL` set to it, `DOTRIX_ENV=production`, `DOTRIX_ENCRYPTION_KEY` and `DOTRIX_JWT_SECRET` from a secrets manager, Postgres and Redis reachable only inside the compose network.
-- [ ] `GET /health/ready` answers from the deployed API; a redeploy of the API while a chat run works loses nothing (the worker finishes it).
-- [ ] The GitHub App's callback and webhook URLs point at `DOTRIX_APP_URL`; a push to a connected repository reaches the webhook (the audit log records the sync).
-- [ ] Outgoing email delivers: a verification email, a password reset and a sign-in link each arrive from `DOTRIX_EMAIL_FROM`.
-- [ ] Backups: a snapshot of `pgdata` and `storagedata` taken and restored once; `deploy/migrate.sh backup` taken and restored once into a scratch database.
-- [ ] Migrations: `deploy/migrate.sh check` passes after the deploy; one recovery rehearsed (a failed `migrate`, then `IMAGE=dotrix-backend:<version> deploy/migrate.sh`).
-- [ ] Storage: the usage query in `deploy/README.md` run before the first deploy with the limit; no workspace over it.
-- [ ] Admin console: the first owner created, two-factor set up, `DOTRIX_ADMIN_BOOTSTRAP_TOKEN` removed; a second admin invited by email and signed in; the Overview shows every dependency OK.
-- [ ] Alerts: stopping the worker sends one alert email to `DOTRIX_ALERT_EMAILS` on the second check, and one "cleared" email after it's back.
-
-### Sandbox isolation (production)
-
-- [ ] `DOTRIX_CODING_SANDBOX=docker-cloud` with `DOTRIX_DOCKER_CLOUD_ID`, `DOTRIX_DOCKER_CLOUD_PAT` and `DOTRIX_CODING_IMAGE` (a published registry tag); the API and worker start.
-- [ ] One authorised coding turn on a disposable repository: the sandbox's network policy allowing only the model API host and the session's hosts (a request to another host from inside the sandbox is refused and reported), the key never in the sandbox's environment.
-- [ ] Stop ends a running turn within seconds and leaves no sandbox running; a worker killed mid-turn leaves the run `recovery_required`, and Recover settles it from GitHub.
-- [ ] The sandbox sleeps between turns, wakes for the next, and is deleted after `DOTRIX_CODING_SLEEP_DAYS`.
-
-### Accounts and recovery (production)
-
-- [ ] Sign up, verify the email, sign out, reset the password, sign back in.
-- [ ] A sign-in link works once and is refused the second time.
-- [ ] GitHub sign-in on a fresh account creates its personal workspace and lands on onboarding.
-- [ ] Settings → Sessions signs out another browser, which loses access at once.
-- [ ] A refresh token reused after rotation signs that browser out (the API treats it as theft).
-
-### Provider and GitHub setup (production)
-
-- [ ] Each supported chat provider: a key saved in Account → Your models, its models listed, one conversation completed, its usage shown; a wrong key reported as such without saving it.
-- [ ] A provider limit (429) shown as "stopped at its model's limit" with Continue, not as a failure.
-- [ ] GitHub App install from onboarding returns to the saved project; the repository list refreshes; connecting a repository starts a sync and an inventory.
-- [ ] Repository creation: a personal account's path (create on GitHub, grant the App, refresh, connect) and an organisation account's path (created by the App after confirmation), each once.
-
-### The core loop (production, one disposable repository)
-
-- [ ] Discuss → Plan → Build in one conversation: Nova delegates to a specialist by name (Lyra, Orion, Vega, Juno, Echo), the plan is saved, "Build this plan" creates Kai's approval notification, approving it in the Inbox starts Kai.
-- [ ] Kai's turn: steps and command output visible in Codes, the diff per file, the branch pushed, the PR opened by the App, the commit's checks shown for that exact commit.
-- [ ] Juno's review posted on the PR as a comment (never an approval), its findings on their diff lines in Codes.
-- [ ] The outcome returns to the originating conversation (Nova's summary names the PR and the review); a different conversation cannot read it.
-- [ ] A failing CI run on the PR starts Juno's triage once, shown on the PR and in Codes with "Ask Kai to fix".
-- [ ] Stop mid-turn, a rejected approval, and a turn whose worker was killed each show their true state; no success or PR is invented.
-- [ ] Steering a running Nova turn: the steer is accepted and changes the reply; a queued follow-up runs after the turn.
-- [ ] A merge is done by the person on GitHub; the task stays open until they close it.
-
-### Failure handling and limits (local, then production)
-
-- [ ] Model limit mid-reply: the run stops, says so, and Continue resumes from the checkpoint (local: scripted model; production: a real 429).
-- [ ] The worker restarted mid-chat-run: the run resumes within about two minutes under a new attempt, asks before any change, and tool calls the cut-off attempt left are not repeated.
-- [ ] A coding run's lease lapses: `recovery_required` within about two minutes; Recover adopts the PR when the push landed.
-- [ ] Usage: each run's tokens and cost shown; Codex and fx priced from their tokens; a run with missing usage marked incomplete rather than free.
-
-### Support paths
-
-- [x] A way to report a problem from the app: Help & resources → Report a problem opens a new issue on the repository (public), 2026-11-09.
-- [ ] The CHANGELOG's Unreleased section turned into a version before the beta, and What's new showing it in the desktop app. The 0.2.0 version bump is recorded on stage; verify the release workflow/tag on main and What's new in an installed app before marking this complete.
-- [x] A short "Getting started" for beta participants: the supported configuration, connecting a key and GitHub, what Manual approval means, how to stop a run, and how to report a problem. On the public site at [dotrix.cc/#start](https://dotrix.cc/#start), linked from the app's Help & resources → Getting started, and in full at [Getting started](#getting-started), 2026-11-12.
+The beta's checklist on the deployed host (deployment, sandbox isolation, accounts, providers and
+GitHub, the core loop, failure handling and support paths) is in
+[Live and production checks](live-checks.md#readiness-checks), with every other check that needs a paid
+model, a real sandbox account or gateway, a real machine or the packaged app. Record the date, the
+commit, the environment and the evidence there when a check passes.
 
 ## Known limitations
 
@@ -226,7 +169,7 @@ What a beta participant should be told. Each is tracked in the [Roadmap](#roadma
 
 This is the only list of open work. It merges the solo-beta roadmap, the move to the Kai runtime (`adeyemiadekunle/kai-runtime`, the private fork of fx), CLAUDE.md's coding-agent plan and remaining work by priority, the platform-support work in CLAUDE.md, and the open phase of [plan 046](../plans/046-coding-workspaces.md). Other files point here rather than keeping their own list. The runtime's own phases and evidence live in its [migration plan](https://github.com/adeyemiadekunle/kai-runtime/blob/main/docs/DOTRIX_KAI_MIGRATION_PLAN.md). The [audit plans](../plans/README.md) are done and kept as historical records.
 
-Decided 2026-11-21: **the beta launches with Kai's runtime as the default engine for new Chat and Code sessions.** Tick an item only with a date, commit, environment and evidence link. Implemented but unverified work stays open. "(you)" marks work that needs the owner rather than code.
+Decided 2026-11-21: **the beta launches with Kai's runtime as the default engine for new Chat and Code sessions.** Tick an item only with a date, commit, environment and evidence link. How to check each implemented-but-unverified item on real infrastructure is in [Live and production checks](live-checks.md). Implemented but unverified work stays open. "(you)" marks work that needs the owner rather than code.
 
 ### Where the Kai runtime migration stands (reviewed against CHANGELOG, 2026-11-28)
 
@@ -268,7 +211,7 @@ Two tracks that can run side by side. The beta opens when both are done.
 3. The full journey on fx: Nova → Kai → Juno, with a denied action, a Stop, a worker restart and a pending approval kept across that restart.
 4. Rehearse rollback on the deployed host with the switches and runbook above: route new work back to the earlier defaults and drain or recover active runs on their recorded runtime.
 
-**Network policy for Kai's sandboxes.** One policy, in one format, for the cloud and local runners (Settings → Environments & network).
+**Network policy for Kai's sandboxes.** One policy, in one format, for the cloud and local runners (Settings → Environments).
 
 - [x] One network policy (2026-11-28, synthetic tests only): the workspace's optional limit, each project's choice within it, the choice pinned per coding session for cloud and local turns, and the local runner's `DOTRIX_CODING_NETWORK_ALLOW` able only to narrow it (`dotrix_engine/network_policy.py`, `coding/network.py`, `network_allow.for_turn`).
 - [x] One sandbox per environment (2026-11-28): Docker Cloud in staging and production, OpenShell in development; the Docker sandbox (containers and an egress proxy on the worker's Docker, gVisor when deployed) is removed. OpenShell now takes the session's hosts in its policy (TLS relayed as is, for any program), since it already keeps the model key out.
@@ -278,8 +221,10 @@ Two tracks that can run side by side. The beta opens when both are done.
 **Variables and secrets for Kai's sandboxes.** Per project, in its Environment beside the network policy; a session keeps its environment's version. Local turns never receive cloud secrets.
 
 1. [x] Variables (2026-11-28, synthetic tests only): non-secret `KEY=value` pairs in the project's Environment, in `.env` format in the "Edit environment" form, shown in the brief and set for setup, Kai's commands and verification on cloud turns. Names the sandbox or tools use, and names that look like secrets, are refused.
-2. [ ] Host secrets: a credential added outside the sandbox to requests for one host in the session's network policy, so the sandbox only ever holds a placeholder: an OpenShell provider for that host (as the model key already is), and a Docker Cloud secret injected into its requests. Write-only, encrypted, audited without values; optional workspace-shared secrets that a project must reference by name.
-3. [ ] Setup-only secrets: given to the setup script and gone before Kai runs.
+2. [x] Host secrets (2026-11-28, synthetic tests only): a credential for one exact host in the project's network policy, added outside the sandbox to that host's requests in a header (Authorization and `Bearer ` by default), so the sandbox only ever holds a placeholder in the variable the secret is named after. Docker Cloud stores each as a custom secret injected into its host's requests; OpenShell attaches a provider per secret from a profile made for the turn, and the host goes through OpenShell's inspecting proxy rather than the relayed endpoints. Write-only, encrypted, audited without values; a session pins names and hosts, each turn reads the current value (a rotated token reaches running sessions), and a secret whose host changed or left the network policy is left out with a step saying so. The local sandbox, people's computers and parallel builds refuse or never receive them.
+   - [ ] On a real OpenShell gateway (the per-turn profile, `auth_style`, an inspected endpoint beside relayed `**.domain` ones) and a real Docker Cloud account (custom injection to a non-model host, `host:port`).
+   - [x] Workspace secrets (shared secrets in the API; 2026-11-28, synthetic tests only): kept once in Settings → Environments ("Workspace (all projects)"), within the workspace's limit when it has one; a project uses one only by referencing it by name in its Secrets, with its host in the project's network access. Each turn reads the shared secret's current value, so rotating it once reaches every project; deleting it leaves references listed as missing and turns go on without it.
+3. [x] Setup-only secrets (2026-11-28, synthetic tests only): a project's own secret or a reference to a shared one, marked "Setup only", goes to a fresh sandbox only when its setup script runs and is removed (the Docker secret deleted and checked gone, the OpenShell provider detached) before Kai starts; a failed removal stops the turn, and Kai's brief never names it. Not yet on a real gateway or account: OpenShell's `sandbox provider detach`, a deleted Docker secret's injection stopping at once, and waking a Docker sandbox whose stored secrets include a deleted one. On OpenShell a setup-only secret's host is reachable only while setup runs (its provider supplies the endpoint).
 
 **Production release gates.**
 
@@ -309,7 +254,7 @@ Two tracks that can run side by side. The beta opens when both are done.
 - Distributed per-workspace limits. Today the active-turn semaphore and the warm cache are per worker process.
 - Search: pass the instructing person's key to embedding jobs.
 
-**Verify what's implemented (keep cloud and local evidence separate)**
+**Verify what's implemented (keep cloud and local evidence separate; the checks are in [Live and production checks](live-checks.md))**
 - Local: the macOS Seatbelt, Windows AppContainer and WSL 2 paths, Codex, the installed CLI, and the desktop Browser controls and Stop on real macOS and Windows machines. The Claude Code and fx namespace paths in the actual Electron app on Linux. Safe OAuth/subscription credential relaying for Claude Code and fx.
 - OpenCode's local shell: add an enforced native boundary, or validate the `sbx` path on each host it supports. Never lift the `bash` denial without a replacement boundary.
 - Cloud: live NVIDIA OpenCode and fx coding and browser tests, paid turns on the engines' other providers, and the OpenShell profiles on a real gateway.

@@ -2414,6 +2414,66 @@
         }
       }
     },
+    "/v1/admin/observe/processes": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Observe Processes",
+        "description": "What each backend process costs to run: every API replica and worker reporting through Redis (or, without\nRedis, the API process that answered), with memory, CPU, threads, uptime, how long it took to start, and the\nlast hour of memory and CPU samples. Any admin.",
+        "operationId": "observe_processes",
+        "parameters": [
+          {
+            "name": "dtx_admin_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dtx Admin Access"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessesRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/observe/alerts": {
       "get": {
         "tags": [
@@ -24569,6 +24629,306 @@
         }
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/secrets": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "List Coding Secrets",
+        "description": "The project's host secrets: names, hosts and headers, never values. Owners and admins.",
+        "operationId": "list_coding_secrets",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CodingSecretRead"
+                  },
+                  "title": "Response List Coding Secrets"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/coding/secrets/{name}": {
+      "put": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Set Coding Secret",
+        "description": "Add or change a host secret named after the environment variable Kai's commands read its placeholder from:\nthe project's own (host, header, prefix, value), or `shared`, a reference to the workspace's shared secret of the\nsame name. `phase: setup` gives it to the setup script only, removed before Kai runs. Its host must be in the\nproject's network policy (409 otherwise); a new one of its own needs a value, and leaving `value` out keeps the\nstored one. Stored encrypted (503 when the server has no encryption key), never returned; audited\nwithout the value. New sessions pin it; running sessions get a changed value on their next turn.",
+        "operationId": "set_coding_secret",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodingSecretSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodingSecretRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Delete Coding Secret",
+        "description": "Delete a host secret. Sessions that pinned it go on without it. Owners and admins; audited.",
+        "operationId": "delete_coding_secret",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspace_id}/coding/sessions": {
       "get": {
         "tags": [
@@ -25372,6 +25732,276 @@
           },
           "422": {
             "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/coding/shared-secrets": {
+      "get": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "List Shared Coding Secrets",
+        "description": "The workspace's shared host secrets (names, hosts, headers and how many projects reference each; never\nvalues). A project uses one only by referencing it by name. Owners and admins.",
+        "operationId": "list_shared_coding_secrets",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SharedSecretRead"
+                  },
+                  "title": "Response List Shared Coding Secrets"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{workspace_id}/coding/shared-secrets/{name}": {
+      "put": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Set Shared Coding Secret",
+        "description": "Add or change a shared host secret. Its host must be within the workspace's network limit when there is one\n(409); a new one needs a value. Projects that reference it get a new value on their sessions' next turns.\nStored encrypted, never returned; audited without the value. Owners and admins.",
+        "operationId": "set_shared_coding_secret",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedSecretSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSecretRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body or parameters failed validation",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency (such as file storage) is unavailable or not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "coding"
+        ],
+        "summary": "Delete Shared Coding Secret",
+        "description": "Delete a shared host secret. Projects' references to it stay, listed as missing, and their turns go on without\nit. Owners and admins; audited.",
+        "operationId": "delete_shared_coding_secret",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid, or expired credentials",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to you",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but your role or token scope doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -32159,6 +32789,178 @@
         ],
         "title": "CodingScreenshot"
       },
+      "CodingSecretRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "default": false
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "all",
+              "setup"
+            ],
+            "title": "Phase",
+            "default": "all"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Header"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed",
+            "description": "Whether the project's network policy allows its host now; a secret whose host isn't allowed isn't sent"
+          },
+          "missing": {
+            "type": "boolean",
+            "title": "Missing",
+            "description": "A reference to a shared secret the workspace no longer has",
+            "default": false
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "host",
+          "header",
+          "prefix",
+          "version",
+          "allowed",
+          "updated_at",
+          "updated_by_id"
+        ],
+        "title": "CodingSecretRead",
+        "description": "A project's secret without its value. For a reference to a shared secret, the shared secret's host and header;\n`missing` when the workspace no longer has it."
+      },
+      "CodingSecretSave": {
+        "properties": {
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "description": "Reference the workspace's shared secret of this name instead of keeping a value here; host, header, prefix and value are then left out",
+            "default": false
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "all",
+              "setup"
+            ],
+            "title": "Phase",
+            "description": "`all`: the setup script and Kai's commands. `setup`: the setup script only; removed before Kai runs",
+            "default": "all"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host",
+            "description": "The one host (`api.example.com` or `host:port`) the value is sent to; it must be in the project's network policy"
+          },
+          "header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Header",
+            "description": "The request header the value goes in (Authorization)"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix",
+            "description": "What comes before the value in the header (`Bearer `)"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "The secret. Required for a new secret of the project's own; leave it out to keep the stored one. Never returned"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CodingSecretSave",
+        "description": "A project's secret: its own (host, header, prefix, value), or `shared`, a reference by name to the workspace's\nshared secret of the same name, which brings its own host, header and value."
+      },
       "CodingSessionRead": {
         "properties": {
           "session_id": {
@@ -37981,6 +38783,199 @@
         "title": "ProblemDetail",
         "description": "RFC 9457 problem details. Every error response has this shape."
       },
+      "ProcessPoint": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "rss_mb": {
+            "type": "number",
+            "title": "Rss Mb"
+          },
+          "cpu_percent": {
+            "type": "number",
+            "title": "Cpu Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "rss_mb",
+          "cpu_percent"
+        ],
+        "title": "ProcessPoint"
+      },
+      "ProcessRead": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "api",
+              "worker"
+            ],
+            "title": "Role"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "description": "The machine or container the process runs on"
+          },
+          "pid": {
+            "type": "integer",
+            "title": "Pid"
+          },
+          "instance": {
+            "type": "string",
+            "title": "Instance",
+            "description": "A random id per process start: two containers can share a host name and PID 1",
+            "default": ""
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision",
+            "description": "The deployed commit, when set (DOTRIX_DEPLOYMENT_REVISION)"
+          },
+          "python": {
+            "type": "string",
+            "title": "Python"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At",
+            "description": "When the process started"
+          },
+          "ready_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ready Seconds",
+            "description": "From the process starting to ready to serve"
+          },
+          "uptime_seconds": {
+            "type": "number",
+            "title": "Uptime Seconds"
+          },
+          "rss_mb": {
+            "type": "number",
+            "title": "Rss Mb",
+            "description": "Resident memory now, with child processes (Linux)"
+          },
+          "peak_rss_mb": {
+            "type": "number",
+            "title": "Peak Rss Mb",
+            "description": "The most resident memory seen since the process started"
+          },
+          "cpu_percent": {
+            "type": "number",
+            "title": "Cpu Percent",
+            "description": "CPU since the last sample; 100 is one core busy"
+          },
+          "cpu_seconds": {
+            "type": "number",
+            "title": "Cpu Seconds",
+            "description": "CPU time used since the process started, with child processes"
+          },
+          "threads": {
+            "type": "integer",
+            "title": "Threads"
+          },
+          "children": {
+            "type": "integer",
+            "title": "Children",
+            "description": "Child processes (the fx chat host, git)"
+          },
+          "open_files": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Files"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At",
+            "description": "When this sample was taken"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessPoint"
+            },
+            "type": "array",
+            "title": "History",
+            "description": "The last hour's samples, oldest first"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "host",
+          "pid",
+          "python",
+          "started_at",
+          "uptime_seconds",
+          "rss_mb",
+          "peak_rss_mb",
+          "cpu_percent",
+          "cpu_seconds",
+          "threads",
+          "children",
+          "at"
+        ],
+        "title": "ProcessRead"
+      },
+      "ProcessesRead": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "description": "Whether processes report through Redis (every replica and worker), or only the API process that answered is shown"
+          },
+          "sample_seconds": {
+            "type": "integer",
+            "title": "Sample Seconds",
+            "default": 30
+          },
+          "processes": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRead"
+            },
+            "type": "array",
+            "title": "Processes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "shared",
+          "processes"
+        ],
+        "title": "ProcessesRead"
+      },
       "ProfileUpdate": {
         "properties": {
           "display_name": {
@@ -40793,6 +41788,105 @@
         ],
         "title": "SharedCodingOutcomeRead",
         "description": "Published PR evidence; no private brief, summary, events, keys or Chat references."
+      },
+      "SharedSecretRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "header": {
+            "type": "string",
+            "title": "Header"
+          },
+          "prefix": {
+            "type": "string",
+            "title": "Prefix"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "projects": {
+            "type": "integer",
+            "title": "Projects",
+            "description": "How many of the workspace's projects reference it"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "host",
+          "header",
+          "prefix",
+          "version",
+          "projects",
+          "updated_at",
+          "updated_by_id"
+        ],
+        "title": "SharedSecretRead",
+        "description": "A workspace's shared secret without its value."
+      },
+      "SharedSecretSave": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "description": "The one host (`api.example.com` or `host:port`) the value is sent to; within the workspace's network limit when it has one"
+          },
+          "header": {
+            "type": "string",
+            "title": "Header",
+            "description": "The request header the value goes in",
+            "default": "Authorization"
+          },
+          "prefix": {
+            "type": "string",
+            "title": "Prefix",
+            "description": "What comes before the value in the header",
+            "default": "Bearer "
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "The secret. Required for a new secret; leave it out to keep the stored one. Never returned"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "host"
+        ],
+        "title": "SharedSecretSave",
+        "description": "A workspace's shared secret: the same fields as a project's own."
       },
       "SignInMethods": {
         "properties": {

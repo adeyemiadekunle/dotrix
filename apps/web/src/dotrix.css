@@ -5892,6 +5892,55 @@ textarea.onb2-input {
 .env-pick:hover {
   background: var(--surface-2);
 }
+.env-secrets {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.env-secrets li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+}
+.env-secrets li + li {
+  border-top: 1px solid var(--border);
+}
+.env-secret {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.env-shared-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 520px;
+  margin-top: 12px;
+}
+.env-shared-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.env-secret:hover {
+  background: var(--surface-2);
+}
 .env-check {
   display: flex;
   align-items: flex-start;

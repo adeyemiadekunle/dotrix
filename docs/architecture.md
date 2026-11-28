@@ -185,7 +185,7 @@ Contracts specify role pipelines, checkpoints and structured findings/output sch
 
 ## Validation and operations
 
-Use [beta readiness](product.md#readiness-checks) as the target-environment checklist, [deployment README](../deploy/README.md) for Dokploy, migrations/backups and operator setup, and [coding infrastructure README](../infra/coding/README.md) for image/sandbox setup. Unit and integration tests cover contracts, isolation filters, scheduling, recovery, plans and skill snapshots; browser tests cover visible journeys. Real credentials, paid-engine behaviour, deployed sandbox isolation and load/failure recovery require separate evidence.
+Use [live and production checks](live-checks.md) as the target-environment checklist, [deployment README](../deploy/README.md) for Dokploy, migrations/backups and operator setup, and [coding infrastructure README](../infra/coding/README.md) for image/sandbox setup. Unit and integration tests cover contracts, isolation filters, scheduling, recovery, plans and skill snapshots; browser tests cover visible journeys. Real credentials, paid-engine behaviour, deployed sandbox isolation and load/failure recovery require separate evidence.
 
 Keep exact package/engine versions in lockfiles and the coding image, current schema details in models/migrations, operator commands in deployment documentation and implementation history in the changelog/audit plans. Update these two guides when product contracts or architecture change; do not add another overlapping proposal as current guidance. Retired PRD, engine, team, coding and harness proposals remain available in Git history before this consolidation.
 

@@ -32,10 +32,10 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -52,6 +52,9 @@ from .sandbox import (
     _tar_of,
 )
 from .tools import CodingTool
+
+if TYPE_CHECKING:
+    from .secrets import HostSecret
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +194,9 @@ class DockerCloudSession:
     ttl: int  # seconds the sandbox outlives the worker's last command
     secret: str | None = None  # the key, stored in Docker (deleted with the sandbox)
     placeholder: str | None = None  # what the tool holds instead of the key, when it's a secret
+    host_secrets: list[str] = field(default_factory=list)  # the host secrets' Docker names
+    host_env: dict[str, str] = field(default_factory=dict)  # their placeholders, by variable (also in `env`)
+    host_names: dict[str, str] = field(default_factory=dict)  # variable -> its Docker secret's name
     _credential: _Credential | None = None
     _closed: bool = False
     _uploads: int = 0
@@ -340,13 +346,25 @@ class DockerCloudSession:
                 counts[host] = counts.get(host, 0) + int(entry.get("count") or 1)
         return sorted(counts, key=lambda h: -counts[h])
 
+    async def drop_secrets(self, names: list[str]) -> None:
+        """Remove host secrets (setup-only ones, before Kai runs): each Docker secret deleted and checked gone, and its
+        placeholder out of later commands' environment. Raises SandboxError when one can't be removed."""
+        for name in names:
+            stored = self.host_names.pop(name, None)
+            if stored is not None:
+                await delete_secret(self.api, stored, strict=True)
+                self.host_secrets = [s for s in self.host_secrets if s != stored]
+            self.host_env.pop(name, None)
+            self.env.pop(name, None)
+
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
         await delete_sandbox(self.api, self.sandbox_id)
-        if self.secret:
-            await delete_secret(self.api, self.secret)
+        for secret in [self.secret, *self.host_secrets]:
+            if secret:
+                await delete_secret(self.api, secret)
 
 
 async def _etag(api: DockerCloudApi, url: str) -> str | None:
@@ -369,13 +387,19 @@ async def delete_sandbox(api: DockerCloudApi, sandbox_id: str) -> None:
         logger.warning("docker cloud sandbox %s: couldn't delete it: %s", sandbox_id, exc)
 
 
-async def delete_secret(api: DockerCloudApi, secret: str) -> None:
+async def delete_secret(api: DockerCloudApi, secret: str, *, strict: bool = False) -> None:
+    """Delete a stored secret. Not `strict`: a failure is logged (the sweep deletes it). `strict`: a failure, or the
+    secret still there afterwards, raises SandboxError."""
     url = f"{api.base}/v1/secrets/{secret.rsplit('/', 1)[-1]}"
     try:
         etag = await _etag(api, url)
         if etag is not None:
             await api.call("DELETE", url, ok=(200, 202, 204, 404), headers={"If-Match": etag})
-    except SandboxError as exc:  # the sweep deletes it
+        if strict and await _etag(api, url) is not None:
+            raise SandboxError("the secret is still stored")
+    except SandboxError as exc:
+        if strict:
+            raise SandboxError(f"A host secret couldn't be deleted from Docker: {exc}") from exc
         logger.warning("docker cloud secret %s: couldn't delete it: %s", secret, exc)
 
 
@@ -403,6 +427,7 @@ PLACEHOLDER = "sk-dotrix-placeholder"  # what the tool holds when Docker's own i
 
 class DockerCloudSandbox:
     kind = "docker-cloud"
+    drops_secrets = True  # setup-only host secrets can be removed before Kai runs (DockerCloudSession.drop_secrets)
     sleeps = True  # a session's sandbox can sleep between turns (stopped, files kept) and wake for the next
 
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> None:
@@ -414,13 +439,15 @@ class DockerCloudSandbox:
         # Docker stops it (a crashed worker's sandbox stops billing); the sweep deletes what's left.
         self.ttl = int((settings.coding_timeout_minutes + max(settings.coding_idle_minutes, 0) + 10) * 60)
 
-    def create_body(self, run_id: uuid.UUID, tool: CodingTool, allow: list[str], secret: str | None) -> dict[str, Any]:
+    def create_body(self, run_id: uuid.UUID, tool: CodingTool, allow: list[str], secret: str | None,
+                    host_secrets: list[str] | tuple = ()) -> dict[str, Any]:
         """The sandbox: our image, sleeping until commands come; only the model API (and the hosts an owner
         allowed) reachable; stopped by its own timeout if nobody stops it. The key is a stored secret
         Docker writes into the model API's requests, or (without one) goes with each process."""
         features: dict[str, Any] = {"timeouts": {"timeout": f"{self.ttl}s", "onTimeout": "stop"}}
-        if secret:
-            features["storedSecrets"] = {"secrets": [secret]}
+        stored = [name for name in [secret, *host_secrets] if name]
+        if stored:
+            features["storedSecrets"] = {"secrets": stored}
         return {
             "displayName": display_name(run_id),
             "imageRef": self.image,
@@ -461,6 +488,16 @@ class DockerCloudSandbox:
             logger.warning("docker cloud: the key couldn't be stored as a secret: %s", exc)
             return None
 
+    async def _host_secret(self, run_id: uuid.UUID, secret: HostSecret) -> tuple[str, str]:
+        """One host secret stored in Docker, injected into its host's requests only: (its name, its placeholder)."""
+        res = await self.api.call("POST", f"{self.api.base}/v1/secrets", json={
+            "displayName": display_name(run_id), "custom": {"value": secret.value, "injection": {
+                "hosts": [secret.entry], "header": secret.header, "format": secret.prefix.replace("%", "%%") + "%s",
+                "envVar": secret.name, "placeholderTemplate": "dotrix-secret-{rand}"}}},
+            headers={"Idempotency-Key": str(uuid.uuid4())})
+        created = res.json()
+        return str(created["name"]), str(created.get("placeholder") or "")
+
     async def _ready(self, sandbox: dict[str, Any]) -> dict[str, Any]:
         """Wait for a sandbox Docker accepted (202) to be running."""
         sandbox_id = _id(sandbox)
@@ -482,25 +519,40 @@ class DockerCloudSandbox:
 
     async def open(
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
+        secrets: list[HostSecret] | tuple = (),
     ) -> SandboxSession:
         allow = list(allow)
+        if secrets and not self.inject:
+            raise SandboxError("Host secrets need Docker's secret injection (DOTRIX_DOCKER_CLOUD_KEY_INJECTION)")
         stored = await self._secret(run_id, tool, model_key) if self.inject else None
         if stored is None and [h for h in allow if h != tool.api_host]:
             # Another reachable host would be somewhere the key could be sent: never with the key inside.
             raise SandboxError("The model key couldn't be kept out of the sandbox, so it can't reach the extra "
                                "hosts in the project's network policy; remove them, or try again")
         secret, placeholder = stored if stored else (None, None)
+        host_secrets: list[str] = []
+        host_env: dict[str, str] = {}
+        host_names: dict[str, str] = {}
         try:
+            for item in secrets:
+                name, held = await self._host_secret(run_id, item)
+                host_secrets.append(name)
+                host_names[item.name] = name
+                if held:
+                    host_env[item.name] = held
             created = await self.api.call("POST", f"{self.api.base}/v1/sandboxes",
-                                          json=self.create_body(run_id, tool, allow, secret),
+                                          json=self.create_body(run_id, tool, allow, secret, host_secrets),
                                           headers={"Idempotency-Key": str(uuid.uuid4())})
         except BaseException:
-            if secret:
-                await delete_secret(self.api, secret)
+            for name in [secret, *host_secrets]:
+                if name:
+                    await delete_secret(self.api, name)
             raise
         sandbox = created.json()
-        session = DockerCloudSession(self.api, _id(sandbox), endpoint="", env=self._env(tool, placeholder or model_key),
-                                     ttl=self.ttl, secret=secret, placeholder=placeholder)
+        session = DockerCloudSession(self.api, _id(sandbox), endpoint="",
+                                     env={**self._env(tool, placeholder or model_key), **host_env},
+                                     ttl=self.ttl, secret=secret, placeholder=placeholder, host_secrets=host_secrets,
+                                     host_env=host_env, host_names=host_names)
         try:
             await self._connect(session, sandbox)
             await session.upload("/tmp/dotrix-repo.tar", await asyncio.to_thread(_tar_of, source))
@@ -528,7 +580,8 @@ class DockerCloudSandbox:
         """What it takes to wake `box` later, from any worker (stored on its coding session; no key in it)."""
         if not isinstance(box, DockerCloudSession):
             return None
-        return {"kind": self.kind, "sandbox": box.sandbox_id, "secret": box.secret, "placeholder": box.placeholder}
+        return {"kind": self.kind, "sandbox": box.sandbox_id, "secret": box.secret, "placeholder": box.placeholder,
+                "host_secrets": list(box.host_secrets), "host_env": dict(box.host_env)}
 
     async def sleep(self, box: SandboxSession) -> None:
         """Stop the sandbox: its files (and installed dependencies) kept, no compute billed until it wakes."""
@@ -552,13 +605,17 @@ class DockerCloudSandbox:
             return None
         url = f"{self.api.base}/v1/sandboxes/{sandbox_id}"
         placeholder = handle.get("placeholder")
-        session = DockerCloudSession(self.api, sandbox_id, endpoint="", env=self._env(tool, placeholder or model_key),
-                                     ttl=self.ttl, secret=handle.get("secret"), placeholder=placeholder)
+        session = DockerCloudSession(self.api, sandbox_id, endpoint="",
+                                     env={**self._env(tool, placeholder or model_key), **(handle.get("host_env") or {})},
+                                     ttl=self.ttl, secret=handle.get("secret"), placeholder=placeholder,
+                                     host_secrets=list(handle.get("host_secrets") or []),
+                                     host_env=dict(handle.get("host_env") or {}))
         try:
             current = await self.api.call("GET", url, ok=(200, 404))
             if current.status_code == 404:
-                if session.secret:
-                    await delete_secret(self.api, session.secret)
+                for secret in [session.secret, *session.host_secrets]:
+                    if secret:
+                        await delete_secret(self.api, secret)
                 return None
             sandbox = current.json()
             if (sandbox.get("core") or {}).get("status") != "running":
@@ -577,8 +634,9 @@ class DockerCloudSandbox:
         """Delete a sleeping sandbox and its key."""
         if handle.get("sandbox"):
             await delete_sandbox(self.api, str(handle["sandbox"]))
-        if handle.get("secret"):
-            await delete_secret(self.api, str(handle["secret"]))
+        for secret in [handle.get("secret"), *(handle.get("host_secrets") or [])]:
+            if secret:
+                await delete_secret(self.api, str(secret))
 
     async def sweep(self, keep: set[str], min_age: float = ORPHAN_AGE) -> int:
         """Delete dotrix's stopped sandboxes no session refers to (`keep`: the sandbox ids sessions hold),

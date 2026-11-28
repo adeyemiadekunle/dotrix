@@ -133,10 +133,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     job_context, runner=runner, jobs=app.state.jobs, coding=build_coding_worker(settings, sessionmaker, runner, app.state.storage)
                 )
             loops: list[asyncio.Task[None]] = []
+            # What this process costs to run, for the admin console's Resources page (core/process_stats.py).
+            from .core.process_stats import ProcessStats
+
+            app.state.process_stats = stats = ProcessStats("api", settings.deployment_revision)
+            stats.ready()
+            if redis is not None:
+                loops.append(asyncio.create_task(stats.run(redis)))
             if local_jobs is not None:
                 # No worker (and so no cron) in local mode: clean up hourly and keep the search
                 # index current from here.
-                loops = [
+                loops += [
                     asyncio.create_task(_every(local_jobs, "cleanup_expired", CLEANUP_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "index_knowledge", INDEX_INTERVAL_SECONDS)),
                     asyncio.create_task(_every(local_jobs, "run_automations", AUTOMATIONS_INTERVAL_SECONDS)),
@@ -148,6 +155,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
             for loop in loops:
                 loop.cancel()
+            if redis is not None:
+                await stats.withdraw(redis)
             await runner.shutdown()
             if local_jobs is not None:
                 await local_jobs.drain()
@@ -176,6 +185,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.e2e_email_sender = email_sender
     app.state.rate_limiter = build_rate_limiter(settings, None)
     app.state.redis = None  # the lifespan sets the pool when worker mode or Redis rate limits need one
+    app.state.process_stats = None  # the lifespan's sampler of this process (core/process_stats.py)
     app.state.storage = build_storage(settings)
     app.state.embedder = build_embedder(settings)
     # Checkouts of connected repos: kept where agents run (here in local mode, else the worker).

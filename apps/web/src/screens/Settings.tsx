@@ -74,6 +74,7 @@ import {
   tokenRevoked,
   tokens,
   cloudEnvironment,
+  codingSecrets,
   sandboxNetwork,
   sandboxNetworkSaved,
   unlinkGitHub,
@@ -87,6 +88,7 @@ import { automationAdded, automationRemoved, automationToggled, isLive, live, re
 import { D, S, me, mutate, proj, render, save, visibleProjects, who } from "../data/store";
 import { useAgents, useAudit, useAutomations, useMembers, useProjects } from "../data/lists";
 import { SHORTCUTS } from "../overlays/Modals";
+import { SharedSecrets } from "../components/SharedSecrets";
 import { EditEnvironment, networkSummary } from "../components/EditEnvironment";
 import { Av, Empty, PIcon } from "../ui/helpers";
 import { toast } from "../ui/toast";
@@ -117,7 +119,7 @@ const SET_NAV: [string, [string, string, string][], boolean?][] = [
     [
       ["agents", "Agents", "bot"],
       ["github", "GitHub", "github"],
-      ["sandbox", "Environments & network", "shield-check"],
+      ["sandbox", "Environments", "shield-check"],
       ["audit", "Audit log", "list-checks"],
     ],
     true,
@@ -1779,6 +1781,7 @@ function SandboxNetworkSettings() {
   const [scope, setScope] = useState("");
   const loaded = useApi(() => sandboxNetwork(scope || undefined), [scope]);
   const environment = useApi(() => (scope ? cloudEnvironment(scope) : Promise.resolve(null)), [scope]);
+  const secretList = useApi(() => (scope && isLive() ? codingSecrets(scope) : Promise.resolve([])), [scope]);
   const [editing, setEditing] = useState(false);
   const [presets, setPresets] = useState<string[] | null>(null);
   const [hosts, setHosts] = useState<string | null>(null);
@@ -1804,7 +1807,7 @@ function SandboxNetworkSettings() {
   const saveLimit = () => {
     const body = isLimited ? { limited: true, presets: chosen, hosts: typed.split(/[\s,]+/).filter(Boolean) } : { limited: false, presets: [], hosts: [] };
     if (!isLive()) {
-      toast("Saved");
+      toast("Network access saved");
       return;
     }
     setBusy(true);
@@ -1812,31 +1815,32 @@ function SandboxNetworkSettings() {
       .then(() => {
         reset();
         loaded.reload();
-        toast("Network limit saved");
+        toast("Network access saved");
       })
       .catch((e: unknown) => toast(`It didn't save: ${errText(e)}`, { kind: "err", ms: 6000 }))
       .finally(() => setBusy(false));
   };
   const env = environment.data;
   const variableCount = Object.keys(env?.variables ?? {}).length;
+  const secretCount = secretList.data?.length ?? 0;
   const setupLines = (env?.setup_script ?? "").split("\n").filter((l) => l.trim() && !l.startsWith("#!")).length;
   return (
     <>
       <div className="alert info" style={{ marginBottom: 16 }}>
         <Ic n="shield-check" s={15} />
         <span>
-          Each project has an environment: its network access, setup script and environment variables. Kai's sandboxes reach only the model API and the hosts a
-          project allows; each is somewhere an agent could also send your code. A new coding session keeps the version it started with.
+          Each project has an environment: its network access, setup script, environment variables and secrets. Kai's sandboxes reach only the model API and the
+          hosts a project allows; each is somewhere an agent could also send your code. A new coding session keeps the version it started with.
         </span>
       </div>
       <div className="sblock" style={{ marginTop: 0 }}>
-        <SRow t="Applies to" d={workspace ? "The workspace's limit: the most any project may allow" : "This project's environment"}>
+        <SRow t="Settings for" d={workspace ? "What applies to all projects: a limit on network access, and workspace secrets" : "This project's environment"}>
           <SelectField
             style={{ width: "auto", minWidth: 200, maxWidth: "100%" }}
             value={scope}
             onValueChange={pick}
-            aria-label="Applies to"
-            options={[{ value: "", label: "Workspace limit" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            aria-label="Settings for"
+            options={[{ value: "", label: "Workspace (all projects)" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
           />
         </SRow>
       </div>
@@ -1844,14 +1848,14 @@ function SandboxNetworkSettings() {
         <>
           <div className="sblock" style={{ marginTop: 0 }}>
             <SRow
-              t="Limit what projects may allow"
+              t="Limit network access for all projects"
               d={
                 isLimited
                   ? "Projects choose only from the hosts below. Lowering it applies to running sessions' next turns."
                   : "Each project chooses its own hosts."
               }
             >
-              <Tog on={isLimited} set={(on) => setLimited(on)} label="Limit what projects may allow" />
+              <Tog on={isLimited} set={(on) => setLimited(on)} label="Limit network access for all projects" />
             </SRow>
           </div>
           {isLimited && (
@@ -1892,6 +1896,7 @@ function SandboxNetworkSettings() {
               </ActionButton>
             )}
           </div>
+          <SharedSecrets />
         </>
       ) : (
         <div className="sblock">
@@ -1901,6 +1906,7 @@ function SandboxNetworkSettings() {
           <SRow t="Network access" d={networkSummary(data.presets, data.hosts, available)} />
           <SRow t="Setup script" d={setupLines ? `${setupLines} ${setupLines === 1 ? "line" : "lines"}` : "None"} />
           <SRow t="Environment variables" d={variableCount ? `${variableCount} set` : "None"} />
+          <SRow t="Secrets" d={secretCount ? `${secretCount} set` : "None"} />
           {(data.outside_limit ?? []).length > 0 && (
             <div className="alert warn" style={{ margin: "8px 0" }}>
               <span>
@@ -1914,7 +1920,12 @@ function SandboxNetworkSettings() {
             </ActionButton>
           </div>
           {editing && (
-            <EditEnvironment projectId={scope} network={data} onClose={() => setEditing(false)} onSaved={() => (loaded.reload(), environment.reload())} />
+            <EditEnvironment
+              projectId={scope}
+              network={data}
+              onClose={() => (setEditing(false), secretList.reload())}
+              onSaved={() => (loaded.reload(), environment.reload())}
+            />
           )}
         </div>
       )}

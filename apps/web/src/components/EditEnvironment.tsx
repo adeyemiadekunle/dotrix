@@ -5,11 +5,24 @@ import { SelectField } from "@dotrix/ui/components/select";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Ic } from "../core/icons";
 import { formatDotenv, parseDotenv } from "../core/dotenv";
-import { cloudEnvironment, cloudEnvironmentSaved, type CloudEnvironment, type SandboxNetwork } from "../data/account";
+import {
+  cloudEnvironment,
+  cloudEnvironmentSaved,
+  codingSecretDeleted,
+  codingSecrets,
+  codingSecretSaved,
+  sharedSecrets,
+  type CloudEnvironment,
+  type CodingSecret,
+  type SharedSecret,
+  type SandboxNetwork,
+} from "../data/account";
 import { isLive } from "../data/live";
 import { toast } from "../ui/toast";
 
 type Preset = { label: string; hosts: string[] };
+type SecretDraft = { name: string; host: string; header: string; prefix: string; value: string; shared: boolean; setupOnly: boolean };
+const NEW_SECRET: SecretDraft = { name: "", host: "", header: "Authorization", prefix: "Bearer ", value: "", shared: false, setupOnly: false };
 
 /** What a project's network policy lets its sessions reach besides the model API, in a few words. */
 export function networkSummary(presets: string[], hosts: string[], available: Record<string, Preset>): string {
@@ -51,7 +64,10 @@ export function EditEnvironment({
   const [variables, setVariables] = useState(isLive() ? "" : formatDotenv(SAMPLE.variables ?? {}));
   const [presets, setPresets] = useState<string[]>(network.presets);
   const [hosts, setHosts] = useState(network.hosts.join("\n"));
-  const [view, setView] = useState<"main" | "network">("main");
+  const [view, setView] = useState<"main" | "network" | "secret">("main");
+  const [secrets, setSecrets] = useState<CodingSecret[]>([]);
+  const [secret, setSecret] = useState<SecretDraft>(NEW_SECRET);
+  const [shared, setShared] = useState<SharedSecret[]>([]);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
@@ -70,6 +86,12 @@ export function EditEnvironment({
         setMore(Boolean(env.verify_script || env.image));
       })
       .catch((e: unknown) => on && setLoadError(e instanceof Error && e.message ? e.message : "It didn't load"));
+    codingSecrets(projectId)
+      .then((list) => on && setSecrets(list))
+      .catch((e: unknown) => on && setLoadError(e instanceof Error && e.message ? e.message : "It didn't load"));
+    sharedSecrets()
+      .then((list) => on && setShared(list))
+      .catch(() => on && setShared([])); // only for picking one; the project's own secrets work without them
     return () => {
       on = false;
     };
@@ -105,7 +127,7 @@ export function EditEnvironment({
       network: { presets, hosts: typedHosts },
     };
     if (!isLive()) {
-      toast("Saved");
+      toast("Environment saved");
       onClose();
       return;
     }
@@ -122,8 +144,58 @@ export function EditEnvironment({
     }
   };
 
-  const close = () => (view === "network" ? setView("main") : onClose());
-  const title = view === "network" ? "Network access" : "Edit environment";
+  const saveSecret = async () => {
+    const name = secret.name.trim();
+    if (!isLive()) {
+      toast("Secret saved");
+      setView("main");
+      return;
+    }
+    setBusy(true);
+    try {
+      const phase = secret.setupOnly ? "setup" : "all";
+      const saved = await codingSecretSaved(
+        projectId,
+        name,
+        secret.shared
+          ? { shared: true, phase }
+          : {
+              shared: false,
+              phase,
+              host: secret.host.trim(),
+              header: secret.header.trim() || "Authorization",
+              prefix: secret.prefix,
+              value: secret.value ? secret.value : null,
+            },
+      );
+      setSecrets([...secrets.filter((s) => s.name !== saved.name), saved].sort((a, b) => a.name.localeCompare(b.name)));
+      toast("Secret saved");
+      setView("main");
+    } catch (e) {
+      toast(`It didn't save: ${e instanceof Error && e.message ? e.message : "try again"}`, { kind: "err", ms: 7000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeSecret = async (name: string) => {
+    if (!window.confirm(`Delete the secret ${name}? Sessions that use it go on without it.`)) return;
+    try {
+      if (isLive()) await codingSecretDeleted(projectId, name);
+      setSecrets(secrets.filter((s) => s.name !== name));
+      toast("Secret deleted");
+    } catch (e) {
+      toast(`It didn't delete: ${e instanceof Error && e.message ? e.message : "try again"}`, { kind: "err", ms: 7000 });
+    }
+  };
+  const current = secrets.find((s) => s.name === secret.name);
+  const editing = Boolean(current);
+  const validName = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(secret.name.trim());
+  // Turning a reference into the project's own secret needs a value, as a new one does.
+  const needsValue = !editing || Boolean(current?.shared);
+  const secretReady = validName && (secret.shared || (secret.host.trim() !== "" && (!needsValue || secret.value !== "")));
+
+  const close = () => (view === "main" ? onClose() : setView("main"));
+  const title = view === "network" ? "Network access" : view === "secret" ? (editing ? "Edit secret" : "Add secret") : "Edit environment";
   return (
     <div>
       {/* Above the agents launcher (73), below popovers (80) and toasts (100). */}
@@ -136,8 +208,8 @@ export function EditEnvironment({
       >
         <div ref={dialog} className="modal enter env-sheet" role="dialog" aria-modal="true" aria-labelledby="env-sheet-title">
           <div className="env-sheet-h">
-            <button className="ibtn" onClick={close} aria-label={view === "network" ? "Back" : "Close"}>
-              <Ic n={view === "network" ? "chevron-left" : "x"} s={18} />
+            <button className="ibtn" onClick={close} aria-label={view === "main" ? "Close" : "Back"}>
+              <Ic n={view === "main" ? "x" : "chevron-left"} s={18} />
             </button>
             <h2 id="env-sheet-title">{title}</h2>
             <span aria-hidden style={{ width: 32 }} />
@@ -147,6 +219,106 @@ export function EditEnvironment({
               <div className="alert danger">{loadError}</div>
             ) : !form || !loaded ? (
               <div className="faint">Loading…</div>
+            ) : view === "secret" ? (
+              <>
+                <p className="faint" style={{ margin: 0 }}>
+                  The sandbox never holds the value: Kai's commands see a placeholder in the variable, and the sandbox's proxy puts the real value into the
+                  header on requests to this host only. The host must be in the saved network access.
+                </p>
+                <EnvField label="Source">
+                  <SelectField
+                    aria-label="Source"
+                    value={secret.shared ? "shared" : "own"}
+                    onValueChange={(value) => setSecret({ ...secret, shared: value === "shared", name: editing ? secret.name : "" })}
+                    options={[
+                      { value: "own", label: "Its own value" },
+                      ...(shared.length || secret.shared ? [{ value: "shared", label: "A workspace secret" }] : []),
+                    ]}
+                  />
+                </EnvField>
+                {secret.shared ? (
+                  <EnvField
+                    label="Workspace secret"
+                    help="Its host, header and value come from the workspace, and a new value there reaches this project's next turns. Its host must be in this project's network access."
+                  >
+                    <SelectField
+                      aria-label="Workspace secret"
+                      value={secret.name}
+                      disabled={editing}
+                      onValueChange={(value) => setSecret({ ...secret, name: value })}
+                      options={[
+                        ...(secret.name && !shared.some((x) => x.name === secret.name) ? [{ value: secret.name, label: `${secret.name} (missing)` }] : []),
+                        ...shared.map((x) => ({ value: x.name, label: `${x.name} · ${x.host}` })),
+                      ]}
+                    />
+                  </EnvField>
+                ) : (
+                  <EnvField label="Variable name" id="secret-name" help="What Kai's commands read, such as NPM_TOKEN.">
+                    <DesignInput
+                      id="secret-name"
+                      className="mono"
+                      value={secret.name}
+                      disabled={editing}
+                      onChange={(e) => setSecret({ ...secret, name: e.target.value.toUpperCase() })}
+                      placeholder="NPM_TOKEN"
+                    />
+                  </EnvField>
+                )}
+                {!secret.shared && (
+                  <>
+                    <EnvField label="Host" id="secret-host" help="One host, such as registry.npmjs.org or registry.example.com:8443.">
+                      <DesignInput
+                        id="secret-host"
+                        className="mono"
+                        value={secret.host}
+                        onChange={(e) => setSecret({ ...secret, host: e.target.value })}
+                        placeholder="registry.npmjs.org"
+                      />
+                    </EnvField>
+                    <EnvField label="Header" id="secret-header">
+                      <DesignInput
+                        id="secret-header"
+                        className="mono"
+                        value={secret.header}
+                        onChange={(e) => setSecret({ ...secret, header: e.target.value })}
+                        placeholder="Authorization"
+                      />
+                    </EnvField>
+                    <EnvField label="Prefix" id="secret-prefix" help="Text before the value, such as “Bearer ” (with its space), or nothing.">
+                      <DesignInput
+                        id="secret-prefix"
+                        className="mono"
+                        value={secret.prefix}
+                        onChange={(e) => setSecret({ ...secret, prefix: e.target.value })}
+                        placeholder="Bearer "
+                      />
+                    </EnvField>
+                    <EnvField
+                      label="Value"
+                      id="secret-value"
+                      help={editing ? "Leave it empty to keep the saved value. Values are never shown again." : "Values are never shown again."}
+                    >
+                      <DesignInput
+                        id="secret-value"
+                        type="password"
+                        autoComplete="off"
+                        className="mono"
+                        value={secret.value}
+                        onChange={(e) => setSecret({ ...secret, value: e.target.value })}
+                      />
+                    </EnvField>
+                  </>
+                )}
+                <label className="env-check">
+                  <input type="checkbox" checked={secret.setupOnly} onChange={(e) => setSecret({ ...secret, setupOnly: e.target.checked })} />
+                  <span>
+                    Setup only
+                    <span className="faint" style={{ display: "block", fontSize: 12 }}>
+                      Given only to the setup script and removed before Kai runs; Kai's brief doesn't name it. Needs a setup script.
+                    </span>
+                  </span>
+                </label>
+              </>
             ) : view === "network" ? (
               <>
                 <p className="faint" style={{ margin: 0 }}>
@@ -242,7 +414,7 @@ export function EditEnvironment({
                     parsed.error ? (
                       <span className="env-err">{parsed.error}</span>
                     ) : (
-                      "One KEY=value per line, in .env format. Anyone who uses this environment can see these values, and so can Kai, so don't put secrets here."
+                      "One KEY=value per line, in .env format. Anyone who uses this environment can see these values, and so can Kai: put tokens under Secrets."
                     )
                   }
                 >
@@ -256,6 +428,62 @@ export function EditEnvironment({
                     aria-invalid={Boolean(parsed.error)}
                   />
                 </EnvField>
+                <EnvField
+                  label="Secrets"
+                  action={
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setSecret(NEW_SECRET);
+                        setView("secret");
+                      }}
+                    >
+                      Add secret
+                    </button>
+                  }
+                  help="Tokens for one host each, such as a private registry's. Kai only ever sees a placeholder. Cloud sessions only."
+                >
+                  {secrets.length === 0 ? (
+                    <div className="faint" style={{ fontSize: 13 }}>
+                      None
+                    </div>
+                  ) : (
+                    <ul className="env-secrets" aria-label="Secrets">
+                      {secrets.map((s) => (
+                        <li key={s.name}>
+                          <button
+                            type="button"
+                            className="env-secret"
+                            onClick={() => {
+                              setSecret({
+                                name: s.name,
+                                host: s.shared ? "" : (s.host ?? ""),
+                                header: s.shared ? "Authorization" : (s.header ?? "Authorization"),
+                                prefix: s.shared ? "Bearer " : (s.prefix ?? ""),
+                                value: "",
+                                shared: Boolean(s.shared),
+                                setupOnly: s.phase === "setup",
+                              });
+                              setView("secret");
+                            }}
+                          >
+                            <span className="mono">{s.name}</span>
+                            <span className="faint">
+                              {s.missing ? "Workspace secret deleted" : s.host}
+                              {s.shared && !s.missing && " · workspace"}
+                              {s.phase === "setup" && " · setup only"}
+                              {!s.missing && !s.allowed && " · not in network access, so not sent"}
+                            </span>
+                          </button>
+                          <button type="button" className="ibtn" aria-label={`Delete ${s.name}`} onClick={() => removeSecret(s.name)}>
+                            <Ic n="trash-2" s={15} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </EnvField>
                 <button type="button" className="env-more" onClick={() => setMore(!more)} aria-expanded={more}>
                   <Ic n={more ? "chevron-down" : "chevron-right"} s={14} />
                   More settings
@@ -263,7 +491,7 @@ export function EditEnvironment({
                 {more && (
                   <>
                     <EnvField
-                      label="Verification command"
+                      label="Verification script"
                       id="env-verify"
                       help="Must pass before changes can be accepted. Runs with the repository read-only; write test artifacts to $TMPDIR."
                     >
@@ -277,7 +505,7 @@ export function EditEnvironment({
                         placeholder="npm test"
                       />
                     </EnvField>
-                    <EnvField label="Coding image" help="Custom images must be approved by the server operator and pinned by digest. Docker only.">
+                    <EnvField label="Coding image" help="Custom images must be approved by the server operator and pinned by digest. OpenShell only for now.">
                       <SelectField
                         title={form.image ?? "Platform coding image"}
                         aria-label="Coding image"
@@ -315,6 +543,10 @@ export function EditEnvironment({
             {view === "network" ? (
               <ActionButton className="btn btn-primary env-save" onClick={() => setView("main")}>
                 Done
+              </ActionButton>
+            ) : view === "secret" ? (
+              <ActionButton className="btn btn-primary env-save" disabled={busy || !secretReady} onClick={saveSecret}>
+                Save secret
               </ActionButton>
             ) : (
               <ActionButton className="btn btn-primary env-save" disabled={!form || busy || Boolean(parsed.error)} onClick={save}>

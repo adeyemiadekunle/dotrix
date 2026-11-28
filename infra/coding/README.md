@@ -84,7 +84,7 @@ off. A run whose worker stopped, or whose push or PR response was lost, becomes
 - **Network.** A run reaches its tool's model API (api.anthropic.com, api.openai.com,
   generativelanguage.googleapis.com, or the other provider's own API; a `*_BASE_URL` in the worker's environment is
   never followed) and the hosts in its session's network policy, which the project chooses in Settings →
-  Environments & network (`coding/network.py`). GitHub and everything else are blocked. OpenShell gets the hosts in
+  Environments (`coding/network.py`). GitHub and everything else are blocked. OpenShell gets the hosts in
   the sandbox's policy (`sandbox_policy()` in `coding/sandbox.py`: TLS relayed as it is, for any program); Docker
   Cloud in its network policy. Both keep the model key outside the sandbox, so a listed host can't receive it.
 - **OpenCode's own settings are ours.** Its config comes from `OPENCODE_CONFIG_CONTENT` (that
@@ -172,7 +172,7 @@ allowing only the engine's model API host. Instead of `docker exec`:
   requests to the model API only (custom injection with the engine's header; Docker's own
   integration for hosts it serves itself). Without a secret the key goes in each process's
   environment, and then extra allowed hosts are refused;
-- the hosts in the session's pinned network policy (Settings → Environments & network,
+- the hosts in the session's pinned network policy (Settings → Environments,
   `coding/network.py`) join the model API in the policy;
 - between turns the sandbox sleeps (stopped, files kept) and the next turn wakes it; the worker's
   sweep deletes sleepers after 7 days, closed or deleted sessions', and leftovers;

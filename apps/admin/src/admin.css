@@ -13,12 +13,21 @@
   /* Chart series, checked for colour-blind separation and contrast on each surface. */
   --chart-ok: #4b5bd6;
   --chart-bad: #b23c30;
+  /* One per backend process on Resources: blue, teal, amber, magenta (distinct in hue and lightness). */
+  --chart-p1: #4b5bd6;
+  --chart-p2: #13876f;
+  --chart-p3: #b26a00;
+  --chart-p4: #a3367f;
   --side-w: 224px;
 }
 .dark {
   --brand: #5cba86;
   --chart-ok: #7d8af0;
   --chart-bad: #e5566f;
+  --chart-p1: #7d8af0;
+  --chart-p2: #3cc2a6;
+  --chart-p3: #e5a23a;
+  --chart-p4: #d872b8;
 }
 
 body {

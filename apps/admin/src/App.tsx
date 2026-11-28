@@ -11,6 +11,7 @@ import {
   ListIcon,
   LockKeyholeIcon,
   FingerprintIcon,
+  GaugeIcon,
   ScrollIcon,
   LogOutIcon,
   LayoutGridIcon,
@@ -31,6 +32,7 @@ const Overview = lazy(() => pages().then((m) => ({ default: m.Overview })));
 const Runs = lazy(() => pages().then((m) => ({ default: m.Runs })));
 const FailuresPage = lazy(() => pages().then((m) => ({ default: m.FailuresPage })));
 const CodingPage = lazy(() => pages().then((m) => ({ default: m.CodingPage })));
+const ResourcesPage = lazy(() => pages().then((m) => ({ default: m.ResourcesPage })));
 const ModelsPage = lazy(() => pages().then((m) => ({ default: m.ModelsPage })));
 const WorkspacesPage = lazy(() => pages().then((m) => ({ default: m.WorkspacesPage })));
 const AuditPage = lazy(() => pages().then((m) => ({ default: m.AuditPage })));
@@ -49,6 +51,7 @@ const NAV_GROUPS: { title?: string; pages: AdminPage[] }[] = [
     pages: [
       { id: "runs", label: "Runs", icon: ListIcon },
       { id: "failures", label: "Failures", icon: OctagonAlertIcon },
+      { id: "resources", label: "Resources", icon: GaugeIcon },
     ],
   },
   {
@@ -680,6 +683,7 @@ function Console({ account, onSignOut }: { account?: Me; onSignOut?: () => void 
           {page === "overview" && <Overview go={go} />}
           {page === "runs" && <Runs />}
           {page === "failures" && <FailuresPage />}
+          {page === "resources" && <ResourcesPage />}
           {page === "coding" && <CodingPage />}
           {page === "models" && <ModelsPage />}
           {page === "workspaces" && <WorkspacesPage />}

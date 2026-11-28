@@ -6,13 +6,13 @@ One policy in three layers, in one format (`dotrix_engine/network_policy.py`, sh
   (`Permission.MANAGE_WORKSPACE`, never granted to members): the most any project may allow.
 - The project's choice (`projects.sandbox_network`), within the limit: named presets (package registries) and hosts,
   exact (`api.example.com`), a wildcard for one domain's hosts (`*.example.com`) or either on a port
-  (`registry.example.com:8443`). Settings → Environments & network shows it with the project's environment.
+  (`registry.example.com:8443`). Settings → Environments shows it with the project's environment.
 - The coding session's pin (`coding_runs.network_snapshot`): the project's choice when the session's first turn was
   admitted, kept by every follow-up, cloud or local, as its environment is. A project's later edits apply to new
   sessions. The limit as it is now still applies to every turn (`for_run`), so lowering it takes effect at once.
 
 Every change is audited. A turn's sandbox gets its list with the model API (the Docker Cloud sandbox's network policy;
-the Docker and OpenShell sandboxes refuse a turn with any, sandbox.py); a local runner gets it in its claim and may
+OpenShell's sandbox policy, sandbox.py); a local runner gets it in its claim and may
 only narrow it (dotrix_cli/network_allow.py). A sandbox opened with another list isn't reused (`network_digest` is part
 of what warm and sleeping sandboxes are matched on).
 
@@ -130,7 +130,7 @@ class SandboxNetwork:
         limit = limit_of(workspace)
         outside = [h for h in expand(stored) if limit is not None and not network_policy.within(limit, h)]
         if outside:
-            raise Conflict(f"{', '.join(outside)}: outside the workspace's limit; an owner or admin can widen it")
+            raise Conflict(f"{', '.join(outside)}: outside the network access limit for all projects; an owner or admin can widen it")
         before = expand(project.sandbox_network)
         project.sandbox_network = stored
         after = expand(project.sandbox_network)

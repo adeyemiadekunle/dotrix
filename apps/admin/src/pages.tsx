@@ -1,4 +1,4 @@
-// The console's pages: Overview (is it working), Runs, Failures, Coding, Workspaces, Audit log.
+// The console's pages: Overview (is it working), Runs, Failures, Resources, Coding, Workspaces, Audit log.
 // Everything is read-only, across every workspace, and never shows what people wrote.
 import {
   CircleCheckIcon,
@@ -35,12 +35,14 @@ import {
   type Health,
   type Me,
   type ModelRow,
+  type Processes,
+  type ProcessRow,
   type Page,
   type Run,
   type TrailEvent,
   type WorkspaceRow,
 } from "./api";
-import { RunsChart, SignupsChart, TokensChart } from "./charts";
+import { ProcessChart, RunsChart, SignupsChart, TokensChart } from "./charts";
 import { DataTable, PAGE_SIZES, type Column } from "./table";
 import {
   ago,
@@ -706,6 +708,111 @@ export function CodingPage() {
           </div>
         )}
       </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Resources
+
+const mb = (v: number) => (v >= 1024 ? `${(v / 1024).toFixed(1)} GB` : `${Math.round(v)} MB`);
+const ROLE: Record<string, string> = { api: "API", worker: "Worker" };
+
+export function ResourcesPage() {
+  const q = useQuery({ queryKey: ["processes"], queryFn: () => call<Processes>("/admin/observe/processes"), refetchInterval: REFRESH });
+  const now = useTick();
+  const rows = q.data?.processes ?? [];
+  const of = (role: ProcessRow["role"]) => rows.filter((p) => p.role === role);
+  const total = (list: ProcessRow[], k: "rss_mb" | "cpu_percent") => list.reduce((s, p) => s + p[k], 0);
+  const slowest = rows.reduce<number | null>((m, p) => (p.ready_seconds == null ? m : Math.max(m ?? 0, p.ready_seconds)), null);
+  return (
+    <>
+      <PageHead
+        title="Resources"
+        sub="What each backend process costs to run: memory, CPU, how long it took to start and how long it has been up. Each process reports every 30 seconds."
+      />
+      {q.isPending ? (
+        <Loading />
+      ) : q.isError ? (
+        <Failed error={q.error} />
+      ) : (
+        <>
+          {!q.data.shared && (
+            <p className="note">Without Redis only the API process that answered is shown. Workers and other replicas report through Redis.</p>
+          )}
+          <div className="tiles">
+            <Tile
+              label="API processes"
+              value={num(of("api").length)}
+              foot={`${mb(total(of("api"), "rss_mb"))} · ${total(of("api"), "cpu_percent").toFixed(1)}% CPU`}
+            />
+            <Tile
+              label="Workers"
+              value={num(of("worker").length)}
+              foot={`${mb(total(of("worker"), "rss_mb"))} · ${total(of("worker"), "cpu_percent").toFixed(1)}% CPU`}
+              tone={q.data.shared && !of("worker").length ? "bad" : undefined}
+            />
+            <Tile label="Memory" value={mb(total(rows, "rss_mb"))} foot="resident, every process with its children" />
+            <Tile label="Slowest start" value={slowest == null ? "—" : `${slowest.toFixed(1)} s`} foot="from the process starting to ready" />
+          </div>
+          <Card title="Processes" flush>
+            {!rows.length ? (
+              <Empty>No process has reported in the last 90 seconds.</Empty>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Process</th>
+                      <th>Host</th>
+                      <th className="r">Memory</th>
+                      <th className="r">Peak</th>
+                      <th className="r">CPU</th>
+                      <th className="r">Threads</th>
+                      <th className="r">Started in</th>
+                      <th>Up</th>
+                      <th>Revision</th>
+                      <th>Reported</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((p) => (
+                      <tr key={`${p.role}:${p.host}:${p.pid}:${p.instance}`}>
+                        <td className="strong">
+                          {ROLE[p.role] ?? p.role} <span className="dim num">· {p.pid}</span>
+                        </td>
+                        <td className="mono" title={p.host}>
+                          {p.host.slice(0, 16)}
+                        </td>
+                        <td className="r num">{mb(p.rss_mb)}</td>
+                        <td className="r num">{mb(p.peak_rss_mb)}</td>
+                        <td className="r num">{p.cpu_percent.toFixed(1)}%</td>
+                        <td className="r num" title={p.children ? `${p.children} child processes` : undefined}>
+                          {num(p.threads)}
+                          {p.children ? ` +${p.children}` : ""}
+                        </td>
+                        <td className="r num">{p.ready_seconds == null ? "—" : `${p.ready_seconds.toFixed(1)} s`}</td>
+                        <td>{duration(p.uptime_seconds)}</td>
+                        <td className="mono">{p.revision ? p.revision.slice(0, 7) : "—"}</td>
+                        <td>{ago(p.at, now)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+          {rows.some((p) => p.history.length > 1) && (
+            <div className="grid-2">
+              <Card title="Memory, last hour">
+                <ProcessChart processes={rows} metric="rss_mb" />
+              </Card>
+              <Card title="CPU, last hour">
+                <ProcessChart processes={rows} metric="cpu_percent" />
+              </Card>
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }

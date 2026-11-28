@@ -244,6 +244,89 @@ async def test_openshell_opens_its_sandbox_with_the_sessions_hosts(tmp_path, mon
     assert ["sandbox", "delete", session.name] in calls
 
 
+def test_a_secret_host_is_inspected_by_its_provider_not_relayed() -> None:
+    from dotrix_backend.modules.coding.sandbox import secret_profile
+    from dotrix_backend.modules.coding.secrets import HostSecret
+
+    policy = sandbox_policy(["registry.npmjs.org", "pypi.org"], ["registry.npmjs.org"])
+    assert policy["network_policies"]["project_hosts"]["endpoints"] == [{"host": "pypi.org", "port": 443, "tls": "skip"}]
+    assert sandbox_policy(["registry.npmjs.org"], ["registry.npmjs.org"])["network_policies"] == {}
+    npm = secret_profile("ps-x-1", HostSecret("NPM_TOKEN", "registry.npmjs.org", 443, "Authorization", "Bearer ", "v", 1))
+    assert npm["credentials"] == [{"name": "value", "description": "Host secret NPM_TOKEN", "env_vars": ["NPM_TOKEN"],
+                                   "required": True, "auth_style": "bearer"}]
+    assert npm["endpoints"] == [{"host": "registry.npmjs.org", "port": 443, "protocol": "rest", "access": "read-write",
+                                 "enforcement": "enforce"}]
+    api = secret_profile("ps-x-2", HostSecret("TEST_API", "api.example.com", 8443, "X-Api-Key", "", "v", 1))
+    assert api["credentials"][0]["auth_style"] == "header" and api["credentials"][0]["header_name"] == "X-Api-Key"
+    assert api["endpoints"][0]["port"] == 8443
+
+
+async def test_openshell_attaches_a_provider_per_secret_and_removes_them(tmp_path, monkeypatch) -> None:
+    import uuid
+
+    from dotrix_backend.core.settings import Settings
+    from dotrix_backend.modules.coding.sandbox import OpenShellSandbox
+    from dotrix_backend.modules.coding.secrets import HostSecret
+    from dotrix_backend.modules.coding.tools import ClaudeCode
+
+    calls, envs, profiles = [], [], []
+
+    async def cli(self, *args, env=None):
+        calls.append(list(args))
+        envs.append(env or {})
+        if args[:3] == ("provider", "profile", "import"):
+            profiles.append(open(args[args.index("-f") + 1]).read())
+        return ""
+
+    monkeypatch.setattr(OpenShellSandbox, "cli", cli)
+    (tmp_path / "a.txt").write_text("x")
+    sandbox = OpenShellSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
+                                        jwt_secret="test-only-secret-long-enough-for-settings"))
+    run_id = uuid.uuid4()
+    secret = HostSecret("NPM_TOKEN", "registry.npmjs.org", 443, "Authorization", "Bearer ", "npm-real-value", 1)
+    session = await sandbox.open(run_id, tmp_path, ClaudeCode(), "sk-test", allow=["registry.npmjs.org"],
+                                 secrets=[secret])
+    provider = f"ps-{run_id.hex[-13:]}-1"
+    assert len(provider) <= 19
+    assert ["provider", "create", "--name", provider, "--type", provider, "--credential", "NPM_TOKEN"] in calls
+    assert any(e.get("NPM_TOKEN") == "npm-real-value" for e in envs)  # by environment only
+    assert "npm-real-value" not in " ".join(" ".join(c) for c in calls) and "npm-real-value" not in "".join(profiles)
+    create = next(c for c in calls if c[:2] == ["sandbox", "create"])
+    assert create[create.index("--provider") + 1] != provider and provider in create
+    await session.close()
+    assert ["provider", "delete", provider] in calls and ["provider", "profile", "delete", provider] in calls
+
+
+async def test_openshell_detaches_a_setup_only_secret(tmp_path, monkeypatch) -> None:
+    import uuid
+
+    from dotrix_backend.core.settings import Settings
+    from dotrix_backend.modules.coding.sandbox import OpenShellSandbox
+    from dotrix_backend.modules.coding.secrets import HostSecret
+    from dotrix_backend.modules.coding.tools import ClaudeCode
+
+    calls = []
+
+    async def cli(self, *args, env=None):
+        calls.append(list(args))
+        return ""
+
+    monkeypatch.setattr(OpenShellSandbox, "cli", cli)
+    (tmp_path / "a.txt").write_text("x")
+    sandbox = OpenShellSandbox(Settings(database_url="postgresql+asyncpg://localhost/unused",
+                                        jwt_secret="test-only-secret-long-enough-for-settings"))
+    run_id = uuid.uuid4()
+    session = await sandbox.open(run_id, tmp_path, ClaudeCode(), "sk-test", allow=["pypi.org"], secrets=[
+        HostSecret("PYPI_TOKEN", "pypi.org", 443, "Authorization", "Bearer ", "v", 1, "setup")])
+    provider = f"ps-{run_id.hex[-13:]}-1"
+    await session.drop_secrets(["PYPI_TOKEN"])
+    assert ["sandbox", "provider", "detach", session.name, provider] in calls
+    assert session.secret_providers == [] and session.profiles == []
+    calls.clear()
+    await session.close()  # what was already removed isn't removed again
+    assert ["provider", "delete", provider] not in calls
+
+
 async def test_a_process_is_streamed_and_killed_on_cancel_or_timeout() -> None:
     lines: list[str] = []
 
