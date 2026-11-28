@@ -20,7 +20,7 @@ const health: Health = {
   },
   environment: "demo",
   jobs: "worker",
-  sandbox: "docker",
+  sandbox: "docker-cloud",
   database_ms: 18,
   queue_pending: 2,
   queue_oldest_seconds: 11,

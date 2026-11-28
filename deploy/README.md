@@ -14,9 +14,8 @@ VPS
     ├── Dokploy, Traefik (TLS, your domain)
     ├── dotrix: site (nginx, dotrix.cc), web (nginx, app.dotrix.cc),
     │   admin (nginx, admin.dotrix.cc, /v1/admin only) → api, worker, migrate (once),
-    │   postgres, redis, storage (RustFS), docker-proxy
-    └── coding sandboxes on the VPS (not with docker-cloud): two containers per run,
-        dotrix-run-<id> and dotrix-run-<id>-egress
+    │   postgres, redis, storage (RustFS)
+    └── (coding sandboxes run on Docker Cloud, not on the VPS)
 ```
 
 ## Your checklist
@@ -72,7 +71,6 @@ The defaults in `dokploy.env.example` fit 6 vCPUs and 12 GB of memory:
 | Dokploy and Traefik | about 0.5 GB |
 | Postgres, Redis, RustFS | about 1.5 GB |
 | API and worker | about 1.5 GB |
-| Coding: 2 runs at once × 3 GB (`DOTRIX_CODING_MAX_RUNS`, `DOTRIX_CODING_MEMORY`) | up to 6 GB |
 
 A third run waits ("Waiting for a free sandbox") until one finishes. This sizing uses one cloud
 worker: the two-run limit is per worker process. Idle cached sandboxes are separate: production
@@ -212,12 +210,12 @@ matters:
 Redis is still needed (the queue, live streams, rate limits); its data can be lost without
 losing runs.
 
-## Coding sandboxes on Docker Cloud (recommended)
+## Coding sandboxes on Docker Cloud
 
 With `DOTRIX_CODING_SANDBOX=docker-cloud`, Kai's turns run in Docker Cloud sandboxes (the Docker
 Agentic Platform) instead of on this VPS. Each turn gets a microVM of its own; the API, worker,
 Postgres and Redis stay here. Docker enforces the network policy (only the model API of the turn's
-engine is reachable), so the egress proxy isn't needed. The worker still clones and pushes, so no
+engine and the hosts in the session's network policy are reachable). The worker still clones and pushes, so no
 GitHub token ever reaches a sandbox.
 
 1. **Subscribe** to the Docker Agentic Platform with the Docker account the sandboxes bill to.
@@ -230,7 +228,7 @@ GitHub token ever reaches a sandbox.
    manually and select publication explicitly. Set `DOTRIX_CODING_IMAGE` to the resulting immutable
    build tag, e.g. `docker.io/acme/dotrix-coding:sha-<12-character-commit>`.
 4. **Size:** `DOTRIX_CODING_CPUS` picks the sandbox size (Docker pairs 2 GiB of memory with each CPU:
-   1, 2, 4, 8 or 16 CPUs); `DOTRIX_CODING_MEMORY` and `DOTRIX_CODING_DOCKER_RUNTIME` don't apply.
+   1, 2, 4, 8 or 16 CPUs).
 
 The VPS then needs no room for sandboxes: 2 vCPUs and 4 GB run the rest. An account runs 10
 sandboxes at once by default; `DOTRIX_CODING_MAX_RUNS` (per worker) stays below that. Docker labels
@@ -258,17 +256,12 @@ Not yet checked against a real account (the client is tested against a fake of t
 `tests/unit/test_docker_cloud.py`): whether Docker pulls a private image without extra setup, and how
 long a sandbox takes to start.
 
-## Coding sandboxes on the VPS
+## No coding sandboxes on the VPS
 
-The worker starts each run's containers on the VPS's Docker. It reaches Docker only through
-`docker-proxy` (`tecnativa/docker-socket-proxy`), which allows containers, exec, networks, volumes,
-and images, and nothing else. Only the worker and proxy join the internal `docker-control` network;
-the API, migrations, and web cannot reach the proxy. The worker also joins the application network
-for the database, queue, and storage. The socket itself is never mounted into a dotrix container. Each
-run's agent container has no route out except its egress proxy, which reaches only the model API
-of the tool Kai runs: Claude Code and Codex by default, or OpenCode on the provider set in
-the session's model (Claude Code, Codex, OpenCode or fx). Every run uses only the requester's own
-key, from Account → Your models; there are no workspace or server keys.
+Staging and production run Kai's turns on Docker Cloud only. The Docker sandbox that ran containers on the VPS
+was removed (2026-11-28); development uses OpenShell (`infra/coding/README.md`). The worker needs no Docker access,
+so the compose file has no socket proxy. Every run uses only the requester's own key, from Account → Your models;
+there are no workspace or server keys.
 
 ## Outbound access
 
@@ -288,9 +281,8 @@ If the API and worker reach the internet only through a proxy (`HTTPS_PROXY`, `N
 DeepAgents does: Dotrix starts fx's chat host with `NODE_USE_ENV_PROXY=1`, since Node's own `fetch` ignores those
 variables otherwise. That needs Node 22.21 or newer in the backend image.
 
-Building the coding image (`coding-image`) also needs Docker Hub, `registry.npmjs.org`,
-`npm.pkg.github.com` (Kai's fx command, with `KAI_PACKAGES_TOKEN`), Debian's package mirrors and Playwright's browser download. The coding sandboxes
-themselves need nothing here: their egress proxy reaches only the model API of the run's tool.
+Building the coding image (the `coding-image` workflow, not this VPS) needs Docker Hub, `registry.npmjs.org`,
+`npm.pkg.github.com` (Kai's fx command, with `KAI_PACKAGES_TOKEN`), Debian's package mirrors and Playwright's browser download.
 
 To check OSV from the worker:
 
@@ -300,62 +292,19 @@ docker compose exec worker python -c "import httpx; print(httpx.post('https://ap
 
 `200` means the tool can check dependencies.
 
-**In Dokploy's container list** you'll see each run's two containers (label `dotrix.run=<run id>`)
-for as long as it lasts. Leave them to dotrix: stop a run with Stop in dotrix, not in Dokploy.
-
-**Dokploy's cleanup of unused images** can delete `dotrix-coding:latest` while no run uses it; the
-next run then fails with "The coding image … isn't built". Leave that cleanup off, or redeploy
-after it to rebuild the image.
-
-**If coding runs fail to start through the proxy** (not yet tried on a real Dokploy host: sending
-the repository into the sandbox uses `docker exec -i`), run the worker on the VPS itself instead:
-
-```shell
-# On the VPS, as a user in the docker group:
-git clone https://github.com/<you>/dotrix && cd dotrix
-docker build -t dotrix-coding:latest infra/coding
-# An env file with the same values as in Dokploy, plus where Postgres and Redis are reachable
-# from the host (publish them on 127.0.0.1 in the compose file), and without DOCKER_HOST:
-uv sync --frozen --no-dev --package dotrix-backend
-uv run python -m dotrix_backend.worker   # or as a systemd service
-```
-
-Then remove the `worker` and `docker-proxy` services from the compose file.
-
 ## Isolation requirements and host verification
 
-- **gVisor is required for `DOTRIX_CODING_SANDBOX=docker` in staging and production.** Install
-  `runsc` on the Docker host ([gvisor.dev](https://gvisor.dev/docs/user_guide/install/)),
-  register it in `/etc/docker/daemon.json`, restart Docker (this restarts every Dokploy app), then set
-  `DOTRIX_CODING_DOCKER_RUNTIME=runsc`. The deployment example sets this explicitly. An unset or
-  ordinary runtime is refused at API/worker startup. If gVisor cannot start, coding fails; it never
-  retries using ordinary Docker. Both the agent and egress containers use it, and their actual
-  runtime is checked before any repository content is copied. Docker Cloud uses its own microVMs;
-  this Docker runtime requirement does not apply to it. Keep coding `off` until the selected
-  backend is ready.
+- **Docker Cloud is the isolation.** Each turn runs in a microVM of Docker's, under Docker's network policy;
+  the model key stays outside it. Keep coding `off` until the account, token and image are ready.
 - **Finite capacity:** `DOTRIX_CODING_MAX_RUNS` must be positive when deployed coding is enabled.
-  This limits active turns per worker process, not across workers or per workspace. Agent memory,
-  CPU and process limits remain in effect; swap is disabled. Egress is separately limited to
-  256 MiB, 0.25 CPU and 128 processes. Idle cached sandboxes can retain processes and memory;
-  budget for them separately or set `DOTRIX_CODING_WARM_MAX=0`. Distributed workspace limits
-  are still pending.
-- **A second VPS for coding:** keeps untrusted code off the machine with your database. Run the
-  worker there (as above), pointing at this VPS's Postgres and Redis over a private network.
+  This limits active turns per worker process, not across workers or per workspace. Sleeping
+  sandboxes count toward the account's limit; `DOTRIX_CODING_SLEEP_MAX` caps them per workspace.
+  Distributed workspace limits are still pending.
 - **Snapshots:** take one before upgrading; back up the `pgdata` and `storagedata` volumes.
 
-Before enabling Docker coding, run `docker info --format '{{json .Runtimes}}'` against the
-worker's Docker daemon and verify `runsc` is registered. Then run the real Docker sandbox
-regressions on that host with `DOTRIX_CODING_DOCKER_RUNTIME=runsc` and the coding image built:
-
-```shell
-uv run pytest apps/backend/tests/unit/test_coding_docker.py -v
-```
-
-These exercise file edits, network restrictions, read-only system paths, Stop and cleanup with
-the selected runtime. Finally run an explicitly authorised coding turn through the deployed
-worker and record its checks, PR and container runtime. Configuration/unit tests alone do not
-verify the host's isolation or establish production readiness. No host runtime installation or
-Docker restart is performed by the application.
+Before enabling coding, run an explicitly authorised turn through the deployed worker on a disposable
+repository and record its checks, PR, and the hosts Docker's policy log shows it blocked. Configuration and unit
+tests (`tests/unit/test_docker_cloud.py`, against a fake of the documented API) do not verify Docker's real service.
 
 
 

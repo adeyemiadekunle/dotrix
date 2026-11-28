@@ -1,37 +1,28 @@
 """Where a coding agent runs: a sandbox per run, holding a copy of the repo and nothing else.
 
-- OpenShell (`DOTRIX_CODING_SANDBOX=openshell`): one sandbox per run from the coding image,
-  under a policy (the workdir writable, the system read-only, no network rule of its own), with
-  the model key attached as a provider: OpenShell keeps the key and the sandbox sees a
-  placeholder that its proxy swaps in only for the model provider's endpoints. Driven through
-  the OpenShell CLI against the gateway it has selected.
-- Docker (`docker`): a container per run from the coding image, on an internal network of its
-  own with no route out. A second container, the egress proxy (`infra/coding/egress-proxy.mjs`),
-  sits on that network and the outside one and tunnels HTTPS to the tool's model API only. The
-  agent's container has a read-only system, no capabilities, and an unprivileged user; the repo
-  sits on a volume deleted with it. Unlike OpenShell, the model key is in the agent's environment:
-  the proxy is what keeps it from going anywhere but the model API.
-- Docker Cloud (`docker-cloud`): a Docker Sandboxes microVM per run, its network limited to the
-  model API by Docker's own policy (docker_cloud.py).
-- Local (`local`): a temporary folder on this machine, with no isolation at all. For
-  development only; refused in production.
+- OpenShell (`DOTRIX_CODING_SANDBOX=openshell`, the development sandbox): one sandbox per run from the coding image,
+  under a policy (the workdir writable, the system read-only, the network closed but for what it lists), with the
+  model key attached as a provider: OpenShell keeps the key and the sandbox sees a placeholder that its proxy swaps
+  in only for the model provider's endpoints. Driven through the OpenShell CLI against the gateway it has selected.
+- Docker Cloud (`docker-cloud`, staging and production): a Docker Sandboxes microVM per run, its network limited to
+  the model API by Docker's own policy, the key added by Docker outside the sandbox (docker_cloud.py).
+- Local (`local`): a temporary folder on this machine, with no isolation at all. For development only; refused in
+  production.
 
 None ever receives a GitHub token: the worker clones and pushes outside the sandbox.
 
-Extra hosts owners and admins allow (the network policy, network.py) reach only Docker Cloud
-sandboxes, which keep the key out of the sandbox; the others refuse a turn rather than open a way
-for the key to leave.
+The hosts in a session's network policy (network.py) reach OpenShell and Docker Cloud sandboxes: both keep the model
+key out of the sandbox, so a listed host can't receive it. OpenShell lists them in the sandbox's policy
+(`sandbox_policy`); Docker Cloud in its network policy.
 """
 from __future__ import annotations
 
 import asyncio
 import dataclasses
 import io
-import ipaddress
 import json
 import logging
 import os
-import re
 import shutil
 import signal
 import subprocess
@@ -96,11 +87,28 @@ class CodingSandbox(Protocol):
         ...
 
 
-def sandbox_policy() -> dict:
-    """The run's OpenShell policy: the workdir (with the repo) writable, the system read-only,
-    /tmp for scratch; no network of its own. The model provider attached to the sandbox adds
-    its endpoints (api.anthropic.com for Claude Code, api.openai.com for Codex), for the tool's
-    binaries only. Nothing reaches GitHub: the worker pushes."""
+def openshell_endpoint(entry: str) -> dict:
+    """One network policy entry (`host`, `*.domain`, either with `:port`; network_policy.py) as an OpenShell endpoint:
+    TLS relayed as it is (`tls: skip`), so the sandbox's own client checks the certificate and nothing is inspected.
+    `*.domain` means every host under the domain here, so it becomes OpenShell's `**.domain` (`*.` is one label)."""
+    from dotrix_engine.network_policy import parse_entry
+
+    parsed = parse_entry(entry)
+    return {"host": f"**.{parsed.host}" if parsed.subdomains else parsed.host, "port": parsed.port, "tls": "skip"}
+
+
+def sandbox_policy(allow: list[str] | tuple = ()) -> dict:
+    """The run's OpenShell policy: the workdir (with the repo) writable, the system read-only, /tmp for scratch, and
+    a network closed but for the hosts in the session's network policy (`allow`), for any program in the sandbox.
+    The model provider attached to the sandbox adds its endpoints (api.anthropic.com for Claude Code, api.openai.com
+    for Codex), for the tool's binaries only; the sandbox holds only a placeholder for the key, so no listed host can
+    receive it. Nothing reaches GitHub: the worker pushes."""
+    network: dict = {}
+    if allow:
+        network["project_hosts"] = {
+            "endpoints": [openshell_endpoint(entry) for entry in allow],
+            "binaries": [{"path": "/**"}],
+        }
     return {
         "version": 1,
         "filesystem_policy": {
@@ -110,7 +118,7 @@ def sandbox_policy() -> dict:
         },
         "landlock": {"compatibility": "hard_requirement"},
         "process": {"run_as_user": "sandbox", "run_as_group": "sandbox"},
-        "network_policies": {},
+        "network_policies": network,
     }
 
 
@@ -381,6 +389,15 @@ class OpenShellSandbox:
         self.bin = settings.openshell_bin
         self.image = settings.coding_image
 
+    async def pin_image(self, reference: str) -> OpenShellSandbox:
+        """This sandbox, creating from `reference`: an operator-approved image pinned by digest (environments.py) is
+        already immutable, so it's used as it is. The platform image (a tag) is used as configured."""
+        import copy
+
+        pinned = copy.copy(self)
+        pinned.image = reference
+        return pinned
+
     def cli_env(self, **extra: str) -> dict[str, str]:
         """The CLI finds its gateway in the worker's config; nothing else of ours reaches it."""
         keep = ("PATH", "HOME", "XDG_CONFIG_HOME", "OPENSHELL_GATEWAY", "OPENSHELL_CONFIG_DIR", "LANG", "TZ")
@@ -398,9 +415,6 @@ class OpenShellSandbox:
     async def open(
         self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
     ) -> SandboxSession:
-        if allow:  # its policy reaches the model provider only; not the hosts owners allow
-            raise SandboxError("OpenShell sandboxes don't take the hosts in the project's network policy: "
-                               "those need Docker Cloud sandboxes; or remove the hosts.")
         # OpenShell names are at most 19 characters; a UUIDv7's last 16 hex digits are its random part.
         name = provider = f"pm-{run_id.hex[-16:]}"
         scratch = Path(tempfile.mkdtemp(prefix="dotrix-openshell-"))
@@ -410,7 +424,7 @@ class OpenShellSandbox:
             await self.cli("provider", "create", "--name", provider, "--type", tool.provider_type,
                            "--credential", tool.key_env, env=self.cli_env(**{tool.key_env: model_key}))
             policy = scratch / "policy.yaml"
-            policy.write_text(json.dumps(sandbox_policy(), indent=2))  # JSON is YAML
+            policy.write_text(json.dumps(sandbox_policy(allow), indent=2))  # JSON is YAML
             await self.cli("sandbox", "create", "--name", name, "--from", self.image, "--policy", str(policy),
                            "--provider", provider, "--label", f"dotrix-run={run_id}", "--detach",
                            "--", "sleep", "infinity")
@@ -421,22 +435,7 @@ class OpenShellSandbox:
         return session
 
 
-# -- Docker ---------------------------------------------------------------------------
-
-DOCKER_HOME = "/sandbox"  # the image's sandbox user's home; the repo goes in its `repo`
-DOCKER_UID = "1500:1500"  # that user (infra/coding/Dockerfile)
-EGRESS_PORT = 3128
-EGRESS_READY_TRIES = 40  # half a second apart
-
-
-def egress_allow(tool: CodingTool) -> str:
-    """Where the egress proxy lets the tool go: its model API, nothing else."""
-    return f"{tool.api_host}:443"
-
-
-EXTRA_HOSTS_REFUSED = ("The key is inside this sandbox, so it can't reach the hosts in the project's network "
-                       "policy (the agent could send the key there). Those need Docker Cloud sandboxes, which "
-                       "keep the key out; or remove the hosts and start a new session.")
+# -- Docker Cloud's upload -------------------------------------------------------------
 
 
 def _tar_of(source: Path) -> bytes:
@@ -445,177 +444,6 @@ def _tar_of(source: Path) -> bytes:
     with tarfile.open(fileobj=buffer, mode="w") as tar:
         tar.add(source, arcname="repo")
     return buffer.getvalue()
-
-
-class DockerSession:
-    def __init__(self, sandbox: DockerSandbox, name: str) -> None:
-        self.sandbox, self.name = sandbox, name
-
-    async def exec(
-        self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
-        timeout: float, cancel: asyncio.Event | None = None,
-    ) -> ExecResult:
-        return await interruptible(self._exec, argv, stdin=stdin, on_line=on_line, timeout=timeout, cancel=cancel)
-
-    async def _exec(
-        self, argv: list[str], *, stdin: bytes | None = None, on_line: LineHandler | None = None,
-        timeout: float, cancel: asyncio.Event | None = None,
-    ) -> ExecResult:
-        cli = [self.sandbox.bin, "exec", *(["-i"] if stdin is not None else []), "-w", f"{DOCKER_HOME}/repo",
-               self.name, *argv]
-        result = await run_process(cli, env=self.sandbox.cli_env(), stdin=stdin, on_line=on_line, timeout=timeout,
-                                   cancel=cancel)
-        if result.code != 0 and not (result.cancelled or result.timed_out or (cancel and cancel.is_set())):
-            # docker exec can fail because either the command or its container exited.
-            # Ask the daemon rather than interpreting output the command can write itself.
-            try:
-                running = await self.sandbox.cli(
-                    "container", "ls", "--filter", f"name=^/?{re.escape(self.name)}$", "--format", "{{.Names}}",
-                )
-            except SandboxError:
-                logger.debug("Couldn't check whether Docker sandbox %s is still running", self.name)
-            else:
-                if self.name not in running.splitlines():
-                    raise SandboxError("The Docker sandbox stopped or was removed")
-        return result
-
-    async def close(self) -> None:
-        for args in (["rm", "-f", "-v", self.name, f"{self.name}-egress"], ["network", "rm", self.name]):
-            try:
-                await self.sandbox.cli(*args)
-            except SandboxError as exc:
-                logger.warning("docker %s: %s", args[0], exc)
-
-
-class DockerSandbox:
-    kind = "docker"
-
-    def __init__(self, settings: Settings) -> None:
-        self.bin = settings.docker_bin
-        self.image = settings.coding_image
-        self.memory, self.cpus, self.runtime = settings.coding_memory, settings.coding_cpus, settings.coding_docker_runtime
-        self.egress_dns = settings.coding_egress_dns
-
-    async def pin_image(self, reference: str) -> DockerSandbox:
-        """Resolve once, use the content ID for both agent and egress containers; never mutate the shared factory."""
-        import copy
-        import re
-
-        identity = (await self.cli("image", "inspect", "--format", "{{.Id}}", reference)).strip()
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", identity):
-            raise SandboxError("The coding image has no valid immutable identity")
-        pinned = copy.copy(self)
-        pinned.image = identity
-        return pinned
-
-    def cli_env(self, **extra: str) -> dict[str, str]:
-        """The CLI finds its daemon in the worker's environment; nothing else of ours reaches it."""
-        keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "TEMP",
-                "TMP", "LANG", "TZ")
-        return {**{k: v for k, v in os.environ.items() if k in keep or k.startswith("DOCKER_")}, **extra}
-
-    async def cli(self, *args: str, stdin: bytes | None = None, env: dict[str, str] | None = None) -> str:
-        result = await run_process([self.bin, *args], env=env or self.cli_env(), stdin=stdin, timeout=CLI_TIMEOUT)
-        if result.timed_out:
-            raise SandboxError(f"docker {args[0]} took too long")
-        if result.code != 0:
-            lines = result.stderr.strip().splitlines()
-            raise SandboxError(f"docker {args[0]} failed: {lines[-1][:300] if lines else result.code}")
-        return result.stdout
-
-    async def _check_runtime(self, name: str) -> None:
-        """Do not copy repository content into a container using an unexpected runtime."""
-        if self.runtime is not None:
-            actual = await self.cli("inspect", "--format", "{{.HostConfig.Runtime}}", name)
-            if actual.strip() != self.runtime:
-                raise SandboxError("The coding sandbox did not use its configured isolation runtime; "
-                                   "check the Docker host's runtime configuration")
-
-    async def _listening(self, container: str) -> None:
-        """Wait until the egress proxy accepts connections (Node starts slower under gVisor), so the agent's first
-        request isn't refused. One that never listens stops the sandbox."""
-        probe = (f"require('net').connect({EGRESS_PORT},'127.0.0.1').on('connect',function(){{this.destroy();process.exit(0)}})"
-                 ".on('error',()=>process.exit(1))")
-        for _ in range(EGRESS_READY_TRIES):
-            try:
-                await self.cli("exec", container, "node", "-e", probe)
-                return
-            except SandboxError:
-                await asyncio.sleep(0.5)
-        raise SandboxError("The coding sandbox's egress proxy didn't start")
-
-    async def _address_on(self, container: str, network: str) -> str:
-        """A container's IPv4 address on one network, checked to be one."""
-        found = (await self.cli("inspect", "--format", f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
-                                container)).strip()
-        try:
-            if ipaddress.ip_address(found).version == 4:
-                return found
-        except ValueError:
-            pass
-        raise SandboxError("The coding sandbox's egress proxy has no address on its network")
-
-    async def open(
-        self, run_id: uuid.UUID, source: Path, tool: CodingTool, model_key: str, *, allow: list[str] | tuple = (),
-    ) -> SandboxSession:
-        if allow:
-            raise SandboxError(EXTRA_HOSTS_REFUSED)
-        name = f"dotrix-run-{run_id.hex[-16:]}"
-        label = f"dotrix.run={run_id}"
-        try:
-            await self.cli("image", "inspect", "--format", "{{.Id}}", self.image)
-        except SandboxError as exc:
-            raise SandboxError(f"The coding image {self.image} isn't built on this machine "
-                               "(docker build -t dotrix-coding:latest infra/coding)") from exc
-        session = DockerSession(self, name)
-        try:
-            # A network with no route out. The proxy is on it (as "egress") and on the default bridge.
-            await self.cli("network", "create", "--internal", "--label", label, name)
-            # Attach both networks before starting gVisor: its network stack is initialized at start.
-            await self.cli("create", "--name", f"{name}-egress", "--label", label, "--read-only",
-                           "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m",
-                           "--memory-swap", "256m", "--cpus", "0.25", "--pids-limit", "128",
-                           *(["--runtime", self.runtime] if self.runtime else []),
-                           "-e", f"DOTRIX_EGRESS_ALLOW={egress_allow(tool)}",
-                           # Under a runtime (gVisor) Docker's resolver is out of reach: name the resolvers.
-                           *(["-e", f"DOTRIX_EGRESS_DNS={self.egress_dns}"] if self.runtime else []),
-                           self.image, "node", "/opt/dotrix/egress-proxy.mjs")
-            await self.cli("network", "connect", "--alias", "egress", name, f"{name}-egress")
-            await self.cli("start", f"{name}-egress")
-            await self._check_runtime(f"{name}-egress")
-            # The agent finds the proxy by its address, not Docker's DNS: under gVisor a container on an internal
-            # network can't reach Docker's resolver (127.0.0.11), so "egress" wouldn't resolve and no turn could
-            # reach its model. An address that can't be read stops the sandbox here.
-            egress_ip = await self._address_on(f"{name}-egress", name)
-            await self._listening(f"{name}-egress")
-            # The agent's environment: the proxy, and the key (passed by name from ours, never on argv).
-            proxy = f"http://egress:{EGRESS_PORT}"
-            # localhost stays local: the agent's own dev server, opened by its browser.
-            credentials = tool.sandbox_env(model_key)
-            container_env = {"HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "https_proxy": proxy,
-                             "http_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1,::1",
-                             "no_proxy": "localhost,127.0.0.1,::1", "HOME": DOCKER_HOME, "LANG": "C.UTF-8"}
-            # --init: a reaper as PID 1, so what a stopped turn leaves behind doesn't linger as zombies.
-            await self.cli("run", "-d", "--init", "--name", name, "--label", label, "--network", name, "--read-only",
-                           "--add-host", f"egress:{egress_ip}",
-                           "--tmpfs", "/tmp:rw,exec,size=1g", "--mount", f"type=volume,dst={DOCKER_HOME}",
-                           "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", DOCKER_UID,
-                           "--memory", self.memory, "--memory-swap", self.memory,
-                           "--cpus", f"{self.cpus:g}", "--pids-limit", "512",
-                           *(["--runtime", self.runtime] if self.runtime else []),
-                           *[a for k in credentials for a in ("-e", k)],
-                           *[a for k, value in container_env.items() for a in ("-e", f"{k}={value}")],
-                           "-w", DOCKER_HOME, self.image, "sleep", "infinity",
-                           # Docker's TCP daemon must not use the agent-only egress proxy.
-                           # Credentials stay off argv; the fixed, non-secret container settings don't.
-                           env=self.cli_env(**credentials))
-            await self._check_runtime(name)
-            await self.cli("exec", "-i", "-w", DOCKER_HOME, name, "tar", "-x", "-f", "-",
-                           stdin=await asyncio.to_thread(_tar_of, source))
-        except BaseException:
-            await session.close()
-            raise
-        return session
 
 
 # -- Local (development) ---------------------------------------------------------------
@@ -656,8 +484,6 @@ class LocalSandbox:
 def build_sandbox(settings: Settings) -> CodingSandbox | None:
     if settings.coding_sandbox == "openshell":
         return OpenShellSandbox(settings)
-    if settings.coding_sandbox == "docker":
-        return DockerSandbox(settings)
     if settings.coding_sandbox == "docker-cloud":
         from .docker_cloud import DockerCloudSandbox  # (imports this module)
 

@@ -1,7 +1,9 @@
 name: Live models
 # Paid checks on real models, run by hand (Actions → Live models → Run workflow), never on a push or PR:
-# Nova on DeepAgents and fx (apps/backend/tests/integration/test_live_chat.py) and Kai on every engine in the
-# Docker sandbox, from the issue to the PR (test_live_coding.py, which builds the coding image first).
+# Nova on DeepAgents and fx (apps/backend/tests/integration/test_live_chat.py) and Kai on every engine in a Docker
+# Cloud sandbox, from the issue to the PR (test_live_coding.py). Kai's tests need the environment's
+# DOTRIX_DOCKER_CLOUD_ID and DOTRIX_DOCKER_CLOUD_PAT secrets and its DOTRIX_LIVE_CODING_IMAGE variable (the coding
+# image's registry reference, published by the coding-image workflow); without them they skip.
 #
 # Each provider's key is a secret of the `live-models` environment, read only for the provider picked:
 # DOTRIX_LIVE_NVIDIA_API_KEY, DOTRIX_LIVE_ANTHROPIC_API_KEY, DOTRIX_LIVE_OPENAI_API_KEY. A test whose key
@@ -61,6 +63,11 @@ jobs:
       DOTRIX_LIVE_NVIDIA_API_KEY: ${{ (inputs.provider == 'nvidia' || inputs.provider == 'all') && secrets.DOTRIX_LIVE_NVIDIA_API_KEY || '' }}
       DOTRIX_LIVE_ANTHROPIC_API_KEY: ${{ (inputs.provider == 'anthropic' || inputs.provider == 'all') && secrets.DOTRIX_LIVE_ANTHROPIC_API_KEY || '' }}
       DOTRIX_LIVE_OPENAI_API_KEY: ${{ (inputs.provider == 'openai' || inputs.provider == 'all') && secrets.DOTRIX_LIVE_OPENAI_API_KEY || '' }}
+      # Kai's sandbox: Docker Cloud, as in staging and production.
+      DOTRIX_LIVE_CODING_SANDBOX: docker-cloud
+      DOTRIX_LIVE_CODING_IMAGE: ${{ vars.DOTRIX_LIVE_CODING_IMAGE }}
+      DOTRIX_DOCKER_CLOUD_ID: ${{ secrets.DOTRIX_DOCKER_CLOUD_ID }}
+      DOTRIX_DOCKER_CLOUD_PAT: ${{ secrets.DOTRIX_DOCKER_CLOUD_PAT }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -80,24 +87,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.KAI_PACKAGES_TOKEN }}
         run: npm ci --prefix packages/engine/src/dotrix_engine/runtimes/fx_host
-      - name: Build the coding image
-        if: inputs.suite != 'chat'
-        env:
-          KAI_PACKAGES_TOKEN: ${{ secrets.KAI_PACKAGES_TOKEN }}
-        run: DOCKER_BUILDKIT=1 docker build --secret id=kai_packages_token,env=KAI_PACKAGES_TOKEN -t dotrix-coding:latest infra/coding
-      - name: Install gVisor (runsc), as deployed coding requires
-        # test_live_nvidia_bug_and_browser runs its sandbox under runsc. Pinned to the release Dotrix's sandbox tests ran on.
-        if: inputs.suite != 'chat'
-        env:
-          GVISOR: https://storage.googleapis.com/gvisor/releases/release/20261102/x86_64
-        run: |
-          cd "$(mktemp -d)"
-          curl -fsSLO "$GVISOR/gvisor.tar.bz2" -O "$GVISOR/gvisor.tar.bz2.sha512"
-          sha512sum -c gvisor.tar.bz2.sha512
-          sudo tar xjf gvisor.tar.bz2 -C /usr/local/bin   # runsc, its containerd shim and the gvisor-bin helpers it runs
-          sudo /usr/local/bin/runsc install
-          sudo systemctl reload docker || sudo systemctl restart docker
-          docker run --rm --runtime runsc hello-world
       - name: Nova on real models
         if: inputs.suite != 'coding'
         run: uv run pytest -v -rs apps/backend/tests/integration/test_live_chat.py

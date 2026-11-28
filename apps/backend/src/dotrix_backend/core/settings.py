@@ -164,17 +164,14 @@ class Settings(DatabaseSettings):
     code_dir: str = "~/.cache/dotrix/code"
     code_max_mb: int = Field(default=500, ge=1)
     # Coding runs (step 5c): Claude Code or Codex editing a checkout in a sandbox.
-    # - "openshell": an OpenShell sandbox per run (its gateway set up and selected with the
-    #   OpenShell CLI; see infra/coding/README.md), with a policy and the model key injected
-    # - "docker": a container per run from the coding image, on a network whose only way out is
-    #   a proxy to the model API (Docker and the image built; see infra/coding/README.md)
-    # - "docker-cloud": a Docker Cloud sandbox (microVM) per run, from the coding image in a
-    #   registry, its network limited to the model API (modules/coding/docker_cloud.py)
+    # - "openshell" (development): an OpenShell sandbox per run (its gateway set up and selected with
+    #   the OpenShell CLI; see infra/coding/README.md), with a policy and the model key injected
+    # - "docker-cloud" (staging and production): a Docker Cloud sandbox (microVM) per run, from the
+    #   coding image in a registry, its network limited to the model API (modules/coding/docker_cloud.py)
     # - "local": a temporary folder on this machine, no isolation (development only)
     # - "off": "Start coding" is refused
-    coding_sandbox: Literal["off", "openshell", "docker", "docker-cloud", "local"] = "off"
+    coding_sandbox: Literal["off", "openshell", "docker-cloud", "local"] = "off"
     openshell_bin: str = "openshell"
-    docker_bin: str = "docker"
     coding_image: str = "dotrix-coding:latest"  # the sandbox image (infra/coding/Dockerfile)
     coding_environment_images: list[Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[0-9a-f]{64}$")]] = Field(default_factory=list)
     # Docker Cloud sandboxes: the Docker ID and a personal access token with Cloud Sandboxes access
@@ -225,14 +222,8 @@ class Settings(DatabaseSettings):
     # free sandbox"). 0: no limit. Size it to the machine: each run may use the memory and CPUs below.
     coding_parallel: bool = False
     coding_max_runs: int = Field(default=2, ge=0, le=100)
-    # Each Docker sandbox's limits. Deployed Docker coding requires gVisor ("runsc", installed
-    # and registered on the host); development may use Docker's default runtime.
-    coding_memory: str = Field(default="4g", pattern=r"^[1-9][0-9]*[mg]$")
+    # Each Docker Cloud sandbox's CPUs (docker_cloud.size_for picks the size from them).
     coding_cpus: float = Field(default=2.0, gt=0, le=64)
-    coding_docker_runtime: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]{1,64}$")
-    # The resolvers the egress proxy looks the model API's host up with when a runtime is set: under gVisor a
-    # container on the sandbox's internal network can't reach Docker's own resolver. Comma-separated addresses.
-    coding_egress_dns: str = Field(default="1.1.1.1,8.8.8.8", pattern=r"^[0-9A-Fa-f.:]+(,[0-9A-Fa-f.:]+)*$")
     # The GitHub organisation coding branches are pushed to: the app forks each repo there (it needs
     # Administration and Contents write on it), so the PR's CI never gets the repo's secrets. Unset:
     # branches go to the repo itself (development only).
@@ -406,9 +397,6 @@ class Settings(DatabaseSettings):
         if self.is_deployed and self.coding_sandbox != "off" and not self.coding_fork_owner:
             raise ValueError("coding runs need DOTRIX_CODING_FORK_OWNER in staging and production (branches pushed "
                              "to the repo itself get its secrets in CI)")
-        if self.is_deployed and self.coding_sandbox == "docker" and self.coding_docker_runtime != "runsc":
-            raise ValueError("Docker coding needs DOTRIX_CODING_DOCKER_RUNTIME=runsc in staging and production; "
-                             "install and register gVisor on the Docker host, or keep coding off")
         if self.is_deployed and self.coding_sandbox != "off" and self.coding_max_runs == 0:
             raise ValueError("DOTRIX_CODING_MAX_RUNS must be positive in staging and production")
         if self.is_deployed and self.e2e_models:

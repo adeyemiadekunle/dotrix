@@ -403,7 +403,7 @@ async def test_changes_to_dotrix_or_workflows_are_never_pushed(
 async def test_a_turn_that_writes_the_model_key_is_never_pushed(
     db_client: AsyncClient, coding, github, origin: Path, claude: ScriptedClaude
 ) -> None:
-    """The Docker sandbox gives the agent the person's key in its environment: a turn that copies it
+    """A sandbox can give the agent the person's key in its environment (local, or a placeholder elsewhere): a turn that copies it
     into a file, encoded or not, or into its summary (the PR body) fails before anything is committed."""
     import base64
 
@@ -696,7 +696,7 @@ class ShootingSession(ScriptedSession):
 
 
 class ShootingSandbox(ScriptedSandbox):
-    kind = "docker"  # screenshots are kept from the coding image's sandboxes, never the local one
+    kind = "openshell"  # screenshots are kept from the coding image's sandboxes, never the local one
 
     async def open(self, run_id, source, tool, model_key):
         session = await super().open(run_id, source, tool, model_key)
@@ -3009,10 +3009,10 @@ async def test_repository_prompt_rejects_a_starting_branch_that_moved_before_app
 async def test_cloud_recovery_restores_only_a_checkpoint_from_the_same_base(
     db_client: AsyncClient, coding, github, origin, monkeypatch, branch_moved, db_session,
 ) -> None:
-    from dotrix_backend.modules.coding.sandbox import DockerSandbox, DockerSession
+    from dotrix_backend.modules.coding.sandbox import SandboxError
 
     ada, _, _, _, _, sandbox = coding
-    monkeypatch.setattr(sandbox, "kind", "docker")
+    monkeypatch.setattr(sandbox, "kind", "openshell")
     (origin / ".gitignore").write_text("ignored.txt\n")
     _git(origin, "add", ".gitignore")
     _git(origin, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Ignore scratch files")
@@ -3026,16 +3026,8 @@ async def test_cloud_recovery_restores_only_a_checkpoint_from_the_same_base(
             (box.root / "repo" / "ignored.txt").write_text("scratch")
             assert checkpoint is not None
             await checkpoint()
-            async def docker_result(argv, **kwargs):
-                if argv[1] == "exec":
-                    return ExecResult(code=1, stdout="", stderr="Error response from daemon: No such container")
-                assert argv[1:3] == ["container", "ls"]
-                return ExecResult(code=0, stdout="", stderr="")
+            raise SandboxError("The sandbox stopped or was removed")  # as a lost sandbox reports it
 
-            with monkeypatch.context() as docker:
-                docker.setattr("dotrix_backend.modules.coding.sandbox.run_process", docker_result)
-                await DockerSession(DockerSandbox(self.settings), "dotrix-test-lost").exec(["claude"], timeout=5)
-            pytest.fail("Docker sandbox loss did not trigger recovery")
         assert (box.root / "repo" / "saved.bin").read_bytes() == b"\0saved\xff"
         assert not (box.root / "repo" / "ignored.txt").exists()
         return await original_code(self, run_id, box, *args, checkpoint=checkpoint, **kwargs)

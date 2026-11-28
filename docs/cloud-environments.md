@@ -50,15 +50,15 @@ engine/container transports, not proof of deployed sandbox behavior.
 
 ## Approving a project image
 
-Custom images currently require the Docker sandbox. Build them from the supported
+Custom images currently require the OpenShell sandbox (Docker Cloud uses the platform image). Build them from the supported
 `infra/coding/Dockerfile` contract, including every pinned engine, the browser,
 `/opt/dotrix` drivers, and the sandbox user. Review the image before allowing it;
 image approval grants executable code access to admitted runs and their model key.
 Do not bake credentials into an image.
 
 1. Push the reviewed image to your registry and obtain its immutable registry digest.
-2. Preinstall that exact digest on every worker's Docker daemon. Docker registry
-   credentials belong to the operator/daemon, never to the coding container.
+2. Make that exact digest available to the OpenShell gateway. Registry credentials
+   belong to the operator and the gateway, never to the coding sandbox.
 3. Set `DOTRIX_CODING_ENVIRONMENT_IMAGES` to a JSON list of approved references
    such as `registry.example.com/team/coding@sha256:<64 lowercase hex digits>`.
    Restart API and workers with the same list; Dokploy passes it to both.

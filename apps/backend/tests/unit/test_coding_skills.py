@@ -108,7 +108,7 @@ def test_cloud_browser_capabilities_match_engine_support_and_mode(agent, mode):
 
     run = SimpleNamespace(agent=CodingAgent(agent), model="openai:gpt-5.5", location=CodingLocation.CLOUD, work_mode=mode)
     settings = Settings(database_url="postgresql+asyncpg://localhost/unused", jwt_secret="test-only-secret-for-browser-capabilities",
-                        coding_sandbox="docker")
+                        coding_sandbox="openshell")
     assert next(item for item in describe(run, settings) if item["id"] == "browser")["available"] is (mode != "plan")
 
 

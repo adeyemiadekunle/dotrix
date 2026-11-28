@@ -66,10 +66,6 @@ RUN npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} \
   && cd "$(npm root -g)/@playwright/mcp" && npx --no-install playwright install --with-deps chromium \
   && chmod -R a+rX /opt/ms-playwright && playwright-mcp --version
 
-# The Docker sandbox's way out (DOTRIX_CODING_SANDBOX=docker): run from this image in a container
-# of its own, it lets the agent reach the model API and nothing else.
-COPY egress-proxy.mjs /opt/dotrix/egress-proxy.mjs
-
 # OpenShell drops the agent to this user (policy: run_as_user/run_as_group "sandbox").
 RUN groupadd --gid 1500 sandbox && useradd --uid 1500 --gid sandbox --home-dir /sandbox --create-home sandbox
 WORKDIR /sandbox
