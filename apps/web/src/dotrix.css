@@ -660,7 +660,7 @@
   --launcher-h: 60px; /* its height and the gap above it, for what stacks over it */
 }
 :root:has(.agents-launcher) .page:not(.flush) {
-  padding-bottom: calc(var(--launcher-h, 60px) + 32px);
+  padding-bottom: calc(var(--launcher-h, 60px) + var(--notices-h, 0px) + 32px);
 }
 :root:has(.agents-launcher) .tlist {
   padding-bottom: calc(var(--launcher-h, 60px) + 28px);
@@ -1026,6 +1026,7 @@
 @media (max-width: 640px) {
   .notices {
     position: static;
+    z-index: auto;
     width: auto;
     flex-shrink: 0;
     margin: 8px var(--gutter) 0;
@@ -1033,6 +1034,11 @@
   .notices .notice {
     box-shadow: none;
     border: 1px solid var(--border-strong);
+  }
+  .agents-launcher {
+    height: 40px;
+    min-width: 40px;
+    padding: 0 8px;
   }
   .agents-panel.sheet {
     box-shadow: none;
@@ -1767,6 +1773,22 @@ body.resizing-row * {
 .home-stats {
   margin-bottom: 16px;
 }
+.home-decision-item {
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 -8px;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--dur);
+}
+.home-decision-item:hover {
+  background: var(--surface-2);
+}
+.home-decision-item:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: -2px;
+}
 .home-decision-mobile {
   display: none;
 }
@@ -2071,10 +2093,9 @@ section.side-panel-body[hidden] {
   background: none;
   color: var(--text-3);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   text-align: left;
   cursor: pointer;
 }
@@ -4565,12 +4586,14 @@ textarea.onb2-input {
   .cs-row-foot {
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 8px;
     min-width: 0;
   }
   .cs-row-meta {
     display: block;
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -4583,7 +4606,7 @@ textarea.onb2-input {
   }
   .cs-row-foot > .badge {
     flex-shrink: 0;
-    max-width: 60%;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -5060,7 +5083,7 @@ textarea.onb2-input {
     max-width: 106px;
   }
   .compact-composer .composer-model {
-    max-width: min(104px, 30vw);
+    max-width: min(124px, 34vw);
   }
   .dotrix-composer .composer-model [data-slot="select-trigger"],
   .dotrix-composer .composer-model .cmp-select-trigger {
@@ -5107,7 +5130,7 @@ textarea.onb2-input {
     max-width: 106px;
   }
   .compact-composer .composer-model {
-    max-width: min(104px, 30vw);
+    max-width: min(124px, 34vw);
   }
   .dotrix-composer .composer-model [data-slot="select-trigger"],
   .dotrix-composer .composer-model .cmp-select-trigger {
@@ -5590,10 +5613,8 @@ textarea.onb2-input {
   flex: 1;
 }
 .readiness-eyebrow {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--text-3);
 }
 .readiness-next-copy h3 {

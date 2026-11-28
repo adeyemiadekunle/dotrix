@@ -98,9 +98,9 @@ function loadPrefs(): SavedPrefs | null {
     if (raw) {
       const j = JSON.parse(raw) as SavedPrefs;
       if (j && typeof j === "object") {
-        // Never hydrate demo user identity ("Tanjim Islam") into live preferences.
+        // Never hydrate demo user identity ("John Doe" / legacy "Tanjim Islam") into live preferences.
         const prefs = { ...(j.prefs ?? {}) };
-        if (prefs.name === "Tanjim Islam") delete prefs.name;
+        if (prefs.name === "John Doe" || prefs.name === "Tanjim Islam") delete prefs.name;
         if (prefs.title === "Head of Product") delete prefs.title;
         return { prefs, views: j.views, collapsed: j.collapsed };
       }

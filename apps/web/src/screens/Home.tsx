@@ -44,7 +44,18 @@ function AgentItem({ n }: { n: Notif }) {
   const open = () =>
     isLive() && n.thread && !n.codingRun ? go("chat", {}, { search: `thread=${n.thread}&project=${p?.key ?? ""}` }) : go("inbox", {}, { search: `n=${n.id}` });
   return (
-    <div className="row" style={{ alignItems: "flex-start", gap: 10, padding: "8px 0", cursor: "pointer" }} onClick={open} role="button" tabIndex={0}>
+    <div
+      className="row home-decision-item"
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <Av id={n.by} cls="md" tip={false} />
       <div className="grow" style={{ fontSize: 13, lineHeight: 1.45, minWidth: 0 }}>
         <div>
@@ -323,12 +334,12 @@ export function Home() {
                   aria-label={tableOverflow ? "Project progress, scroll to see more columns" : "Project progress"}
                   tabIndex={tableOverflow ? 0 : undefined}
                 >
-                  <table className="perm-t" style={{ minWidth: 560 }}>
+                  <table className="perm-t" style={{ minWidth: 520 }}>
                     <thead>
                       <tr>
                         <th style={{ paddingLeft: 14 }}>Project</th>
                         <th style={{ textAlign: "left" }}>Status</th>
-                        <th style={{ textAlign: "left", width: "26%" }}>Progress</th>
+                        <th style={{ textAlign: "left", width: "18%" }}>Progress</th>
                         <th>Open</th>
                         <th>Overdue</th>
                         <th style={{ textAlign: "left" }}>Due</th>
@@ -342,10 +353,12 @@ export function Home() {
                         const ov = pts.filter(isOver).length;
                         return (
                           <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => go("project", { id: p.key, tab: "overview" })}>
-                            <td style={{ paddingLeft: 14 }}>
+                            <td style={{ paddingLeft: 14, whiteSpace: "nowrap" }}>
                               <span className="row">
                                 <PIcon p={p} s={14} />
-                                <b style={{ fontWeight: 500 }}>{p.name}</b>
+                                <b className="trunc" style={{ fontWeight: 500 }}>
+                                  {p.name}
+                                </b>
                               </span>
                             </td>
                             <td style={{ textAlign: "left" }}>

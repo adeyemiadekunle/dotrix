@@ -8,7 +8,7 @@ export function seed(): Data {
   const members: Member[] = [
     {
       id: "m1",
-      name: "Tanjim Islam",
+      name: "John Doe",
       email: "hello@dotrix.app",
       role: "Owner",
       title: "Head of Product",
@@ -382,7 +382,7 @@ export function seed(): Data {
       text: "Tablet layout feels crowded around the logo strip. Could we drop to four logos under 1024px?",
       re: { "👍": ["m2", "m3"] },
     },
-    { id: "c2", task: "t3", by: "m2", at: minsAgo(210), text: "Good call. Updated in v3 — @Tanjim Islam can you review before Thursday?", re: {} },
+    { id: "c2", task: "t3", by: "m2", at: minsAgo(210), text: "Good call. Updated in v3 — @John Doe can you review before Thursday?", re: {} },
     {
       id: "c3",
       task: "t3",
@@ -396,7 +396,7 @@ export function seed(): Data {
     { id: "c6", task: "t9", by: "m1", at: minsAgo(55), text: "This slipped past yesterday — @Emma Wilson anything blocking the permission prompts?", re: {} },
     { id: "c7", task: "t24", by: "m7", at: minsAgo(700), text: "Face ID fallback to passcode works on iOS 17; testing Android next.", re: {} },
     { id: "c8", task: "t34", by: "m2", at: minsAgo(1500), text: "Finance needs the channel split before approving.", re: {} },
-    { id: "c9", task: "t35", by: "m7", at: minsAgo(200), text: "Support training moved to Monday. @Tanjim Islam please confirm the status page copy.", re: {} },
+    { id: "c9", task: "t35", by: "m7", at: minsAgo(200), text: "Support training moved to Monday. @John Doe please confirm the status page copy.", re: {} },
   ];
   const A = (by: string, verb: string, task: string | null, project: string | null, m: number, extra = "") => ({
     id: uid("a"),
@@ -429,7 +429,7 @@ export function seed(): Data {
       by: "m2",
       task: "t3",
       text: "mentioned you in",
-      snippet: "Updated in v3 — @Tanjim Islam can you review before Thursday?",
+      snippet: "Updated in v3 — @John Doe can you review before Thursday?",
       at: minsAgo(210),
       read: false,
     },
@@ -450,7 +450,7 @@ export function seed(): Data {
       by: "m7",
       task: "t35",
       text: "mentioned you in",
-      snippet: "Support training moved to Monday. @Tanjim Islam please confirm the status page copy.",
+      snippet: "Support training moved to Monday. @John Doe please confirm the status page copy.",
       at: minsAgo(200),
       read: false,
     },

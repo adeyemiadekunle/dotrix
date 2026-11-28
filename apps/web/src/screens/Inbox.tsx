@@ -29,6 +29,7 @@ const projOf = (n: Notif) => (n.project ? proj(n.project) : n.task ? proj(task(n
 
 function NotifText({ n }: { n: Notif }) {
   const t = n.task ? task(n.task) : null;
+  const th = !t && n.thread ? D().threads.find((x) => x.id === n.thread) : null;
   const p = projOf(n);
   if (!n.by && p && !t) return <b style={{ fontWeight: 600 }}>{n.text}</b>;
   if (!n.by && t)
@@ -37,9 +38,10 @@ function NotifText({ n }: { n: Notif }) {
         <b style={{ fontWeight: 600 }}>{t.title}</b> <span className="muted">{n.text}</span>
       </>
     );
+  const subject = t?.title ?? th?.title;
   return (
     <>
-      <b style={{ fontWeight: 600 }}>{who(n.by)?.name}</b> <span className="muted">{n.text}</span> {t && <b style={{ fontWeight: 500 }}>{t.title}</b>}
+      <b style={{ fontWeight: 600 }}>{who(n.by)?.name}</b> <span className="muted">{n.text}</span> {subject && <b style={{ fontWeight: 500 }}>{subject}</b>}
     </>
   );
 }

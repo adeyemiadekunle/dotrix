@@ -14,7 +14,7 @@ const DEMO_STORE_KEY = "dotrix.demo.v2";
 const LEGACY_STORE_KEY = "dotrix.studio.v2";
 
 export const DEMO_PREFS = {
-  name: "Tanjim Islam",
+  name: "John Doe",
   title: "Head of Product",
 };
 
@@ -24,7 +24,11 @@ function loadDemoData(): Data {
     if (raw) {
       const parsed = JSON.parse(raw) as Data | { data?: Data };
       const candidate = "tasks" in parsed ? parsed : parsed?.data;
-      if (candidate?.tasks && candidate.threads && candidate.ws?.url === "dotrix") return candidate;
+      if (candidate?.tasks && candidate.threads && candidate.ws?.url === "dotrix") {
+        const owner = candidate.members?.find((m) => m.id === "m1");
+        if (owner?.name === "Tanjim Islam") owner.name = DEMO_PREFS.name;
+        return candidate;
+      }
     }
   } catch {
     /* storage blocked or corrupt: start from the seed */
@@ -77,7 +81,7 @@ registerDemoHooks({
 export function mountDemo() {
   if (live.mode === "demo" && S.data.projects.length > 0) return;
   S.data = loadDemoData();
-  if (!S.prefs.name) S.prefs.name = DEMO_PREFS.name;
+  if (!S.prefs.name || S.prefs.name === "Tanjim Islam") S.prefs.name = DEMO_PREFS.name;
   if (!S.prefs.title) S.prefs.title = DEMO_PREFS.title;
   if (S.ui.expanded.p1 === undefined) S.ui.expanded.p1 = true;
   setLiveData(null);

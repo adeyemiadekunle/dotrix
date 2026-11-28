@@ -554,7 +554,7 @@ export function MiniRow({ t, av = true, noProj }: { t: Task; av?: boolean; noPro
     >
       <input
         type="checkbox"
-        className="check round"
+        className="check"
         checked={t.status === "done"}
         disabled={t.status !== "done" && !canManageIssues()}
         onClick={(e) => e.stopPropagation()}
